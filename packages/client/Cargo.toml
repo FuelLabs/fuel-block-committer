@@ -1,0 +1,10 @@
+[package]
+name = "fuels-committer-client"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
+version = { workspace = true }
+
+description = "Fuel Rust Block Committer client."
