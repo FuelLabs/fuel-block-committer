@@ -1,5 +1,5 @@
 [package]
-name = "fuels-committer-bin"
+name = "fuel-block-committer-bin"
 authors = { workspace = true }
 edition = { workspace = true }
 homepage = { workspace = true }
@@ -7,7 +7,7 @@ repository = { workspace = true }
 rust-version = { workspace = true }
 version = { workspace = true }
 
-description = "Fuel Rust Block Committer bin."
+description = "Fuel Block Committer bin."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
