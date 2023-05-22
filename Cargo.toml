@@ -7,10 +7,9 @@
 resolver = "2"
 members = [
     "actors",
-    "api_server/service",
+    "api",
     "bin",
-    "client",
-    "domain_model"
+    "cli",
 ]
 
 [workspace.package]
