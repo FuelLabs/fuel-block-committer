@@ -6,11 +6,10 @@
 # https://doc.rust-lang.org/edition-guide/rust-2021/default-cargo-resolver.html#details
 resolver = "2"
 members = [
-    "actors",
-    "api_server/service",
+    "crates/actors",
+    "crates/api",
+    "crates/cli",
     "bin",
-    "client",
-    "domain_model"
 ]
 
 [workspace.package]

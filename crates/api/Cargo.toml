@@ -1,5 +1,5 @@
 [package]
-name = "fuels-committer-client"
+name = "fuel-block-committer-api"
 authors = { workspace = true }
 edition = { workspace = true }
 homepage = { workspace = true }
@@ -7,4 +7,7 @@ repository = { workspace = true }
 rust-version = { workspace = true }
 version = { workspace = true }
 
-description = "Fuel Rust Block Committer client."
+description = "Fuel Block Committer api."
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
