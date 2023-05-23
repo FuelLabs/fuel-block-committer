@@ -18,7 +18,9 @@ edition = "2021"
 homepage = "https://fuel.network/"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
 rust-version = "1.68.0"
-version = "0.0.0"
+version = "0.0.1"
 
 [workspace.dependencies]
-
+tokio = { version = "1.21.2", features = ["process", "macros", "rt", "rt-multi-thread"] }
+clap = "4.3.0"
+anyhow = "1.0"
