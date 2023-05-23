@@ -11,3 +11,5 @@ description = "Fuel Block Committer api."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-web = "4"
+serde = { version = "1.0", features = ["derive"] }

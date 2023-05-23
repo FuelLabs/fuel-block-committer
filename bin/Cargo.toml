@@ -11,3 +11,7 @@ description = "Fuel Block Committer bin."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+fuel-block-committer-api = {path = './../crates/api'}
+lazy_static = "1.4.0"
+prometheus = "0.13.3"
+tokio = { version = "1.0", features = ["full"] }
