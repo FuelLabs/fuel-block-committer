@@ -11,3 +11,5 @@ description = "Fuel Block Committer bin."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix = { workspace=true }
+async-trait = { workspace=true }

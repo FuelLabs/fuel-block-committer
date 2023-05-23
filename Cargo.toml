@@ -21,4 +21,5 @@ rust-version = "1.68.0"
 version = "0.0.0"
 
 [workspace.dependencies]
-
+actix = "0.13.0"
+async-trait = "0.1.68"
