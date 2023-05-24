@@ -1,30 +1,43 @@
-use std::time::Duration;
+use std::{println, time::Duration};
 
-use actix::{Actor, AsyncContext, Context, Handler, Message};
+use actix::{Actor, Addr, AsyncContext, Context, Handler, Recipient};
 
-use crate::adapters::block_fetcher::BlockFetcher;
+use crate::{
+    actors::messages::{BlockUpdate, CheckNewBlock},
+    adapters::block_fetcher::BlockFetcher,
+};
+
+use super::eth_committer::EthCommitter;
 
 pub struct BlockWatcher {
     check_interval: Duration,
     block_fetcher: Box<dyn BlockFetcher>,
     last_block_height: u64,
+    subscriber: Recipient<BlockUpdate>,
 }
 
 impl BlockWatcher {
-    pub fn new(check_interval: Duration, block_fetcher: impl BlockFetcher + 'static) -> Self {
+    pub fn new(
+        check_interval: Duration,
+        block_fetcher: impl BlockFetcher + 'static,
+        subscriber: Recipient<BlockUpdate>,
+    ) -> Self {
         Self {
             check_interval,
             block_fetcher: Box::new(block_fetcher),
             last_block_height: 0,
+            subscriber,
         }
     }
-}
 
-impl BlockWatcher {
     fn schedule_new_check(&self, ctx: &mut Context<Self>) {
         ctx.run_later(self.check_interval, |_, ctx| {
             ctx.address().do_send(CheckNewBlock {});
         });
+    }
+
+    fn log(&self, message: &str) {
+        println!("BlockWatcher: {message}");
     }
 }
 
@@ -40,13 +53,14 @@ impl Handler<CheckNewBlock> for BlockWatcher {
     type Result = (); // <- Message response type
 
     fn handle(&mut self, _msg: CheckNewBlock, ctx: &mut Context<Self>) {
-        println!("checking!");
+        self.log("checking new block!");
         // TODO: HANDLE
         //self.block_fetcher.latest_block();
         self.schedule_new_check(ctx);
+        //TODO: send BlockUpdate
+        self.log("sending block update");
+        self.subscriber.do_send(BlockUpdate {
+            block: Default::default(),
+        });
     }
 }
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct CheckNewBlock {}
