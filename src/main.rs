@@ -6,15 +6,18 @@ use adapters::{
     block_fetcher::FakeBlockFetcher, storage::FakeStorage, tx_status::FakeTxStatusProvider,
     tx_submitter::FakeTxSubmitter,
 };
+use api::launch;
 
 mod actors;
 mod adapters;
+mod api;
 mod cli;
 mod common;
 mod errors;
 
 #[actix::main]
 async fn main() {
+    /*x
     let committer = EthCommitter::new(
         Duration::from_secs(2),
         FakeTxStatusProvider {},
@@ -28,7 +31,11 @@ async fn main() {
         FakeBlockFetcher {},
         committer.into(),
     )
-    .start();
+    .start(); */
 
-    std::future::pending::<()>().await;
+    //TODO init prometheus
+
+    launch(8080).await;
+
+    //std::future::pending::<()>().await;
 }

@@ -11,5 +11,8 @@ name = "fuel-block-commiter"
 
 [dependencies]
 actix = "0.13.0"
+actix-web = "4"
 async-trait = "0.1.68"
 fuels = "0.41.0"
+prometheus = "0.13.3"
+serde = { version = "1.0", features = ["derive"] }

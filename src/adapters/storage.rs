@@ -19,6 +19,7 @@ pub trait Storage {
     async fn insert(&self, submission: EthTxSubmission) -> Result<u64>;
     async fn update(&self, entry: StorageEntry) -> Result<()>;
     async fn last_entry(&self) -> Result<Option<StorageEntry>>;
+    async fn last_successful_tx(&self) -> Result<Option<StorageEntry>>;
 }
 
 pub struct FakeStorage {}
@@ -32,6 +33,9 @@ impl Storage for FakeStorage {
         todo!()
     }
     async fn last_entry(&self) -> Result<Option<StorageEntry>> {
+        todo!()
+    }
+    async fn last_successful_tx(&self) -> Result<Option<StorageEntry>> {
         todo!()
     }
 }

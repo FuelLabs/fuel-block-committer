@@ -2,7 +2,10 @@ use std::{println, time::Duration};
 
 use actix::{Actor, Addr, AsyncContext, Context, Handler, Recipient};
 
-use super::eth_committer::EthCommitter;
+use super::{
+    eth_committer::EthCommitter,
+    messages::{FuelStatus, ReportFuelStatus},
+};
 use crate::{
     actors::messages::{BlockUpdate, CheckNewBlock},
     adapters::block_fetcher::BlockFetcher,
@@ -61,5 +64,15 @@ impl Handler<CheckNewBlock> for BlockWatcher {
         self.subscriber.do_send(BlockUpdate {
             block: Default::default(),
         });
+    }
+}
+
+impl Handler<ReportFuelStatus> for BlockWatcher {
+    type Result = FuelStatus;
+
+    fn handle(&mut self, _msg: ReportFuelStatus, ctx: &mut Context<Self>) -> FuelStatus {
+        FuelStatus {
+            latest_fuel_block: self.last_block_height,
+        }
     }
 }

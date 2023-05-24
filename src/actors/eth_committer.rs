@@ -7,7 +7,10 @@ use crate::{
     actors::messages::{BlockUpdate, CheckTxStatus},
     adapters::{storage::Storage, tx_status::TxStatusProvider, tx_submitter::TxSubmitter},
     common::EthTxStatus,
+    errors::Result,
 };
+
+use super::messages::{EthStatus, ReportEthStatus};
 
 pub struct EthCommitter {
     check_interval: Duration,
