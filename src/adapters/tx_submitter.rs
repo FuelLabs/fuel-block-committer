@@ -1,6 +1,7 @@
-use crate::errors::Result;
 use async_trait::async_trait;
 use fuels::types::block::Block;
+
+use crate::errors::Result;
 
 #[async_trait]
 pub trait TxSubmitter {

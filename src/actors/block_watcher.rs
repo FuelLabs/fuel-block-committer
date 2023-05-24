@@ -2,12 +2,11 @@ use std::{println, time::Duration};
 
 use actix::{Actor, Addr, AsyncContext, Context, Handler, Recipient};
 
+use super::eth_committer::EthCommitter;
 use crate::{
     actors::messages::{BlockUpdate, CheckNewBlock},
     adapters::block_fetcher::BlockFetcher,
 };
-
-use super::eth_committer::EthCommitter;
 
 pub struct BlockWatcher {
     check_interval: Duration,

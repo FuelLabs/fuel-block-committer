@@ -1,8 +1,7 @@
-use crate::errors::Result;
 use async_trait::async_trait;
 use fuels::tx::Bytes32;
 
-use crate::common::EthTxStatus;
+use crate::{common::EthTxStatus, errors::Result};
 
 pub struct EthTxSubmission {
     status: EthTxStatus,

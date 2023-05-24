@@ -3,11 +3,11 @@ use std::time::Duration;
 use actix::{Actor, AsyncContext, Context, Handler};
 use fuels::tx::Bytes32;
 
-use crate::actors::messages::{BlockUpdate, CheckTxStatus};
-use crate::adapters::storage::Storage;
-use crate::adapters::tx_status::TxStatusProvider;
-use crate::adapters::tx_submitter::TxSubmitter;
-use crate::common::EthTxStatus;
+use crate::{
+    actors::messages::{BlockUpdate, CheckTxStatus},
+    adapters::{storage::Storage, tx_status::TxStatusProvider, tx_submitter::TxSubmitter},
+    common::EthTxStatus,
+};
 
 pub struct EthCommitter {
     check_interval: Duration,

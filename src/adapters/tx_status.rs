@@ -1,7 +1,6 @@
-use crate::errors::Result;
 use async_trait::async_trait;
 
-use crate::common::EthTxStatus;
+use crate::{common::EthTxStatus, errors::Result};
 
 #[async_trait]
 pub trait TxStatusProvider {
