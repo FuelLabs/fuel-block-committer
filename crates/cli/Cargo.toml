@@ -13,4 +13,6 @@ description = "Fuel Block Committer cli."
 [dependencies]
 tokio = { workspace = true}
 anyhow = { workspace = true}
+fuel-types = { workspace = true }
 clap = { version ="4.0.15", features =["derive"] }
+url = "2.3.1"
