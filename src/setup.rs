@@ -4,6 +4,7 @@ use actix_web::dev::Url;
 use fuels::{
     accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32, types::block::Block as FuelBlock,
 };
+use prometheus::Registry;
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
@@ -38,16 +39,19 @@ pub async fn spawn_block_watcher(
     config: &Config,
     extra_config: &ExtraConfig,
     storage: InMemoryStorage,
+    registry: &Registry,
 ) -> Result<(Receiver<FuelBlock>, tokio::task::JoinHandle<()>)> {
     let block_fetcher = FuelBlockFetcher::connect(&config.fuel_graphql_endpoint).await?;
 
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
+
     let block_watcher = BlockWatcher::new(
         config.commit_epoch,
         tx_fuel_block,
         block_fetcher,
         storage.clone(),
     );
+    block_watcher.register_metrics(registry);
 
     let polling_interval = extra_config.fuel_polling_interval;
     let handle = tokio::spawn(async move {

@@ -29,7 +29,9 @@ impl BlockFetcher for FuelBlockFetcher {
             .chain_info()
             .await
             .map_err(|err| match err {
-                fuels::prelude::ProviderError::ClientRequestError(err) => Error::from(err),
+                fuels::prelude::ProviderError::ClientRequestError(err) => {
+                    Error::NetworkError(err.to_string())
+                }
             })
             .map(|chain_info| chain_info.latest_block)
     }

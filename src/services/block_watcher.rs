@@ -1,4 +1,5 @@
 use fuels::types::block::Block as FuelBlock;
+use prometheus::{IntGauge, Opts, Registry};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
@@ -7,13 +8,30 @@ use crate::{
         storage::{EthTxSubmission, Storage},
     },
     common::EthTxStatus,
+    errors::{Error, Result},
 };
+
+struct Metrics {
+    latest_fuel_block: IntGauge,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let latest_fuel_block = IntGauge::with_opts(Opts::new(
+            "latest_fuel_block",
+            "The height of the latest fuel block.",
+        ))
+        .unwrap();
+        Self { latest_fuel_block }
+    }
+}
 
 pub struct BlockWatcher {
     block_fetcher: Box<dyn BlockFetcher + Send + Sync>,
     tx_fuel_block: Sender<FuelBlock>,
     storage: Box<dyn Storage + Send + Sync>,
     commit_epoch: u32,
+    metrics: Metrics,
 }
 
 impl BlockWatcher {
@@ -28,11 +46,18 @@ impl BlockWatcher {
             block_fetcher: Box::new(block_fetcher),
             tx_fuel_block,
             storage: Box::new(storage),
+            metrics: Default::default(),
         }
     }
 
-    pub async fn run(&self) -> anyhow::Result<()> {
-        let current_block = self.block_fetcher.latest_block().await?; // todo: handle error
+    pub fn register_metrics(&self, registry: &Registry) {
+        registry
+            .register(Box::new(self.metrics.latest_fuel_block.clone()))
+            .expect("app to have correctly named metrics");
+    }
+
+    pub async fn run(&self) -> Result<()> {
+        let current_block = self.fetch_latest_block().await?;
 
         let latest_block_submission = self.storage.submission_w_latest_block().await?;
 
@@ -41,10 +66,21 @@ impl BlockWatcher {
             &current_block,
             latest_block_submission.as_ref(),
         ) {
-            self.tx_fuel_block.send(current_block).await?; // todo: handle error
+            self.tx_fuel_block
+                .send(current_block)
+                .await
+                .map_err(|e| Error::Other(e.to_string()))?;
         }
 
         Ok(())
+    }
+
+    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
+        let current_block = self.block_fetcher.latest_block().await?;
+        self.metrics
+            .latest_fuel_block
+            .set(current_block.header.height as i64);
+        Ok(current_block)
     }
 
     fn should_propagate_update(
@@ -169,6 +205,36 @@ mod tests {
 
         // then
         assert!(should_propagate);
+    }
+
+    #[tokio::test]
+    async fn updates_block_metric_regardless_if_block_is_published() {
+        // given
+        let (tx, _) = tokio::sync::mpsc::channel(10);
+
+        let block_fetcher = given_fetcher_that_returns(vec![given_a_block(5)]);
+
+        let storage = InMemoryStorage::new();
+        storage.insert(given_pending_submission(4)).await.unwrap();
+
+        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+
+        let registry = Registry::default();
+        block_watcher.register_metrics(&registry);
+
+        // when
+        block_watcher.run().await.unwrap();
+
+        //then
+        let metrics = registry.gather();
+        let latest_block_metric = metrics
+            .iter()
+            .find(|metric| metric.get_name() == "latest_fuel_block")
+            .and_then(|metric| metric.get_metric().get(0))
+            .map(|metric| metric.get_gauge())
+            .unwrap();
+
+        assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
     fn given_fetcher_that_returns(blocks: Vec<FuelBlock>) -> MockBlockFetcher {

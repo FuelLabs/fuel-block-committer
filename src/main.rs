@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use actix_web::{web, App, HttpServer};
 use adapters::storage::InMemoryStorage;
+use prometheus::Registry;
 use serde::Serialize;
 use setup::{spawn_block_watcher, Config, ExtraConfig};
 
@@ -32,8 +33,10 @@ async fn main() -> Result<()> {
 
     let storage = InMemoryStorage::new();
 
+    let metrics_registry = Registry::default();
+
     let (rx_fuel_block, _block_watcher_handle) =
-        spawn_block_watcher(&config, &extra_config, storage.clone()).await?;
+        spawn_block_watcher(&config, &extra_config, storage.clone(), &metrics_registry).await?;
 
     // service BlockCommitter
     let ethereum_rpc = config.ethereum_rpc.clone();
