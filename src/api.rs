@@ -29,7 +29,7 @@ impl StatusReporter {
     }
 }
 
-pub async fn launch(port: u64) -> std::io::Result<()> {
+pub async fn _launch(_port: u64) -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
             .app_data(web::Data::new(StatusReporter {}))

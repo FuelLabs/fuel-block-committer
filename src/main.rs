@@ -4,8 +4,7 @@ use std::{
 };
 
 use actix_web::{dev::Url, web, App, HttpServer};
-use adapters::block_fetcher::{self, BlockFetcher, FakeBlockFetcher};
-use api::launch;
+use adapters::block_fetcher::FakeBlockFetcher;
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, client::schema::Bytes32};
 use serde::Serialize;
 
@@ -44,7 +43,7 @@ async fn main() {
     // service BlockWatcher
     tokio::spawn(async move {
         let block_fetcher = FakeBlockFetcher {};
-        let block_watcher =
+        let _block_watcher =
             BlockWatcher::new(Duration::from_secs(30), tx_fuel_block, block_fetcher);
 
         // todo: make fetcher thread safe before running
@@ -61,7 +60,7 @@ async fn main() {
     // service CommitListener
     let commit_listener = CommitListener::new(
         config.ethereum_rpc.clone(),
-        config.state_contract_address.clone(),
+        config.state_contract_address,
         app_state.clone(),
     );
 
@@ -73,7 +72,7 @@ async fn main() {
     // Database
 
     // prometheus
-    let metrics = MetricsService;
+    let _metrics = MetricsService;
 
     let _ = HttpServer::new(move || {
         App::new().app_data(web::Data::new(app_state.clone()))
@@ -87,16 +86,11 @@ async fn main() {
     .await;
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Default)]
 pub enum Status {
+    #[default]
     Idle,
     Commiting,
-}
-
-impl Default for Status {
-    fn default() -> Self {
-        Status::Idle
-    }
 }
 
 #[derive(Debug, Serialize, Default)]
