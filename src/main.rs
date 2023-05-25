@@ -1,9 +1,14 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use actix_web::{dev::Url, web, App, HttpServer};
 use adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage};
-use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
+use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32, types::block::Block};
 use serde::Serialize;
+use setup::{spawn_block_watcher, Config, ExtraConfig};
+use tokio::sync::mpsc::Sender;
 
 use crate::errors::Result;
 
@@ -13,17 +18,9 @@ mod cli;
 mod common;
 mod errors;
 mod services;
+mod setup;
 
-use services::{BlockCommitter, BlockWatcher, CommitListener, MetricsService};
-
-#[derive(Default, Debug, Clone)]
-pub struct Config {
-    pub ethereum_wallet_key: Bytes32,
-    pub ethereum_rpc: Url,
-    pub fuel_graphql_endpoint: Url,
-    pub state_contract_address: Bytes20,
-    pub commit_epoch: u32,
-}
+use services::{BlockCommitter, CommitListener, MetricsService};
 
 // todo/note: each of these fields could be separately hidden behind a mutex
 // so that we don't have to lock the whole struct - depending on the usecases
@@ -33,24 +30,16 @@ pub type AppState = Arc<Mutex<StatusReport>>;
 async fn main() -> Result<()> {
     // todo: get config from cli
     let config = Config::default();
+    let extra_config = ExtraConfig::default();
 
     // AppState actix::web
     let app_state = Arc::new(Mutex::new(StatusReport::default()));
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
 
-    let block_fetcher = FuelBlockFetcher::connect(config.fuel_graphql_endpoint).await?;
     let storage = InMemoryStorage::new();
-    // service BlockWatcher
-    tokio::spawn(async move {
-        let block_watcher = BlockWatcher::new(
-            config.commit_epoch,
-            tx_fuel_block,
-            block_fetcher,
-            storage.clone(),
-        );
 
-        block_watcher.run().await.unwrap();
-    });
+    let _block_watcher_handle =
+        spawn_block_watcher(&config, &extra_config, storage.clone(), tx_fuel_block).await?;
 
     // service BlockCommitter
     let ethereum_rpc = config.ethereum_rpc.clone();

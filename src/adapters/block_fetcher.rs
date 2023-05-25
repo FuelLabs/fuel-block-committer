@@ -15,7 +15,7 @@ pub struct FuelBlockFetcher {
 }
 
 impl FuelBlockFetcher {
-    pub async fn connect(url: Url) -> Result<Self> {
+    pub async fn connect(url: &Url) -> Result<Self> {
         Ok(Self {
             provider: Provider::connect(url.uri().to_string()).await.unwrap(),
         })
@@ -59,7 +59,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let block_fetcher = FuelBlockFetcher::connect(Url::new(uri)).await.unwrap();
+        let block_fetcher = FuelBlockFetcher::connect(&Url::new(uri)).await.unwrap();
 
         // when
         let result = block_fetcher.latest_block().await.unwrap();
