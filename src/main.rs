@@ -3,11 +3,12 @@ use std::{
     time::Duration,
 };
 
-use crate::errors::Result;
 use actix_web::{dev::Url, web, App, HttpServer};
-use adapters::block_fetcher::FuelBlockFetcher;
+use adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage};
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
 use serde::Serialize;
+
+use crate::errors::Result;
 
 mod adapters;
 mod api;
@@ -41,10 +42,10 @@ async fn main() -> Result<()> {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
 
     let block_fetcher = FuelBlockFetcher::connect(config.fuel_graphql_endpoint).await?;
+    let storage = InMemoryStorage::new();
     // service BlockWatcher
     tokio::spawn(async move {
-        let block_watcher =
-            BlockWatcher::new(Duration::from_secs(30), tx_fuel_block, block_fetcher);
+        let block_watcher = BlockWatcher::new(tx_fuel_block, block_fetcher, storage.clone());
 
         block_watcher.run().await.unwrap();
     });

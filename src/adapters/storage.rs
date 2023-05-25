@@ -10,9 +10,9 @@ use crate::{common::EthTxStatus, errors::Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EthTxSubmission {
-    fuel_block_height: u64,
-    status: EthTxStatus,
-    tx_hash: H256,
+    pub fuel_block_height: u32,
+    pub status: EthTxStatus,
+    pub tx_hash: H256,
 }
 
 #[async_trait]
@@ -22,8 +22,9 @@ pub trait Storage {
     async fn submission_w_latest_block(&self) -> Result<Option<EthTxSubmission>>;
 }
 
+#[derive(Clone)]
 pub struct InMemoryStorage {
-    pub storage: Arc<Mutex<HashMap<u64, EthTxSubmission>>>,
+    pub storage: Arc<Mutex<HashMap<u32, EthTxSubmission>>>,
 }
 
 impl Default for InMemoryStorage {
