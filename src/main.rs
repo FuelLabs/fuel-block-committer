@@ -1,10 +1,9 @@
 use std::{
-    io,
     sync::{Arc, Mutex},
     vec,
 };
 
-use actix_web::{dev::Url, get, http::Uri, web, App, HttpRequest, HttpServer};
+use actix_web::{dev::Url, get, http::Uri, web, App, HttpServer};
 use adapters::storage::InMemoryStorage;
 use prometheus::{Encoder, Registry, TextEncoder};
 use serde::Serialize;
@@ -20,7 +19,7 @@ mod errors;
 mod services;
 mod setup;
 
-use services::{BlockCommitter, CommitListener};
+
 
 // todo/note: each of these fields could be separately hidden behind a mutex
 // so that we don't have to lock the whole struct - depending on the usecases
@@ -60,7 +59,7 @@ async fn main() -> Result<()> {
 
     let metrics_registry = Arc::new(Registry::default());
 
-    let (rx_fuel_block, _block_watcher_handle) =
+    let (_rx_fuel_block, _block_watcher_handle) =
         spawn_block_watcher(&config, &extra_config, storage.clone(), &metrics_registry).await?;
 
     // // service BlockCommitter
