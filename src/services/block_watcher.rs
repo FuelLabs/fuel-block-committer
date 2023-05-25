@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use crate::adapters::block_fetcher::BlockFetcher;
-
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::mpsc::Sender;
+
+use crate::adapters::block_fetcher::BlockFetcher;
 
 pub struct BlockWatcher {
     check_interval: Duration,

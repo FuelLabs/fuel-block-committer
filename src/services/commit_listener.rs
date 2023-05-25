@@ -1,7 +1,8 @@
+use std::sync::Arc;
+
 use actix_web::dev::Url;
 use ethers::prelude::*;
 use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
-use std::sync::Arc;
 
 use crate::AppState;
 
