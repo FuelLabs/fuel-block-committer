@@ -2,7 +2,10 @@ use fuels::types::block::Block as FuelBlock;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    adapters::{block_fetcher::BlockFetcher, storage::Storage},
+    adapters::{
+        block_fetcher::BlockFetcher,
+        storage::{EthTxSubmission, Storage},
+    },
     common::EthTxStatus,
 };
 
@@ -29,33 +32,36 @@ impl BlockWatcher {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        let fuel_block = self.block_fetcher.latest_block().await?; // todo: handle error
+        let current_block = self.block_fetcher.latest_block().await?; // todo: handle error
 
-        let latest_submission = self.storage.submission_w_latest_block().await?;
-        if let Some(submission) = latest_submission {
-            if submission.fuel_block_height >= fuel_block.header.height {
-                return Ok(());
-            }
+        let latest_block_submission = self.storage.submission_w_latest_block().await?;
 
-            match submission.status {
-                EthTxStatus::Pending => {}
-                EthTxStatus::Commited => {
-                    if (fuel_block.header.height - submission.fuel_block_height) % self.commit_epoch
-                        != 0
-                    {
-                        return Ok(());
-                    }
-                }
-                EthTxStatus::Aborted => {}
-            }
+        if self.should_propagate_update(&current_block, latest_block_submission) {
+            self.tx_fuel_block.send(current_block).await?; // todo: handle error
         }
 
-        // check is it time for new epoch
-
-        // if yes send the block to the committer
-        self.tx_fuel_block.send(fuel_block).await?; // todo: handle error
-
         Ok(())
+    }
+
+    fn should_propagate_update(
+        &self,
+        current_block: &FuelBlock,
+        last_block_submission: Option<EthTxSubmission>,
+    ) -> bool {
+        let Some(submission) = last_block_submission else {
+            return true;
+        };
+
+        if submission.fuel_block_height >= current_block.header.height {
+            return true;
+        }
+
+        let height_diff = current_block.header.height - submission.fuel_block_height;
+        match submission.status {
+            EthTxStatus::Pending => false,
+            EthTxStatus::Commited if height_diff % self.commit_epoch != 0 => false,
+            _ => true,
+        }
     }
 }
 
@@ -74,9 +80,6 @@ mod tests {
         },
         common::EthTxStatus,
     };
-    // TODO: TESTS
-    // * epoch, first after failure
-    // * pending tx
 
     #[tokio::test]
     async fn will_propagate_a_received_block() {
@@ -106,7 +109,7 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let block = given_a_block(0);
+        let block = given_a_block(2);
 
         let storage = InMemoryStorage::new();
         storage.insert(given_pending_submission(1)).await.unwrap();
