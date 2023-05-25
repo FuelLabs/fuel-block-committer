@@ -4,7 +4,7 @@ use std::{
 };
 
 use actix_web::{dev::Url, web, App, HttpServer};
-use adapters::block_fetcher::FakeBlockFetcher;
+use adapters::block_fetcher::FuelBlockFetcher;
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, client::schema::Bytes32};
 use serde::Serialize;
 
@@ -41,9 +41,10 @@ async fn main() {
 
     // service BlockWatcher
     tokio::spawn(async move {
-        let block_fetcher = FakeBlockFetcher {};
-        let _block_watcher =
-            BlockWatcher::new(Duration::from_secs(30), tx_fuel_block, block_fetcher);
+        todo!("Init block fetcher");
+        // let block_fetcher = FuelBlockFetcher { provider: todo!() };
+        // let _block_watcher =
+        //     BlockWatcher::new(Duration::from_secs(30), tx_fuel_block, block_fetcher);
 
         // todo: make fetcher thread safe before running
         // block_watcher.run().await.unwrap();
