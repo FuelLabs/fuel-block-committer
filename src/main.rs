@@ -1,14 +1,9 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 
-use actix_web::{dev::Url, web, App, HttpServer};
-use adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage};
-use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32, types::block::Block};
+use actix_web::{web, App, HttpServer};
+use adapters::storage::InMemoryStorage;
 use serde::Serialize;
 use setup::{spawn_block_watcher, Config, ExtraConfig};
-use tokio::sync::mpsc::Sender;
 
 use crate::errors::Result;
 

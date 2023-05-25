@@ -75,7 +75,6 @@ mod tests {
 
     use ethers::types::H256;
     use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
-    use mockall::predicate::ge;
 
     use super::*;
     use crate::{
