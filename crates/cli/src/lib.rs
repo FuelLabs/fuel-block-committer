@@ -91,3 +91,109 @@ pub fn parse_cli() -> Config {
             .unwrap(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Cli;
+    use assert_cmd::prelude::*; // Add methods on commands
+    use std::process::Command;
+
+    // Run programs
+    // --ethereum-wallet-key 0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa
+    #[tokio::test]
+    async fn test_cli_app() -> Result<(), Box<dyn std::error::Error>> {
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            let no_key_or_env_var = cmd.assert();
+            assert!(
+            String::from_utf8_lossy(&no_key_or_env_var.get_output().stderr)
+                .starts_with("error: Please provide the Ethereum wallet key using the '--ethereum-wallet-key'")
+            );
+        }
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-wallet-key");
+            let key_val_missing = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&key_val_missing.get_output().stderr).starts_with(
+                    "error: a value is required for '--ethereum-wallet-key <BYTES32>'"
+                )
+            );
+            cmd.arg("0123456789");
+            let bad_key_val = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&bad_key_val.get_output().stderr).starts_with(
+                    "error: invalid value '0123456789' for '--ethereum-wallet-key <BYTES32>'"
+                )
+            );
+        }
+
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-rpc");
+            let rpc_missing = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&rpc_missing.get_output().stderr).starts_with(
+                    "error: a value is required for '--ethereum-rpc <URL>' but none was supplied"
+                )
+            );
+            cmd.arg("not valid url");
+            let bad_rpc_value = cmd.assert();
+            assert!(String::from_utf8_lossy(&bad_rpc_value.get_output().stderr)
+                .starts_with("error: invalid value 'not valid url' for '--ethereum-rpc <URL>'"));
+        }
+
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--fuel-graphql-endpoint");
+            let fge_missing = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&fge_missing.get_output().stderr).starts_with(
+                    "error: a value is required for '--fuel-graphql-endpoint <URL>' but none was supplied"
+                )
+            );
+            cmd.arg("not valid url");
+            let bad_fge_value = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&bad_fge_value.get_output().stderr).starts_with(
+                    "error: invalid value 'not valid url' for '--fuel-graphql-endpoint <URL>'"
+                )
+            );
+        }
+
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--state-contract-address");
+            let sca_missing = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&sca_missing.get_output().stderr).starts_with(
+                    "error: a value is required for '--state-contract-address <BYTES20>' but none was supplied"
+                )
+            );
+            cmd.arg("123");
+            let bad_sca_value = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&bad_sca_value.get_output().stderr).starts_with(
+                    "error: invalid value '123' for '--state-contract-address <BYTES20>'"
+                )
+            );
+        }
+
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--commit-interval");
+            let ci_missing = cmd.assert();
+            assert!(
+                String::from_utf8_lossy(&ci_missing.get_output().stderr).starts_with(
+                    "error: a value is required for '--commit-interval <U32>' but none was supplied"
+                )
+            );
+            cmd.arg("asd");
+            let bad_ci_value = cmd.assert();
+            assert!(String::from_utf8_lossy(&bad_ci_value.get_output().stderr)
+                .starts_with("error: invalid value 'asd' for '--commit-interval <U32>'"));
+        }
+
+        Ok(())
+    }
+}

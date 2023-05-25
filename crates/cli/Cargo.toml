@@ -16,3 +16,4 @@ anyhow = { workspace = true}
 fuel-types = { workspace = true }
 clap = { version ="4.3", features =["derive"] }
 url = "2.3"
+assert_cmd = "2.0.11"
