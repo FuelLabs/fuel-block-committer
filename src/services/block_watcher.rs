@@ -1,7 +1,10 @@
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::mpsc::Sender;
 
-use crate::adapters::{block_fetcher::BlockFetcher, storage::Storage};
+use crate::{
+    adapters::{block_fetcher::BlockFetcher, storage::Storage},
+    common::EthTxStatus,
+};
 
 pub struct BlockWatcher {
     block_fetcher: Box<dyn BlockFetcher + Send + Sync>,
@@ -27,21 +30,26 @@ impl BlockWatcher {
 
     pub async fn run(&self) -> anyhow::Result<()> {
         let fuel_block = self.block_fetcher.latest_block().await?; // todo: handle error
-        dbg!("before the epoch check");
-        eprintln!("Received height: {}", fuel_block.header.height);
-        dbg!(fuel_block.header.height % self.commit_epoch);
-        if fuel_block.header.height % self.commit_epoch != 0 {
-            return Ok(());
-        }
-
-        dbg!("Passed the epoch check");
 
         let latest_submission = self.storage.submission_w_latest_block().await?;
         if let Some(submission) = latest_submission {
             if submission.fuel_block_height >= fuel_block.header.height {
                 return Ok(());
             }
+
+            match submission.status {
+                EthTxStatus::Pending => {}
+                EthTxStatus::Commited => {
+                    if (fuel_block.header.height - submission.fuel_block_height) % self.commit_epoch
+                        != 0
+                    {
+                        return Ok(());
+                    }
+                }
+                EthTxStatus::Aborted => {}
+            }
         }
+
         // check is it time for new epoch
 
         // if yes send the block to the committer
@@ -53,7 +61,7 @@ impl BlockWatcher {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{sync::Arc, vec};
 
     use ethers::types::H256;
     use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
@@ -61,7 +69,7 @@ mod tests {
     use super::*;
     use crate::{
         adapters::{
-            block_fetcher::{self, MockBlockFetcher},
+            block_fetcher::MockBlockFetcher,
             storage::{EthTxSubmission, InMemoryStorage},
         },
         common::EthTxStatus,
@@ -127,7 +135,16 @@ mod tests {
         let block_fetcher = given_fetcher_that_returns(blocks.clone());
 
         let epoch = 3;
-        let block_watcher = BlockWatcher::new(epoch, tx, block_fetcher, InMemoryStorage::new());
+        let storage = InMemoryStorage::new();
+        storage
+            .insert(EthTxSubmission {
+                fuel_block_height: 0,
+                status: EthTxStatus::Commited,
+                tx_hash: Default::default(),
+            })
+            .await
+            .unwrap();
+        let block_watcher = BlockWatcher::new(epoch, tx, block_fetcher, storage);
         block_watcher.run().await.unwrap();
         block_watcher.run().await.unwrap();
 
@@ -136,6 +153,37 @@ mod tests {
 
         //then
         assert_eq!(rx.try_recv().ok().unwrap(), *blocks.last().unwrap());
+
+        let err = rx.try_recv().expect_err("Should have been empty");
+        assert!(matches!(err, tokio::sync::mpsc::error::TryRecvError::Empty))
+    }
+
+    #[tokio::test]
+    async fn will_post_the_next_block_after_failure() {
+        // given
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+
+        let storage = InMemoryStorage::new();
+        storage
+            .insert(EthTxSubmission {
+                fuel_block_height: 2,
+                status: EthTxStatus::Aborted,
+                tx_hash: H256::default(),
+            })
+            .await
+            .unwrap();
+
+        let new_block = given_a_block(3);
+        let block_fetcher = given_fetcher_that_returns(vec![new_block.clone()]);
+
+        let epoch = 2;
+        let block_watcher = BlockWatcher::new(epoch, tx, block_fetcher, storage);
+
+        // when
+        block_watcher.run().await.unwrap();
+
+        //then
+        assert_eq!(rx.try_recv().ok().unwrap(), new_block);
 
         let err = rx.try_recv().expect_err("Should have been empty");
         assert!(matches!(err, tokio::sync::mpsc::error::TryRecvError::Empty))

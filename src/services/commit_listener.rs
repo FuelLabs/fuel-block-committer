@@ -48,12 +48,12 @@ impl CommitListener {
 
         let mut stream = events.stream().await?.take(1);
         while let Some(Ok(event)) = stream.next().await {
-            let height = event.commit_height;
-            let block_hash = event.block_hash;
+            let _height = event.commit_height;
+            let _block_hash = event.block_hash;
 
             // todo: update the state
             match self.app_state.lock() {
-                Ok(mut state) => {}
+                Ok(_state) => {}
                 Err(e) => {
                     println!("Error: {:?}", e);
                 }

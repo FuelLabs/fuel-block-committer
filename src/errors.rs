@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Network Error: {0}")]

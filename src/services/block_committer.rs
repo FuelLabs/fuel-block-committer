@@ -18,7 +18,7 @@ impl BlockCommitter {
     // todo: this should probably run as a stream
     pub async fn run(&mut self) -> anyhow::Result<()> {
         // listen to the newly received block
-        if let Some(block) = self.rx_block.recv().await {
+        if let Some(_block) = self.rx_block.recv().await {
             // enhancment: consume all the blocks from the channel to get the latest one
 
             // commit the block to ethereum

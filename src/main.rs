@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 
 use actix_web::{dev::Url, web, App, HttpServer};
 use adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage};

@@ -1,6 +1,6 @@
 use actix_web::dev::Url;
 use async_trait::async_trait;
-use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
+use fuels::{prelude::Provider, types::block::Block};
 
 use crate::errors::{Error, Result};
 
