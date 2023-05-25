@@ -56,7 +56,9 @@ pub async fn spawn_block_watcher(
     let polling_interval = extra_config.fuel_polling_interval;
     let handle = tokio::spawn(async move {
         loop {
-            block_watcher.run().await.unwrap();
+            if let Err(e) = block_watcher.run().await {
+                eprint!("An error with the block watcher: {e}");
+            }
             tokio::time::sleep(polling_interval).await;
         }
     });
