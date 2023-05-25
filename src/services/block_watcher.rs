@@ -1,9 +1,6 @@
 use std::time::Duration;
 
-use crate::{
-    actors::messages::{BlockUpdate, CheckNewBlock},
-    adapters::block_fetcher::BlockFetcher,
-};
+use crate::adapters::block_fetcher::BlockFetcher;
 
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::mpsc::Sender;

@@ -4,8 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use ethers::types::{transaction::response, H256};
-use fuels::tx::Bytes32;
+use ethers::types::H256;
 
 use crate::{common::EthTxStatus, errors::Result};
 
@@ -25,6 +24,12 @@ pub trait Storage {
 
 pub struct InMemoryStorage {
     pub storage: Arc<Mutex<HashMap<u64, EthTxSubmission>>>,
+}
+
+impl Default for InMemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InMemoryStorage {
@@ -59,7 +64,7 @@ impl Storage for InMemoryStorage {
             .lock()
             .unwrap()
             .iter()
-            .max_by_key(|(k, v)| k.clone())
+            .max_by_key(|(k, _)| k.clone())
             .map(|(_, v)| v.clone())
             .clone();
         Ok(res)

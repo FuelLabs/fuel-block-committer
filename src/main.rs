@@ -8,7 +8,6 @@ use adapters::block_fetcher::FakeBlockFetcher;
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, client::schema::Bytes32};
 use serde::Serialize;
 
-mod actors;
 mod adapters;
 mod api;
 mod cli;

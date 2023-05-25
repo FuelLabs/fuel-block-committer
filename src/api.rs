@@ -58,7 +58,5 @@ async fn status(data: web::Data<StatusReporter>) -> Result<impl Responder> {
 
 #[get("/metrics")]
 async fn metrics() -> impl Responder {
-    // TODO read from actor
-
     HttpResponse::Ok()
 }

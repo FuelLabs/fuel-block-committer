@@ -12,7 +12,7 @@ pub struct FakeTxSubmitter {}
 
 #[async_trait]
 impl TxSubmitter for FakeTxSubmitter {
-    async fn submit(&self, block: Block) -> Result<u64> {
+    async fn submit(&self, _block: Block) -> Result<u64> {
         todo!()
     }
 }
