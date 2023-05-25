@@ -1,7 +1,5 @@
-use std::{sync::Arc, time::Duration};
-
 use fuels::types::block::Block as FuelBlock;
-use tokio::sync::{mpsc::Sender, Mutex};
+use tokio::sync::mpsc::Sender;
 
 use crate::adapters::{block_fetcher::BlockFetcher, storage::Storage};
 
@@ -9,15 +7,18 @@ pub struct BlockWatcher {
     block_fetcher: Box<dyn BlockFetcher + Send + Sync>,
     tx_fuel_block: Sender<FuelBlock>,
     storage: Box<dyn Storage + Send + Sync>,
+    commit_epoch: u32,
 }
 
 impl BlockWatcher {
     pub fn new(
+        commit_epoch: u32,
         tx_fuel_block: Sender<FuelBlock>,
         block_fetcher: impl BlockFetcher + 'static + Send + Sync,
         storage: impl Storage + 'static + Send + Sync,
     ) -> Self {
         Self {
+            commit_epoch,
             block_fetcher: Box::new(block_fetcher),
             tx_fuel_block,
             storage: Box::new(storage),
@@ -26,6 +27,14 @@ impl BlockWatcher {
 
     pub async fn run(&self) -> anyhow::Result<()> {
         let fuel_block = self.block_fetcher.latest_block().await?; // todo: handle error
+        dbg!("before the epoch check");
+        eprintln!("Received height: {}", fuel_block.header.height);
+        dbg!(fuel_block.header.height % self.commit_epoch);
+        if fuel_block.header.height % self.commit_epoch != 0 {
+            return Ok(());
+        }
+
+        dbg!("Passed the epoch check");
 
         let latest_submission = self.storage.submission_w_latest_block().await?;
         if let Some(submission) = latest_submission {
@@ -44,6 +53,8 @@ impl BlockWatcher {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use ethers::types::H256;
     use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
 
@@ -56,7 +67,7 @@ mod tests {
         common::EthTxStatus,
     };
     // TODO: TESTS
-    // * epoch, every nth block
+    // * epoch, first after failure
     // * pending tx
 
     #[tokio::test]
@@ -64,12 +75,12 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let block = given_a_block();
+        let block = given_a_block(0);
 
-        let block_fetcher = given_fetcher_that_returns(block.clone());
+        let block_fetcher = given_fetcher_that_returns(vec![block.clone()]);
 
         let storage = InMemoryStorage::new();
-        let block_watcher = BlockWatcher::new(tx, block_fetcher, storage);
+        let block_watcher = BlockWatcher::new(1, tx, block_fetcher, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -87,14 +98,14 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let block = given_a_block();
+        let block = given_a_block(0);
 
         let storage = InMemoryStorage::new();
         storage.insert(given_pending_submission(1)).await.unwrap();
 
-        let block_fetcher = given_fetcher_that_returns(block.clone());
+        let block_fetcher = given_fetcher_that_returns(vec![block.clone()]);
 
-        let block_watcher = BlockWatcher::new(tx, block_fetcher, storage);
+        let block_watcher = BlockWatcher::new(1, tx, block_fetcher, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -104,12 +115,39 @@ mod tests {
         assert!(matches!(err, tokio::sync::mpsc::error::TryRecvError::Empty))
     }
 
-    fn given_fetcher_that_returns(block: FuelBlock) -> MockBlockFetcher {
-        let mut block_fetcher = MockBlockFetcher::new();
-        block_fetcher
+    #[tokio::test]
+    async fn respects_epoch_when_posting_block_updates() {
+        // given
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+
+        let blocks = (1..=3)
+            .map(|height| given_a_block(height))
+            .collect::<Vec<_>>();
+
+        let block_fetcher = given_fetcher_that_returns(blocks.clone());
+
+        let epoch = 3;
+        let block_watcher = BlockWatcher::new(epoch, tx, block_fetcher, InMemoryStorage::new());
+        block_watcher.run().await.unwrap();
+        block_watcher.run().await.unwrap();
+
+        // when
+        block_watcher.run().await.unwrap();
+
+        //then
+        assert_eq!(rx.try_recv().ok().unwrap(), *blocks.last().unwrap());
+
+        let err = rx.try_recv().expect_err("Should have been empty");
+        assert!(matches!(err, tokio::sync::mpsc::error::TryRecvError::Empty))
+    }
+
+    fn given_fetcher_that_returns(blocks: Vec<FuelBlock>) -> MockBlockFetcher {
+        let blocks = Arc::new(std::sync::Mutex::new(blocks));
+        let mut fetcher = MockBlockFetcher::new();
+        fetcher
             .expect_latest_block()
-            .returning(move || Ok(block.clone()));
-        block_fetcher
+            .returning(move || Ok(blocks.lock().unwrap().pop().unwrap()));
+        fetcher
     }
 
     fn given_pending_submission(block_height: u32) -> EthTxSubmission {
@@ -120,7 +158,7 @@ mod tests {
         }
     }
 
-    fn given_a_block() -> FuelBlock {
+    fn given_a_block(block_height: u32) -> FuelBlock {
         let header = FuelBlockHeader {
             id: Bytes32::zeroed(),
             da_height: 0,
@@ -128,7 +166,7 @@ mod tests {
             message_receipt_count: 0,
             transactions_root: Bytes32::zeroed(),
             message_receipt_root: Bytes32::zeroed(),
-            height: 0,
+            height: block_height,
             prev_root: Bytes32::zeroed(),
             time: None,
             application_hash: Bytes32::zeroed(),

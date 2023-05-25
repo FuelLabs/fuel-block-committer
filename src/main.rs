@@ -25,7 +25,7 @@ pub struct Config {
     pub ethereum_rpc: Url,
     pub fuel_graphql_endpoint: Url,
     pub state_contract_address: Bytes20,
-    pub commit_interval: u32,
+    pub commit_epoch: u32,
 }
 
 // todo/note: each of these fields could be separately hidden behind a mutex
@@ -45,7 +45,12 @@ async fn main() -> Result<()> {
     let storage = InMemoryStorage::new();
     // service BlockWatcher
     tokio::spawn(async move {
-        let block_watcher = BlockWatcher::new(tx_fuel_block, block_fetcher, storage.clone());
+        let block_watcher = BlockWatcher::new(
+            config.commit_epoch,
+            tx_fuel_block,
+            block_fetcher,
+            storage.clone(),
+        );
 
         block_watcher.run().await.unwrap();
     });
