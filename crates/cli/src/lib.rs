@@ -53,7 +53,7 @@ struct Cli {
     commit_interval: u32,
 }
 
-pub fn parse_cli() -> Config {
+pub fn parse() -> Config {
     let cli = Cli::parse();
 
     let ethereum_wallet_key = std::env::var("ETHEREUM_WALLET_KEY")
@@ -64,8 +64,9 @@ pub fn parse_cli() -> Config {
     if ethereum_wallet_key.is_none() {
         Command::error(
             &mut Command::new("fuel-block-committer-bin --ethereum-wallet-key <BYTES32>"),
-                ErrorKind::MissingRequiredArgument,
-            "Please provide the Ethereum wallet key using the \x1B[33m'--ethereum-wallet-key'\x1B[0m command-line argument or set the \x1B[33m'ETHEREUM_WALLET_KEY'\x1B[0m environmental variable."
+            ErrorKind::MissingRequiredArgument,
+            "Please provide the Ethereum wallet key using the \x1B[33m'--ethereum-wallet-key'\x1B[0m command-line argument or set the \x1B[33m'ETHEREUM_WALLET_KEY'\x1B[0m environmental variable.\n       \
+            If set, the \x1B[33m'ETHEREUM_WALLET_KEY'\x1B[0m environmental variable will take priority over the \x1B[33m'--ethereum-wallet-key'\x1B[0m argument."
         ).exit();
     }
 
@@ -94,14 +95,11 @@ pub fn parse_cli() -> Config {
 
 #[cfg(test)]
 mod tests {
-    use crate::Cli;
     use assert_cmd::prelude::*; // Add methods on commands
     use std::process::Command;
 
-    // Run programs
-    // --ethereum-wallet-key 0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa
-    #[tokio::test]
-    async fn test_cli_app() -> Result<(), Box<dyn std::error::Error>> {
+    #[test]
+    fn test_invalid_inputs() -> Result<(), Box<dyn std::error::Error>> {
         {
             let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
             let no_key_or_env_var = cmd.assert();
@@ -110,6 +108,7 @@ mod tests {
                 .starts_with("error: Please provide the Ethereum wallet key using the '--ethereum-wallet-key'")
             );
         }
+
         {
             let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
             cmd.arg("--ethereum-wallet-key");
@@ -192,6 +191,27 @@ mod tests {
             let bad_ci_value = cmd.assert();
             assert!(String::from_utf8_lossy(&bad_ci_value.get_output().stderr)
                 .starts_with("error: invalid value 'asd' for '--commit-interval <U32>'"));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_valid_inputs() -> Result<(), Box<dyn std::error::Error>> {
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-wallet-key");
+            cmd.arg("0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa");
+            cmd.assert().success();
+        }
+
+        {
+            std::env::set_var(
+                "ETHEREUM_WALLET_KEY",
+                "0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899bbb",
+            );
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.assert().success();
         }
 
         Ok(())
