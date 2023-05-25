@@ -4,7 +4,7 @@ use actix_web::dev::Url;
 use fuels::{
     accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32, types::block::Block as FuelBlock,
 };
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::Receiver;
 
 use crate::{
     adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
@@ -38,10 +38,10 @@ pub async fn spawn_block_watcher(
     config: &Config,
     extra_config: &ExtraConfig,
     storage: InMemoryStorage,
-    tx_fuel_block: Sender<FuelBlock>,
-) -> Result<tokio::task::JoinHandle<()>> {
+) -> Result<(Receiver<FuelBlock>, tokio::task::JoinHandle<()>)> {
     let block_fetcher = FuelBlockFetcher::connect(&config.fuel_graphql_endpoint).await?;
 
+    let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher = BlockWatcher::new(
         config.commit_epoch,
         tx_fuel_block,
@@ -50,10 +50,12 @@ pub async fn spawn_block_watcher(
     );
 
     let polling_interval = extra_config.fuel_polling_interval;
-    Ok(tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         loop {
             block_watcher.run().await.unwrap();
             tokio::time::sleep(polling_interval).await;
         }
-    }))
+    });
+
+    Ok((rx_fuel_block, handle))
 }

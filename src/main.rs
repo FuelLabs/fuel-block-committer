@@ -29,12 +29,11 @@ async fn main() -> Result<()> {
 
     // AppState actix::web
     let app_state = Arc::new(Mutex::new(StatusReport::default()));
-    let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
 
     let storage = InMemoryStorage::new();
 
-    let _block_watcher_handle =
-        spawn_block_watcher(&config, &extra_config, storage.clone(), tx_fuel_block).await?;
+    let (rx_fuel_block, _block_watcher_handle) =
+        spawn_block_watcher(&config, &extra_config, storage.clone()).await?;
 
     // service BlockCommitter
     let ethereum_rpc = config.ethereum_rpc.clone();
