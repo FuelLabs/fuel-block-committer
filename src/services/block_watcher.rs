@@ -1,5 +1,5 @@
 use fuels::types::block::Block as FuelBlock;
-use prometheus::{IntGauge, Opts, Registry};
+use prometheus::{core::Collector, IntCounter, IntGauge, Opts, Registry};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
@@ -13,6 +13,22 @@ use crate::{
 
 struct Metrics {
     latest_fuel_block: IntGauge,
+    fuel_network_errors: IntCounter,
+}
+
+impl Metrics {
+    pub fn register_metrics(&self, registry: &Registry) {
+        [
+            Box::new(self.latest_fuel_block.clone()) as Box<dyn Collector>,
+            Box::new(self.fuel_network_errors.clone()),
+        ]
+        .into_iter()
+        .for_each(|metric| {
+            registry
+                .register(metric)
+                .expect("app to have correctly named metrics");
+        });
+    }
 }
 
 impl Default for Metrics {
@@ -22,7 +38,17 @@ impl Default for Metrics {
             "The height of the latest fuel block.",
         ))
         .unwrap();
-        Self { latest_fuel_block }
+
+        let fuel_network_errors = IntCounter::with_opts(Opts::new(
+            "fuel_network_errors",
+            "Number of network errors encountered while polling for a new Fuel block.",
+        ))
+        .unwrap();
+
+        Self {
+            latest_fuel_block,
+            fuel_network_errors,
+        }
     }
 }
 
@@ -51,9 +77,7 @@ impl BlockWatcher {
     }
 
     pub fn register_metrics(&self, registry: &Registry) {
-        registry
-            .register(Box::new(self.metrics.latest_fuel_block.clone()))
-            .expect("app to have correctly named metrics");
+        self.metrics.register_metrics(registry);
     }
 
     pub async fn run(&self) -> Result<()> {
@@ -76,11 +100,21 @@ impl BlockWatcher {
     }
 
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
-        let current_block = self.block_fetcher.latest_block().await?;
-        self.metrics
-            .latest_fuel_block
-            .set(current_block.header.height as i64);
-        Ok(current_block)
+        let current_block = self.block_fetcher.latest_block().await;
+        match current_block {
+            Ok(current_block) => {
+                self.metrics
+                    .latest_fuel_block
+                    .set(current_block.header.height as i64);
+                Ok(current_block)
+            }
+            Err(e) => {
+                if let Error::NetworkError(_) = e {
+                    self.metrics.fuel_network_errors.inc();
+                }
+                Err(e)
+            }
+        }
     }
 
     fn should_propagate_update(
@@ -235,6 +269,38 @@ mod tests {
             .unwrap();
 
         assert_eq!(latest_block_metric.get_value(), 5f64);
+    }
+
+    #[tokio::test]
+    async fn will_update_network_failure_metric() {
+        // given
+        let (tx, _) = tokio::sync::mpsc::channel(10);
+
+        let mut block_fetcher = MockBlockFetcher::new();
+        block_fetcher
+            .expect_latest_block()
+            .return_once(|| Err(Error::NetworkError("Something went wrong".to_string())));
+
+        let storage = InMemoryStorage::new();
+
+        let block_watcher = BlockWatcher::new(1, tx, block_fetcher, storage);
+
+        let registry = Registry::default();
+        block_watcher.register_metrics(&registry);
+
+        // when
+        let _ = block_watcher.run().await;
+
+        //then
+        let metrics = registry.gather();
+        let network_error_metric = metrics
+            .iter()
+            .find(|metric| metric.get_name() == "fuel_network_errors")
+            .and_then(|metric| metric.get_metric().get(0))
+            .map(|metric| metric.get_counter())
+            .unwrap();
+
+        assert_eq!(network_error_metric.get_value(), 1f64);
     }
 
     fn given_fetcher_that_returns(blocks: Vec<FuelBlock>) -> MockBlockFetcher {
