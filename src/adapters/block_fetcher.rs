@@ -1,9 +1,10 @@
 use actix_web::dev::Url;
 use async_trait::async_trait;
-use fuels::{prelude::Provider, types::block::Block, client::FuelClient};
+use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
 
 use crate::errors::{Error, Result};
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait BlockFetcher {
     async fn latest_block(&self) -> Result<Block>;
@@ -14,11 +15,10 @@ pub struct FuelBlockFetcher {
 }
 
 impl FuelBlockFetcher {
-    fn new(url: Url) -> Self {
-        let client = FuelClient::new(url.uri().to_string()).unwrap();
-        Self {
-            provider: Provider::new(client),
-        }
+    pub async fn connect(url: Url) -> Result<Self> {
+        Ok(Self {
+            provider: Provider::connect(url.uri().to_string()).await.unwrap(),
+        })
     }
 }
 
@@ -45,7 +45,6 @@ mod tests {
     #[tokio::test]
     async fn can_fetch_latest_block() {
         // given
-        // le
         let node_config = Config {
             manual_blocks_enabled: true,
             ..Config::local_node()
@@ -60,7 +59,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let block_fetcher = FuelBlockFetcher::new(Url::new(uri));
+        let block_fetcher = FuelBlockFetcher::connect(Url::new(uri)).await.unwrap();
 
         // when
         let result = block_fetcher.latest_block().await.unwrap();

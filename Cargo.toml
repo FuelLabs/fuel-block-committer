@@ -12,10 +12,13 @@ name = "fuel-block-commiter"
 [dependencies]
 actix-web = "4"
 async-trait = "0.1.68"
-fuels = "0.41.0"
+fuels = { path = "/home/segfault_magnet/fuel/projects/fuels-rs/packages/fuels" }
 prometheus = "0.13.3"
 serde = { version = "1.0", features = ["derive"] }
 ethers = { version = "2.0", features = ["ws"] }
 anyhow = "1.0.44"
 tokio = { version = "1.28.0", features = ["rt-multi-thread"] }
 thiserror = "1.0.40"
+
+[dev-dependencies]
+mockall = "0.11.4"

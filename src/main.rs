@@ -3,9 +3,10 @@ use std::{
     time::Duration,
 };
 
+use crate::errors::Result;
 use actix_web::{dev::Url, web, App, HttpServer};
 use adapters::block_fetcher::FuelBlockFetcher;
-use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, client::schema::Bytes32};
+use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
 use serde::Serialize;
 
 mod adapters;
@@ -31,7 +32,7 @@ pub struct Config {
 pub type AppState = Arc<Mutex<StatusReport>>;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     // todo: get config from cli
     let config = Config::default();
 
@@ -39,15 +40,13 @@ async fn main() {
     let app_state = Arc::new(Mutex::new(StatusReport::default()));
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
 
+    let block_fetcher = FuelBlockFetcher::connect(config.fuel_graphql_endpoint).await?;
     // service BlockWatcher
     tokio::spawn(async move {
-        todo!("Init block fetcher");
-        // let block_fetcher = FuelBlockFetcher { provider: todo!() };
-        // let _block_watcher =
-        //     BlockWatcher::new(Duration::from_secs(30), tx_fuel_block, block_fetcher);
+        let block_watcher =
+            BlockWatcher::new(Duration::from_secs(30), tx_fuel_block, block_fetcher);
 
-        // todo: make fetcher thread safe before running
-        // block_watcher.run().await.unwrap();
+        block_watcher.run().await.unwrap();
     });
 
     // service BlockCommitter
@@ -84,6 +83,8 @@ async fn main() {
     .unwrap() //TODO read via config PARAM
     .run()
     .await;
+
+    Ok(())
 }
 
 #[derive(Serialize, Debug, Default)]
