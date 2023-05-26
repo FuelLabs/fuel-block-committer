@@ -3,7 +3,7 @@ use prometheus::Registry;
 use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
-use super::config::{Config, ExtraConfig};
+use super::config::{Config, InternalConfig};
 use crate::{
     adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
     errors::Result,
@@ -13,7 +13,7 @@ use crate::{
 
 pub fn spawn_block_watcher(
     config: &Config,
-    extra_config: &ExtraConfig,
+    internal_config: &InternalConfig,
     storage: InMemoryStorage,
     registry: &Registry,
 ) -> Result<(
@@ -21,17 +21,17 @@ pub fn spawn_block_watcher(
     tokio::task::JoinHandle<()>,
     HealthChecker,
 )> {
-    let (block_fetcher, fuel_connection_health) = create_block_fetcher(config, registry);
+    let (block_fetcher, fuel_connection_health) = create_block_fetcher(config, internal_config, registry);
 
     let (block_watcher, rx) = create_block_watcher(config, registry, block_fetcher, storage);
 
-    let handle = schedule_polling(extra_config, block_watcher);
+    let handle = schedule_polling(internal_config, block_watcher);
 
     Ok((rx, handle, fuel_connection_health))
 }
 
 fn schedule_polling(
-    config: &ExtraConfig,
+    config: &InternalConfig,
     block_watcher: BlockWatcher,
 ) -> tokio::task::JoinHandle<()> {
     let polling_interval = config.fuel_polling_interval;
@@ -45,8 +45,8 @@ fn schedule_polling(
     })
 }
 
-fn create_block_fetcher(config: &Config, registry: &Registry) -> (FuelBlockFetcher, HealthChecker) {
-    let block_fetcher = FuelBlockFetcher::new(&config.fuel_graphql_endpoint);
+fn create_block_fetcher(config: &Config, internal_config: &InternalConfig, registry: &Registry) -> (FuelBlockFetcher, HealthChecker) {
+    let block_fetcher = FuelBlockFetcher::new(&config.fuel_graphql_endpoint, internal_config.fuel_errors_before_unhealthy);
     block_fetcher.register_metrics(registry);
 
     let fuel_connection_health = block_fetcher.connection_health_checker();
@@ -70,4 +70,8 @@ fn create_block_watcher(
     block_watcher.register_metrics(registry);
 
     (block_watcher, rx_fuel_block)
+}
+
+pub fn setup_logger() {
+    tracing_subscriber::fmt::init();
 }

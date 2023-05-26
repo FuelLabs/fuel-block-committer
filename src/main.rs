@@ -1,7 +1,7 @@
 use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
-use setup::{config::ExtraConfig, helpers::spawn_block_watcher};
+use setup::{config::InternalConfig, helpers::{spawn_block_watcher, setup_logger}};
 
 use crate::errors::Result;
 
@@ -17,16 +17,16 @@ mod telemetry;
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = cli::parse()?;
-    tracing_subscriber::fmt::init();
+    let internal_config = InternalConfig::default();
 
-    let extra_config = ExtraConfig::default();
+    setup_logger();
 
     let storage = InMemoryStorage::new();
 
     let metrics_registry = Registry::default();
 
     let (_rx_fuel_block, _block_watcher_handle, fuel_health_check) =
-        spawn_block_watcher(&config, &extra_config, storage.clone(), &metrics_registry)?;
+        spawn_block_watcher(&config, &internal_config, storage.clone(), &metrics_registry)?;
 
     launch_api_server(metrics_registry, storage, fuel_health_check).await?;
 
