@@ -14,6 +14,6 @@ description = "Fuel Block Committer cli."
 tokio = { workspace = true}
 anyhow = { workspace = true}
 fuel-types = { workspace = true }
-clap = { version ="4.3", features =["derive"] }
+clap = { version ="4.3", features =["derive", "env"] }
 url = "2.3"
 assert_cmd = "2.0.11"
