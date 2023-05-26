@@ -7,20 +7,22 @@ use prometheus::{Encoder, Registry, TextEncoder};
 
 use crate::{
     errors::{Error, Result},
-    services::StatusReporter,
+    services::{HealthReporter, StatusReporter},
 };
 
 pub async fn launch_api_server(
     metrics_registry: Arc<Registry>,
     status_reporter: Arc<StatusReporter>,
+    health_reporter: Arc<HealthReporter>,
 ) -> Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(Arc::clone(&metrics_registry)))
             .app_data(web::Data::new(Arc::clone(&status_reporter)))
+            .app_data(web::Data::new(Arc::clone(&health_reporter)))
             .service(status)
             .service(metrics)
-        // .service(health)
+            .service(health)
     })
     .bind(("127.0.0.1", 7070))
     .unwrap() //TODO read via config PARAM
@@ -30,10 +32,16 @@ pub async fn launch_api_server(
 }
 
 #[get("/health")]
-async fn health() -> impl Responder {
-    // TODO: add report for fuel-core & ethereum RPC connection
+async fn health(data: web::Data<Arc<HealthReporter>>) -> impl Responder {
+    let report = data.report();
 
-    HttpResponse::Ok()
+    let mut response = if report.healthy() {
+        HttpResponse::Ok()
+    } else {
+        HttpResponse::InternalServerError()
+    };
+
+    response.json(report)
 }
 
 #[get("/status")]

@@ -10,6 +10,7 @@ use tokio::sync::mpsc::Receiver;
 use crate::{
     adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
     errors::Result,
+    health_check::HealthCheck,
     metrics::RegistersMetrics,
     services::BlockWatcher,
 };
@@ -41,9 +42,15 @@ pub async fn spawn_block_watcher(
     extra_config: &ExtraConfig,
     storage: InMemoryStorage,
     registry: &Registry,
-) -> Result<(Receiver<FuelBlock>, tokio::task::JoinHandle<()>)> {
+) -> Result<(
+    Receiver<FuelBlock>,
+    tokio::task::JoinHandle<()>,
+    Box<dyn HealthCheck + Send + Sync>,
+)> {
     let block_fetcher = FuelBlockFetcher::connect(&config.fuel_graphql_endpoint).await?;
     block_fetcher.register_metrics(registry);
+
+    let fuel_connection_health = block_fetcher.connection_health_checker();
 
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
 
@@ -65,5 +72,5 @@ pub async fn spawn_block_watcher(
         }
     });
 
-    Ok((rx_fuel_block, handle))
+    Ok((rx_fuel_block, handle, fuel_connection_health))
 }

@@ -6,7 +6,7 @@ use std::{
 use crate::health_check::HealthCheck;
 
 #[derive(Debug, Clone)]
-struct FuelHealthTracker {
+pub struct FuelHealthTracker {
     // how many failures are needed before the connection is deemed unhealty
     max_consecutive_failures: usize,
     // how many consecutive failures there currently are
@@ -14,7 +14,7 @@ struct FuelHealthTracker {
 }
 
 impl FuelHealthTracker {
-    fn new(max_consecutive_failures: usize) -> Self {
+    pub fn new(max_consecutive_failures: usize) -> Self {
         Self {
             max_consecutive_failures,
             consecutive_failures: Arc::new(Mutex::new(0)),
@@ -35,7 +35,7 @@ impl FuelHealthTracker {
             .expect("no need to handle poisoning since lock duration is short and no panics occurr")
     }
 
-    fn tracker(&self) -> Box<dyn HealthCheck> {
+    pub fn tracker(&self) -> Box<dyn HealthCheck + Send + Sync> {
         Box::new(self.clone())
     }
 }

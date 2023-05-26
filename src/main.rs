@@ -4,7 +4,7 @@ use actix_web::{dev::Url, http::Uri};
 use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
-use services::StatusReporter;
+use services::{HealthReporter, StatusReporter};
 use setup::{spawn_block_watcher, Config, ExtraConfig};
 
 use crate::errors::Result;
@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
 
     let metrics_registry = Arc::new(Registry::default());
 
-    let (_rx_fuel_block, _block_watcher_handle) =
+    let (_rx_fuel_block, _block_watcher_handle, fuel_health_check) =
         spawn_block_watcher(&config, &extra_config, storage.clone(), &metrics_registry).await?;
 
     // // service BlockCommitter
@@ -58,7 +58,13 @@ async fn main() -> Result<()> {
     // });
 
     let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
-    launch_api_server(Arc::clone(&metrics_registry), status_reporter).await?;
+    let health_reporter = Arc::new(HealthReporter::new(fuel_health_check));
+    launch_api_server(
+        Arc::clone(&metrics_registry),
+        status_reporter,
+        health_reporter,
+    )
+    .await?;
 
     Ok(())
 }

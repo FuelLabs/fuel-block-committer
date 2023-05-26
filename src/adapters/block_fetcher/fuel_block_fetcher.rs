@@ -1,9 +1,10 @@
 use actix_web::dev::Url;
 use fuels::{prelude::Provider, types::block::Block};
 
-use super::{metrics::Metrics, BlockFetcher};
+use super::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher};
 use crate::{
     errors::{Error, Result},
+    health_check::HealthCheck,
     metrics::RegistersMetrics,
 };
 
@@ -16,6 +17,7 @@ impl RegistersMetrics for FuelBlockFetcher {
 pub struct FuelBlockFetcher {
     provider: Provider,
     metrics: Metrics,
+    health_tracker: FuelHealthTracker,
 }
 
 impl FuelBlockFetcher {
@@ -25,7 +27,12 @@ impl FuelBlockFetcher {
                 .await
                 .expect("url should be correctly formed"),
             metrics: Metrics::default(),
+            health_tracker: FuelHealthTracker::new(3),
         })
+    }
+
+    pub fn connection_health_checker(&self) -> Box<dyn HealthCheck + Send + Sync> {
+        self.health_tracker.tracker()
     }
 
     fn update_network_err_count(&self) {
