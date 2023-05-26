@@ -19,8 +19,7 @@ mod telemetry;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // todo: get config from cli
-    let config = Config::default();
+    let config = cli::parse()?;
     tracing_subscriber::fmt::init();
 
     let extra_config = ExtraConfig::default();

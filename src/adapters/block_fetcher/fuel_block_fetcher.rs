@@ -1,5 +1,5 @@
-use actix_web::dev::Url;
 use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
+use url::Url;
 
 use super::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher};
 use crate::{
@@ -21,7 +21,7 @@ pub struct FuelBlockFetcher {
 
 impl FuelBlockFetcher {
     pub fn new(url: &Url) -> Self {
-        let client = FuelClient::new(url.uri().to_string()).expect("Url to be well formed");
+        let client = FuelClient::new(url.to_string()).expect("Url to be well formed");
         let provider = Provider::new(client, Default::default());
         Self {
             provider,
@@ -85,12 +85,9 @@ mod tests {
             setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default())).await;
         provider.produce_blocks(5, None).await.unwrap();
 
-        let uri = Uri::builder()
-            .path_and_query(addr.to_string())
-            .build()
-            .unwrap();
+        let url = Url::parse(&format!("http://{addr}")).unwrap();
 
-        let block_fetcher = FuelBlockFetcher::new(&Url::new(uri));
+        let block_fetcher = FuelBlockFetcher::new(&url);
 
         // when
         let result = block_fetcher.latest_block().await.unwrap();
@@ -103,12 +100,9 @@ mod tests {
     async fn updates_metrics_in_case_of_network_err() {
         // temporary 'fake' address to cause a network error the same effect will be achieved by
         // killing the node once the SDK supports it.
-        let uri = Uri::builder()
-            .path_and_query("localhost:12344")
-            .build()
-            .unwrap();
+        let url = Url::parse("localhost:12344").unwrap();
 
-        let block_fetcher = FuelBlockFetcher::new(&Url::new(uri));
+        let block_fetcher = FuelBlockFetcher::new(&url);
 
         let registry = Registry::default();
         block_fetcher.register_metrics(&registry);
@@ -133,12 +127,9 @@ mod tests {
     async fn correctly_tracks_network_health() {
         // temporary 'fake' address to cause a network error the same effect will be achieved by
         // killing the node once the SDK supports it.
-        let uri = Uri::builder()
-            .path_and_query("localhost:12344")
-            .build()
-            .unwrap();
+        let url = Url::parse("http://localhost:12344").unwrap();
 
-        let block_fetcher = FuelBlockFetcher::new(&Url::new(uri));
+        let block_fetcher = FuelBlockFetcher::new(&url);
         let health_check = block_fetcher.connection_health_checker();
 
         assert!(health_check.healthy());

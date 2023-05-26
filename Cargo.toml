@@ -5,7 +5,7 @@ homepage = "https://fuel.network/"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
 rust-version = "1.69.0"
 version = "0.0.0"
-name = "fuel-block-commiter"
+name = "fuel-block-committer"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,6 +20,8 @@ tokio = { version = "1.28.0", features = ["rt-multi-thread"] }
 thiserror = "1.0.40"
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
+clap = { version ="4.3", features =["derive", "env"] }
+url = "2.3"
 
 [dev-dependencies]
 mockall = "0.11.4"

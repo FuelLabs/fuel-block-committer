@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use actix_web::dev::Url;
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
+use url::Url;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub ethereum_wallet_key: Bytes32,
     pub ethereum_rpc: Url,
