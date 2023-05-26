@@ -83,7 +83,7 @@ mod tests {
             let no_key_or_env_var = cmd.assert();
             assert!(
             String::from_utf8_lossy(&no_key_or_env_var.get_output().stderr)
-                .starts_with("error: Please provide the Ethereum wallet key using the '--ethereum-wallet-key'")
+                .starts_with("error: The following required argument was not provided: ethereum_wallet_key")
             );
         }
 
