@@ -1,5 +1,5 @@
 use actix_web::dev::Url;
-use fuels::{prelude::Provider, types::block::Block};
+use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
 
 use super::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher};
 use crate::{
@@ -21,40 +21,48 @@ pub struct FuelBlockFetcher {
 }
 
 impl FuelBlockFetcher {
-    pub async fn connect(url: &Url) -> Result<Self> {
-        Ok(Self {
-            provider: Provider::connect(url.uri().to_string())
-                .await
-                .expect("url should be correctly formed"),
+    pub fn new(url: &Url) -> Self {
+        let client = FuelClient::new(url.uri().to_string()).expect("Url to be well formed");
+        let provider = Provider::new(client, Default::default());
+        Self {
+            provider,
             metrics: Metrics::default(),
             health_tracker: FuelHealthTracker::new(3),
-        })
+        }
     }
 
     pub fn connection_health_checker(&self) -> Box<dyn HealthCheck + Send + Sync> {
         self.health_tracker.tracker()
     }
 
-    fn update_network_err_count(&self) {
-        // metrics being incremented  isn't tested since we can't currently kill a
-        // spawned fuel node through the SDK
+    fn handle_network_error(&self) {
+        self.health_tracker.note_failure();
         self.metrics.fuel_network_errors.inc();
+    }
+
+    fn handle_network_success(&self) {
+        self.health_tracker.note_success();
     }
 }
 
 #[async_trait::async_trait]
 impl BlockFetcher for FuelBlockFetcher {
     async fn latest_block(&self) -> Result<Block> {
-        self.provider
+        let latest_block = self
+            .provider
             .chain_info()
             .await
             .map_err(|err| match err {
                 fuels::prelude::ProviderError::ClientRequestError(err) => {
-                    self.update_network_err_count();
+                    self.handle_network_error();
                     Error::NetworkError(err.to_string())
                 }
             })
-            .map(|chain_info| chain_info.latest_block)
+            .map(|chain_info| chain_info.latest_block)?;
+
+        self.handle_network_success();
+
+        Ok(latest_block)
     }
 }
 
@@ -62,6 +70,7 @@ impl BlockFetcher for FuelBlockFetcher {
 mod tests {
     use actix_web::http::Uri;
     use fuels::test_helpers::{setup_test_provider, Config};
+    use prometheus::Registry;
 
     use super::*;
 
@@ -82,12 +91,66 @@ mod tests {
             .build()
             .unwrap();
 
-        let block_fetcher = FuelBlockFetcher::connect(&Url::new(uri)).await.unwrap();
+        let block_fetcher = FuelBlockFetcher::new(&Url::new(uri));
 
         // when
         let result = block_fetcher.latest_block().await.unwrap();
 
         // then
         assert_eq!(result.header.height, 5);
+    }
+
+    #[tokio::test]
+    async fn updates_metrics_in_case_of_network_err() {
+        // temporary 'fake' address to cause a network error the same effect will be achieved by
+        // killing the node once the SDK supports it.
+        let uri = Uri::builder()
+            .path_and_query("localhost:12344")
+            .build()
+            .unwrap();
+
+        let block_fetcher = FuelBlockFetcher::new(&Url::new(uri));
+
+        let registry = Registry::default();
+        block_fetcher.register_metrics(&registry);
+
+        // when
+        let result = block_fetcher.latest_block().await;
+
+        // then
+        assert!(result.is_err());
+        let metrics = registry.gather();
+        let network_errors_metric = metrics
+            .iter()
+            .find(|metric| metric.get_name() == "fuel_network_errors")
+            .and_then(|metric| metric.get_metric().get(0))
+            .map(|metric| metric.get_counter())
+            .unwrap();
+
+        assert_eq!(network_errors_metric.get_value(), 1f64);
+    }
+
+    #[tokio::test]
+    async fn correctly_tracks_network_health() {
+        // temporary 'fake' address to cause a network error the same effect will be achieved by
+        // killing the node once the SDK supports it.
+        let uri = Uri::builder()
+            .path_and_query("localhost:12344")
+            .build()
+            .unwrap();
+
+        let block_fetcher = FuelBlockFetcher::new(&Url::new(uri));
+        let health_check = block_fetcher.connection_health_checker();
+
+        assert!(health_check.healthy());
+
+        let _ = block_fetcher.latest_block().await;
+        assert!(health_check.healthy());
+
+        let _ = block_fetcher.latest_block().await;
+        assert!(health_check.healthy());
+
+        let _ = block_fetcher.latest_block().await;
+        assert!(!health_check.healthy());
     }
 }

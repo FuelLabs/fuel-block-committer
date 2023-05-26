@@ -47,7 +47,7 @@ pub async fn spawn_block_watcher(
     tokio::task::JoinHandle<()>,
     Box<dyn HealthCheck + Send + Sync>,
 )> {
-    let block_fetcher = FuelBlockFetcher::connect(&config.fuel_graphql_endpoint).await?;
+    let block_fetcher = FuelBlockFetcher::new(&config.fuel_graphql_endpoint);
     block_fetcher.register_metrics(registry);
 
     let fuel_connection_health = block_fetcher.connection_health_checker();

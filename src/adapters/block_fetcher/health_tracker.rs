@@ -21,11 +21,11 @@ impl FuelHealthTracker {
         }
     }
 
-    fn note_failure(&self) {
+    pub fn note_failure(&self) {
         **self.acquire_consecutive_failures().borrow_mut() += 1;
     }
 
-    fn note_success(&mut self) {
+    pub fn note_success(&self) {
         **self.acquire_consecutive_failures().borrow_mut() = 0;
     }
 
@@ -42,6 +42,6 @@ impl FuelHealthTracker {
 
 impl HealthCheck for FuelHealthTracker {
     fn healthy(&self) -> bool {
-        *self.acquire_consecutive_failures() >= self.max_consecutive_failures
+        *self.acquire_consecutive_failures() < self.max_consecutive_failures
     }
 }
