@@ -7,7 +7,7 @@ use crate::telemetry::{HealthCheck, HealthChecker};
 
 #[derive(Debug, Clone)]
 pub struct FuelHealthTracker {
-    // how many failures are needed before the connection is deemed unhealty
+    // how many failures are needed before the connection is deemed unhealhty
     max_consecutive_failures: usize,
     // how many consecutive failures there currently are
     consecutive_failures: Arc<Mutex<usize>>,

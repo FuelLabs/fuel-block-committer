@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 use clap::{command, Parser};
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
 use url::Url;
@@ -11,6 +13,8 @@ const ETHEREUM_RPC: &str = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID";
 const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
 const STATE_CONTRACT_ADDRESS: Bytes20 = Bytes20::zeroed();
 const COMMIT_INTERVAL: u32 = 1;
+const HOST: &str = "127.0.0.1";
+const PORT: u16 = 8080;
 
 #[derive(Parser)]
 #[command(
@@ -52,6 +56,22 @@ struct Cli {
     env = "COMMIT_INTERVAL",
     default_value_t = COMMIT_INTERVAL, value_name = "U32", help = "The number of fuel blocks between ethereum commits. If set to 1, then every block should be pushed to Ethereum.")]
     commit_interval: u32,
+
+    /// Host of the started API server
+    #[arg(
+        long,
+        env = "HOST",
+        default_value = HOST,
+        value_name = "IPv4",
+        help = "Host on which to start the API server."
+    )]
+    host: Ipv4Addr,
+
+    /// Port of the started API server
+    #[arg(long,
+    env = "PORT",
+    default_value_t = PORT, value_name = "U16", help = "Port on which to start the API server.")]
+    port: u16,
 }
 
 pub fn parse() -> Result<Config> {
@@ -62,5 +82,7 @@ pub fn parse() -> Result<Config> {
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
         state_contract_address: cli.state_contract_address,
         commit_epoch: cli.commit_interval,
+        port: cli.port,
+        host: cli.host,
     })
 }

@@ -9,10 +9,12 @@ use crate::{
     adapters::storage::InMemoryStorage,
     errors::{Error, Result},
     services::{HealthReporter, StatusReporter},
+    setup::config::Config,
     telemetry::HealthChecker,
 };
 
 pub async fn launch_api_server(
+    config: &Config,
     metrics_registry: Registry,
     storage: InMemoryStorage,
     fuel_health_check: HealthChecker,
@@ -29,8 +31,8 @@ pub async fn launch_api_server(
             .service(metrics)
             .service(health)
     })
-    .bind(("127.0.0.1", 7070))
-    .unwrap() //TODO read via config PARAM
+    .bind((config.host, config.port))
+    .map_err(|e| Error::Other(e.to_string()))?
     .run()
     .await
     .map_err(|e| Error::Other(e.to_string()))

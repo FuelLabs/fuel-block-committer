@@ -21,7 +21,8 @@ pub fn spawn_block_watcher(
     tokio::task::JoinHandle<()>,
     HealthChecker,
 )> {
-    let (block_fetcher, fuel_connection_health) = create_block_fetcher(config, internal_config, registry);
+    let (block_fetcher, fuel_connection_health) =
+        create_block_fetcher(config, internal_config, registry);
 
     let (block_watcher, rx) = create_block_watcher(config, registry, block_fetcher, storage);
 
@@ -45,8 +46,15 @@ fn schedule_polling(
     })
 }
 
-fn create_block_fetcher(config: &Config, internal_config: &InternalConfig, registry: &Registry) -> (FuelBlockFetcher, HealthChecker) {
-    let block_fetcher = FuelBlockFetcher::new(&config.fuel_graphql_endpoint, internal_config.fuel_errors_before_unhealthy);
+fn create_block_fetcher(
+    config: &Config,
+    internal_config: &InternalConfig,
+    registry: &Registry,
+) -> (FuelBlockFetcher, HealthChecker) {
+    let block_fetcher = FuelBlockFetcher::new(
+        &config.fuel_graphql_endpoint,
+        internal_config.fuel_errors_before_unhealthy,
+    );
     block_fetcher.register_metrics(registry);
 
     let fuel_connection_health = block_fetcher.connection_health_checker();
