@@ -18,7 +18,7 @@ impl Default for Metrics {
             "fuel_network_errors",
             "Number of network errors encountered while polling for a new Fuel block.",
         ))
-        .unwrap();
+        .expect("fuel_network_errors metric to be correctly configured");
         Self {
             fuel_network_errors,
         }

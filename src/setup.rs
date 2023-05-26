@@ -6,6 +6,7 @@ use fuels::{
 };
 use prometheus::Registry;
 use tokio::sync::mpsc::Receiver;
+use tracing::error;
 
 use crate::{
     adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
@@ -64,7 +65,7 @@ fn schedule_polling(
     tokio::spawn(async move {
         loop {
             if let Err(e) = block_watcher.run().await {
-                eprint!("An error with the block watcher: {e}");
+                error!("Block watcher encountered an error: {e}");
             }
             tokio::time::sleep(polling_interval).await;
         }

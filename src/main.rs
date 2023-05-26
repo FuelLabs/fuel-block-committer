@@ -21,6 +21,8 @@ mod setup;
 async fn main() -> Result<()> {
     // todo: get config from cli
     let config = Config::default();
+    tracing_subscriber::fmt::init();
+
     let extra_config = ExtraConfig::default();
 
     let storage = InMemoryStorage::new();

@@ -30,7 +30,7 @@ impl Default for Metrics {
             "latest_fuel_block",
             "The height of the latest fuel block.",
         ))
-        .unwrap();
+        .expect("fuel_network_errors metric to be correctly configured");
 
         Self { latest_fuel_block }
     }
