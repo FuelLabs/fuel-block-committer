@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use actix_web::{dev::Url, http::Uri};
 use adapters::storage::InMemoryStorage;
-use api::launch;
+use api::launch_api_server;
 use prometheus::Registry;
 use services::StatusReporter;
 use setup::{spawn_block_watcher, Config, ExtraConfig};
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     // });
 
     let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
-    launch(Arc::clone(&metrics_registry), status_reporter).await?;
+    launch_api_server(Arc::clone(&metrics_registry), status_reporter).await?;
 
     Ok(())
 }

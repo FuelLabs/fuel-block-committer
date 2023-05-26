@@ -10,7 +10,7 @@ use crate::{
     services::StatusReporter,
 };
 
-pub async fn launch(
+pub async fn launch_api_server(
     metrics_registry: Arc<Registry>,
     status_reporter: Arc<StatusReporter>,
 ) -> Result<()> {
