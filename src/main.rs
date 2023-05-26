@@ -1,9 +1,10 @@
-use std::sync::Arc;
-
 use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
-use setup::{spawn_block_watcher, Config, ExtraConfig};
+use setup::{
+    config::{Config, ExtraConfig},
+    helpers::spawn_block_watcher,
+};
 
 use crate::errors::Result;
 
@@ -12,10 +13,9 @@ mod api;
 mod cli;
 mod common;
 mod errors;
-mod health_check;
-mod metrics;
 mod services;
 mod setup;
+mod telemetry;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     let (_rx_fuel_block, _block_watcher_handle, fuel_health_check) =
         spawn_block_watcher(&config, &extra_config, storage.clone(), &metrics_registry)?;
 
-    launch_api_server(Arc::new(metrics_registry), storage, fuel_health_check).await?;
+    launch_api_server(metrics_registry, storage, fuel_health_check).await?;
 
     Ok(())
 }

@@ -4,8 +4,7 @@ use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
 use super::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher};
 use crate::{
     errors::{Error, Result},
-    health_check::HealthChecker,
-    metrics::RegistersMetrics,
+    telemetry::{HealthChecker, RegistersMetrics},
 };
 
 impl RegistersMetrics for FuelBlockFetcher {

@@ -8,15 +8,16 @@ use prometheus::{Encoder, Registry, TextEncoder};
 use crate::{
     adapters::storage::InMemoryStorage,
     errors::{Error, Result},
-    health_check::HealthChecker,
     services::{HealthReporter, StatusReporter},
+    telemetry::HealthChecker,
 };
 
 pub async fn launch_api_server(
-    metrics_registry: Arc<Registry>,
+    metrics_registry: Registry,
     storage: InMemoryStorage,
     fuel_health_check: HealthChecker,
 ) -> Result<()> {
+    let metrics_registry = Arc::new(metrics_registry);
     let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
     let health_reporter = Arc::new(HealthReporter::new(fuel_health_check));
     HttpServer::new(move || {

@@ -1,6 +1,6 @@
 use prometheus::{IntCounter, Opts};
 
-use crate::metrics::RegistersMetrics;
+use crate::telemetry::RegistersMetrics;
 
 pub struct Metrics {
     pub fuel_network_errors: IntCounter,

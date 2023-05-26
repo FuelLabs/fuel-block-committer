@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::health_check::{HealthCheck, HealthChecker};
+use crate::telemetry::HealthChecker;
 
 #[derive(Debug, Serialize)]
 pub struct HealthReport {

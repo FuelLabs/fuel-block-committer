@@ -11,7 +11,7 @@ use crate::{
     },
     common::EthTxStatus,
     errors::{Error, Result},
-    metrics::RegistersMetrics,
+    telemetry::RegistersMetrics,
 };
 
 struct Metrics {

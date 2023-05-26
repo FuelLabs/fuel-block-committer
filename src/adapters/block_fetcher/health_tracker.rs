@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::health_check::{HealthCheck, HealthChecker};
+use crate::telemetry::{HealthCheck, HealthChecker};
 
 #[derive(Debug, Clone)]
 pub struct FuelHealthTracker {
