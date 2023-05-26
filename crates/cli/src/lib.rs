@@ -30,7 +30,6 @@ struct Cli {
         env = "ETHEREUM_WALLET_KEY",
         value_name = "BYTES32",
         help = "The secret key authorized by the L1 bridging contracts to post block commitments.",
-        required = false
     )]
     ethereum_wallet_key: Bytes32,
 
@@ -59,16 +58,15 @@ struct Cli {
     commit_interval: u32,
 }
 
-pub fn parse() -> Config {
-    let cli = Cli::parse();
-
-    Config {
+pub fn parse() -> anyhow::Result<Config> {
+    let cli = Cli::try_parse()?;
+    Ok(Config {
         ethereum_wallet_key: cli.ethereum_wallet_key,
         ethereum_rpc: cli.ethereum_rpc,
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
         state_contract_address: cli.state_contract_address,
         commit_interval: cli.commit_interval,
-    }
+    })
 }
 
 #[cfg(test)]
