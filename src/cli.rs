@@ -1,9 +1,11 @@
-use crate::errors::Error;
-use crate::errors::Result;
-use crate::setup::config::Config;
 use clap::{command, Parser};
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
 use url::Url;
+
+use crate::{
+    errors::{Error, Result},
+    setup::config::Config,
+};
 
 const ETHEREUM_RPC: &str = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID";
 const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";

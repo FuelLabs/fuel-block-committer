@@ -1,10 +1,7 @@
 use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
-use setup::{
-    config::{Config, ExtraConfig},
-    helpers::spawn_block_watcher,
-};
+use setup::{config::ExtraConfig, helpers::spawn_block_watcher};
 
 use crate::errors::Result;
 
