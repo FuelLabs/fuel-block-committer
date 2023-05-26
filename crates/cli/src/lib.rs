@@ -23,9 +23,8 @@ pub struct Config {
     name = "fuel-block-committer",
     version,
     about,
-    propagate_version = true
+    propagate_version = true,
 )]
-#[derive(Debug)]
 struct Cli {
     /// Ethereum wallet key
     #[arg(
@@ -41,7 +40,7 @@ struct Cli {
     ethereum_rpc: Url,
 
     /// Fuel GraphQL endpoint
-    #[arg(short, long, default_value = FUEL_GRAPHQL_ENDPOINT, value_name = "URL", help = "URL to a fuel-core graphql endpoint.")]
+    #[arg(long, default_value = FUEL_GRAPHQL_ENDPOINT, value_name = "URL", help = "URL to a fuel-core graphql endpoint.")]
     fuel_graphql_endpoint: Url,
 
     /// State contract address
@@ -49,24 +48,24 @@ struct Cli {
     state_contract_address: Bytes20,
 
     /// Commit interval
-    #[clap(long, default_value_t = COMMIT_INTERVAL, value_name = "U32", help = "The number of fuel blocks between ethereum commits. If set to 1, then every block should be pushed to Ethereum.")]
+    #[arg(long, default_value_t = COMMIT_INTERVAL, value_name = "U32", help = "The number of fuel blocks between ethereum commits. If set to 1, then every block should be pushed to Ethereum.")]
     commit_interval: u32,
 }
 
 pub fn parse() -> Config {
     let cli = Cli::parse();
 
-    let ethereum_wallet_key = std::env::var("ETHEREUM_WALLET_KEY")
-        .ok()
-        .and_then(|value| Bytes32::from_str(&value).ok())
-        .or(cli.ethereum_wallet_key);
+    let ethereum_wallet_key = cli.ethereum_wallet_key.or_else(|| {
+        std::env::var("ETHEREUM_WALLET_KEY")
+            .ok()
+            .and_then(|value| Bytes32::from_str(&value).ok())
+    });
 
     if ethereum_wallet_key.is_none() {
         Command::error(
             &mut Command::new("fuel-block-committer-bin --ethereum-wallet-key <BYTES32>"),
             ErrorKind::MissingRequiredArgument,
-            "Please provide the Ethereum wallet key using the \x1B[33m'--ethereum-wallet-key'\x1B[0m command-line argument or set the \x1B[33m'ETHEREUM_WALLET_KEY'\x1B[0m environmental variable.\n       \
-            If set, the \x1B[33m'ETHEREUM_WALLET_KEY'\x1B[0m environmental variable will take priority over the \x1B[33m'--ethereum-wallet-key'\x1B[0m argument."
+            "Please provide the Ethereum wallet key using the \x1B[33m'--ethereum-wallet-key'\x1B[0m command-line argument or set the \x1B[33m'ETHEREUM_WALLET_KEY'\x1B[0m environmental variable.\n"
         ).exit();
     }
 
@@ -214,6 +213,62 @@ mod tests {
             cmd.assert().success();
         }
 
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-wallet-key");
+            cmd.arg("0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa");
+            cmd.arg("--ethereum-rpc");
+            cmd.arg("https://mainnet.infura.io/v3/testintest");
+            cmd.assert().success();
+        }
+
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-wallet-key");
+            cmd.arg("0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa");
+            cmd.arg("--ethereum-rpc");
+            cmd.arg("https://mainnet.infura.io/v3/testintest");
+            cmd.arg("--fuel-graphql-endpoint");
+            cmd.arg("https://127.0.0.1:50000");
+            cmd.assert().success();
+        }
+
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-wallet-key");
+            cmd.arg("0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa");
+            cmd.arg("--ethereum-rpc");
+            cmd.arg("https://mainnet.infura.io/v3/testintest");
+            cmd.arg("--fuel-graphql-endpoint");
+            cmd.arg("https://127.0.0.1:50000");
+            cmd.assert().success();
+        }
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-wallet-key");
+            cmd.arg("0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa");
+            cmd.arg("--ethereum-rpc");
+            cmd.arg("https://mainnet.infura.io/v3/testintest");
+            cmd.arg("--fuel-graphql-endpoint");
+            cmd.arg("https://127.0.0.1:50000");
+            cmd.arg("--state-contract-address");
+            cmd.arg("0000000000000000000000000000000000225883");
+            cmd.assert().success();
+        }
+        {
+            let mut cmd = Command::cargo_bin("fuel-block-committer-bin")?;
+            cmd.arg("--ethereum-wallet-key");
+            cmd.arg("0123456789abcdeffedcba9876543210aabbccddeeff112233445566778899aa");
+            cmd.arg("--ethereum-rpc");
+            cmd.arg("https://mainnet.infura.io/v3/testintest");
+            cmd.arg("--fuel-graphql-endpoint");
+            cmd.arg("https://127.0.0.1:50000");
+            cmd.arg("--state-contract-address");
+            cmd.arg("0000000000000000000000000000000000225883");
+            cmd.arg("--commit-interval");
+            cmd.arg("225883");
+            cmd.assert().success();
+        }
         Ok(())
     }
 }
