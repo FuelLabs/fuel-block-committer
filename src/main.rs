@@ -16,6 +16,7 @@ mod common;
 mod errors;
 mod services;
 mod setup;
+mod metrics;
 
 #[tokio::main]
 async fn main() -> Result<()> {

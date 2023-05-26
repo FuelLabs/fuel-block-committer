@@ -1,8 +1,12 @@
 use actix_web::dev::Url;
 use async_trait::async_trait;
 use fuels::{prelude::Provider, types::block::Block};
+use prometheus::{IntCounter, Opts, Registry};
 
-use crate::errors::{Error, Result};
+use crate::{
+    errors::{Error, Result},
+    metrics::RegistersMetrics,
+};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
@@ -10,15 +14,48 @@ pub trait BlockFetcher {
     async fn latest_block(&self) -> Result<Block>;
 }
 
+struct Metrics {
+    fuel_network_errors: IntCounter,
+}
+
+impl Metrics {
+    fn default() -> Self {
+        let fuel_network_errors = IntCounter::with_opts(Opts::new(
+            "fuel_network_errors",
+            "Number of network errors encountered while polling for a new Fuel block.",
+        ))
+        .unwrap();
+        Self {
+            fuel_network_errors,
+        }
+    }
+}
+
+impl RegistersMetrics for FuelBlockFetcher {
+    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+        vec![Box::new(self.metrics.fuel_network_errors.clone())]
+    }
+}
+
 pub struct FuelBlockFetcher {
     provider: Provider,
+    metrics: Metrics,
 }
 
 impl FuelBlockFetcher {
     pub async fn connect(url: &Url) -> Result<Self> {
         Ok(Self {
-            provider: Provider::connect(url.uri().to_string()).await.unwrap(),
+            provider: Provider::connect(url.uri().to_string())
+                .await
+                .expect("url should be correctly formed"),
+            metrics: Metrics::default(),
         })
+    }
+
+    fn update_network_err_count(&self) {
+        // metrics being incremented  isn't tested since we can't currently kill a
+        // spawned fuel node through the SDK
+        self.metrics.fuel_network_errors.inc();
     }
 }
 
@@ -30,6 +67,7 @@ impl BlockFetcher for FuelBlockFetcher {
             .await
             .map_err(|err| match err {
                 fuels::prelude::ProviderError::ClientRequestError(err) => {
+                    self.update_network_err_count();
                     Error::NetworkError(err.to_string())
                 }
             })
