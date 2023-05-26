@@ -1,7 +1,7 @@
 use std::vec;
 
 use fuels::types::block::Block as FuelBlock;
-use prometheus::{core::Collector, IntCounter, IntGauge, Opts, Registry};
+use prometheus::{core::Collector, IntGauge, Opts};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
@@ -117,6 +117,7 @@ mod tests {
 
     use ethers::types::H256;
     use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
+    use prometheus::Registry;
 
     use super::*;
     use crate::{

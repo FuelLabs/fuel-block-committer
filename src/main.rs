@@ -14,9 +14,10 @@ mod api;
 mod cli;
 mod common;
 mod errors;
+mod health_check;
+mod metrics;
 mod services;
 mod setup;
-mod metrics;
 
 #[tokio::main]
 async fn main() -> Result<()> {

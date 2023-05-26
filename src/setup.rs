@@ -10,7 +10,8 @@ use tokio::sync::mpsc::Receiver;
 use crate::{
     adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
     errors::Result,
-    services::BlockWatcher, metrics::RegistersMetrics,
+    metrics::RegistersMetrics,
+    services::BlockWatcher,
 };
 
 #[derive(Default, Debug, Clone)]
