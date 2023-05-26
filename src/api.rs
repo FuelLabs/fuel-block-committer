@@ -4,39 +4,23 @@ use actix_web::{
     error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
 };
 use prometheus::{Encoder, Registry, TextEncoder};
-use serde::Serialize;
 
-use crate::errors::{Error, Result};
+use crate::{
+    errors::{Error, Result},
+    services::StatusReporter,
+};
 
-#[derive(Serialize)]
-enum Status {
-    Idle,
-    Commiting,
-}
-
-#[derive(Serialize)]
-struct StatusReport {
-    pub status: Status,
-}
-
-#[derive(Clone)]
-struct StatusReporter {}
-
-impl StatusReporter {
-    fn status_report(&self) -> StatusReport {
-        StatusReport {
-            status: Status::Idle,
-        }
-    }
-}
-
-pub async fn launch(metrics_registry: Arc<Registry>) -> Result<()> {
+pub async fn launch(
+    metrics_registry: Arc<Registry>,
+    status_reporter: Arc<StatusReporter>,
+) -> Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(Arc::clone(&metrics_registry)))
-            // .service(health)
-            // .service(status)
+            .app_data(web::Data::new(Arc::clone(&status_reporter)))
+            .service(status)
             .service(metrics)
+        // .service(health)
     })
     .bind(("127.0.0.1", 7070))
     .unwrap() //TODO read via config PARAM
@@ -53,10 +37,10 @@ async fn health() -> impl Responder {
 }
 
 #[get("/status")]
-async fn status(data: web::Data<StatusReporter>) -> impl Responder {
-    let report = data.status_report();
+async fn status(data: web::Data<Arc<StatusReporter>>) -> impl Responder {
+    let report = data.current_status().await?;
 
-    web::Json(report)
+    Result::Ok(web::Json(report))
 }
 
 #[get("/metrics")]

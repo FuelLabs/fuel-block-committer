@@ -4,7 +4,7 @@ use actix_web::{dev::Url, http::Uri};
 use adapters::storage::InMemoryStorage;
 use api::launch;
 use prometheus::Registry;
-use serde::Serialize;
+use services::StatusReporter;
 use setup::{spawn_block_watcher, Config, ExtraConfig};
 
 use crate::errors::Result;
@@ -55,22 +55,8 @@ async fn main() -> Result<()> {
     //     commit_listener.run().await.unwrap();
     // });
 
-    launch(Arc::clone(&metrics_registry)).await?;
+    let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
+    launch(Arc::clone(&metrics_registry), status_reporter).await?;
 
     Ok(())
-}
-
-#[derive(Serialize, Debug, Default)]
-pub enum Status {
-    #[default]
-    Idle,
-    Commiting,
-}
-
-#[derive(Debug, Serialize, Default)]
-pub struct StatusReport {
-    pub latest_fuel_block: u64,
-    pub latest_committed_block: u64,
-    pub status: Status,
-    pub ethereum_wallet_gas_balance: u64,
 }
