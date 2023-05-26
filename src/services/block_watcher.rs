@@ -98,8 +98,8 @@ impl BlockWatcher {
             return true;
         };
 
-        if submission.fuel_block_height >= current_block.header.height {
-            return true;
+        if current_block.header.height <= submission.fuel_block_height {
+            return false;
         }
 
         let height_diff = current_block.header.height - submission.fuel_block_height;
@@ -157,6 +157,34 @@ mod tests {
         };
 
         assert_eq!(block, announced_block);
+    }
+
+    #[tokio::test]
+    async fn will_not_propagate_a_stale_block() {
+        let last_block_submission = given_successful_submission(2);
+
+        {
+            let current_block = given_a_block(1);
+
+            let should_propagate = BlockWatcher::should_propagate_update(
+                1,
+                &current_block,
+                Some(&last_block_submission),
+            );
+
+            assert!(!should_propagate);
+        }
+        {
+            let current_block = given_a_block(2);
+
+            let should_propagate = BlockWatcher::should_propagate_update(
+                1,
+                &current_block,
+                Some(&last_block_submission),
+            );
+
+            assert!(!should_propagate);
+        }
     }
 
     #[tokio::test]
@@ -253,6 +281,13 @@ mod tests {
         fetcher
     }
 
+    fn given_successful_submission(block_height: u32) -> EthTxSubmission {
+        EthTxSubmission {
+            fuel_block_height: block_height,
+            status: EthTxStatus::Pending,
+            tx_hash: H256::default(),
+        }
+    }
     fn given_pending_submission(block_height: u32) -> EthTxSubmission {
         EthTxSubmission {
             fuel_block_height: block_height,
