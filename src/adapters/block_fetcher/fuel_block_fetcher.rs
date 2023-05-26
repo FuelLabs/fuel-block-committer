@@ -1,8 +1,8 @@
 use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
 use url::Url;
 
-use super::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher};
 use crate::{
+    adapters::block_fetcher::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher},
     errors::{Error, Result},
     telemetry::{HealthChecker, RegistersMetrics},
 };

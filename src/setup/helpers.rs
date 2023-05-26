@@ -3,11 +3,11 @@ use prometheus::Registry;
 use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
-use super::config::{Config, InternalConfig};
 use crate::{
     adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
     errors::Result,
     services::BlockWatcher,
+    setup::config::{Config, InternalConfig},
     telemetry::{HealthChecker, RegistersMetrics},
 };
 
