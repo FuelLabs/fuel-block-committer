@@ -4,16 +4,12 @@ use actix_web::dev::Url;
 use ethers::prelude::*;
 use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
 
-use crate::{
-    errors::{Error, Result},
-    AppState,
-};
+use crate::errors::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct CommitListener {
     contract_address: Address,
     ethereum_rpc: Url, // websocket
-    app_state: AppState,
 }
 
 // smart contract setup
@@ -25,14 +21,13 @@ abigen!(
 );
 
 impl CommitListener {
-    pub fn new(ethereum_rpc: Url, contract_address: Bytes20, app_state: AppState) -> Self {
+    pub fn new(ethereum_rpc: Url, contract_address: Bytes20) -> Self {
         let contract_address = Address::from_slice(contract_address.as_ref());
 
         Self {
             contract_address,
             // todo: this should be turned into websocket url
             ethereum_rpc,
-            app_state,
         }
     }
 
@@ -61,14 +56,6 @@ impl CommitListener {
         while let Some(Ok(event)) = stream.next().await {
             let _height = event.commit_height;
             let _block_hash = event.block_hash;
-
-            // todo: update the state
-            match self.app_state.lock() {
-                Ok(_state) => {}
-                Err(e) => {
-                    println!("Error: {:?}", e);
-                }
-            }
         }
 
         Ok(())

@@ -1,11 +1,9 @@
-use std::{
-    sync::{Arc, Mutex},
-    vec,
-};
+use std::sync::Arc;
 
-use actix_web::{dev::Url, get, http::Uri, web, App, HttpServer};
+use actix_web::{dev::Url, http::Uri};
 use adapters::storage::InMemoryStorage;
-use prometheus::{Encoder, Registry, TextEncoder};
+use api::launch;
+use prometheus::Registry;
 use serde::Serialize;
 use setup::{spawn_block_watcher, Config, ExtraConfig};
 
@@ -19,27 +17,6 @@ mod errors;
 mod services;
 mod setup;
 
-
-
-// todo/note: each of these fields could be separately hidden behind a mutex
-// so that we don't have to lock the whole struct - depending on the usecases
-pub type AppState = Arc<Mutex<StatusReport>>;
-
-#[get("/metrics")]
-async fn metrics(registry: web::Data<Arc<Registry>>) -> String {
-    let encoder = TextEncoder::new();
-
-    let mut buf: Vec<u8> = vec![];
-    let metrics = registry.gather();
-
-    encoder.encode(&metrics, &mut buf).unwrap();
-
-    let metrics = prometheus::gather();
-    encoder.encode(&metrics, &mut buf).unwrap();
-
-    String::from_utf8(buf).unwrap()
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // todo: get config from cli
@@ -51,9 +28,6 @@ async fn main() -> Result<()> {
             .unwrap(),
     );
     let extra_config = ExtraConfig::default();
-
-    // AppState actix::web
-    let app_state = Arc::new(Mutex::new(StatusReport::default()));
 
     let storage = InMemoryStorage::new();
 
@@ -81,18 +55,7 @@ async fn main() -> Result<()> {
     //     commit_listener.run().await.unwrap();
     // });
 
-    let _ = HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(app_state.clone()))
-            .app_data(web::Data::new(Arc::clone(&metrics_registry)))
-            // .service(health)
-            // .service(status)
-            .service(metrics)
-    })
-    .bind(("127.0.0.1", 7070))
-    .unwrap() //TODO read via config PARAM
-    .run()
-    .await;
+    launch(Arc::clone(&metrics_registry)).await?;
 
     Ok(())
 }
