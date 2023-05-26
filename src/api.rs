@@ -20,7 +20,7 @@ pub async fn launch_api_server(
     fuel_health_check: HealthChecker,
 ) -> Result<()> {
     let metrics_registry = Arc::new(metrics_registry);
-    let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
+    let status_reporter = Arc::new(StatusReporter::new(storage));
     let health_reporter = Arc::new(HealthReporter::new(fuel_health_check));
     HttpServer::new(move || {
         App::new()
@@ -64,7 +64,7 @@ async fn metrics(registry: web::Data<Arc<Registry>>) -> impl Responder {
     let mut buf: Vec<u8> = vec![];
     let mut encode = |metrics: &_| {
         encoder
-            .encode(&metrics, &mut buf)
+            .encode(metrics, &mut buf)
             .map_err(map_to_internal_err)
     };
 

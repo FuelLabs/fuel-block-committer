@@ -69,12 +69,8 @@ fn create_block_watcher(
     storage: InMemoryStorage,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
-    let block_watcher = BlockWatcher::new(
-        config.commit_epoch,
-        tx_fuel_block,
-        block_fetcher,
-        storage.clone(),
-    );
+    let block_watcher =
+        BlockWatcher::new(config.commit_epoch, tx_fuel_block, block_fetcher, storage);
     block_watcher.register_metrics(registry);
 
     (block_watcher, rx_fuel_block)

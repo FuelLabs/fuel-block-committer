@@ -65,9 +65,8 @@ impl Storage for InMemoryStorage {
             .lock()
             .unwrap()
             .iter()
-            .max_by_key(|(k, _)| k.clone())
-            .map(|(_, v)| v.clone())
-            .clone();
+            .max_by_key(|(k, _)| *k)
+            .map(|(_, v)| v.clone());
         Ok(res)
     }
 }

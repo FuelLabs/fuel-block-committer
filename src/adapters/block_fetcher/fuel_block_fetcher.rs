@@ -21,7 +21,7 @@ pub struct FuelBlockFetcher {
 
 impl FuelBlockFetcher {
     pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
-        let client = FuelClient::new(url.to_string()).expect("Url to be well formed");
+        let client = FuelClient::new(url).expect("Url to be well formed");
         let provider = Provider::new(client, Default::default());
         Self {
             provider,
