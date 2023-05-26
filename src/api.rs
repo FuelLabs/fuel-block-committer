@@ -6,15 +6,19 @@ use actix_web::{
 use prometheus::{Encoder, Registry, TextEncoder};
 
 use crate::{
+    adapters::storage::InMemoryStorage,
     errors::{Error, Result},
+    health_check::HealthChecker,
     services::{HealthReporter, StatusReporter},
 };
 
 pub async fn launch_api_server(
     metrics_registry: Arc<Registry>,
-    status_reporter: Arc<StatusReporter>,
-    health_reporter: Arc<HealthReporter>,
+    storage: InMemoryStorage,
+    fuel_health_check: HealthChecker,
 ) -> Result<()> {
+    let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
+    let health_reporter = Arc::new(HealthReporter::new(fuel_health_check));
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(Arc::clone(&metrics_registry)))

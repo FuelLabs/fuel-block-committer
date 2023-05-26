@@ -4,7 +4,7 @@ use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
 use super::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher};
 use crate::{
     errors::{Error, Result},
-    health_check::HealthCheck,
+    health_check::HealthChecker,
     metrics::RegistersMetrics,
 };
 
@@ -31,7 +31,7 @@ impl FuelBlockFetcher {
         }
     }
 
-    pub fn connection_health_checker(&self) -> Box<dyn HealthCheck + Send + Sync> {
+    pub fn connection_health_checker(&self) -> HealthChecker {
         self.health_tracker.tracker()
     }
 

@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::health_check::HealthCheck;
+use crate::health_check::{HealthCheck, HealthChecker};
 
 #[derive(Debug, Clone)]
 pub struct FuelHealthTracker {
@@ -35,7 +35,7 @@ impl FuelHealthTracker {
             .expect("no need to handle poisoning since lock duration is short and no panics occurr")
     }
 
-    pub fn tracker(&self) -> Box<dyn HealthCheck + Send + Sync> {
+    pub fn tracker(&self) -> HealthChecker {
         Box::new(self.clone())
     }
 }

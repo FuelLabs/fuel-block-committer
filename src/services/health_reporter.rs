@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::health_check::HealthCheck;
+use crate::health_check::{HealthCheck, HealthChecker};
 
 #[derive(Debug, Serialize)]
 pub struct HealthReport {
@@ -16,11 +16,11 @@ impl HealthReport {
 }
 
 pub struct HealthReporter {
-    fuel_connection: Box<dyn HealthCheck + Send + Sync>,
+    fuel_connection: HealthChecker,
 }
 
 impl HealthReporter {
-    pub fn new(fuel_health_check: Box<dyn HealthCheck + Send + Sync>) -> Self {
+    pub fn new(fuel_health_check: HealthChecker) -> Self {
         Self {
             fuel_connection: fuel_health_check,
         }

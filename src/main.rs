@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-
 use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
-use services::{HealthReporter, StatusReporter};
 use setup::{spawn_block_watcher, Config, ExtraConfig};
 
 use crate::errors::Result;
@@ -27,19 +25,12 @@ async fn main() -> Result<()> {
 
     let storage = InMemoryStorage::new();
 
-    let metrics_registry = Arc::new(Registry::default());
+    let metrics_registry = Registry::default();
 
     let (_rx_fuel_block, _block_watcher_handle, fuel_health_check) =
-        spawn_block_watcher(&config, &extra_config, storage.clone(), &metrics_registry).await?;
+        spawn_block_watcher(&config, &extra_config, storage.clone(), &metrics_registry)?;
 
-    let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
-    let health_reporter = Arc::new(HealthReporter::new(fuel_health_check));
-    launch_api_server(
-        Arc::clone(&metrics_registry),
-        status_reporter,
-        health_reporter,
-    )
-    .await?;
+    launch_api_server(Arc::new(metrics_registry), storage, fuel_health_check).await?;
 
     Ok(())
 }
