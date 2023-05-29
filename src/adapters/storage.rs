@@ -19,7 +19,7 @@ pub struct EthTxSubmission {
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: EthTxSubmission) -> Result<()>;
     async fn update(&self, entry: EthTxSubmission) -> Result<()>;
-    async fn register_commited(&self, height: u32) -> Result<()>;
+    async fn update_submission_status(&self, height: u32, status: EthTxStatus) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<EthTxSubmission>>;
 }
 
@@ -71,14 +71,12 @@ impl Storage for InMemoryStorage {
         Ok(res)
     }
 
-    async fn register_commited(&self, height: u32) -> Result<()> {
+    async fn update_submission_status(&self, height: u32, status: EthTxStatus) -> Result<()> {
         self.storage
             .lock()
             .unwrap()
             .entry(height)
-            .and_modify(|entry| {
-                entry.status = EthTxStatus::Commited;
-            });
+            .and_modify(|entry| entry.status = status);
         Ok(())
     }
 }

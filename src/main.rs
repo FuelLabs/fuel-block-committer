@@ -62,9 +62,9 @@ async fn main() -> Result<()> {
         config.state_contract_address,
         wallet.clone(),
     );
+    let mut block_committer = BlockCommitter::new(rx_fuel_block, tx_submitter, storage.clone());
     // service BlockCommitter
     tokio::spawn(async move {
-        let mut block_committer = BlockCommitter::new(rx_fuel_block, tx_submitter);
         block_committer.run().await.unwrap();
     });
 

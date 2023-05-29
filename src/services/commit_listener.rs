@@ -3,6 +3,7 @@ use url::Url;
 
 use crate::{
     adapters::storage::Storage,
+    common::EthTxStatus,
     errors::{Error, Result},
 };
 
@@ -33,7 +34,7 @@ impl CommitListener {
             self.check_tx_finalized(submission.tx_hash).await?;
 
             self.storage
-                .register_commited(submission.fuel_block_height)
+                .update_submission_status(submission.fuel_block_height, EthTxStatus::Commited)
                 .await?;
 
             // add to metrics
