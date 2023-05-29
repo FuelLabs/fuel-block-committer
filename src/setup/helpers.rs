@@ -82,7 +82,7 @@ pub fn setup_logger() {
 
 pub fn setup_storage(config: &Config) -> Result<SledDb> {
     if let Some(path) = &config.db_path {
-        SledDb::open(&path)
+        SledDb::open(path)
     } else {
         SledDb::temporary()
     }
