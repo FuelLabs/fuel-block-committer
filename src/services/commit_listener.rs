@@ -1,60 +1,58 @@
-use std::sync::Arc;
-use tracing::info;
-
-use crate::errors::{Error, Result};
 use ethers::prelude::*;
-use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
 use url::Url;
 
-#[derive(Debug, Clone)]
+use crate::{
+    adapters::storage::Storage,
+    errors::{Error, Result},
+};
+
 pub struct CommitListener {
-    _contract_address: Address,
-    _ethereum_rpc: Url, // websocket
+    provider: Provider<Http>,
+    storage: Box<dyn Storage + Send + Sync>,
 }
 
-// smart contract setup
-abigen!(
-    FUEL_STATE_CONTRACT,
-    r#"[
-        event CommitSubmitted(uint256 indexed commitHeight, bytes32 blockHash)
-    ]"#,
-);
-
 impl CommitListener {
-    pub fn _new(_ethereum_rpc: Url, _contract_address: Bytes20) -> Self {
-        let _contract_address = Address::from_slice(_contract_address.as_ref());
+    pub fn new(ethereum_rpc: Url, storage: impl Storage + 'static + Send + Sync) -> Self {
+        let provider = Provider::<Http>::try_from(ethereum_rpc.to_string()).unwrap();
 
         Self {
-            _contract_address,
-            // todo: this should be turned into websocket url
-            _ethereum_rpc,
+            provider,
+            storage: Box::new(storage),
         }
     }
 
-    pub async fn _run(&self) -> Result<()> {
-        // websocket setup
-        let provider = Provider::<Ws>::connect(self._ethereum_rpc.to_string())
-            .await
-            .map_err(|e| Error::NetworkError(e.to_string()))?;
-        let client = Arc::new(provider);
+    fn handle_network_error(&self) {
+        todo!()
+    }
 
-        // contract setup
-        let contract = FUEL_STATE_CONTRACT::new(self._contract_address, client.clone());
+    pub async fn run(&self) -> Result<()> {
+        let last_submission = self.storage.submission_w_latest_block().await?;
 
-        // event listener setup
-        let events = contract.event::<CommitSubmittedFilter>().from_block(1);
+        if let Some(submission) = last_submission {
+            // todo: what to do when tx reverts, is it possible?
+            self.check_tx_finalized(submission.tx_hash).await?;
 
-        let mut stream = events
-            .stream()
-            .await
-            .map_err(|e| Error::NetworkError(e.to_string()))?;
+            self.storage
+                .register_commited(submission.fuel_block_height)
+                .await?;
 
-        loop {
-            if let Some(Ok(event)) = stream.next().await {
-                let _height = event.commit_height;
-
-                info!("{_height}");
-            }
+            // add to metrics
+        } else {
+            // log no submission found
+            todo!()
         }
+
+        Ok(())
+    }
+
+    async fn check_tx_finalized(&self, tx_hash: H256) -> Result<Option<TransactionReceipt>> {
+        Ok(self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await
+            .map_err(|err| {
+                self.handle_network_error();
+                Error::NetworkError(err.to_string())
+            })?)
     }
 }

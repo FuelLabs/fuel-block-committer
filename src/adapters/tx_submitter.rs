@@ -51,18 +51,6 @@ impl TxSubmitter for EthTxSubmitter {
 
         warn!("{}", &id);
 
-        for _ in 0..2 {
-            let receipt = self
-                .provider
-                .get_transaction_receipt(id)
-                .await
-                .expect("failed to get transaction receipt");
-
-            info!("{receipt:?}");
-
-            tokio::time::sleep(Duration::from_secs(4)).await;
-        }
-
         Ok(id)
     }
 }

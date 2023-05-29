@@ -69,12 +69,11 @@ async fn main() -> Result<()> {
     });
 
     // service CommitListener
-    // let commit_listener =
-    //     CommitListener::_new(config.ethereum_rpc.clone(), config.state_contract_address);
-    // // // run the service
-    // tokio::spawn(async move {
-    //     commit_listener._run().await.unwrap();
-    // });
+    let commit_listener = CommitListener::new(config.ethereum_rpc.clone(), storage.clone());
+    // // run the service
+    tokio::spawn(async move {
+        commit_listener.run().await.unwrap();
+    });
 
     launch_api_server(&config, metrics_registry, storage, fuel_health_check).await?;
 
