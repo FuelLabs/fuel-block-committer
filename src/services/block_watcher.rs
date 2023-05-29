@@ -123,7 +123,7 @@ mod tests {
     use crate::{
         adapters::{
             block_fetcher::MockBlockFetcher,
-            storage::{EthTxSubmission, InMemoryStorage},
+            storage::{in_memory_db::InMemoryStorage, EthTxSubmission},
         },
         common::EthTxStatus,
     };

@@ -1,4 +1,4 @@
-use adapters::storage::InMemoryStorage;
+use adapters::storage::in_memory_db::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
 use setup::{

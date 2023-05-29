@@ -45,7 +45,7 @@ impl StatusReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::storage::{EthTxSubmission, InMemoryStorage};
+    use crate::adapters::storage::{in_memory_db::InMemoryStorage, EthTxSubmission};
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {

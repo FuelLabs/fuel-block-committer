@@ -4,7 +4,7 @@ use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
 use crate::{
-    adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
+    adapters::{block_fetcher::FuelBlockFetcher, storage::in_memory_db::InMemoryStorage},
     errors::Result,
     services::BlockWatcher,
     setup::config::{Config, InternalConfig},
