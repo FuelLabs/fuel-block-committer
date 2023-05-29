@@ -5,7 +5,7 @@ use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub ethereum_wallet_key: Bytes32,
+    pub ethereum_wallet_key: String,
     pub ethereum_rpc: Url,
     pub fuel_graphql_endpoint: Url,
     pub state_contract_address: Bytes20,

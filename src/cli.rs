@@ -9,7 +9,7 @@ use crate::{
     setup::config::Config,
 };
 
-const ETHEREUM_RPC: &str = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID";
+const ETHEREUM_RPC: &str = "http://127.0.0.1:8545/";
 const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
 const STATE_CONTRACT_ADDRESS: Bytes20 = Bytes20::zeroed();
 const COMMIT_INTERVAL: u32 = 1;
@@ -28,10 +28,10 @@ struct Cli {
     #[arg(
         long,
         env = "ETHEREUM_WALLET_KEY",
-        value_name = "BYTES32",
+        value_name = "String",
         help = "The secret key authorized by the L1 bridging contracts to post block commitments."
     )]
-    ethereum_wallet_key: Bytes32,
+    ethereum_wallet_key: String,
 
     /// Ethereum RPC
     #[arg(long,

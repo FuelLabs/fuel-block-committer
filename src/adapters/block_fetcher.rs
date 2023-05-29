@@ -1,5 +1,6 @@
+pub mod fake_block_fetcher;
 mod fuel_block_fetcher;
-mod health_tracker;
+pub mod health_tracker;
 mod metrics;
 
 pub use fuel_block_fetcher::FuelBlockFetcher;

@@ -1,31 +1,31 @@
-use actix_web::dev::Url;
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::mpsc::Receiver;
 
-use crate::errors::Result;
+use crate::{adapters::tx_submitter::TxSubmitter, errors::Result};
 
 pub struct BlockCommitter {
     rx_block: Receiver<FuelBlock>,
-    etherem_rpc: Url,
+    tx_submitter: Box<dyn TxSubmitter + 'static + Sync + Send>,
 }
 
 impl BlockCommitter {
-    pub fn new(rx_block: Receiver<FuelBlock>, etherem_rpc: Url) -> Self {
+    pub fn new(
+        rx_block: Receiver<FuelBlock>,
+        tx_submitter: impl TxSubmitter + 'static + Sync + Send,
+    ) -> Self {
         Self {
             rx_block,
-            etherem_rpc,
+            tx_submitter: Box::new(tx_submitter),
         }
     }
 
-    // todo: this should probably run as a stream
     pub async fn run(&mut self) -> Result<()> {
-        // listen to the newly received block
-        if let Some(_block) = self.rx_block.recv().await {
-            // enhancment: consume all the blocks from the channel to get the latest one
-
-            // commit the block to ethereum
+        loop {
+            // listen to the newly received block
+            if let Some(block) = self.rx_block.recv().await {
+                // enhancment: consume all the blocks from the channel to get the latest one
+                self.tx_submitter.submit(block).await?;
+            }
         }
-
-        Ok(())
     }
 }

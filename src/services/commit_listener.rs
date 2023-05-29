@@ -1,63 +1,60 @@
 use std::sync::Arc;
-
-use actix_web::dev::Url;
-use ethers::prelude::*;
-use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
+use tracing::info;
 
 use crate::errors::{Error, Result};
+use ethers::prelude::*;
+use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
+use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct CommitListener {
-    contract_address: Address,
-    ethereum_rpc: Url, // websocket
+    _contract_address: Address,
+    _ethereum_rpc: Url, // websocket
 }
 
 // smart contract setup
 abigen!(
     FUEL_STATE_CONTRACT,
     r#"[
-        event CommitSubmitted(uint256 indexed commitHeight, bytes32 blockHash)        
+        event CommitSubmitted(uint256 indexed commitHeight, bytes32 blockHash)
     ]"#,
 );
 
 impl CommitListener {
-    pub fn new(ethereum_rpc: Url, contract_address: Bytes20) -> Self {
-        let contract_address = Address::from_slice(contract_address.as_ref());
+    pub fn _new(_ethereum_rpc: Url, _contract_address: Bytes20) -> Self {
+        let _contract_address = Address::from_slice(_contract_address.as_ref());
 
         Self {
-            contract_address,
+            _contract_address,
             // todo: this should be turned into websocket url
-            ethereum_rpc,
+            _ethereum_rpc,
         }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn _run(&self) -> Result<()> {
         // websocket setup
-        let provider = Provider::<Ws>::connect(self.ethereum_rpc.uri().to_string())
+        let provider = Provider::<Ws>::connect(self._ethereum_rpc.to_string())
             .await
             .map_err(|e| Error::NetworkError(e.to_string()))?;
-
         let client = Arc::new(provider);
 
         // contract setup
-        let contract = FUEL_STATE_CONTRACT::new(self.contract_address, client.clone());
+        let contract = FUEL_STATE_CONTRACT::new(self._contract_address, client.clone());
 
         // event listener setup
-        let events = contract
-            .event::<CommitSubmittedFilter>()
-            .from_block(16232696);
+        let events = contract.event::<CommitSubmittedFilter>().from_block(1);
 
         let mut stream = events
             .stream()
             .await
-            .map_err(|e| Error::NetworkError(e.to_string()))?
-            .take(1);
+            .map_err(|e| Error::NetworkError(e.to_string()))?;
 
-        while let Some(Ok(event)) = stream.next().await {
-            let _height = event.commit_height;
-            let _block_hash = event.block_hash;
+        loop {
+            if let Some(Ok(event)) = stream.next().await {
+                let _height = event.commit_height;
+
+                info!("{_height}");
+            }
         }
-
-        Ok(())
     }
 }
