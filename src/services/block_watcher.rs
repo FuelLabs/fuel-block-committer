@@ -37,9 +37,9 @@ impl Default for Metrics {
 }
 
 pub struct BlockWatcher {
-    block_fetcher: Box<dyn BlockFetcher + Send + Sync>,
+    block_fetcher: Box<dyn BlockFetcher>,
     tx_fuel_block: Sender<FuelBlock>,
-    storage: Box<dyn Storage + Send + Sync>,
+    storage: Box<dyn Storage>,
     commit_epoch: u32,
     metrics: Metrics,
 }
@@ -48,8 +48,8 @@ impl BlockWatcher {
     pub fn new(
         commit_epoch: u32,
         tx_fuel_block: Sender<FuelBlock>,
-        block_fetcher: impl BlockFetcher + 'static + Send + Sync,
-        storage: impl Storage + 'static + Send + Sync,
+        block_fetcher: impl BlockFetcher + 'static,
+        storage: impl Storage + 'static,
     ) -> Self {
         Self {
             commit_epoch,

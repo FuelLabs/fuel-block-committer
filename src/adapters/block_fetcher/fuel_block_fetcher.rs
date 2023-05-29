@@ -1,4 +1,8 @@
-use fuels::{client::FuelClient, prelude::Provider, types::block::Block};
+use fuels::{
+    client::FuelClient,
+    prelude::{Provider, ProviderError},
+    types::block::Block,
+};
 use url::Url;
 
 use crate::{
@@ -47,21 +51,16 @@ impl FuelBlockFetcher {
 #[async_trait::async_trait]
 impl BlockFetcher for FuelBlockFetcher {
     async fn latest_block(&self) -> Result<Block> {
-        let latest_block = self
-            .provider
-            .chain_info()
-            .await
-            .map_err(|err| match err {
-                fuels::prelude::ProviderError::ClientRequestError(err) => {
-                    self.handle_network_error();
-                    Error::NetworkError(err.to_string())
-                }
-            })
-            .map(|chain_info| chain_info.latest_block)?;
-
-        self.handle_network_success();
-
-        Ok(latest_block)
+        match self.provider.chain_info().await {
+            Ok(chain_info) => {
+                self.handle_network_success();
+                Ok(chain_info.latest_block)
+            }
+            Err(ProviderError::ClientRequestError(err)) => {
+                self.handle_network_error();
+                Err(Error::NetworkError(err.to_string()))
+            }
+        }
     }
 }
 

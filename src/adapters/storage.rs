@@ -16,7 +16,7 @@ pub struct EthTxSubmission {
 }
 
 #[async_trait]
-pub trait Storage {
+pub trait Storage: Send + Sync {
     async fn insert(&self, submission: EthTxSubmission) -> Result<()>;
     async fn update(&self, entry: EthTxSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<EthTxSubmission>>;

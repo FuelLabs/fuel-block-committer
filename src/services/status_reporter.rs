@@ -15,11 +15,11 @@ pub enum Status {
 }
 
 pub struct StatusReporter {
-    storage: Box<dyn Storage + Send + Sync>,
+    storage: Box<dyn Storage>,
 }
 
 impl StatusReporter {
-    pub fn new(storage: impl Storage + 'static + Send + Sync) -> Self {
+    pub fn new(storage: impl Storage + 'static) -> Self {
         Self {
             storage: Box::new(storage),
         }
