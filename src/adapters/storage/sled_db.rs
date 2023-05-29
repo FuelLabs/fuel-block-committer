@@ -1,16 +1,31 @@
+use std::path::Path;
+
 use sled::{Config, Db};
 
 use super::{EthTxSubmission, Storage};
 use crate::errors::Result;
 
+#[derive(Clone)]
 pub struct SledDb {
     db: Db,
 }
 
 impl SledDb {
+    pub fn open(path: &Path) -> Result<Self> {
+        let cache_in_mb = 300;
+        let config = Config::new()
+            .path(path)
+            .cache_capacity(cache_in_mb * 1024 * 1024)
+            .mode(sled::Mode::LowSpace)
+            .use_compression(true);
+
+        Ok(Self { db: config.open()? })
+    }
+
     pub fn temporary() -> Result<Self> {
-        let db = Config::new().temporary(true).open()?;
-        Ok(Self { db })
+        Ok(Self {
+            db: Config::new().temporary(true).open()?,
+        })
     }
 
     fn encode(submission: &EthTxSubmission) -> Result<([u8; 4], Vec<u8>)> {

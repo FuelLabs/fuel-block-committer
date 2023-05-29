@@ -6,7 +6,7 @@ use actix_web::{
 use prometheus::{Encoder, Registry, TextEncoder};
 
 use crate::{
-    adapters::storage::in_memory_db::InMemoryStorage,
+    adapters::storage::sled_db::SledDb,
     errors::{Error, Result},
     services::{HealthReporter, StatusReporter},
     setup::config::Config,
@@ -16,7 +16,7 @@ use crate::{
 pub async fn launch_api_server(
     config: &Config,
     metrics_registry: Registry,
-    storage: InMemoryStorage,
+    storage: SledDb,
     fuel_health_check: HealthChecker,
 ) -> Result<()> {
     let metrics_registry = Arc::new(metrics_registry);
