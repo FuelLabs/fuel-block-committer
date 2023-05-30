@@ -1,4 +1,4 @@
-use std::{hash::Hash, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use ethers::{
@@ -8,7 +8,7 @@ use ethers::{
     types::{Address, Chain, TransactionReceipt, H256},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
-use tracing::{info, log::warn};
+
 use url::Url;
 
 use crate::{
