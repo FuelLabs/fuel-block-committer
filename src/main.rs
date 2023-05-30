@@ -21,12 +21,11 @@ mod telemetry;
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = cli::parse()?;
-    let internal_config = InternalConfig::default();
 
     setup_logger();
 
+    let internal_config = InternalConfig::default();
     let storage = InMemoryStorage::new();
-
     let metrics_registry = Registry::default();
 
     // let (rx_fuel_block, _block_watcher_handle, fuel_health_check) = spawn_block_watcher(
