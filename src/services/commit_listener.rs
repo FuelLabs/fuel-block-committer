@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use tracing::log::warn;
+use tracing::{error, info, log::warn};
 
 use crate::{
     adapters::{ethereum_rpc::EthereumAdapter, runner::Runner, storage::Storage},
@@ -15,7 +15,7 @@ pub struct CommitListener {
 impl CommitListener {
     pub fn new(
         ethereum_rpc: impl EthereumAdapter + 'static,
-        storage: impl Storage + 'static + Send + Sync,
+        storage: impl Storage + 'static,
     ) -> Self {
         Self {
             ethereum_rpc: Box::new(ethereum_rpc),
@@ -29,18 +29,21 @@ impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
         if let Some(submission) = self.storage.submission_w_latest_block().await? {
             if submission.status == EthTxStatus::Pending {
-                let status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
+                // TODO: add metrics
+                let new_status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
 
-                if status != EthTxStatus::Pending {
-                    self.storage
-                        .set_submission_status(submission.fuel_block_height, status)
-                        .await?
-                } else {
-                    warn!("tx not yet commited");
+                match new_status {
+                    EthTxStatus::Pending => warn!("tx: {} not commited", submission.tx_hash),
+                    EthTxStatus::Commited => {
+                        self.storage
+                            .set_submission_status(submission.fuel_block_height, new_status)
+                            .await?;
+                        info!("tx: {} commited", submission.tx_hash);
+                    }
+                    EthTxStatus::Aborted => error!("tx: {} aborted", submission.tx_hash),
                 }
-                // add to metrics
             } else {
-                warn!("no pending submission found in storage");
+                warn!("no pending tx submission found in storage");
             }
         }
 

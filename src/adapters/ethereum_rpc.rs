@@ -8,7 +8,7 @@ use ethers::{
     types::{Address, Chain, TransactionReceipt, H256, U256},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
-use tracing::log::warn;
+
 use url::Url;
 
 use crate::{
@@ -85,9 +85,9 @@ impl EthereumRPC {
             .expect("Status field should be present after EIP-658!");
 
         if status.is_zero() {
-            return EthTxStatus::Aborted;
+            EthTxStatus::Aborted
         } else {
-            return EthTxStatus::Commited;
+            EthTxStatus::Commited
         }
     }
 
@@ -131,15 +131,12 @@ impl EthereumAdapter for EthereumRPC {
                     Error::NetworkError(e.to_string())
                 }
                 _ => Error::Other(contract_err.to_string()),
-            });
+            })?;
+
         self.handle_network_success();
-
         self.record_balance().await?;
-
-        let id = tx?.tx_hash();
-        warn!("{}", &id);
-
-        Ok(id)
+        
+        Ok(tx.tx_hash())
     }
 
     async fn poll_tx_status(&self, tx_hash: H256) -> Result<EthTxStatus> {

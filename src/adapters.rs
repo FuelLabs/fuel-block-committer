@@ -3,4 +3,3 @@ pub mod eth_metrics;
 pub mod ethereum_rpc;
 pub mod runner;
 pub mod storage;
-pub mod tx_status;
