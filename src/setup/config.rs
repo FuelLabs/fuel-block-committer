@@ -25,7 +25,7 @@ impl Default for InternalConfig {
     fn default() -> Self {
         Self {
             fuel_polling_interval: Duration::from_secs(3),
-            eth_polling_interval: Duration::from_secs(3),
+            eth_polling_interval: Duration::from_secs(1),
             fuel_errors_before_unhealthy: 3,
         }
     }

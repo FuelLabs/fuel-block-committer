@@ -45,13 +45,16 @@ impl Runner for CommitListener {
         if let Some(submission) = self.storage.submission_w_latest_block().await? {
             if submission.status == EthTxStatus::Pending {
                 // todo: what to do when tx reverts, is it possible?
-                self.check_tx_finalized(submission.tx_hash).await?;
+                if let Some(receipts) = self.check_tx_finalized(submission.tx_hash).await? {
+                    // should we check tx status in receipts ?
+                    self.storage
+                        .set_submission_commited(submission.fuel_block_height)
+                        .await?;
 
-                self.storage
-                    .set_submission_commited(submission.fuel_block_height)
-                    .await?;
-
-                warn!("{:?}", self.storage);
+                    warn!("{:?}", self.storage);
+                } else {
+                    warn!("tx not yet commited");
+                }
             }
 
             // add to metrics
