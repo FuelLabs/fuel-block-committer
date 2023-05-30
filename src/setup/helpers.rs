@@ -8,11 +8,12 @@ use tracing::error;
 use crate::{
     adapters::{
         block_fetcher::{fake_block_fetcher::FakeBlockFetcher, FuelBlockFetcher},
+        ethereum_rpc::EthereumRPC,
         runner::Runner,
         storage::InMemoryStorage,
     },
     errors::Result,
-    services::BlockWatcher,
+    services::{BlockCommitter, BlockWatcher, CommitListener},
     setup::config::{Config, InternalConfig},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
@@ -61,6 +62,35 @@ pub fn spawn_block_watcher(
     let handle = schedule_polling(internal_config.fuel_polling_interval, block_watcher);
 
     Ok((rx, handle, fuel_connection_health))
+}
+
+pub fn spawn_eth_committer_listener(
+    config: &Config,
+    internal_config: &InternalConfig,
+    rx_fuel_block: Receiver<FuelBlock>,
+    storage: InMemoryStorage,
+    _registry: &Registry,
+) -> Result<(
+    tokio::task::JoinHandle<()>,
+    tokio::task::JoinHandle<()>,
+    HealthChecker,
+)> {
+    let ethereum_rpc = EthereumRPC::new(
+        &config.ethereum_rpc,
+        config.state_contract_address,
+        &config.ethereum_wallet_key,
+    );
+    let eth_health_check = ethereum_rpc.connection_health_checker();
+
+    let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
+    let committer_handler = tokio::spawn(async move {
+        block_committer.run().await.unwrap();
+    });
+
+    let commit_listener = CommitListener::new(ethereum_rpc, storage.clone());
+    let listener_handle = schedule_polling(internal_config.eth_polling_interval, commit_listener);
+
+    Ok((committer_handler, listener_handle, eth_health_check))
 }
 
 pub fn schedule_polling(

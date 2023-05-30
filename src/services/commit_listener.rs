@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use tracing::log::warn;
+use tracing::{info, log::warn};
 
 use crate::{
     adapters::{ethereum_rpc::EthereumAdapter, runner::Runner, storage::Storage},
@@ -34,14 +34,15 @@ impl Runner for CommitListener {
                 if status != EthTxStatus::Pending {
                     self.storage
                         .set_submission_status(submission.fuel_block_height, status)
-                        .await?
+                        .await?;
+                    info!("tx: {} commited", submission.tx_hash);
                 } else {
-                    warn!("tx not yet commited");
+                    warn!("tx: {} not commited", submission.tx_hash);
                 }
                 // add to metrics
             } else {
                 warn!("no pending submission found in storage");
-            }            
+            }
         }
 
         Ok(())
