@@ -20,6 +20,7 @@ use crate::{
 
 use super::eth_metrics::EthMetrics;
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EthereumAdapter: Send + Sync {
     async fn submit(&self, block: Block) -> Result<H256>;

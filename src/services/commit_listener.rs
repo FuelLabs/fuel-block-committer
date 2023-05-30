@@ -53,3 +53,40 @@ impl Runner for CommitListener {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        adapters::{
+            ethereum_rpc::MockEthereumAdapter,
+            storage::{EthTxSubmission, InMemoryStorage},
+        },
+        common::EthTxStatus,
+    };
+
+    #[tokio::test]
+    async fn will_write_new_eth_status() {
+        // given
+        let storage = InMemoryStorage::new();
+        storage
+            .insert(EthTxSubmission {
+                fuel_block_height: 3,
+                status: EthTxStatus::Pending,
+                tx_hash: H256::default(),
+            })
+            .await
+            .unwrap();
+        let block_watcher = CommitListener::new(2, tx, block_fetcher, storage);
+
+        // when
+        block_watcher.run().await.unwrap();
+
+        //then
+        let Ok(announced_block) = rx.try_recv() else {
+            panic!("Didn't receive the block")
+        };
+
+        assert_eq!(block, announced_block);
+    }
+}
