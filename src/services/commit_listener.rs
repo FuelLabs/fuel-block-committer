@@ -35,12 +35,15 @@ impl Runner for CommitListener {
                 match new_status {
                     EthTxStatus::Pending => warn!("tx: {} not commited", submission.tx_hash),
                     EthTxStatus::Commited => {
-                        self.storage
-                            .set_submission_status(submission.fuel_block_height, new_status)
-                            .await?;
                         info!("tx: {} commited", submission.tx_hash);
                     }
                     EthTxStatus::Aborted => error!("tx: {} aborted", submission.tx_hash),
+                }
+
+                if new_status != EthTxStatus::Pending {
+                    self.storage
+                        .set_submission_status(submission.fuel_block_height, new_status)
+                        .await?;
                 }
             } else {
                 warn!("no pending tx submission found in storage");

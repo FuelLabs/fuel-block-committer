@@ -39,9 +39,10 @@ pub struct EthereumRPC {
 
 impl EthereumRPC {
     pub fn new(ethereum_rpc: &Url, contract_address: Bytes20, ethereum_wallet_key: &str) -> Self {
-        let provider = Provider::<Http>::try_from(ethereum_rpc.to_string()).unwrap();
+        let provider = Provider::<Http>::try_from(ethereum_rpc.to_string())
+            .expect("could not create ethereum provider from url");
         let wallet = LocalWallet::from_str(ethereum_wallet_key)
-            .unwrap()
+            .expect("could not create wallet from key")
             .with_chain_id(Chain::AnvilHardhat);
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
