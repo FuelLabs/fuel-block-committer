@@ -64,29 +64,81 @@ mod tests {
         },
         common::EthTxStatus,
     };
+    use ethers::types::H256;
+    use mockall::predicate;
 
     #[tokio::test]
-    async fn will_write_new_eth_status() {
+    async fn listener_will_not_write_when_new_satus_pending() {
         // given
+        let (tx_hash, storage) = given_tx_hash_and_storage().await;
+        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Pending);
+        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+
+        // when
+        commit_listener.run().await.unwrap();
+
+        //then
+        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
+
+        assert_eq!(res.status, EthTxStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn listener_will_write_when_new_satus_commited() {
+        // given
+        let (tx_hash, storage) = given_tx_hash_and_storage().await;
+        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Commited);
+        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+
+        // when
+        commit_listener.run().await.unwrap();
+
+        //then
+        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
+
+        assert_eq!(res.status, EthTxStatus::Commited);
+    }
+
+    #[tokio::test]
+    async fn listener_will_write_when_new_satus_aborted() {
+        // given
+        let (tx_hash, storage) = given_tx_hash_and_storage().await;
+        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Aborted);
+        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+
+        // when
+        commit_listener.run().await.unwrap();
+
+        //then
+        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
+
+        assert_eq!(res.status, EthTxStatus::Aborted);
+    }
+
+    fn given_eth_rpc_that_returns(tx_hash: H256, status: EthTxStatus) -> MockEthereumAdapter {
+        let mut eth_rpc_mock = MockEthereumAdapter::new();
+        eth_rpc_mock
+            .expect_poll_tx_status()
+            .with(predicate::eq(tx_hash))
+            .return_once(|_| Ok(status));
+        eth_rpc_mock
+    }
+
+    async fn given_tx_hash_and_storage() -> (H256, InMemoryStorage) {
+        let tx_hash: H256 = "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
+            .parse()
+            .unwrap();
+
         let storage = InMemoryStorage::new();
         storage
             .insert(EthTxSubmission {
                 fuel_block_height: 3,
                 status: EthTxStatus::Pending,
-                tx_hash: H256::default(),
+                tx_hash,
             })
             .await
             .unwrap();
-        let block_watcher = CommitListener::new(2, tx, block_fetcher, storage);
 
-        // when
-        block_watcher.run().await.unwrap();
-
-        //then
-        let Ok(announced_block) = rx.try_recv() else {
-            panic!("Didn't receive the block")
-        };
-
-        assert_eq!(block, announced_block);
+        (tx_hash, storage)
     }
 }

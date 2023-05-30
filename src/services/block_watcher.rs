@@ -293,6 +293,7 @@ mod tests {
             tx_hash: H256::default(),
         }
     }
+
     fn given_pending_submission(block_height: u32) -> EthTxSubmission {
         EthTxSubmission {
             fuel_block_height: block_height,
