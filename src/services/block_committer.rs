@@ -1,9 +1,15 @@
 use async_trait::async_trait;
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::{mpsc::Receiver, Mutex};
+use tracing::info;
 
 use crate::{
-    adapters::{ethereum_rpc::EthereumAdapter, runner::Runner, storage::Storage},
+    adapters::{
+        ethereum_rpc::EthereumAdapter,
+        runner::Runner,
+        storage::{EthTxSubmission, Storage},
+    },
+    common::EthTxStatus,
     errors::Result,
 };
 
@@ -31,17 +37,19 @@ impl BlockCommitter {
 impl Runner for BlockCommitter {
     async fn run(&self) -> Result<()> {
         loop {
-            // listen to the newly received block
+            // listen for new blocks
             if let Some(block) = self.rx_block.lock().await.recv().await {
-                // enhancment: consume all the blocks from the channel to get the latest one
                 let tx_hash = self.ethereum_rpc.submit(block.clone()).await?;
+
                 self.storage
-                    .insert(crate::adapters::storage::EthTxSubmission {
+                    .insert(EthTxSubmission {
                         fuel_block_height: block.header.height,
-                        status: crate::common::EthTxStatus::Pending,
+                        status: EthTxStatus::Pending,
                         tx_hash,
                     })
                     .await?;
+
+                info!("tx: {} pending", &tx_hash);
             }
         }
     }

@@ -93,7 +93,7 @@ pub fn spawn_eth_committer_listener(
     Ok((committer_handler, listener_handle, eth_health_check))
 }
 
-pub fn schedule_polling(
+fn schedule_polling(
     polling_interval: Duration,
     runner: impl Runner + 'static,
 ) -> tokio::task::JoinHandle<()> {

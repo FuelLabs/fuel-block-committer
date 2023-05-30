@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{hash::Hash, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use ethers::{
@@ -8,7 +8,7 @@ use ethers::{
     types::{Address, Chain, TransactionReceipt, H256},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
-use tracing::log::warn;
+use tracing::{info, log::warn};
 use url::Url;
 
 use crate::{
@@ -98,14 +98,11 @@ impl EthereumAdapter for EthereumRPC {
                     Error::NetworkError(e.to_string())
                 }
                 _ => Error::Other(contract_err.to_string()),
-            });
+            })?;
+
         self.handle_network_success();
 
-        let id = tx?.tx_hash();
-
-        warn!("{}", &id);
-
-        Ok(id)
+        Ok(tx.tx_hash())
     }
 
     async fn poll_tx_status(&self, tx_hash: H256) -> Result<EthTxStatus> {
