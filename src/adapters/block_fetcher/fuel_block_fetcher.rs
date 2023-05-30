@@ -6,7 +6,7 @@ use fuels::{
 use url::Url;
 
 use crate::{
-    adapters::block_fetcher::{metrics::Metrics, BlockFetcher},
+    adapters::block_fetcher::{fuel_metrics::FuelMetrics, BlockFetcher},
     errors::{Error, Result},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
@@ -19,7 +19,7 @@ impl RegistersMetrics for FuelBlockFetcher {
 
 pub struct FuelBlockFetcher {
     provider: Provider,
-    metrics: Metrics,
+    metrics: FuelMetrics,
     health_tracker: ConnectionHealthTracker,
 }
 
@@ -29,7 +29,7 @@ impl FuelBlockFetcher {
         let provider = Provider::new(client, Default::default());
         Self {
             provider,
-            metrics: Metrics::default(),
+            metrics: FuelMetrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
         }
     }

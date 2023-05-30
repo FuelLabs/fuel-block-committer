@@ -1,22 +1,15 @@
+use crate::errors::Result;
 use adapters::{ethereum_rpc::EthereumRPC, storage::InMemoryStorage};
 use api::launch_api_server;
 use prometheus::Registry;
 use services::{BlockCommitter, CommitListener};
 use setup::{
     config::InternalConfig,
-    helpers::{schedule_polling, setup_logger, spawn_block_watcher, spawn_fake_block_watcher},
+    helpers::{schedule_polling, setup_logger, spawn_fake_block_watcher},
 };
-use tracing::log::warn;
-
-use crate::errors::Result;
-use std::str::FromStr;
+use telemetry::RegistersMetrics;
 
 use adapters::runner::Runner;
-use ethers::{
-    providers::{Http, Provider},
-    signers::{LocalWallet, Signer},
-    types::Chain,
-};
 
 mod adapters;
 mod api;
@@ -58,6 +51,7 @@ async fn main() -> Result<()> {
         config.state_contract_address,
         &config.ethereum_wallet_key,
     );
+    ethereum_rpc.register_metrics(&metrics_registry);
     let eth_health_check = ethereum_rpc.connection_health_checker();
 
     // service BlockCommitter

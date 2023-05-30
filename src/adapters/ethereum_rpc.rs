@@ -5,7 +5,7 @@ use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
     providers::{Http, Middleware, Provider},
     signers::{LocalWallet, Signer},
-    types::{Address, Chain, TransactionReceipt, H256},
+    types::{Address, Chain, TransactionReceipt, H256, U256},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
 use tracing::log::warn;
@@ -14,8 +14,10 @@ use url::Url;
 use crate::{
     common::EthTxStatus,
     errors::{Error, Result},
-    telemetry::{ConnectionHealthTracker, HealthChecker},
+    telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
+
+use super::eth_metrics::EthMetrics;
 
 #[async_trait]
 pub trait EthereumAdapter: Send + Sync {
@@ -34,6 +36,8 @@ abigen!(
 pub struct EthereumRPC {
     provider: Provider<Http>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Http>, LocalWallet>>,
+    wallet_address: Address,
+    metrics: EthMetrics, // TODO: verify Clone leads to the same metric
     health_tracker: ConnectionHealthTracker,
 }
 
@@ -43,6 +47,7 @@ impl EthereumRPC {
         let wallet = LocalWallet::from_str(ethereum_wallet_key)
             .unwrap()
             .with_chain_id(Chain::AnvilHardhat);
+        let wallet_address = wallet.address();
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
         let contract_address = Address::from_slice(contract_address.as_ref());
@@ -51,6 +56,8 @@ impl EthereumRPC {
         Self {
             provider,
             contract,
+            wallet_address,
+            metrics: EthMetrics::default(),
             health_tracker: ConnectionHealthTracker::new(3),
         }
     }
@@ -61,7 +68,7 @@ impl EthereumRPC {
 
     fn handle_network_error(&self) {
         self.health_tracker.note_failure();
-        // self.metrics.fuel_network_errors.inc();
+        self.metrics.eth_network_errors.inc();
     }
 
     fn handle_network_success(&self) {
@@ -83,6 +90,32 @@ impl EthereumRPC {
             return EthTxStatus::Commited;
         }
     }
+
+    async fn record_balance(&self) -> Result<()> {
+        let balance = self
+            .provider
+            .get_balance(self.wallet_address, None)
+            .await
+            .map_err(|err| {
+                self.handle_network_error();
+                Error::NetworkError(err.to_string())
+            })?;
+        self.handle_network_success();
+
+        warn!("{}", &balance);
+
+        // Note: might lead to wrong metrics if we have more than 500k ETH
+        let balance_gwei = balance / U256::from(1_000_000_000);
+        self.metrics.eth_wallet_balance.set(balance_gwei.as_u64() as i64);
+
+        Ok(())
+    }
+}
+
+impl RegistersMetrics for EthereumRPC {
+    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+        self.metrics.metrics()
+    }
 }
 
 #[async_trait]
@@ -101,8 +134,9 @@ impl EthereumAdapter for EthereumRPC {
             });
         self.handle_network_success();
 
-        let id = tx?.tx_hash();
+        self.record_balance().await?;
 
+        let id = tx?.tx_hash();
         warn!("{}", &id);
 
         Ok(id)

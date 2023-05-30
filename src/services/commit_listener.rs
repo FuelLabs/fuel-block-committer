@@ -41,7 +41,7 @@ impl Runner for CommitListener {
                 // add to metrics
             } else {
                 warn!("no pending submission found in storage");
-            }            
+            }
         }
 
         Ok(())
