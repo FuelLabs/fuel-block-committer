@@ -7,17 +7,14 @@ use tracing::error;
 
 use crate::{
     adapters::{
-        block_fetcher::{
-            fake_block_fetcher::FakeBlockFetcher, health_tracker::FuelHealthTracker,
-            FuelBlockFetcher,
-        },
+        block_fetcher::{fake_block_fetcher::FakeBlockFetcher, FuelBlockFetcher},
         runner::Runner,
         storage::InMemoryStorage,
     },
     errors::Result,
     services::BlockWatcher,
     setup::config::{Config, InternalConfig},
-    telemetry::{HealthChecker, RegistersMetrics},
+    telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
 
 pub fn spawn_fake_block_watcher(
@@ -39,7 +36,11 @@ pub fn spawn_fake_block_watcher(
 
     let handle = schedule_polling(internal_config.fuel_polling_interval, block_watcher);
 
-    Ok((rx_fuel_block, handle, Box::new(FuelHealthTracker::new(0))))
+    Ok((
+        rx_fuel_block,
+        handle,
+        Box::new(ConnectionHealthTracker::new(0)),
+    ))
 }
 
 pub fn spawn_block_watcher(

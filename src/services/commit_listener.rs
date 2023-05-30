@@ -1,41 +1,26 @@
 use async_trait::async_trait;
-use ethers::prelude::*;
 use tracing::log::warn;
-use url::Url;
 
 use crate::{
-    adapters::{runner::Runner, storage::Storage},
+    adapters::{ethereum_rpc::EthereumAdapter, runner::Runner, storage::Storage},
     common::EthTxStatus,
-    errors::{Error, Result},
+    errors::Result,
 };
 
 pub struct CommitListener {
-    provider: Provider<Http>,
+    ethereum_rpc: Box<dyn EthereumAdapter>,
     storage: Box<dyn Storage + Send + Sync>,
 }
 
 impl CommitListener {
-    pub fn new(ethereum_rpc: Url, storage: impl Storage + 'static + Send + Sync) -> Self {
-        let provider = Provider::<Http>::try_from(ethereum_rpc.to_string()).unwrap();
-
+    pub fn new(
+        ethereum_rpc: impl EthereumAdapter + 'static,
+        storage: impl Storage + 'static + Send + Sync,
+    ) -> Self {
         Self {
-            provider,
+            ethereum_rpc: Box::new(ethereum_rpc),
             storage: Box::new(storage),
         }
-    }
-
-    fn handle_network_error(&self) {
-        todo!()
-    }
-
-    async fn check_tx_finalized(&self, tx_hash: H256) -> Result<Option<TransactionReceipt>> {
-        self.provider
-            .get_transaction_receipt(tx_hash)
-            .await
-            .map_err(|err| {
-                self.handle_network_error();
-                Error::NetworkError(err.to_string())
-            })
     }
 }
 
@@ -44,22 +29,19 @@ impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
         if let Some(submission) = self.storage.submission_w_latest_block().await? {
             if submission.status == EthTxStatus::Pending {
-                // todo: what to do when tx reverts, is it possible?
-                if let Some(receipts) = self.check_tx_finalized(submission.tx_hash).await? {
-                    // should we check tx status in receipts ?
-                    self.storage
-                        .set_submission_commited(submission.fuel_block_height)
-                        .await?;
+                let status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
 
-                    warn!("{:?}", self.storage);
+                if status != EthTxStatus::Pending {
+                    self.storage
+                        .set_submission_status(submission.fuel_block_height, status)
+                        .await?
                 } else {
                     warn!("tx not yet commited");
                 }
-            }
-
-            // add to metrics
-        } else {
-            warn!("no submission found in storage");
+                // add to metrics
+            } else {
+                warn!("no pending submission found in storage");
+            }            
         }
 
         Ok(())

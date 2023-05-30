@@ -18,10 +18,11 @@ pub async fn launch_api_server(
     metrics_registry: Registry,
     storage: InMemoryStorage,
     fuel_health_check: HealthChecker,
+    eth_health_check: HealthChecker,
 ) -> Result<()> {
     let metrics_registry = Arc::new(metrics_registry);
     let status_reporter = Arc::new(StatusReporter::new(storage));
-    let health_reporter = Arc::new(HealthReporter::new(fuel_health_check));
+    let health_reporter = Arc::new(HealthReporter::new(fuel_health_check, eth_health_check));
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(Arc::clone(&metrics_registry)))

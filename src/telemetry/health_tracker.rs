@@ -6,14 +6,14 @@ use std::{
 use crate::telemetry::{HealthCheck, HealthChecker};
 
 #[derive(Debug, Clone)]
-pub struct FuelHealthTracker {
+pub struct ConnectionHealthTracker {
     // how many failures are needed before the connection is deemed unhealhty
     max_consecutive_failures: usize,
     // how many consecutive failures there currently are
     consecutive_failures: Arc<Mutex<usize>>,
 }
 
-impl FuelHealthTracker {
+impl ConnectionHealthTracker {
     pub fn new(max_consecutive_failures: usize) -> Self {
         Self {
             max_consecutive_failures,
@@ -40,7 +40,7 @@ impl FuelHealthTracker {
     }
 }
 
-impl HealthCheck for FuelHealthTracker {
+impl HealthCheck for ConnectionHealthTracker {
     fn healthy(&self) -> bool {
         *self.acquire_consecutive_failures() < self.max_consecutive_failures
     }

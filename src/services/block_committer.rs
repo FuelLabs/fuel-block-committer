@@ -1,28 +1,27 @@
 use async_trait::async_trait;
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::{mpsc::Receiver, Mutex};
-use tracing::log::warn;
 
 use crate::{
-    adapters::{runner::Runner, storage::Storage, tx_submitter::TxSubmitter},
+    adapters::{ethereum_rpc::EthereumAdapter, runner::Runner, storage::Storage},
     errors::Result,
 };
 
 pub struct BlockCommitter {
     rx_block: Mutex<Receiver<FuelBlock>>,
-    tx_submitter: Box<dyn TxSubmitter>,
+    ethereum_rpc: Box<dyn EthereumAdapter>,
     storage: Box<dyn Storage>,
 }
 
 impl BlockCommitter {
     pub fn new(
         rx_block: Receiver<FuelBlock>,
-        tx_submitter: impl TxSubmitter + 'static,
+        ethereum_rpc: impl EthereumAdapter + 'static,
         storage: impl Storage + 'static,
     ) -> Self {
         Self {
             rx_block: Mutex::new(rx_block),
-            tx_submitter: Box::new(tx_submitter),
+            ethereum_rpc: Box::new(ethereum_rpc),
             storage: Box::new(storage),
         }
     }
@@ -35,7 +34,7 @@ impl Runner for BlockCommitter {
             // listen to the newly received block
             if let Some(block) = self.rx_block.lock().await.recv().await {
                 // enhancment: consume all the blocks from the channel to get the latest one
-                let tx_hash = self.tx_submitter.submit(block.clone()).await?;
+                let tx_hash = self.ethereum_rpc.submit(block.clone()).await?;
                 self.storage
                     .insert(crate::adapters::storage::EthTxSubmission {
                         fuel_block_height: block.header.height,
@@ -43,7 +42,6 @@ impl Runner for BlockCommitter {
                         tx_hash,
                     })
                     .await?;
-                warn!("{:?}", self.storage);
             }
         }
     }

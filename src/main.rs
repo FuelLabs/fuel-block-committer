@@ -1,4 +1,4 @@
-use adapters::storage::InMemoryStorage;
+use adapters::{ethereum_rpc::EthereumRPC, storage::InMemoryStorage};
 use api::launch_api_server;
 use prometheus::Registry;
 use services::{BlockCommitter, CommitListener};
@@ -11,8 +11,9 @@ use tracing::log::warn;
 use crate::errors::Result;
 use std::str::FromStr;
 
-use adapters::{runner::Runner, tx_submitter::EthTxSubmitter};
+use adapters::runner::Runner;
 use ethers::{
+    providers::{Http, Provider},
     signers::{LocalWallet, Signer},
     types::Chain,
 };
@@ -51,26 +52,32 @@ async fn main() -> Result<()> {
         &metrics_registry,
     )?;
 
-    let wallet = LocalWallet::from_str(&config.ethereum_wallet_key)
-        .unwrap()
-        .with_chain_id(Chain::AnvilHardhat);
-
-    let tx_submitter = EthTxSubmitter::new(
-        config.ethereum_rpc.clone(),
+    // Ethereum provider
+    let ethereum_rpc = EthereumRPC::new(
+        &config.ethereum_rpc,
         config.state_contract_address,
-        wallet.clone(),
+        &config.ethereum_wallet_key,
     );
-    let mut block_committer = BlockCommitter::new(rx_fuel_block, tx_submitter, storage.clone());
+    let eth_health_check = ethereum_rpc.connection_health_checker();
+
     // service BlockCommitter
+    let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
     tokio::spawn(async move {
         block_committer.run().await.unwrap();
     });
 
     // service CommitListener
-    let mut commit_listener = CommitListener::new(config.ethereum_rpc.clone(), storage.clone());
+    let commit_listener = CommitListener::new(ethereum_rpc, storage.clone());
     let handle = schedule_polling(internal_config.eth_polling_interval, commit_listener);
 
-    launch_api_server(&config, metrics_registry, storage, fuel_health_check).await?;
+    launch_api_server(
+        &config,
+        metrics_registry,
+        storage,
+        fuel_health_check,
+        eth_health_check,
+    )
+    .await?;
 
     Ok(())
 }
