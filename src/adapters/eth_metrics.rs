@@ -1,4 +1,4 @@
-use prometheus::{Gauge, IntCounter, IntGauge, Opts};
+use prometheus::{IntCounter, IntGauge, Opts};
 
 use crate::telemetry::RegistersMetrics;
 

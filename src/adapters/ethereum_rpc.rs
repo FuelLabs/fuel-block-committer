@@ -9,6 +9,7 @@ use ethers::{
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
 
+use tracing::warn;
 use url::Url;
 
 use crate::{
@@ -106,7 +107,9 @@ impl EthereumRPC {
 
         // Note: might lead to wrong metrics if we have more than 500k ETH
         let balance_gwei = balance / U256::from(1_000_000_000);
-        self.metrics.eth_wallet_balance.set(balance_gwei.as_u64() as i64);
+        self.metrics
+            .eth_wallet_balance
+            .set(balance_gwei.as_u64() as i64);
 
         Ok(())
     }
@@ -134,8 +137,9 @@ impl EthereumAdapter for EthereumRPC {
             })?;
 
         self.handle_network_success();
+
         self.record_balance().await?;
-        
+
         Ok(tx.tx_hash())
     }
 
