@@ -78,9 +78,9 @@ impl EthereumRPC {
             .expect("Status field should be present after EIP-658!");
 
         if status.is_zero() {
-            return EthTxStatus::Aborted;
+            EthTxStatus::Aborted
         } else {
-            return EthTxStatus::Commited;
+            EthTxStatus::Commited
         }
     }
 }

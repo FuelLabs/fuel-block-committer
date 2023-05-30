@@ -151,7 +151,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -257,7 +257,7 @@ mod tests {
         let storage = InMemoryStorage::new();
         storage.insert(given_pending_submission(4)).await.unwrap();
 
-        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);

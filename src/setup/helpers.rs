@@ -95,7 +95,7 @@ pub fn spawn_eth_committer_listener(
 
 pub fn schedule_polling(
     polling_interval: Duration,
-    mut runner: impl Runner + 'static,
+    runner: impl Runner + 'static,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {

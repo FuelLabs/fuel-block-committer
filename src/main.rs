@@ -1,25 +1,21 @@
-use adapters::{ethereum_rpc::EthereumRPC, storage::InMemoryStorage};
+use adapters::{storage::InMemoryStorage};
 use api::launch_api_server;
 use prometheus::Registry;
-use services::{BlockCommitter, CommitListener};
+
 use setup::{
     config::InternalConfig,
     helpers::{
-        schedule_polling, setup_logger, spawn_block_watcher, spawn_eth_committer_listener,
+        setup_logger, spawn_eth_committer_listener,
         spawn_fake_block_watcher,
     },
 };
-use tracing::log::warn;
+
 
 use crate::errors::Result;
-use std::str::FromStr;
 
-use adapters::runner::Runner;
-use ethers::{
-    providers::{Http, Provider},
-    signers::{LocalWallet, Signer},
-    types::Chain,
-};
+
+
+
 
 mod adapters;
 mod api;

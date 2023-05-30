@@ -1,6 +1,6 @@
 use std::{net::Ipv4Addr, time::Duration};
 
-use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
+use fuels::{accounts::fuel_crypto::fuel_types::Bytes20};
 use url::Url;
 
 #[derive(Debug, Clone)]
