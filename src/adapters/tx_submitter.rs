@@ -15,7 +15,7 @@ use url::Url;
 use crate::errors::{Error, Result};
 
 #[async_trait]
-pub trait TxSubmitter {
+pub trait TxSubmitter: Send + Sync {
     async fn submit(&self, block: Block) -> Result<H256>; //TODO: change to eth tx_id type
 }
 

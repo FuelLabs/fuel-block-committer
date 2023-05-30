@@ -17,6 +17,7 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub struct InternalConfig {
     pub fuel_polling_interval: Duration,
+    pub eth_polling_interval: Duration,
     pub fuel_errors_before_unhealthy: usize,
 }
 
@@ -24,6 +25,7 @@ impl Default for InternalConfig {
     fn default() -> Self {
         Self {
             fuel_polling_interval: Duration::from_secs(3),
+            eth_polling_interval: Duration::from_secs(3),
             fuel_errors_before_unhealthy: 3,
         }
     }

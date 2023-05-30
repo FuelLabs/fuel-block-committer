@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use fuels::types::block::Block as FuelBlock;
 use prometheus::Registry;
 use tokio::sync::mpsc::Receiver;
@@ -9,6 +11,7 @@ use crate::{
             fake_block_fetcher::FakeBlockFetcher, health_tracker::FuelHealthTracker,
             FuelBlockFetcher,
         },
+        runner::Runner,
         storage::InMemoryStorage,
     },
     errors::Result,
@@ -34,7 +37,7 @@ pub fn spawn_fake_block_watcher(
         BlockWatcher::new(config.commit_epoch, tx_fuel_block, block_fetcher, storage);
     block_watcher.register_metrics(registry);
 
-    let handle = schedule_polling(internal_config, block_watcher);
+    let handle = schedule_polling(internal_config.fuel_polling_interval, block_watcher);
 
     Ok((rx_fuel_block, handle, Box::new(FuelHealthTracker::new(0))))
 }
@@ -54,19 +57,18 @@ pub fn spawn_block_watcher(
 
     let (block_watcher, rx) = create_block_watcher(config, registry, block_fetcher, storage);
 
-    let handle = schedule_polling(internal_config, block_watcher);
+    let handle = schedule_polling(internal_config.fuel_polling_interval, block_watcher);
 
     Ok((rx, handle, fuel_connection_health))
 }
 
-fn schedule_polling(
-    config: &InternalConfig,
-    block_watcher: BlockWatcher,
+pub fn schedule_polling(
+    polling_interval: Duration,
+    mut runner: impl Runner + 'static,
 ) -> tokio::task::JoinHandle<()> {
-    let polling_interval = config.fuel_polling_interval;
     tokio::spawn(async move {
         loop {
-            if let Err(e) = block_watcher.run().await {
+            if let Err(e) = runner.run().await {
                 error!("Block watcher encountered an error: {e}");
             }
             tokio::time::sleep(polling_interval).await;

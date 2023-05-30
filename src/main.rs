@@ -4,14 +4,14 @@ use prometheus::Registry;
 use services::{BlockCommitter, CommitListener};
 use setup::{
     config::InternalConfig,
-    helpers::{setup_logger, spawn_block_watcher, spawn_fake_block_watcher},
+    helpers::{schedule_polling, setup_logger, spawn_block_watcher, spawn_fake_block_watcher},
 };
 use tracing::log::warn;
 
 use crate::errors::Result;
 use std::str::FromStr;
 
-use adapters::tx_submitter::EthTxSubmitter;
+use adapters::{runner::Runner, tx_submitter::EthTxSubmitter};
 use ethers::{
     signers::{LocalWallet, Signer},
     types::Chain,
@@ -29,11 +29,9 @@ mod telemetry;
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = cli::parse()?;
-
     let internal_config = InternalConfig::default();
 
     setup_logger();
-    warn!("{config:?}");
 
     let storage = InMemoryStorage::new();
 
@@ -69,11 +67,8 @@ async fn main() -> Result<()> {
     });
 
     // service CommitListener
-    let commit_listener = CommitListener::new(config.ethereum_rpc.clone(), storage.clone());
-    // // run the service
-    tokio::spawn(async move {
-        commit_listener.run().await.unwrap();
-    });
+    let mut commit_listener = CommitListener::new(config.ethereum_rpc.clone(), storage.clone());
+    let handle = schedule_polling(internal_config.eth_polling_interval, commit_listener);
 
     launch_api_server(&config, metrics_registry, storage, fuel_health_check).await?;
 

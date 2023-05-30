@@ -1,5 +1,6 @@
 use std::vec;
 
+use async_trait::async_trait;
 use fuels::types::block::Block as FuelBlock;
 use prometheus::{core::Collector, IntGauge, Opts};
 use tokio::sync::mpsc::Sender;
@@ -7,6 +8,7 @@ use tokio::sync::mpsc::Sender;
 use crate::{
     adapters::{
         block_fetcher::BlockFetcher,
+        runner::Runner,
         storage::{EthTxSubmission, Storage},
     },
     common::EthTxStatus,
@@ -60,25 +62,6 @@ impl BlockWatcher {
         }
     }
 
-    pub async fn run(&self) -> Result<()> {
-        let current_block = self.fetch_latest_block().await?;
-
-        let latest_block_submission = self.storage.submission_w_latest_block().await?;
-
-        if Self::should_propagate_update(
-            self.commit_epoch,
-            &current_block,
-            latest_block_submission.as_ref(),
-        ) {
-            self.tx_fuel_block
-                .send(current_block)
-                .await
-                .map_err(|e| Error::Other(e.to_string()))?;
-        }
-
-        Ok(())
-    }
-
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let current_block = self.block_fetcher.latest_block().await?;
 
@@ -108,6 +91,28 @@ impl BlockWatcher {
             EthTxStatus::Commited if height_diff % commit_epoch != 0 => false,
             _ => true,
         }
+    }
+}
+
+#[async_trait]
+impl Runner for BlockWatcher {
+    async fn run(&self) -> Result<()> {
+        let current_block = self.fetch_latest_block().await?;
+
+        let latest_block_submission = self.storage.submission_w_latest_block().await?;
+
+        if Self::should_propagate_update(
+            self.commit_epoch,
+            &current_block,
+            latest_block_submission.as_ref(),
+        ) {
+            self.tx_fuel_block
+                .send(current_block)
+                .await
+                .map_err(|e| Error::Other(e.to_string()))?;
+        }
+
+        Ok(())
     }
 }
 
@@ -146,7 +151,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -252,7 +257,7 @@ mod tests {
         let storage = InMemoryStorage::new();
         storage.insert(given_pending_submission(4)).await.unwrap();
 
-        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);
