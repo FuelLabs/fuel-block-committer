@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use ethers::types::H256;
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::{mpsc::Receiver, Mutex};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     adapters::{
@@ -31,26 +32,37 @@ impl BlockCommitter {
             storage: Box::new(storage),
         }
     }
+
+    async fn write_storage(&self, tx_hash: H256, block_height: u32) -> Result<()> {
+        self.storage
+            .insert(EthTxSubmission {
+                fuel_block_height: block_height,
+                status: EthTxStatus::Pending,
+                tx_hash,
+            })
+            .await?;
+
+        info!("tx: {} pending", &tx_hash);
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl Runner for BlockCommitter {
     async fn run(&self) -> Result<()> {
-        loop {
-            // listen for new blocks
-            if let Some(block) = self.rx_block.lock().await.recv().await {
-                let tx_hash = self.ethereum_rpc.submit(block.clone()).await?;
+        // listen for new blocks
+        while let Some(block) = self.rx_block.lock().await.recv().await {
+            let block_height = block.header.height;
 
-                self.storage
-                    .insert(EthTxSubmission {
-                        fuel_block_height: block.header.height,
-                        status: EthTxStatus::Pending,
-                        tx_hash,
-                    })
-                    .await?;
+            let maybe_error = match self.ethereum_rpc.submit(block.clone()).await {
+                Ok(tx_hash) => self.write_storage(tx_hash, block_height).await.err(),
+                Err(e) => Some(e),
+            };
 
-                info!("tx: {} pending", &tx_hash);
+            if let Some(error) = maybe_error {
+                error!("{error}");
             }
         }
+        Ok(())
     }
 }

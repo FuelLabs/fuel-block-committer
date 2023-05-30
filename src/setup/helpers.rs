@@ -84,10 +84,13 @@ pub fn spawn_eth_committer_listener(
 
     let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
     let committer_handler = tokio::spawn(async move {
-        block_committer.run().await.unwrap();
+        block_committer
+            .run()
+            .await
+            .expect("Errors are handled inside of run");
     });
 
-    let commit_listener = CommitListener::new(ethereum_rpc, storage.clone());
+    let commit_listener = CommitListener::new(ethereum_rpc, storage);
     let listener_handle = schedule_polling(internal_config.eth_polling_interval, commit_listener);
 
     Ok((committer_handler, listener_handle, eth_health_check))
