@@ -70,5 +70,6 @@ mod tests {
             assert_eq!(actual, latest_block);
         };
         test(Box::new(InMemoryStorage::new())).await;
+        test(Box::new(SledDb::temporary().unwrap())).await;
     }
 }
