@@ -2,17 +2,17 @@ use prometheus::{IntCounter, Opts};
 
 use crate::telemetry::RegistersMetrics;
 
-pub struct Metrics {
+pub struct FuelMetrics {
     pub fuel_network_errors: IntCounter,
 }
 
-impl RegistersMetrics for Metrics {
+impl RegistersMetrics for FuelMetrics {
     fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
         vec![Box::new(self.fuel_network_errors.clone())]
     }
 }
 
-impl Default for Metrics {
+impl Default for FuelMetrics {
     fn default() -> Self {
         let fuel_network_errors = IntCounter::with_opts(Opts::new(
             "fuel_network_errors",

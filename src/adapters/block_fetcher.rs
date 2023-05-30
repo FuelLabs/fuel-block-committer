@@ -1,6 +1,6 @@
 pub mod fake_block_fetcher;
 mod fuel_block_fetcher;
-mod metrics;
+mod fuel_metrics;
 
 pub use fuel_block_fetcher::FuelBlockFetcher;
 use fuels::types::block::Block as FuelBlock;

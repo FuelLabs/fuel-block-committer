@@ -1,3 +1,4 @@
+use crate::errors::Result;
 use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
@@ -6,8 +7,6 @@ use setup::{
     config::InternalConfig,
     helpers::{setup_logger, spawn_eth_committer_listener, spawn_fake_block_watcher},
 };
-
-use crate::errors::Result;
 
 mod adapters;
 mod api;

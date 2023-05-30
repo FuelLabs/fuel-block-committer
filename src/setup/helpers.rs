@@ -69,7 +69,7 @@ pub fn spawn_eth_committer_listener(
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
     storage: InMemoryStorage,
-    _registry: &Registry,
+    registry: &Registry,
 ) -> Result<(
     tokio::task::JoinHandle<()>,
     tokio::task::JoinHandle<()>,
@@ -81,6 +81,7 @@ pub fn spawn_eth_committer_listener(
         &config.ethereum_wallet_key,
     );
     let eth_health_check = ethereum_rpc.connection_health_checker();
+    ethereum_rpc.register_metrics(registry);
 
     let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
     let committer_handler = tokio::spawn(async move {
