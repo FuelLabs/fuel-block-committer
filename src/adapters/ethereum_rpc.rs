@@ -135,6 +135,10 @@ impl EthereumAdapter for EthereumRPC {
                     self.handle_network_error();
                     Error::NetworkError(e.to_string())
                 }
+                ContractError::MiddlewareError { e } => {
+                    self.handle_network_error();
+                    Error::NetworkError(e.to_string())
+                }
                 _ => Error::Other(contract_err.to_string()),
             })?;
 
@@ -157,5 +161,83 @@ impl EthereumAdapter for EthereumRPC {
         self.handle_network_success();
 
         Ok(EthereumRPC::extract_status(result))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fuels::{
+        tx::Bytes32,
+        types::block::{Block as FuelBlock, Header as FuelBlockHeader},
+    };
+    use prometheus::Registry;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn eth_rpc_updates_metrics_in_case_of_network_err() {
+        // given
+        let ethereum_rpc = given_eth_rpc();
+        let registry = Registry::default();
+        ethereum_rpc.register_metrics(&registry);
+
+        // when
+        let result = ethereum_rpc.submit(given_a_block(42)).await;
+
+        // then
+        assert!(result.is_err());
+        let metrics = registry.gather();
+        let network_errors_metric = metrics
+            .iter()
+            .find(|metric| metric.get_name() == "eth_network_errors")
+            .and_then(|metric| metric.get_metric().get(0))
+            .map(|metric| metric.get_counter())
+            .unwrap();
+
+        assert_eq!(network_errors_metric.get_value(), 1f64);
+    }
+
+    #[tokio::test]
+    async fn eth_rpc_correctly_tracks_network_health() {
+        let ethereum_rpc = given_eth_rpc();
+        let health_check = ethereum_rpc.connection_health_checker();
+
+        assert!(health_check.healthy());
+
+        let _ = ethereum_rpc.submit(given_a_block(42)).await;
+        assert!(health_check.healthy());
+
+        let _ = ethereum_rpc.submit(given_a_block(42)).await;
+        assert!(health_check.healthy());
+
+        let _ = ethereum_rpc.submit(given_a_block(42)).await;
+        assert!(!health_check.healthy());
+    }
+
+    fn given_eth_rpc() -> EthereumRPC {
+        let url = Url::parse("http://127.0.0.42:42").unwrap();
+        let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
+        EthereumRPC::new(&url, Default::default(), wallet_key)
+    }
+
+    fn given_a_block(block_height: u32) -> FuelBlock {
+        let header = FuelBlockHeader {
+            id: Bytes32::zeroed(),
+            da_height: 0,
+            transactions_count: 0,
+            message_receipt_count: 0,
+            transactions_root: Bytes32::zeroed(),
+            message_receipt_root: Bytes32::zeroed(),
+            height: block_height,
+            prev_root: Bytes32::zeroed(),
+            time: None,
+            application_hash: Bytes32::zeroed(),
+        };
+
+        FuelBlock {
+            id: Bytes32::default(),
+            header,
+            transactions: vec![],
+        }
     }
 }

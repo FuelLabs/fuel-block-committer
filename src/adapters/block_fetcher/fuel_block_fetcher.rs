@@ -66,7 +66,6 @@ impl BlockFetcher for FuelBlockFetcher {
 
 #[cfg(test)]
 mod tests {
-
     use fuels::test_helpers::{setup_test_provider, Config};
     use prometheus::Registry;
 

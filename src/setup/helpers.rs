@@ -75,26 +75,43 @@ pub fn spawn_eth_committer_listener(
     tokio::task::JoinHandle<()>,
     HealthChecker,
 )> {
+    let (ethereum_rpc, eth_health_check) = create_eth_rpc(config, registry);
+
+    let committer_handler =
+        create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
+
+    let listener_handle = schedule_polling(
+        internal_config.eth_polling_interval,
+        CommitListener::new(ethereum_rpc, storage),
+    );
+
+    Ok((committer_handler, listener_handle, eth_health_check))
+}
+
+fn create_block_committer(
+    rx_fuel_block: Receiver<FuelBlock>,
+    ethereum_rpc: EthereumRPC,
+    storage: InMemoryStorage,
+) -> tokio::task::JoinHandle<()> {
+    let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc, storage);
+    tokio::spawn(async move {
+        block_committer
+            .run()
+            .await
+            .expect("Errors are handled inside of run");
+    })
+}
+
+fn create_eth_rpc(config: &Config, registry: &Registry) -> (EthereumRPC, HealthChecker) {
     let ethereum_rpc = EthereumRPC::new(
         &config.ethereum_rpc,
         config.state_contract_address,
         &config.ethereum_wallet_key,
     );
-    let eth_health_check = ethereum_rpc.connection_health_checker();
     ethereum_rpc.register_metrics(registry);
 
-    let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
-    let committer_handler = tokio::spawn(async move {
-        block_committer
-            .run()
-            .await
-            .expect("Errors are handled inside of run");
-    });
-
-    let commit_listener = CommitListener::new(ethereum_rpc, storage);
-    let listener_handle = schedule_polling(internal_config.eth_polling_interval, commit_listener);
-
-    Ok((committer_handler, listener_handle, eth_health_check))
+    let eth_health_check = ethereum_rpc.connection_health_checker();
+    (ethereum_rpc, eth_health_check)
 }
 
 fn schedule_polling(
