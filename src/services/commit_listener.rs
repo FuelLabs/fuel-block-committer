@@ -34,7 +34,7 @@ impl Runner for CommitListener {
 
                 match new_status {
                     EthTxStatus::Pending => warn!("tx: {} not commited", submission.tx_hash),
-                    EthTxStatus::Commited => {
+                    EthTxStatus::Committed => {
                         info!("tx: {} commited", submission.tx_hash);
                     }
                     EthTxStatus::Aborted => error!("tx: {} aborted", submission.tx_hash),
@@ -87,7 +87,7 @@ mod tests {
     async fn listener_will_write_when_new_satus_commited() {
         // given
         let (tx_hash, storage) = given_tx_hash_and_storage().await;
-        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Commited);
+        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Committed);
         let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
 
         // when
@@ -96,7 +96,7 @@ mod tests {
         //then
         let res = storage.submission_w_latest_block().await.unwrap().unwrap();
 
-        assert_eq!(res.status, EthTxStatus::Commited);
+        assert_eq!(res.status, EthTxStatus::Committed);
     }
 
     #[tokio::test]

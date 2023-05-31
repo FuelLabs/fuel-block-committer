@@ -90,7 +90,7 @@ impl EthereumRPC {
         if status.is_zero() {
             EthTxStatus::Aborted
         } else {
-            EthTxStatus::Commited
+            EthTxStatus::Committed
         }
     }
 

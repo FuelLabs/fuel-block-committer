@@ -1,7 +1,6 @@
-use std::time::Duration;
-
 use fuels::types::block::Block as FuelBlock;
 use prometheus::Registry;
+use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
@@ -121,7 +120,7 @@ fn schedule_polling(
     tokio::spawn(async move {
         loop {
             if let Err(e) = runner.run().await {
-                error!("Block watcher encountered an error: {e}");
+                error!("Runner encountered an error: {e}");
             }
             tokio::time::sleep(polling_interval).await;
         }
