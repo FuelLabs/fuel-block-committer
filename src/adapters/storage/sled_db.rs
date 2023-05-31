@@ -75,47 +75,37 @@ mod tests {
 
     #[tokio::test]
     async fn can_insert_and_find_latest_block() {
-        let test = |storage: Box<dyn Storage>| async move {
-            let latest_block = EthTxSubmission {
-                fuel_block_height: 10,
-                status: EthTxStatus::Pending,
-                tx_hash: H256::default(),
-            };
-            storage.insert(latest_block.clone()).await.unwrap();
-            storage
-                .insert(EthTxSubmission {
-                    fuel_block_height: 9,
-                    status: EthTxStatus::Pending,
-                    tx_hash: H256::default(),
-                })
-                .await
-                .unwrap();
+        // given
+        let storage = SledDb::temporary().unwrap();
+        let latest_submission = given_pending_submission(10);
+        storage.insert(latest_submission.clone()).await.unwrap();
 
-            let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
+        let older_submission = given_pending_submission(9);
+        storage.insert(older_submission).await.unwrap();
 
-            assert_eq!(actual, latest_block);
-        };
+        // when
+        let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
 
-        test(Box::new(SledDb::temporary().unwrap())).await;
+        // then
+        assert_eq!(actual, latest_submission);
     }
 
     #[tokio::test]
     async fn can_update_block() {
-        let test = |storage: Box<dyn Storage>| async move {
-            let mut latest_block = EthTxSubmission {
-                fuel_block_height: 10,
-                status: EthTxStatus::Pending,
-                tx_hash: H256::default(),
-            };
-            storage.insert(latest_block.clone()).await.unwrap();
-            latest_block.status = EthTxStatus::Committed;
-            storage.update(latest_block.clone()).await.unwrap();
+        // given
+        let storage = SledDb::temporary().unwrap();
 
-            let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
+        let mut latest_submission = given_pending_submission(10);
+        storage.insert(latest_submission.clone()).await.unwrap();
 
-            assert_eq!(actual, latest_block);
-        };
-        test(Box::new(SledDb::temporary().unwrap())).await;
+        latest_submission.status = EthTxStatus::Committed;
+        storage.update(latest_submission.clone()).await.unwrap();
+
+        // when
+        let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
+
+        // then
+        assert_eq!(actual, latest_submission);
     }
 
     #[tokio::test]
@@ -123,11 +113,7 @@ mod tests {
         let db = SledDb::temporary().unwrap();
 
         for current_height in 0..=1024 {
-            let current_entry = EthTxSubmission {
-                fuel_block_height: current_height,
-                status: EthTxStatus::Pending,
-                tx_hash: H256::default(),
-            };
+            let current_entry = given_pending_submission(current_height);
             db.insert(current_entry).await.unwrap();
 
             let highest_block_height = db
@@ -138,6 +124,14 @@ mod tests {
                 .fuel_block_height;
 
             assert_eq!(highest_block_height, current_height);
+        }
+    }
+
+    fn given_pending_submission(fuel_block_height: u32) -> EthTxSubmission {
+        EthTxSubmission {
+            fuel_block_height,
+            status: EthTxStatus::Pending,
+            tx_hash: H256::default(),
         }
     }
 }
