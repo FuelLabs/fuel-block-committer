@@ -11,7 +11,7 @@ pub struct StatusReport {
 pub enum Status {
     #[default]
     Idle,
-    Commiting,
+    Committing,
 }
 
 pub struct StatusReporter {
