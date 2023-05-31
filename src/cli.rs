@@ -1,6 +1,7 @@
 use std::net::Ipv4Addr;
 
 use clap::{command, Parser};
+use ethers::types::Chain;
 use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
 use url::Url;
 
@@ -15,6 +16,7 @@ const STATE_CONTRACT_ADDRESS: Bytes20 = Bytes20::zeroed();
 const COMMIT_INTERVAL: u32 = 1;
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 8080;
+const CHAIN_ID: Chain = Chain::Mainnet;
 
 #[derive(Parser)]
 #[command(
@@ -72,6 +74,12 @@ struct Cli {
     env = "PORT",
     default_value_t = PORT, value_name = "U16", help = "Port on which to start the API server.")]
     port: u16,
+
+    /// Ethereum chain id
+    #[arg(long,
+        env = "ETHEREUM_CHAIN_ID",
+        default_value_t = CHAIN_ID, value_name = "U64", help = "Chain id of the ethereum network.")]
+        ethereum_chain_id: Chain,
 }
 
 pub fn parse() -> Result<Config> {
@@ -79,6 +87,7 @@ pub fn parse() -> Result<Config> {
     Ok(Config {
         ethereum_wallet_key: cli.ethereum_wallet_key,
         ethereum_rpc: cli.ethereum_rpc,
+        ethereum_chain_id: cli.ethereum_chain_id,
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
         state_contract_address: cli.state_contract_address,
         commit_epoch: cli.commit_interval,

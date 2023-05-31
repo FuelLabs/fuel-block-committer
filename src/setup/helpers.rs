@@ -76,6 +76,7 @@ fn create_block_committer(
 fn create_eth_rpc(config: &Config, registry: &Registry) -> (EthereumRPC, HealthChecker) {
     let ethereum_rpc = EthereumRPC::new(
         &config.ethereum_rpc,
+        config.ethereum_chain_id,
         config.state_contract_address,
         &config.ethereum_wallet_key,
     );

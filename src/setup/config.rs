@@ -1,5 +1,6 @@
 use std::{net::Ipv4Addr, time::Duration};
 
+use ethers::types::Chain;
 use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
 use url::Url;
 
@@ -7,6 +8,7 @@ use url::Url;
 pub struct Config {
     pub ethereum_wallet_key: String,
     pub ethereum_rpc: Url,
+    pub ethereum_chain_id: Chain,
     pub fuel_graphql_endpoint: Url,
     pub state_contract_address: Bytes20,
     pub commit_epoch: u32,

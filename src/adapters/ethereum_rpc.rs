@@ -44,12 +44,12 @@ pub struct EthereumRPC {
 }
 
 impl EthereumRPC {
-    pub fn new(ethereum_rpc: &Url, contract_address: Bytes20, ethereum_wallet_key: &str) -> Self {
+    pub fn new(ethereum_rpc: &Url, chain_id: Chain, contract_address: Bytes20, ethereum_wallet_key: &str) -> Self {
         let provider = Provider::<Http>::try_from(ethereum_rpc.to_string())
             .expect("could not create ethereum provider from url");
         let wallet = LocalWallet::from_str(ethereum_wallet_key)
             .expect("could not create wallet from key")
-            .with_chain_id(Chain::AnvilHardhat);
+            .with_chain_id(chain_id);
         let wallet_address = wallet.address();
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
@@ -217,7 +217,7 @@ mod tests {
     fn given_eth_rpc() -> EthereumRPC {
         let url = Url::parse("http://127.0.0.42:42").unwrap();
         let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
-        EthereumRPC::new(&url, Default::default(), wallet_key)
+        EthereumRPC::new(&url, Default::default(), Default::default(), wallet_key)
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {
