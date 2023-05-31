@@ -70,7 +70,6 @@ struct Cli {
     default_value_t = PORT, value_name = "U16", help = "Port on which to start the API server.")]
     port: u16,
 
-    /// Port of the started API server
     #[arg(
         long,
         env = "DB_PATH",
