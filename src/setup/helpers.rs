@@ -6,7 +6,7 @@ use tracing::error;
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlockFetcher, ethereum_rpc::EthereumRPC, runner::Runner,
+        block_fetcher::FuelBlockFetcher, ethereum_adapter::EthereumRPC, runner::Runner,
         storage::InMemoryStorage,
     },
     errors::Result,
@@ -20,11 +20,11 @@ pub fn spawn_block_watcher(
     internal_config: &InternalConfig,
     storage: InMemoryStorage,
     registry: &Registry,
-) -> Result<(
+) -> (
     Receiver<FuelBlock>,
     tokio::task::JoinHandle<()>,
     HealthChecker,
-)> {
+) {
     let (block_fetcher, fuel_connection_health) =
         create_block_fetcher(config, internal_config, registry);
 
@@ -32,7 +32,7 @@ pub fn spawn_block_watcher(
 
     let handle = schedule_polling(internal_config.fuel_polling_interval, block_watcher);
 
-    Ok((rx, handle, fuel_connection_health))
+    (rx, handle, fuel_connection_health)
 }
 
 pub fn spawn_eth_committer_and_listener(
@@ -46,7 +46,7 @@ pub fn spawn_eth_committer_and_listener(
     tokio::task::JoinHandle<()>,
     HealthChecker,
 )> {
-    let (ethereum_rpc, eth_health_check) = create_eth_rpc(config, registry);
+    let (ethereum_rpc, eth_health_check) = create_eth_rpc(config, internal_config, registry)?;
 
     let committer_handler =
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
@@ -73,17 +73,22 @@ fn create_block_committer(
     })
 }
 
-fn create_eth_rpc(config: &Config, registry: &Registry) -> (EthereumRPC, HealthChecker) {
+fn create_eth_rpc(
+    config: &Config,
+    internal_config: &InternalConfig,
+    registry: &Registry,
+) -> Result<(EthereumRPC, HealthChecker)> {
     let ethereum_rpc = EthereumRPC::new(
         &config.ethereum_rpc,
         config.ethereum_chain_id,
         config.state_contract_address,
         &config.ethereum_wallet_key,
-    );
+        internal_config.eth_errors_before_unhealthy,
+    )?;
     ethereum_rpc.register_metrics(registry);
 
     let eth_health_check = ethereum_rpc.connection_health_checker();
-    (ethereum_rpc, eth_health_check)
+    Ok((ethereum_rpc, eth_health_check))
 }
 
 fn schedule_polling(

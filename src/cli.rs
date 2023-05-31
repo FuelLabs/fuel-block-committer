@@ -79,7 +79,7 @@ struct Cli {
     #[arg(long,
         env = "ETHEREUM_CHAIN_ID",
         default_value_t = CHAIN_ID, value_name = "U64", help = "Chain id of the ethereum network.")]
-        ethereum_chain_id: Chain,
+    ethereum_chain_id: Chain,
 }
 
 pub fn parse() -> Result<Config> {

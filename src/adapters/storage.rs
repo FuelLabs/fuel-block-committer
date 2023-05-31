@@ -16,14 +16,14 @@ pub struct EthTxSubmission {
 }
 
 #[async_trait]
-pub trait Storage: Send + Sync + std::fmt::Debug {
+pub trait Storage: Send + Sync {
     async fn insert(&self, submission: EthTxSubmission) -> Result<()>;
     async fn update(&self, entry: EthTxSubmission) -> Result<()>;
     async fn set_submission_status(&self, height: u32, status: EthTxStatus) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<EthTxSubmission>>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InMemoryStorage {
     pub storage: Arc<Mutex<HashMap<u32, EthTxSubmission>>>,
 }

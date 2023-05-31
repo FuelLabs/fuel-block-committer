@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use tracing::{error, info, log::warn};
 
 use crate::{
-    adapters::{ethereum_rpc::EthereumAdapter, runner::Runner, storage::Storage},
+    adapters::{ethereum_adapter::EthereumAdapter, runner::Runner, storage::Storage},
     common::EthTxStatus,
     errors::Result,
 };
@@ -27,26 +27,28 @@ impl CommitListener {
 #[async_trait]
 impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
-        if let Some(submission) = self.storage.submission_w_latest_block().await? {
-            if submission.status == EthTxStatus::Pending {
-                let new_status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
+        let Some(submission) = self.storage.submission_w_latest_block().await? else {
+            return Ok(())
+        };
 
-                match new_status {
-                    EthTxStatus::Pending => warn!("tx: {} not commited", submission.tx_hash),
-                    EthTxStatus::Committed => {
-                        info!("tx: {} commited", submission.tx_hash);
-                    }
-                    EthTxStatus::Aborted => error!("tx: {} aborted", submission.tx_hash),
-                }
+        if submission.status != EthTxStatus::Pending {
+            warn!("no pending tx submission found in storage");
+            return Ok(());
+        }
 
-                if new_status != EthTxStatus::Pending {
-                    self.storage
-                        .set_submission_status(submission.fuel_block_height, new_status)
-                        .await?;
-                }
-            } else {
-                warn!("no pending tx submission found in storage");
+        let new_status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
+        match new_status {
+            EthTxStatus::Pending => warn!("tx: {} not commited", submission.tx_hash),
+            EthTxStatus::Committed => {
+                info!("tx: {} commited", submission.tx_hash);
             }
+            EthTxStatus::Aborted => error!("tx: {} aborted", submission.tx_hash),
+        }
+
+        if new_status != EthTxStatus::Pending {
+            self.storage
+                .set_submission_status(submission.fuel_block_height, new_status)
+                .await?;
         }
 
         Ok(())
@@ -58,7 +60,7 @@ mod tests {
     use super::*;
     use crate::{
         adapters::{
-            ethereum_rpc::MockEthereumAdapter,
+            ethereum_adapter::MockEthereumAdapter,
             storage::{EthTxSubmission, InMemoryStorage},
         },
         common::EthTxStatus,
@@ -67,7 +69,7 @@ mod tests {
     use mockall::predicate;
 
     #[tokio::test]
-    async fn listener_will_not_write_when_new_satus_pending() {
+    async fn listener_will_not_update_storage_if_tx_is_still_pending() {
         // given
         let (tx_hash, storage) = given_tx_hash_and_storage().await;
         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Pending);
@@ -83,7 +85,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn listener_will_write_when_new_satus_commited() {
+    async fn listener_will_update_storage_if_tx_is_committed() {
         // given
         let (tx_hash, storage) = given_tx_hash_and_storage().await;
         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Committed);
@@ -99,7 +101,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn listener_will_write_when_new_satus_aborted() {
+    async fn listener_will_update_storage_if_tx_is_aborted() {
         // given
         let (tx_hash, storage) = given_tx_hash_and_storage().await;
         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Aborted);

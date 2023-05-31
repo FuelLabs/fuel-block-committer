@@ -6,7 +6,7 @@ use tracing::{error, info};
 
 use crate::{
     adapters::{
-        ethereum_rpc::EthereumAdapter,
+        ethereum_adapter::EthereumAdapter,
         runner::Runner,
         storage::{EthTxSubmission, Storage},
     },
@@ -33,7 +33,7 @@ impl BlockCommitter {
         }
     }
 
-    async fn write_storage(&self, tx_hash: H256, block_height: u32) -> Result<()> {
+    async fn store_pending_submission(&self, tx_hash: H256, block_height: u32) -> Result<()> {
         self.storage
             .insert(EthTxSubmission {
                 fuel_block_height: block_height,
@@ -54,8 +54,11 @@ impl Runner for BlockCommitter {
         while let Some(block) = self.rx_block.lock().await.recv().await {
             let block_height = block.header.height;
 
-            let maybe_error = match self.ethereum_rpc.submit(block.clone()).await {
-                Ok(tx_hash) => self.write_storage(tx_hash, block_height).await.err(),
+            let maybe_error = match self.ethereum_rpc.submit(block).await {
+                Ok(tx_hash) => self
+                    .store_pending_submission(tx_hash, block_height)
+                    .await
+                    .err(),
                 Err(e) => Some(e),
             };
 
@@ -76,7 +79,7 @@ mod tests {
     use mockall::predicate;
 
     use super::*;
-    use crate::adapters::{ethereum_rpc::MockEthereumAdapter, storage::InMemoryStorage};
+    use crate::adapters::{ethereum_adapter::MockEthereumAdapter, storage::InMemoryStorage};
 
     #[tokio::test]
     async fn block_committer_will_submit_and_write_block() {
@@ -84,8 +87,9 @@ mod tests {
         let block_height = 5;
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block = given_a_block(block_height);
-        let (tx_hash, storage) = given_tx_hash_and_empty_storage();
-        let eth_rpc_mock = given_eth_rpc_that_submits(block.clone(), tx_hash);
+        let tx_hash = given_tx_hash();
+        let storage = InMemoryStorage::new();
+        let eth_rpc_mock = given_eth_rpc_that_expects(block.clone(), tx_hash);
         tx.try_send(block.clone()).unwrap();
 
         // when
@@ -117,15 +121,13 @@ mod tests {
         }
     }
 
-    fn given_tx_hash_and_empty_storage() -> (H256, InMemoryStorage) {
-        let tx_hash: H256 = "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
+    fn given_tx_hash() -> H256 {
+        "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
             .parse()
-            .unwrap();
-
-        (tx_hash, InMemoryStorage::new())
+            .unwrap()
     }
 
-    fn given_eth_rpc_that_submits(block: FuelBlock, tx_hash: H256) -> MockEthereumAdapter {
+    fn given_eth_rpc_that_expects(block: FuelBlock, tx_hash: H256) -> MockEthereumAdapter {
         let mut eth_rpc_mock = MockEthereumAdapter::new();
         eth_rpc_mock
             .expect_submit()

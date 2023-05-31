@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
         &internal_config,
         storage.clone(),
         &metrics_registry,
-    )?;
+    );
 
     let (_committer_handle, _listener_handle, eth_health_check) = spawn_eth_committer_and_listener(
         &config,
