@@ -9,7 +9,7 @@ use ethers::{
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
 
-use tracing::warn;
+use tracing::info;
 use url::Url;
 
 use crate::{
@@ -105,7 +105,7 @@ impl EthereumRPC {
             })?;
         self.handle_network_success();
 
-        warn!("{}", &balance);
+        info!("wallet balance: {}", &balance);
 
         // Note: might lead to wrong metrics if we have more than 500k ETH
         let balance_gwei = balance / U256::from(1_000_000_000);
