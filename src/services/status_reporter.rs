@@ -33,7 +33,7 @@ impl StatusReporter {
             .map(|submission| submission.status);
 
         let status = if let Some(EthTxStatus::Pending) = status_of_latest_submission {
-            Status::Commiting
+            Status::Committing
         } else {
             Status::Idle
         };
@@ -74,9 +74,9 @@ mod tests {
             }
         };
 
-        doit(EthTxStatus::Pending, Status::Commiting).await;
+        doit(EthTxStatus::Pending, Status::Committing).await;
         doit(EthTxStatus::Aborted, Status::Idle).await;
-        doit(EthTxStatus::Commited, Status::Idle).await;
+        doit(EthTxStatus::Committed, Status::Idle).await;
     }
     #[tokio::test]
     async fn status_is_idle_if_no_submission() {

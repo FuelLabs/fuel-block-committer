@@ -109,7 +109,7 @@ mod tests {
             tx_hash: H256::default(),
         };
         storage.insert(latest_block.clone()).await.unwrap();
-        latest_block.status = EthTxStatus::Commited;
+        latest_block.status = EthTxStatus::Committed;
         storage.update(latest_block.clone()).await.unwrap();
 
         let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
