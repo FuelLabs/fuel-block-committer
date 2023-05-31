@@ -71,7 +71,52 @@ mod tests {
     use ethers::types::H256;
 
     use super::*;
-    use crate::common::EthTxStatus;
+    use crate::{adapters::storage::sled_db::SledDb, common::EthTxStatus};
+
+    #[tokio::test]
+    async fn can_insert_and_find_latest_block() {
+        let test = |storage: Box<dyn Storage>| async move {
+            let latest_block = EthTxSubmission {
+                fuel_block_height: 10,
+                status: EthTxStatus::Pending,
+                tx_hash: H256::default(),
+            };
+            storage.insert(latest_block.clone()).await.unwrap();
+            storage
+                .insert(EthTxSubmission {
+                    fuel_block_height: 9,
+                    status: EthTxStatus::Pending,
+                    tx_hash: H256::default(),
+                })
+                .await
+                .unwrap();
+
+            let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
+
+            assert_eq!(actual, latest_block);
+        };
+
+        test(Box::new(SledDb::temporary().unwrap())).await;
+    }
+
+    #[tokio::test]
+    async fn can_update_block() {
+        let test = |storage: Box<dyn Storage>| async move {
+            let mut latest_block = EthTxSubmission {
+                fuel_block_height: 10,
+                status: EthTxStatus::Pending,
+                tx_hash: H256::default(),
+            };
+            storage.insert(latest_block.clone()).await.unwrap();
+            latest_block.status = EthTxStatus::Committed;
+            storage.update(latest_block.clone()).await.unwrap();
+
+            let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
+
+            assert_eq!(actual, latest_block);
+        };
+        test(Box::new(SledDb::temporary().unwrap())).await;
+    }
 
     #[tokio::test]
     async fn uses_big_endian_encoding_in_keys_for_sort_correctness() {
