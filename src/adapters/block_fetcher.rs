@@ -1,4 +1,3 @@
-pub mod fake_block_fetcher;
 mod fuel_block_fetcher;
 mod fuel_metrics;
 
