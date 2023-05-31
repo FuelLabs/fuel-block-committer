@@ -29,7 +29,6 @@ impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
         if let Some(submission) = self.storage.submission_w_latest_block().await? {
             if submission.status == EthTxStatus::Pending {
-                // TODO: add metrics
                 let new_status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
 
                 match new_status {
