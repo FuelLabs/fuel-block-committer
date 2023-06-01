@@ -1,9 +1,8 @@
-use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
 use setup::{
     config::InternalConfig,
-    helpers::{setup_logger, spawn_block_watcher},
+    helpers::{setup_logger, setup_storage, spawn_block_watcher},
 };
 
 use crate::errors::Result;
@@ -19,12 +18,12 @@ mod telemetry;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = cli::parse()?;
+    let config = cli::parse();
     let internal_config = InternalConfig::default();
 
     setup_logger();
 
-    let storage = InMemoryStorage::new();
+    let storage = setup_storage(&config)?;
 
     let metrics_registry = Registry::default();
 

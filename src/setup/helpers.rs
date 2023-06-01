@@ -4,7 +4,7 @@ use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
 use crate::{
-    adapters::{block_fetcher::FuelBlockFetcher, storage::InMemoryStorage},
+    adapters::{block_fetcher::FuelBlockFetcher, storage::sled_db::SledDb},
     errors::Result,
     services::BlockWatcher,
     setup::config::{Config, InternalConfig},
@@ -14,7 +14,7 @@ use crate::{
 pub fn spawn_block_watcher(
     config: &Config,
     internal_config: &InternalConfig,
-    storage: InMemoryStorage,
+    storage: SledDb,
     registry: &Registry,
 ) -> Result<(
     Receiver<FuelBlock>,
@@ -66,7 +66,7 @@ fn create_block_watcher(
     config: &Config,
     registry: &Registry,
     block_fetcher: FuelBlockFetcher,
-    storage: InMemoryStorage,
+    storage: SledDb,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher =
@@ -78,4 +78,12 @@ fn create_block_watcher(
 
 pub fn setup_logger() {
     tracing_subscriber::fmt::init();
+}
+
+pub fn setup_storage(config: &Config) -> Result<SledDb> {
+    if let Some(path) = &config.db_path {
+        SledDb::open(path)
+    } else {
+        SledDb::temporary()
+    }
 }

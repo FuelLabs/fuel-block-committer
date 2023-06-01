@@ -105,7 +105,7 @@ impl BlockWatcher {
         let height_diff = current_block.header.height - submission.fuel_block_height;
         match submission.status {
             EthTxStatus::Pending => false,
-            EthTxStatus::Commited if height_diff % commit_epoch != 0 => false,
+            EthTxStatus::Committed if height_diff % commit_epoch != 0 => false,
             _ => true,
         }
     }
@@ -123,7 +123,7 @@ mod tests {
     use crate::{
         adapters::{
             block_fetcher::MockBlockFetcher,
-            storage::{EthTxSubmission, InMemoryStorage},
+            storage::{sled_db::SledDb, EthTxSubmission},
         },
         common::EthTxStatus,
     };
@@ -137,11 +137,11 @@ mod tests {
 
         let block_fetcher = given_fetcher_that_returns(vec![block.clone()]);
 
-        let storage = InMemoryStorage::new();
+        let storage = SledDb::temporary().unwrap();
         storage
             .insert(EthTxSubmission {
                 fuel_block_height: 3,
-                status: EthTxStatus::Commited,
+                status: EthTxStatus::Committed,
                 tx_hash: H256::default(),
             })
             .await
@@ -204,7 +204,7 @@ mod tests {
 
         let last_block_submission = EthTxSubmission {
             fuel_block_height: 1,
-            status: EthTxStatus::Commited,
+            status: EthTxStatus::Committed,
             tx_hash: Default::default(),
         };
 
@@ -249,7 +249,7 @@ mod tests {
 
         let block_fetcher = given_fetcher_that_returns(vec![given_a_block(5)]);
 
-        let storage = InMemoryStorage::new();
+        let storage = SledDb::temporary().unwrap();
         storage.insert(given_pending_submission(4)).await.unwrap();
 
         let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
