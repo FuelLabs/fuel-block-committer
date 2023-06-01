@@ -30,7 +30,11 @@ pub fn spawn_block_watcher(
 
     let (block_watcher, rx) = create_block_watcher(config, registry, block_fetcher, storage);
 
-    let handle = schedule_polling(internal_config.fuel_polling_interval, block_watcher);
+    let handle = schedule_polling(
+        internal_config.fuel_polling_interval,
+        block_watcher,
+        "Block Watcher",
+    );
 
     (rx, handle, fuel_connection_health)
 }
@@ -54,6 +58,7 @@ pub fn spawn_eth_committer_and_listener(
     let listener_handle = schedule_polling(
         internal_config.eth_polling_interval,
         CommitListener::new(ethereum_rpc, storage),
+        "Commit Listener",
     );
 
     Ok((committer_handler, listener_handle, eth_health_check))
@@ -94,11 +99,12 @@ fn create_eth_rpc(
 fn schedule_polling(
     polling_interval: Duration,
     runner: impl Runner + 'static,
+    name: &'static str,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             if let Err(e) = runner.run().await {
-                error!("Runner encountered an error: {e}");
+                error!("{name} encountered an error: {e}");
             }
             tokio::time::sleep(polling_interval).await;
         }
