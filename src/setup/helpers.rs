@@ -1,6 +1,7 @@
+use std::time::Duration;
+
 use fuels::types::block::Block as FuelBlock;
 use prometheus::Registry;
-use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
