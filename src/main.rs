@@ -1,21 +1,14 @@
-use crate::errors::Result;
-use adapters::storage::InMemoryStorage;
-use api::launch_api_server;
-use prometheus::Registry;
-
-use setup::{
-    config::InternalConfig,
-    helpers::{setup_logger, spawn_block_watcher, spawn_eth_committer_and_listener},
+use fuel_block_committer::{
+    adapters::storage::InMemoryStorage,
+    api::launch_api_server,
+    cli,
+    errors::Result,
+    setup::{
+        config::InternalConfig,
+        helpers::{setup_logger, spawn_block_watcher, spawn_eth_committer_and_listener},
+    },
 };
-
-mod adapters;
-mod api;
-mod cli;
-mod common;
-mod errors;
-mod services;
-mod setup;
-mod telemetry;
+use prometheus::Registry;
 
 #[tokio::main]
 async fn main() -> Result<()> {

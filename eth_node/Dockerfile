@@ -14,5 +14,5 @@ WORKDIR fuel-v2-contracts
 RUN npm install && npm run compile &> /dev/null && npm cache clean --force
 
 COPY run.sh .
- 
+
 CMD ["./run.sh"]
