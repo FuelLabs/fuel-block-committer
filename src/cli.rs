@@ -16,7 +16,7 @@ const STATE_CONTRACT_ADDRESS: Bytes20 = Bytes20::zeroed();
 const COMMIT_INTERVAL: u32 = 1;
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 8080;
-const CHAIN_ID: Chain = Chain::Mainnet;
+const CHAIN_NAME: Chain = Chain::Mainnet;
 
 #[derive(Parser)]
 #[command(
@@ -77,9 +77,9 @@ struct Cli {
 
     /// Ethereum chain id
     #[arg(long,
-        env = "ETHEREUM_CHAIN_ID",
-        default_value_t = CHAIN_ID, value_name = "U64", help = "Chain id of the ethereum network.")]
-    ethereum_chain_id: Chain,
+        env = "ETHEREUM_CHAIN",
+        default_value_t = CHAIN_NAME, value_name = "ChainName", help = "Chain id of the ethereum network.")]
+    ethereum_chain: Chain,
 }
 
 pub fn parse() -> Result<Config> {
@@ -87,7 +87,7 @@ pub fn parse() -> Result<Config> {
     Ok(Config {
         ethereum_wallet_key: cli.ethereum_wallet_key,
         ethereum_rpc: cli.ethereum_rpc,
-        ethereum_chain_id: cli.ethereum_chain_id,
+        ethereum_chain_id: cli.ethereum_chain,
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
         state_contract_address: cli.state_contract_address,
         commit_epoch: cli.commit_interval,
