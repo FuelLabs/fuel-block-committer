@@ -39,7 +39,7 @@ pub struct EthereumRPC {
     provider: Provider<Http>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Http>, LocalWallet>>,
     wallet_address: Address,
-    metrics: EthMetrics, // TODO: verify Clone leads to the same metric
+    metrics: EthMetrics,
     health_tracker: ConnectionHealthTracker,
 }
 
@@ -198,6 +198,31 @@ mod tests {
             .unwrap();
 
         assert_eq!(network_errors_metric.get_value(), 1f64);
+    }
+
+    #[tokio::test]
+    async fn eth_rpc_clone_updates_shared_metrics() {
+        // given
+        let ethereum_rpc = given_eth_rpc();
+        let registry = Registry::default();
+        ethereum_rpc.register_metrics(&registry);
+
+        let ethereum_rpc_clone = ethereum_rpc.clone();
+
+        // when
+        let _ = ethereum_rpc.submit(given_a_block(42)).await;
+        let _ = ethereum_rpc_clone.submit(given_a_block(42)).await;
+
+        // then
+        let metrics = registry.gather();
+        let network_errors_metric = metrics
+            .iter()
+            .find(|metric| metric.get_name() == "eth_network_errors")
+            .and_then(|metric| metric.get_metric().get(0))
+            .map(|metric| metric.get_counter())
+            .unwrap();
+
+        assert_eq!(network_errors_metric.get_value(), 2f64);
     }
 
     #[tokio::test]
