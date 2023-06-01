@@ -1,5 +1,6 @@
 #!/bin/sh
 
+touch node_err
 $(npm run node 2>&1 | tee node_err )&
 
 export CONTRACTS_RPC_URL=http://127.0.0.1:8545
