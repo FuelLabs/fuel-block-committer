@@ -14,6 +14,7 @@ use crate::{
     errors::Result,
 };
 
+#[allow(dead_code)]
 pub struct BlockCommitter {
     rx_block: Mutex<Receiver<FuelBlock>>,
     ethereum_rpc: Box<dyn EthereumAdapter>,

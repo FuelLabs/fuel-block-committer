@@ -10,7 +10,7 @@ name = "fuel-block-committer"
 [dependencies]
 actix-web = "4"
 async-trait = "0.1.68"
-fuels = { git = "https://github.com/FuelLabs/fuels-rs", branch = "feature/block_committer" }
+fuels = { version= "0.42.0", git = "https://github.com/FuelLabs/fuels-rs", branch = "feature/block_committer" }
 prometheus = "0.13.3"
 serde = { version = "1.0", features = ["derive"] }
 ethers = { version = "2.0", features = ["ws"] }
