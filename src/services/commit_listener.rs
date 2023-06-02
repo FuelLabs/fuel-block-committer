@@ -5,7 +5,7 @@ use ethers::prelude::*;
 use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
 
 use crate::errors::{Error, Result};
-
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CommitListener {
     contract_address: Address,
@@ -21,6 +21,7 @@ abigen!(
 );
 
 impl CommitListener {
+    #[allow(dead_code)]
     pub fn new(ethereum_rpc: Url, contract_address: Bytes20) -> Self {
         let contract_address = Address::from_slice(contract_address.as_ref());
 
@@ -30,7 +31,7 @@ impl CommitListener {
             ethereum_rpc,
         }
     }
-
+    #[allow(dead_code)]
     pub async fn run(&self) -> Result<()> {
         // websocket setup
         let provider = Provider::<Ws>::connect(self.ethereum_rpc.uri().to_string())
