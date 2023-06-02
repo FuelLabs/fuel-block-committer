@@ -61,7 +61,7 @@ mod tests {
     use crate::{
         adapters::{
             ethereum_adapter::MockEthereumAdapter,
-            storage::{EthTxSubmission, InMemoryStorage},
+            storage::{sled_db::SledDb, EthTxSubmission},
         },
         common::EthTxStatus,
     };
@@ -71,7 +71,8 @@ mod tests {
     #[tokio::test]
     async fn listener_will_not_update_storage_if_tx_is_still_pending() {
         // given
-        let (tx_hash, storage) = given_tx_hash_and_storage().await;
+        let tx_hash = given_tx_hash();
+        let storage = given_storage(tx_hash).await;
         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Pending);
         let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
 
@@ -87,7 +88,8 @@ mod tests {
     #[tokio::test]
     async fn listener_will_update_storage_if_tx_is_committed() {
         // given
-        let (tx_hash, storage) = given_tx_hash_and_storage().await;
+        let tx_hash = given_tx_hash();
+        let storage = given_storage(tx_hash).await;
         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Committed);
         let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
 
@@ -103,7 +105,8 @@ mod tests {
     #[tokio::test]
     async fn listener_will_update_storage_if_tx_is_aborted() {
         // given
-        let (tx_hash, storage) = given_tx_hash_and_storage().await;
+        let tx_hash = given_tx_hash();
+        let storage = given_storage(tx_hash).await;
         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Aborted);
         let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
 
@@ -125,12 +128,14 @@ mod tests {
         eth_rpc_mock
     }
 
-    async fn given_tx_hash_and_storage() -> (H256, InMemoryStorage) {
-        let tx_hash: H256 = "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
+    fn given_tx_hash() -> H256 {
+        "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
             .parse()
-            .unwrap();
+            .unwrap()
+    }
 
-        let storage = InMemoryStorage::new();
+    async fn given_storage(tx_hash: H256) -> SledDb {
+        let storage = SledDb::temporary().unwrap();
         storage
             .insert(EthTxSubmission {
                 fuel_block_height: 3,
@@ -140,6 +145,6 @@ mod tests {
             .await
             .unwrap();
 
-        (tx_hash, storage)
+        storage
     }
 }

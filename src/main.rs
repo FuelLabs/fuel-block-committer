@@ -1,11 +1,10 @@
-use crate::errors::Result;
-use adapters::storage::InMemoryStorage;
 use api::launch_api_server;
 use prometheus::Registry;
 
+use errors::Result;
 use setup::{
     config::InternalConfig,
-    helpers::{setup_logger, spawn_block_watcher, spawn_eth_committer_and_listener},
+    helpers::{setup_logger, setup_storage, spawn_block_watcher, spawn_eth_committer_and_listener},
 };
 
 mod adapters;
@@ -19,13 +18,12 @@ mod telemetry;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = cli::parse()?;
+    let config = cli::parse();
+    let internal_config = InternalConfig::default();
+    let metrics_registry = Registry::default();
+    let storage = setup_storage(&config)?;
 
     setup_logger();
-
-    let internal_config = InternalConfig::default();
-    let storage = InMemoryStorage::new();
-    let metrics_registry = Registry::default();
 
     let (rx_fuel_block, _block_watcher_handle, fuel_health_check) = spawn_block_watcher(
         &config,

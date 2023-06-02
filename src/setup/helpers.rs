@@ -7,7 +7,7 @@ use tracing::error;
 use crate::{
     adapters::{
         block_fetcher::FuelBlockFetcher, ethereum_adapter::EthereumRPC, runner::Runner,
-        storage::InMemoryStorage,
+        storage::sled_db::SledDb,
     },
     errors::Result,
     services::{BlockCommitter, BlockWatcher, CommitListener},
@@ -18,7 +18,7 @@ use crate::{
 pub fn spawn_block_watcher(
     config: &Config,
     internal_config: &InternalConfig,
-    storage: InMemoryStorage,
+    storage: SledDb,
     registry: &Registry,
 ) -> (
     Receiver<FuelBlock>,
@@ -43,7 +43,7 @@ pub fn spawn_eth_committer_and_listener(
     config: &Config,
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
-    storage: InMemoryStorage,
+    storage: SledDb,
     registry: &Registry,
 ) -> Result<(
     tokio::task::JoinHandle<()>,
@@ -67,7 +67,7 @@ pub fn spawn_eth_committer_and_listener(
 fn create_block_committer(
     rx_fuel_block: Receiver<FuelBlock>,
     ethereum_rpc: EthereumRPC,
-    storage: InMemoryStorage,
+    storage: SledDb,
 ) -> tokio::task::JoinHandle<()> {
     let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc, storage);
     tokio::spawn(async move {
@@ -131,7 +131,7 @@ fn create_block_watcher(
     config: &Config,
     registry: &Registry,
     block_fetcher: FuelBlockFetcher,
-    storage: InMemoryStorage,
+    storage: SledDb,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher =
@@ -143,4 +143,12 @@ fn create_block_watcher(
 
 pub fn setup_logger() {
     tracing_subscriber::fmt::init();
+}
+
+pub fn setup_storage(config: &Config) -> Result<SledDb> {
+    if let Some(path) = &config.db_path {
+        SledDb::open(path)
+    } else {
+        SledDb::temporary()
+    }
 }

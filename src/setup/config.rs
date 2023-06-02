@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, time::Duration};
+use std::{net::Ipv4Addr, path::PathBuf, time::Duration};
 
 use ethers::types::Chain;
 use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
@@ -14,6 +14,7 @@ pub struct Config {
     pub commit_epoch: u32,
     pub port: u16,
     pub host: Ipv4Addr,
+    pub db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]

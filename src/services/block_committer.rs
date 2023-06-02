@@ -79,7 +79,7 @@ mod tests {
     use mockall::predicate;
 
     use super::*;
-    use crate::adapters::{ethereum_adapter::MockEthereumAdapter, storage::InMemoryStorage};
+    use crate::adapters::{ethereum_adapter::MockEthereumAdapter, storage::sled_db::SledDb};
 
     #[tokio::test]
     async fn block_committer_will_submit_and_write_block() {
@@ -88,7 +88,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block = given_a_block(block_height);
         let tx_hash = given_tx_hash();
-        let storage = InMemoryStorage::new();
+        let storage = SledDb::temporary().unwrap();
         let eth_rpc_mock = given_eth_rpc_that_expects(block.clone(), tx_hash);
         tx.try_send(block.clone()).unwrap();
 
@@ -139,7 +139,7 @@ mod tests {
     async fn spawn_committer_and_run_until_timeout(
         rx: Receiver<FuelBlock>,
         eth_rpc_mock: MockEthereumAdapter,
-        storage: InMemoryStorage,
+        storage: SledDb,
     ) {
         let _ = tokio::time::timeout(Duration::from_millis(250), async move {
             let block_committer = BlockCommitter::new(rx, eth_rpc_mock, storage);

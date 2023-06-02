@@ -1,7 +1,7 @@
 use fuels::{
     client::FuelClient,
     prelude::{Provider, ProviderError},
-    types::block::Block,
+    types::block::Block as FuelBlock,
 };
 use url::Url;
 
@@ -50,7 +50,7 @@ impl FuelBlockFetcher {
 
 #[async_trait::async_trait]
 impl BlockFetcher for FuelBlockFetcher {
-    async fn latest_block(&self) -> Result<Block> {
+    async fn latest_block(&self) -> Result<FuelBlock> {
         match self.provider.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();
