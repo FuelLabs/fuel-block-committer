@@ -1,13 +1,10 @@
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, path::PathBuf};
 
 use clap::{command, Parser};
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
 use url::Url;
 
-use crate::{
-    errors::{Error, Result},
-    setup::config::Config,
-};
+use crate::setup::config::Config;
 
 const ETHEREUM_RPC: &str = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID";
 const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
@@ -72,11 +69,19 @@ struct Cli {
     env = "PORT",
     default_value_t = PORT, value_name = "U16", help = "Port on which to start the API server.")]
     port: u16,
+
+    #[arg(
+        long,
+        env = "DB_PATH",
+        value_name = "Path",
+        help = "Path to db storage. If not given will use temporary storage."
+    )]
+    db_path: Option<PathBuf>,
 }
 
-pub fn parse() -> Result<Config> {
-    let cli = Cli::try_parse().map_err(|e| Error::Other(e.to_string()))?;
-    Ok(Config {
+pub fn parse() -> Config {
+    let cli = Cli::parse();
+    Config {
         ethereum_wallet_key: cli.ethereum_wallet_key,
         ethereum_rpc: cli.ethereum_rpc,
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
@@ -84,5 +89,6 @@ pub fn parse() -> Result<Config> {
         commit_epoch: cli.commit_interval,
         port: cli.port,
         host: cli.host,
-    })
+        db_path: cli.db_path,
+    }
 }
