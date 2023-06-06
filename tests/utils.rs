@@ -13,7 +13,7 @@ impl Image for EthNodeImage {
     type Args = ();
 
     fn name(&self) -> String {
-        "doit".to_owned()
+        "eth_node".to_owned()
     }
 
     fn tag(&self) -> String {
@@ -63,7 +63,7 @@ pub fn run_committer(
         "run",
         "--",
         &format!("--fuel-graphql-endpoint=http://127.0.0.1:{fuel_port}"),
-        &format!("--ethereum-rpc=http://127.0.0.1:{eth_port}"),
+        &format!("--ethereum-rpc=ws://127.0.0.1:{eth_port}"),
         "--ethereum-wallet-key=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36",
         "--state-contract-address=0xdAad669b06d79Cb48C8cfef789972436dBe6F24d",
         "--ethereum-chain=anvil",

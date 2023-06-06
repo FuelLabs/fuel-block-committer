@@ -1,5 +1,5 @@
 #!/bin/bash -e
 
-docker build ./eth_node -t doit
+docker build ./eth_node -t eth_node
 
-cargo test
+cargo test --test e2e
