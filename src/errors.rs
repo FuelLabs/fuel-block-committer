@@ -10,8 +10,8 @@ pub enum Error {
     StorageError(String),
 }
 
-impl From<sled::Error> for Error {
-    fn from(value: sled::Error) -> Self {
+impl From<rusqlite::Error> for Error {
+    fn from(value: rusqlite::Error) -> Self {
         Self::StorageError(value.to_string())
     }
 }
