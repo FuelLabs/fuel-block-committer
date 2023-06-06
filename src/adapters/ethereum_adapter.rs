@@ -23,12 +23,14 @@ use crate::{
 pub trait EthereumAdapter: Send + Sync {
     async fn submit(&self, block: Block) -> Result<H256>;
     async fn poll_tx_status(&self, tx_hash: H256) -> Result<EthTxStatus>;
+    async fn stream_commit_event(&self, from_block: u64) -> Result<()>;
 }
 
 abigen!(
     FUEL_STATE_CONTRACT,
     r#"[
         function commit(bytes32 blockHash, uint256 commitHeight) external whenNotPaused
+        event CommitSubmitted(uint256 indexed commitHeight, bytes32 blockHash)
     ]"#,
 );
 
@@ -166,6 +168,12 @@ impl EthereumAdapter for EthereumRPC {
         self.handle_network_success();
 
         Ok(EthereumRPC::extract_status(result))
+    }
+
+    fn commit_event_stream(&self, from_block: u64) -> Result<()> {
+        let events = self.contract
+            .event::<CommitSubmittedFilter>()
+            .from_block(from_block);
     }
 }
 
