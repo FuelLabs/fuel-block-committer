@@ -1,12 +1,11 @@
-pub mod sled_db;
+pub mod sqlite_db;
 
 use async_trait::async_trait;
 use ethers::types::H256;
-use serde::{Deserialize, Serialize};
 
 use crate::{common::EthTxStatus, errors::Result};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EthTxSubmission {
     pub fuel_block_height: u32,
     pub status: EthTxStatus,

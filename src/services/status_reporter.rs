@@ -45,14 +45,14 @@ impl StatusReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::storage::{sled_db::SledDb, EthTxSubmission};
+    use crate::adapters::storage::{EthTxSubmission, sqlite_db::SqliteDb};
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {
         let doit = |submission_status, expected_app_status| {
             async move {
                 // given
-                let storage = SledDb::temporary().unwrap();
+                let storage = SqliteDb::temporary().unwrap();
                 let latest_submission = EthTxSubmission {
                     fuel_block_height: 1,
                     status: submission_status,
@@ -81,7 +81,7 @@ mod tests {
     #[tokio::test]
     async fn status_is_idle_if_no_submission() {
         // given
-        let storage = SledDb::temporary().unwrap();
+        let storage = SqliteDb::temporary().unwrap();
         let status_reporter = StatusReporter::new(storage);
 
         // when
