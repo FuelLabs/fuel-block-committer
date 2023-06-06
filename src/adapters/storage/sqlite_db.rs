@@ -1,7 +1,11 @@
 use crate::{adapters::storage::Storage, common::EthTxStatus, errors::Error};
 use ethers::types::H256;
 use rusqlite::Connection;
-use std::{path::Path, str::FromStr, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
 use tokio::{sync::Mutex, task};
 
 use crate::errors::Result;
@@ -14,22 +18,27 @@ pub struct SqliteDb {
 }
 
 impl SqliteDb {
-    pub async fn open(path: &Path) -> Result<Self> {
-        task::block_in_place(|| async {
+    pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
+        let path = path.into();
+        task::spawn_blocking(|| async {
             let connection = Connection::open(path)?;
             Ok(Self {
                 connection: Self::initialize(connection)?,
             })
         })
         .await
+        .unwrap()
+        .await
     }
     pub async fn temporary() -> Result<Self> {
-        task::block_in_place(|| async {
+        task::spawn_blocking(|| async {
             let connection = Connection::open_in_memory()?;
             Ok(Self {
                 connection: Self::initialize(connection)?,
             })
         })
+        .await
+        .unwrap()
         .await
     }
 
@@ -54,12 +63,13 @@ impl Storage for SqliteDb {
         let status = submission.status.to_string();
         let tx_hash = submission.tx_hash.to_fixed_bytes();
 
-        task::block_in_place(|| async {
-        self.connection.lock().await.execute(
-            "INSERT INTO eth_tx_submission (fuel_block_height, status, tx_hash) VALUES (?1, ?2, ?3)",
-            (&fuel_block_height, &status, &tx_hash)
-        )
-        }).await?;
+        let connection = Arc::clone(&self.connection);
+        task::spawn_blocking(move || async move {
+            let connection = connection.lock().await;
+            let query = "INSERT INTO eth_tx_submission (fuel_block_height, status, tx_hash) VALUES (?1, ?2, ?3)";
+            connection.execute( query, (fuel_block_height, status, tx_hash))
+        }).await.unwrap().await?;
+
         Ok(())
     }
 
@@ -68,33 +78,43 @@ impl Storage for SqliteDb {
         let status = submission.status.to_string();
         let tx_hash = submission.tx_hash.to_fixed_bytes();
 
-        self.connection.lock().await.execute(
-            r#"UPDATE eth_tx_submission SET status = (?1), tx_hash = (?2) WHERE fuel_block_height = (?3)"#,
-            (&status, &tx_hash, &fuel_block_height)
-        )?;
+        let connection = Arc::clone(&self.connection);
+        task::spawn_blocking(move || async move {
+            let connection = connection.lock().await;
+            let query = "UPDATE eth_tx_submission SET status = (?1), tx_hash = (?2) WHERE fuel_block_height = (?3)";
+            connection.execute( query, (&status, &tx_hash, &fuel_block_height))
+        }).await.unwrap().await?;
 
         Ok(())
     }
 
     async fn submission_w_latest_block(&self) -> Result<Option<EthTxSubmission>> {
-        let connection = self.connection.lock().await;
+        let connection = Arc::clone(&self.connection);
+        let Some((fuel_block_height, status, tx_hash)) = task::spawn_blocking(move || async move {
+            let connection = connection.lock().await;
 
-        let mut statement = connection.prepare(
-            r#"SELECT * FROM eth_tx_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
-        )?;
+            let mut statement = connection.prepare(
+                r#"SELECT * FROM eth_tx_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
+            )?;
 
-        let Some((fuel_block_height, status, tx_hash)) = statement
-            .query_map([], |row| {
-                let fuel_block_height = row.get(0)?;
-                let status: String = row.get(1)?;
-                let tx_hash: [u8; 32] = row.get(2)?;
+            let result = statement
+                .query_map([], |row| {
+                    let fuel_block_height = row.get(0)?;
+                    let status: String = row.get(1)?;
+                    let tx_hash: [u8; 32] = row.get(2)?;
 
-                Ok((fuel_block_height, status, tx_hash))
-            })?
-            .next()
-            .transpose()? else {
-                return Ok(None);
-            };
+                    Ok((fuel_block_height, status, tx_hash))
+                })?
+                .next()
+                .transpose();
+
+            result
+        })
+        .await
+        .unwrap()
+        .await? else {
+            return Ok(None);
+        };
 
         let status =
             EthTxStatus::from_str(&status).map_err(|err| Error::StorageError(err.to_string()))?;
