@@ -2,7 +2,7 @@ use crate::{adapters::storage::Storage, common::EthTxStatus, errors::Error};
 use ethers::types::H256;
 use rusqlite::Connection;
 use std::{path::Path, str::FromStr, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task};
 
 use crate::errors::Result;
 
@@ -14,17 +14,23 @@ pub struct SqliteDb {
 }
 
 impl SqliteDb {
-    pub fn open(path: &Path) -> Result<Self> {
-        let connection = Connection::open(path)?;
-        Ok(Self {
-            connection: Self::initialize(connection)?,
+    pub async fn open(path: &Path) -> Result<Self> {
+        task::block_in_place(|| async {
+            let connection = Connection::open(path)?;
+            Ok(Self {
+                connection: Self::initialize(connection)?,
+            })
         })
+        .await
     }
-    pub fn temporary() -> Result<Self> {
-        let connection = Connection::open_in_memory()?;
-        Ok(Self {
-            connection: Self::initialize(connection)?,
+    pub async fn temporary() -> Result<Self> {
+        task::block_in_place(|| async {
+            let connection = Connection::open_in_memory()?;
+            Ok(Self {
+                connection: Self::initialize(connection)?,
+            })
         })
+        .await
     }
 
     fn initialize(connection: Connection) -> Result<Arc<Mutex<Connection>>> {
@@ -48,11 +54,12 @@ impl Storage for SqliteDb {
         let status = submission.status.to_string();
         let tx_hash = submission.tx_hash.to_fixed_bytes();
 
+        task::block_in_place(|| async {
         self.connection.lock().await.execute(
             "INSERT INTO eth_tx_submission (fuel_block_height, status, tx_hash) VALUES (?1, ?2, ?3)",
             (&fuel_block_height, &status, &tx_hash)
-        )?;
-
+        )
+        }).await?;
         Ok(())
     }
 
@@ -78,7 +85,7 @@ impl Storage for SqliteDb {
 
         let Some((fuel_block_height, status, tx_hash)) = statement
             .query_map([], |row| {
-                let fuel_block_height:u32 = row.get(0)?;
+                let fuel_block_height = row.get(0)?;
                 let status: String = row.get(1)?;
                 let tx_hash: [u8; 32] = row.get(2)?;
 
@@ -111,10 +118,10 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn can_insert_and_find_latest_block() {
         // given
-        let storage = SqliteDb::temporary().unwrap();
+        let storage = SqliteDb::temporary().await.unwrap();
         let latest_submission = given_pending_submission(10);
         storage.insert(latest_submission.clone()).await.unwrap();
 
@@ -128,10 +135,10 @@ mod tests {
         assert_eq!(actual, latest_submission);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn can_update_block() {
         // given
-        let storage = SqliteDb::temporary().unwrap();
+        let storage = SqliteDb::temporary().await.unwrap();
 
         let mut latest_submission = given_pending_submission(10);
         storage.insert(latest_submission.clone()).await.unwrap();
@@ -146,9 +153,9 @@ mod tests {
         assert_eq!(actual, latest_submission);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn correctly_gets_submission_w_latest_block() {
-        let db = SqliteDb::temporary().unwrap();
+        let db = SqliteDb::temporary().await.unwrap();
 
         for current_height in 0..=1024 {
             let current_entry = given_pending_submission(current_height);

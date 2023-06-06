@@ -123,12 +123,12 @@ mod tests {
     use crate::{
         adapters::{
             block_fetcher::MockBlockFetcher,
-            storage::{EthTxSubmission, sqlite_db::SqliteDb},
+            storage::{sqlite_db::SqliteDb, EthTxSubmission},
         },
         common::EthTxStatus,
     };
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn will_propagate_a_received_block() {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
@@ -137,7 +137,7 @@ mod tests {
 
         let block_fetcher = given_fetcher_that_returns(vec![block.clone()]);
 
-        let storage = SqliteDb::temporary().unwrap();
+        let storage = SqliteDb::temporary().await.unwrap();
         storage
             .insert(EthTxSubmission {
                 fuel_block_height: 3,
@@ -242,14 +242,14 @@ mod tests {
         assert!(should_propagate);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn updates_block_metric_regardless_if_block_is_published() {
         // given
         let (tx, _) = tokio::sync::mpsc::channel(10);
 
         let block_fetcher = given_fetcher_that_returns(vec![given_a_block(5)]);
 
-        let storage = SqliteDb::temporary().unwrap();
+        let storage = SqliteDb::temporary().await.unwrap();
         storage.insert(given_pending_submission(4)).await.unwrap();
 
         let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);

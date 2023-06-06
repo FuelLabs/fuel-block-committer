@@ -83,10 +83,10 @@ pub fn setup_logger() {
     tracing_subscriber::fmt::init();
 }
 
-pub fn setup_storage(config: &Config) -> Result<SqliteDb> {
+pub async fn setup_storage(config: &Config) -> Result<SqliteDb> {
     if let Some(path) = &config.db_path {
-        SqliteDb::open(path)
+        SqliteDb::open(path).await
     } else {
-        SqliteDb::temporary()
+        SqliteDb::temporary().await
     }
 }

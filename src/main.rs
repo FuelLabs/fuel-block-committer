@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
 
     setup_logger();
 
-    let storage = setup_storage(&config)?;
+    let storage = setup_storage(&config).await?;
 
     let metrics_registry = Registry::default();
 
