@@ -8,17 +8,15 @@ use ethers::{
     types::{Address, Chain, TransactionReceipt, H256, U256},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
-
 use tracing::info;
 use url::Url;
 
+use super::eth_metrics::EthMetrics;
 use crate::{
     common::EthTxStatus,
     errors::{Error, Result},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
-
-use super::eth_metrics::EthMetrics;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]

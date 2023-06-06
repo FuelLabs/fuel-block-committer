@@ -57,6 +57,9 @@ impl Runner for CommitListener {
 
 #[cfg(test)]
 mod tests {
+    use ethers::types::H256;
+    use mockall::predicate;
+
     use super::*;
     use crate::{
         adapters::{
@@ -65,8 +68,6 @@ mod tests {
         },
         common::EthTxStatus,
     };
-    use ethers::types::H256;
-    use mockall::predicate;
 
     #[tokio::test]
     async fn listener_will_not_update_storage_if_tx_is_still_pending() {

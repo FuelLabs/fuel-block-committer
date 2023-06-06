@@ -1,6 +1,7 @@
+use std::time::Duration;
+
 use fuels::types::block::Block as FuelBlock;
 use prometheus::Registry;
-use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
@@ -40,12 +41,10 @@ pub fn spawn_block_watcher(
 }
 
 pub fn spawn_eth_committer_and_listener(
-    config: &Config,
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
     ethereum_rpc: EthereumRPC,
     storage: SledDb,
-    registry: &Registry,
 ) -> Result<(tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)> {
     let committer_handler =
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());

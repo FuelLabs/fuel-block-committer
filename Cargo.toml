@@ -7,6 +7,11 @@ rust-version = "1.69.0"
 version = "0.0.0"
 name = "fuel-block-committer"
 
+[[test]]
+harness = true
+name = "e2e"
+path = "tests/harness.rs"
+
 [dependencies]
 actix-web = "4"
 async-trait = "0.1.68"
@@ -25,3 +30,4 @@ serde_json = "1.0.96"
 
 [dev-dependencies]
 mockall = "0.11.4"
+testcontainers = "0.14.0"
