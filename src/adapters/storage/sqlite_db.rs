@@ -1,11 +1,7 @@
 use crate::{adapters::storage::Storage, common::EthTxStatus, errors::Error};
 use ethers::types::H256;
 use rusqlite::Connection;
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{sync::Mutex, task};
 
 use crate::errors::Result;
@@ -30,6 +26,7 @@ impl SqliteDb {
         .unwrap()
         .await
     }
+
     pub async fn temporary() -> Result<Self> {
         task::spawn_blocking(|| async {
             let connection = Connection::open_in_memory()?;
@@ -54,6 +51,21 @@ impl SqliteDb {
 
         Ok(Arc::new(Mutex::new(connection)))
     }
+
+    async fn run_blocking<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&Connection) -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let connection = Arc::clone(&self.connection);
+        task::spawn_blocking(move || async move {
+            let connection = connection.lock().await;
+            f(&connection)
+        })
+        .await
+        .unwrap()
+        .await
+    }
 }
 
 #[async_trait::async_trait]
@@ -63,12 +75,10 @@ impl Storage for SqliteDb {
         let status = submission.status.to_string();
         let tx_hash = submission.tx_hash.to_fixed_bytes();
 
-        let connection = Arc::clone(&self.connection);
-        task::spawn_blocking(move || async move {
-            let connection = connection.lock().await;
+        self.run_blocking(move |connection| {
             let query = "INSERT INTO eth_tx_submission (fuel_block_height, status, tx_hash) VALUES (?1, ?2, ?3)";
             connection.execute( query, (fuel_block_height, status, tx_hash))
-        }).await.unwrap().await?;
+        }).await?;
 
         Ok(())
     }
@@ -78,21 +88,17 @@ impl Storage for SqliteDb {
         let status = submission.status.to_string();
         let tx_hash = submission.tx_hash.to_fixed_bytes();
 
-        let connection = Arc::clone(&self.connection);
-        task::spawn_blocking(move || async move {
-            let connection = connection.lock().await;
+        self.run_blocking(move |connection| {
             let query = "UPDATE eth_tx_submission SET status = (?1), tx_hash = (?2) WHERE fuel_block_height = (?3)";
             connection.execute( query, (&status, &tx_hash, &fuel_block_height))
-        }).await.unwrap().await?;
+        }).await?;
 
         Ok(())
     }
 
     async fn submission_w_latest_block(&self) -> Result<Option<EthTxSubmission>> {
-        let connection = Arc::clone(&self.connection);
-        let Some((fuel_block_height, status, tx_hash)) = task::spawn_blocking(move || async move {
-            let connection = connection.lock().await;
-
+        let Some((fuel_block_height, status, tx_hash)) =
+        self.run_blocking(move |connection| {
             let mut statement = connection.prepare(
                 r#"SELECT * FROM eth_tx_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
             )?;
@@ -110,8 +116,6 @@ impl Storage for SqliteDb {
 
             result
         })
-        .await
-        .unwrap()
         .await? else {
             return Ok(None);
         };
