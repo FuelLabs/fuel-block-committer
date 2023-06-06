@@ -4,7 +4,10 @@ use prometheus::Registry;
 use errors::Result;
 use setup::{
     config::InternalConfig,
-    helpers::{setup_logger, setup_storage, spawn_block_watcher, spawn_eth_committer_and_listener},
+    helpers::{
+        create_eth_rpc, setup_logger, setup_storage, spawn_block_watcher,
+        spawn_eth_committer_and_listener,
+    },
 };
 
 mod adapters;
@@ -32,10 +35,14 @@ async fn main() -> Result<()> {
         &metrics_registry,
     );
 
-    let (_committer_handle, _listener_handle, eth_health_check) = spawn_eth_committer_and_listener(
+    let (ethereum_rpc, eth_health_check) =
+        create_eth_rpc(&config, &internal_config, &metrics_registry).await?;
+
+    let (_committer_handle, _listener_handle) = spawn_eth_committer_and_listener(
         &config,
         &internal_config,
         rx_fuel_block,
+        ethereum_rpc,
         storage.clone(),
         &metrics_registry,
     )?;

@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc};
 use async_trait::async_trait;
 use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
-    providers::{Http, Middleware, Provider},
+    providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer},
     types::{Address, Chain, TransactionReceipt, H256, U256},
 };
@@ -36,24 +36,28 @@ abigen!(
 
 #[derive(Clone)]
 pub struct EthereumRPC {
-    provider: Provider<Http>,
-    contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Http>, LocalWallet>>,
+    provider: Provider<Ws>,
+    contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     wallet_address: Address,
     metrics: EthMetrics,
     health_tracker: ConnectionHealthTracker,
 }
 
 impl EthereumRPC {
-    pub fn new(
+    pub async fn connect(
         ethereum_rpc: &Url,
         chain_id: Chain,
         contract_address: Bytes20,
         ethereum_wallet_key: &str,
         unhealthy_after_n_errors: usize,
     ) -> Result<Self> {
-        let provider = Provider::<Http>::try_from(ethereum_rpc.to_string())?;
+        let provider = Provider::<Ws>::connect(ethereum_rpc.to_string())
+            .await
+            .map_err(|e| Error::NetworkError(e.to_string()))?;
+
         let wallet = LocalWallet::from_str(ethereum_wallet_key)?.with_chain_id(chain_id);
         let wallet_address = wallet.address();
+
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
         let contract_address = Address::from_slice(contract_address.as_ref());
@@ -180,7 +184,7 @@ mod tests {
     #[tokio::test]
     async fn eth_rpc_updates_metrics_in_case_of_network_err() {
         // given
-        let ethereum_rpc = given_eth_rpc();
+        let ethereum_rpc = given_eth_rpc().await;
         let registry = Registry::default();
         ethereum_rpc.register_metrics(&registry);
 
@@ -203,7 +207,7 @@ mod tests {
     #[tokio::test]
     async fn eth_rpc_clone_updates_shared_metrics() {
         // given
-        let ethereum_rpc = given_eth_rpc();
+        let ethereum_rpc = given_eth_rpc().await;
         let registry = Registry::default();
         ethereum_rpc.register_metrics(&registry);
 
@@ -227,7 +231,7 @@ mod tests {
 
     #[tokio::test]
     async fn eth_rpc_correctly_tracks_network_health() {
-        let ethereum_rpc = given_eth_rpc();
+        let ethereum_rpc = given_eth_rpc().await;
         let health_check = ethereum_rpc.connection_health_checker();
 
         assert!(health_check.healthy());
@@ -242,10 +246,12 @@ mod tests {
         assert!(!health_check.healthy());
     }
 
-    fn given_eth_rpc() -> EthereumRPC {
+    async fn given_eth_rpc() -> EthereumRPC {
         let url = Url::parse("http://127.0.0.42:42").unwrap();
         let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
-        EthereumRPC::new(&url, Default::default(), Default::default(), wallet_key, 3).unwrap()
+        EthereumRPC::connect(&url, Default::default(), Default::default(), wallet_key, 3)
+            .await
+            .unwrap()
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {

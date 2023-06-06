@@ -43,15 +43,10 @@ pub fn spawn_eth_committer_and_listener(
     config: &Config,
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
+    ethereum_rpc: EthereumRPC,
     storage: SledDb,
     registry: &Registry,
-) -> Result<(
-    tokio::task::JoinHandle<()>,
-    tokio::task::JoinHandle<()>,
-    HealthChecker,
-)> {
-    let (ethereum_rpc, eth_health_check) = create_eth_rpc(config, internal_config, registry)?;
-
+) -> Result<(tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)> {
     let committer_handler =
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
 
@@ -61,7 +56,7 @@ pub fn spawn_eth_committer_and_listener(
         "Commit Listener",
     );
 
-    Ok((committer_handler, listener_handle, eth_health_check))
+    Ok((committer_handler, listener_handle))
 }
 
 fn create_block_committer(
@@ -78,18 +73,19 @@ fn create_block_committer(
     })
 }
 
-fn create_eth_rpc(
+pub async fn create_eth_rpc(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
 ) -> Result<(EthereumRPC, HealthChecker)> {
-    let ethereum_rpc = EthereumRPC::new(
+    let ethereum_rpc = EthereumRPC::connect(
         &config.ethereum_rpc,
         config.ethereum_chain_id,
         config.state_contract_address,
         &config.ethereum_wallet_key,
         internal_config.eth_errors_before_unhealthy,
-    )?;
+    )
+    .await?;
     ethereum_rpc.register_metrics(registry);
 
     let eth_health_check = ethereum_rpc.connection_health_checker();
