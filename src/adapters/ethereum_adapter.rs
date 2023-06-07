@@ -5,7 +5,7 @@ use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
     providers::{Middleware, Provider, StreamExt, Ws},
     signers::{LocalWallet, Signer},
-    types::{Address, Chain, TransactionReceipt, H256, U256, U64},
+    types::{Address, Chain, TransactionReceipt, U256, U64},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32, types::block::Block};
 use tracing::info;

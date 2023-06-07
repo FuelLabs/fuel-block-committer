@@ -32,18 +32,12 @@ impl Runner for CommitListener {
 
 #[cfg(test)]
 mod tests {
-    use ethers::types::H256;
-    use fuels::tx::Bytes32;
-    use mockall::predicate;
+    
+    
+    
 
-    use super::*;
-    use crate::{
-        adapters::{
-            ethereum_adapter::MockEthereumAdapter,
-            storage::{sqlite_db::SqliteDb, BlockSubmission},
-        },
-        common::EthTxStatus,
-    };
+    
+    
 
     /*
     #[tokio::test]
