@@ -96,28 +96,25 @@ impl Storage for SqliteDb {
                     r#"SELECT * FROM eth_tx_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
                 )?;
 
-                let submission = statement
-                    .query_map([], |row| {
-                        let fuel_block_hash: [u8; 32] = row.get(0)?;
-                        let fuel_block_height: u32 = row.get(1)?;
-                        let completed: bool = row.get(2)?;
+                let mut submission = statement.query_map([], |row| {
+                    let fuel_block_hash: [u8; 32] = row.get(0)?;
+                    let fuel_block_height: u32 = row.get(1)?;
+                    let completed: bool = row.get(2)?;
 
-                        let submitted_at_height = {
-                            let le_bytes: [u8; 8] = row.get(3)?;
-                            u64::from_le_bytes(le_bytes)
-                        };
+                    let submitted_at_height = {
+                        let le_bytes: [u8; 8] = row.get(3)?;
+                        u64::from_le_bytes(le_bytes)
+                    };
 
-                        Ok(BlockSubmission {
-                            fuel_block_hash: fuel_block_hash.into(),
-                            fuel_block_height,
-                            completed,
-                            submitted_at_height: submitted_at_height.into(),
-                        })
-                    })?
-                    .next()
-                    .transpose();
+                    Ok(BlockSubmission {
+                        fuel_block_hash: fuel_block_hash.into(),
+                        fuel_block_height,
+                        completed,
+                        submitted_at_height: submitted_at_height.into(),
+                    })
+                })?;
 
-                submission
+                submission.next().transpose()
             })
             .await?)
     }

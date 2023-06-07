@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc};
 use async_trait::async_trait;
 use ethers::{
     prelude::{abigen, k256::ecdsa::SigningKey, ContractError, Event, SignerMiddleware},
-    providers::{Middleware, Provider, StreamExt, Ws},
+    providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer, Wallet},
     types::{Address, Chain, TransactionReceipt, U256, U64},
 };
@@ -186,15 +186,12 @@ pub struct CommitStreamer {
 }
 
 impl CommitStreamer {
-    pub async fn stream(&self) -> impl Stream<Item = crate::errors::Result<Bytes32>> + '_ {
+    pub async fn stream(&self) -> impl Stream<Item = Result<Bytes32>> + '_ {
         self.events
             .stream()
             .await
             .unwrap()
-            .map_ok(|event| {
-                let hash: [u8; 32] = event.block_hash.into();
-                Bytes32::from(hash)
-            })
+            .map_ok(|event| Bytes32::from(event.block_hash))
             .map_err(|e| Error::NetworkError(e.to_string()))
     }
 }
