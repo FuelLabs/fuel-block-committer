@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use ethers::{
     prelude::{k256::ecdsa::SigningKey, Event, SignerMiddleware},
@@ -8,6 +8,7 @@ use ethers::{
 use fuels::tx::Bytes32;
 use futures::{stream::TryStreamExt, Stream};
 
+use super::BlockCommittedEventStreamer;
 use crate::{
     adapters::ethereum_adapter::ethereum_rpc::CommitSubmittedFilter,
     errors::{Error, Result},
@@ -18,22 +19,29 @@ type CommitEventStreamer = Event<
     SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>,
     CommitSubmittedFilter,
 >;
-pub struct BlockCommittedEventStreamer {
+
+pub struct EthBlockCommittedEventStreamer {
     events: CommitEventStreamer,
 }
 
-impl BlockCommittedEventStreamer {
+#[async_trait::async_trait]
+impl BlockCommittedEventStreamer for EthBlockCommittedEventStreamer {
+    async fn establish_stream(
+        &self,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes32>> + '_ + Send>>> {
+        Ok(Box::pin(
+            self.events
+                .stream()
+                .await
+                .map_err(|e| Error::NetworkError(e.to_string()))?
+                .map_ok(|event| Bytes32::from(event.block_hash))
+                .map_err(|e| Error::Other(e.to_string())),
+        ))
+    }
+}
+
+impl EthBlockCommittedEventStreamer {
     pub fn new(events: CommitEventStreamer) -> Self {
         Self { events }
-    }
-
-    pub async fn establish_stream(&self) -> Result<impl Stream<Item = Result<Bytes32>> + '_> {
-        Ok(self
-            .events
-            .stream()
-            .await
-            .map_err(|e| Error::NetworkError(e.to_string()))?
-            .map_ok(|event| Bytes32::from(event.block_hash))
-            .map_err(|e| Error::NetworkError(e.to_string())))
     }
 }
