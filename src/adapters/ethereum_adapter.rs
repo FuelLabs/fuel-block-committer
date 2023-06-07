@@ -15,5 +15,5 @@ use crate::{
 pub trait EthereumAdapter: Send + Sync {
     async fn submit(&self, block: Block) -> Result<()>;
     async fn get_latest_eth_block(&self) -> Result<U64>;
-    fn commit_streamer(&self, eth_block_height: u64) -> Result<BlockCommittedEventStreamer>;
+    fn block_committed_event_streamer(&self, eth_block_height: u64) -> BlockCommittedEventStreamer;
 }

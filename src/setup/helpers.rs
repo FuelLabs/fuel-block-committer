@@ -52,7 +52,7 @@ pub fn spawn_eth_committer_and_listener(
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
 
     let listener_handle = schedule_polling(
-        internal_config.eth_polling_interval,
+        internal_config.between_eth_event_stream_restablishing_attempts,
         CommitListener::new(ethereum_rpc, storage),
         "Commit Listener",
     );

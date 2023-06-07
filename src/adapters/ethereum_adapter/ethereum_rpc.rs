@@ -163,13 +163,13 @@ impl EthereumAdapter for EthereumRPC {
         })
     }
 
-    fn commit_streamer(&self, eth_block_height: u64) -> Result<BlockCommittedEventStreamer> {
+    fn block_committed_event_streamer(&self, eth_block_height: u64) -> BlockCommittedEventStreamer {
         let events = self
             .contract
             .event::<CommitSubmittedFilter>()
             .from_block(eth_block_height);
 
-        Ok(BlockCommittedEventStreamer::new(events))
+        BlockCommittedEventStreamer::new(events)
     }
 }
 

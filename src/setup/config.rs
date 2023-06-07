@@ -21,7 +21,7 @@ pub struct Config {
 pub struct InternalConfig {
     pub fuel_polling_interval: Duration,
     pub fuel_errors_before_unhealthy: usize,
-    pub eth_polling_interval: Duration,
+    pub between_eth_event_stream_restablishing_attempts: Duration,
     pub eth_errors_before_unhealthy: usize,
 }
 
@@ -30,7 +30,7 @@ impl Default for InternalConfig {
         Self {
             fuel_polling_interval: Duration::from_secs(3),
             fuel_errors_before_unhealthy: 3,
-            eth_polling_interval: Duration::from_secs(3),
+            between_eth_event_stream_restablishing_attempts: Duration::from_secs(3),
             eth_errors_before_unhealthy: 3,
         }
     }
