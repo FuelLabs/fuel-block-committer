@@ -3,15 +3,15 @@ use std::{str::FromStr, sync::Arc};
 use async_trait::async_trait;
 use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
-    providers::{Middleware, Provider, Ws},
+    providers::{Middleware, Provider, Ws, StreamExt},
     signers::{LocalWallet, Signer},
-    types::{Address, Chain, TransactionReceipt, H256, U256},
+    types::{Address, Chain, TransactionReceipt, H256, U256, U64},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
 use tracing::info;
 use url::Url;
 
-use super::eth_metrics::EthMetrics;
+use super::{eth_metrics::EthMetrics, storage::Storage};
 use crate::{
     common::EthTxStatus,
     errors::{Error, Result},
@@ -23,7 +23,11 @@ use crate::{
 pub trait EthereumAdapter: Send + Sync {
     async fn submit(&self, block: Block) -> Result<H256>;
     async fn poll_tx_status(&self, tx_hash: H256) -> Result<EthTxStatus>;
-    // async fn stream_commit_event(&self, from_block: u64) -> Result<()>;
+    async fn get_latest_eth_block(&self) -> Result<U64>;
+    async fn watch_events(
+        &self, 
+        from_block: u64, 
+    ) -> Result<()>;
 }
 
 abigen!(
@@ -39,6 +43,7 @@ pub struct EthereumRPC {
     provider: Provider<Ws>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     wallet_address: Address,
+    storage: Arc<Box<dyn Storage>>,
     metrics: EthMetrics,
     health_tracker: ConnectionHealthTracker,
 }
@@ -50,6 +55,7 @@ impl EthereumRPC {
         contract_address: Bytes20,
         ethereum_wallet_key: &str,
         unhealthy_after_n_errors: usize,
+        storage: Arc<Box<dyn Storage>>
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(ethereum_rpc.to_string())
             .await
@@ -58,6 +64,7 @@ impl EthereumRPC {
         let wallet = LocalWallet::from_str(ethereum_wallet_key)?.with_chain_id(chain_id);
         let wallet_address = wallet.address();
 
+        // provider is cloned, is connection shared?
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
         let contract_address = Address::from_slice(contract_address.as_ref());
@@ -67,6 +74,7 @@ impl EthereumRPC {
             provider,
             contract,
             wallet_address,
+            storage,
             metrics: EthMetrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
         })
@@ -170,11 +178,35 @@ impl EthereumAdapter for EthereumRPC {
         Ok(EthereumRPC::extract_status(result))
     }
 
-    // fn commit_event_stream(&self, from_block: u64) -> Result<()> {
-    //     let events = self.contract
-    //         .event::<CommitSubmittedFilter>()
-    //         .from_block(from_block);
-    // }
+    async fn get_latest_eth_block(&self) -> Result<U64> {
+        self.provider.get_block_number().await
+        .map_err(|err| {
+            //self.handle_network_error();
+            Error::NetworkError(err.to_string())
+        })
+    }
+
+    async fn watch_events(
+        &self, 
+        from_block: u64,
+    ) -> Result<()>
+    {
+        let events = self.contract
+            .event::<CommitSubmittedFilter>()
+            .from_block(from_block);
+
+        let mut stream = events
+            .stream()
+            .await
+            .map_err(|e| Error::NetworkError(e.to_string()))?
+            .take(1); 
+
+        while let Some(Ok(event)) = stream.next().await {
+            self.storage.set_submission_completed(event.block_hash.into()).await?
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +216,8 @@ mod tests {
         types::block::{Block as FuelBlock, Header as FuelBlockHeader},
     };
     use prometheus::Registry;
+
+    use crate::adapters::storage::sqlite_db::SqliteDb;
 
     use super::*;
 
@@ -255,7 +289,8 @@ mod tests {
     async fn given_eth_rpc() -> EthereumRPC {
         let url = Url::parse("http://127.0.0.42:42").unwrap();
         let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
-        EthereumRPC::connect(&url, Default::default(), Default::default(), wallet_key, 3)
+        let storage = Arc::new(Box::new(SqliteDb::temporary().await.unwrap()) as Box<dyn Storage>);
+        EthereumRPC::connect(&url, Default::default(), Default::default(), wallet_key, 3, storage)
             .await
             .unwrap()
     }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use fuel_block_committer::{
     api::launch_api_server,
     cli,
@@ -33,7 +35,7 @@ async fn main() -> Result<()> {
     );
 
     let (ethereum_rpc, eth_health_check) =
-        create_eth_rpc(&config, &internal_config, &metrics_registry).await?;
+        create_eth_rpc(&config, &internal_config, &metrics_registry, Arc::new(Box::new(storage.clone()))).await?;
 
     let (_committer_handle, _listener_handle) = spawn_eth_committer_and_listener(
         &internal_config,
