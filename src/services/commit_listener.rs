@@ -3,7 +3,11 @@ use futures::StreamExt;
 use tracing::{error, info, warn};
 
 use crate::{
-    adapters::{ethereum_adapter::EthereumAdapter, runner::Runner, storage::Storage},
+    adapters::{
+        ethereum_adapter::{EthereumAdapter, FuelBlockCommitedOnEth},
+        runner::Runner,
+        storage::Storage,
+    },
     errors::Result,
 };
 
@@ -40,9 +44,11 @@ impl Runner for CommitListener {
 
         while let Some(event) = stream.next().await {
             match event {
-                Ok(block_hash) => {
-                    self.storage.set_submission_completed(block_hash).await?;
-                    info!("block with hash: {:x} completed", block_hash);
+                Ok(FuelBlockCommitedOnEth { fuel_block_hash }) => {
+                    self.storage
+                        .set_submission_completed(fuel_block_hash)
+                        .await?;
+                    info!("block with hash: {:x} completed", fuel_block_hash);
                 }
                 Err(error) => {
                     error!("Received an error from block commit event stream: {error}");
@@ -64,7 +70,7 @@ mod tests {
 
     use crate::{
         adapters::{
-            ethereum_adapter::{MockEthereumAdapter, MockEventStreamer},
+            ethereum_adapter::{FuelBlockCommitedOnEth, MockEthereumAdapter, MockEventStreamer},
             runner::Runner,
             storage::{sqlite_db::SqliteDb, BlockSubmission, Storage},
         },
@@ -122,6 +128,10 @@ mod tests {
 
     fn given_event_streamer_w_events(events: Vec<Result<Bytes32>>) -> MockEventStreamer {
         let mut streamer = MockEventStreamer::new();
+        let events = events
+            .into_iter()
+            .map(|e| e.map(|fuel_block_hash| FuelBlockCommitedOnEth { fuel_block_hash }))
+            .collect::<Vec<_>>();
 
         streamer
             .expect_establish_stream()

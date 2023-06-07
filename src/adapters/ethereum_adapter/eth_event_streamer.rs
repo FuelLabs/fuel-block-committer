@@ -8,7 +8,7 @@ use ethers::{
 use fuels::tx::Bytes32;
 use futures::{stream::TryStreamExt, Stream};
 
-use super::EventStreamer;
+use super::{EventStreamer, FuelBlockCommitedOnEth};
 use crate::{
     adapters::ethereum_adapter::ethereum_rpc::CommitSubmittedFilter,
     errors::{Error, Result},
@@ -28,13 +28,16 @@ pub struct EthEventStreamer {
 impl EventStreamer for EthEventStreamer {
     async fn establish_stream(
         &self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes32>> + '_ + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommitedOnEth>> + '_ + Send>>> {
         Ok(Box::pin(
             self.events
                 .stream()
                 .await
                 .map_err(|e| Error::NetworkError(e.to_string()))?
-                .map_ok(|event| Bytes32::from(event.block_hash))
+                .map_ok(|event| {
+                    let fuel_block_hash = Bytes32::from(event.block_hash);
+                    FuelBlockCommitedOnEth { fuel_block_hash }
+                })
                 .map_err(|e| Error::Other(e.to_string())),
         ))
     }

@@ -10,12 +10,17 @@ use futures::Stream;
 
 use crate::errors::Result;
 
+#[derive(Debug, Clone, Copy)]
+pub struct FuelBlockCommitedOnEth {
+    pub fuel_block_hash: Bytes32,
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EventStreamer {
     async fn establish_stream<'a>(
         &'a self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes32>> + 'a + Send>>>;
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommitedOnEth>> + 'a + Send>>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
