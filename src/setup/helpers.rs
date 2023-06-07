@@ -7,8 +7,8 @@ use tracing::error;
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlockFetcher, ethereum_adapter::EthereumRPC, runner::Runner,
-        storage::sled_db::SledDb,
+        block_fetcher::FuelBlockFetcher,
+        storage::{sqlite_db::SqliteDb, Storage}, ethereum_adapter::EthereumRPC, runner::Runner,
     },
     errors::Result,
     services::{BlockCommitter, BlockWatcher, CommitListener},
@@ -19,7 +19,7 @@ use crate::{
 pub fn spawn_block_watcher(
     config: &Config,
     internal_config: &InternalConfig,
-    storage: SledDb,
+    storage: impl Storage + 'static,
     registry: &Registry,
 ) -> (
     Receiver<FuelBlock>,
@@ -44,7 +44,7 @@ pub fn spawn_eth_committer_and_listener(
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
     ethereum_rpc: EthereumRPC,
-    storage: SledDb,
+    storage: SqliteDb,
 ) -> Result<(tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)> {
     let committer_handler =
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
@@ -61,7 +61,7 @@ pub fn spawn_eth_committer_and_listener(
 fn create_block_committer(
     rx_fuel_block: Receiver<FuelBlock>,
     ethereum_rpc: EthereumRPC,
-    storage: SledDb,
+    storage: impl Storage + 'static,
 ) -> tokio::task::JoinHandle<()> {
     let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc, storage);
     tokio::spawn(async move {
@@ -126,7 +126,7 @@ fn create_block_watcher(
     config: &Config,
     registry: &Registry,
     block_fetcher: FuelBlockFetcher,
-    storage: SledDb,
+    storage: impl Storage + 'static,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher =
@@ -140,10 +140,10 @@ pub fn setup_logger() {
     tracing_subscriber::fmt::init();
 }
 
-pub fn setup_storage(config: &Config) -> Result<SledDb> {
+pub async fn setup_storage(config: &Config) -> Result<SqliteDb> {
     if let Some(path) = &config.db_path {
-        SledDb::open(path)
+        SqliteDb::open(path).await
     } else {
-        SledDb::temporary()
+        SqliteDb::temporary().await
     }
 }

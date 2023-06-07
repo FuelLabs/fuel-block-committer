@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumString, Display)]
 pub enum EthTxStatus {
     Pending,
     Committed,

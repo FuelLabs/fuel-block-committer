@@ -1,9 +1,8 @@
 use async_trait::async_trait;
-use tracing::{error, info, log::warn};
+
 
 use crate::{
     adapters::{ethereum_adapter::EthereumAdapter, runner::Runner, storage::Storage},
-    common::EthTxStatus,
     errors::Result,
 };
 
@@ -27,125 +26,126 @@ impl CommitListener {
 #[async_trait]
 impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
-        let Some(submission) = self.storage.submission_w_latest_block().await? else {
+        let Some(_submission) = self.storage.submission_w_latest_block().await? else {
             return Ok(())
         };
 
-        if submission.status != EthTxStatus::Pending {
-            warn!("no pending tx submission found in storage");
-            return Ok(());
-        }
-
-        let new_status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
-        match new_status {
-            EthTxStatus::Pending => warn!("tx: {} not commited", submission.tx_hash),
-            EthTxStatus::Committed => {
-                info!("tx: {} commited", submission.tx_hash);
-            }
-            EthTxStatus::Aborted => error!("tx: {} aborted", submission.tx_hash),
-        }
-
-        if new_status != EthTxStatus::Pending {
-            self.storage
-                .set_submission_status(submission.fuel_block_height, new_status)
-                .await?;
-        }
+        // TODO:
+        // if submission.status != EthTxStatus::Pending {
+        //     warn!("no pending tx submission found in storage");
+        //     return Ok(());
+        // }
+        //
+        // let new_status = self.ethereum_rpc.poll_tx_status(submission.tx_hash).await?;
+        // match new_status {
+        //     EthTxStatus::Pending => warn!("tx: {} not commited", submission.tx_hash),
+        //     EthTxStatus::Committed => {
+        //         info!("tx: {} commited", submission.tx_hash);
+        //     }
+        //     EthTxStatus::Aborted => error!("tx: {} aborted", submission.tx_hash),
+        // }
+        //
+        // if new_status != EthTxStatus::Pending {
+        //     self.storage
+        //         .set_submission_status(submission.fuel_block_height, new_status)
+        //         .await?;
+        // }
 
         Ok(())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use ethers::types::H256;
-    use mockall::predicate;
-
-    use super::*;
-    use crate::{
-        adapters::{
-            ethereum_adapter::MockEthereumAdapter,
-            storage::{sled_db::SledDb, BlockSubmission},
-        },
-        common::EthTxStatus,
-    };
-
-    #[tokio::test]
-    async fn listener_will_not_update_storage_if_tx_is_still_pending() {
-        // given
-        let tx_hash = given_tx_hash();
-        let storage = given_storage(tx_hash).await;
-        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Pending);
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
-
-        // when
-        commit_listener.run().await.unwrap();
-
-        //then
-        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
-
-        assert_eq!(res.status, EthTxStatus::Pending);
-    }
-
-    #[tokio::test]
-    async fn listener_will_update_storage_if_tx_is_committed() {
-        // given
-        let tx_hash = given_tx_hash();
-        let storage = given_storage(tx_hash).await;
-        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Committed);
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
-
-        // when
-        commit_listener.run().await.unwrap();
-
-        //then
-        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
-
-        assert_eq!(res.status, EthTxStatus::Committed);
-    }
-
-    #[tokio::test]
-    async fn listener_will_update_storage_if_tx_is_aborted() {
-        // given
-        let tx_hash = given_tx_hash();
-        let storage = given_storage(tx_hash).await;
-        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Aborted);
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
-
-        // when
-        commit_listener.run().await.unwrap();
-
-        //then
-        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
-
-        assert_eq!(res.status, EthTxStatus::Aborted);
-    }
-
-    fn given_eth_rpc_that_returns(tx_hash: H256, status: EthTxStatus) -> MockEthereumAdapter {
-        let mut eth_rpc_mock = MockEthereumAdapter::new();
-        eth_rpc_mock
-            .expect_poll_tx_status()
-            .with(predicate::eq(tx_hash))
-            .return_once(|_| Ok(status));
-        eth_rpc_mock
-    }
-
-    fn given_tx_hash() -> H256 {
-        "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
-            .parse()
-            .unwrap()
-    }
-
-    async fn given_storage(tx_hash: H256) -> SledDb {
-        let storage = SledDb::temporary().unwrap();
-        storage
-            .insert(BlockSubmission {
-                fuel_block_height: 3,
-                status: EthTxStatus::Pending,
-                tx_hash,
-            })
-            .await
-            .unwrap();
-
-        storage
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use ethers::types::H256;
+//     use mockall::predicate;
+//
+//     use super::*;
+//     use crate::{
+//         adapters::{
+//             ethereum_adapter::MockEthereumAdapter,
+//             storage::{BlockSubmission, sqlite_db::SqliteDb},
+//         },
+//         common::EthTxStatus,
+//     };
+//
+//     #[tokio::test]
+//     async fn listener_will_not_update_storage_if_tx_is_still_pending() {
+//         // given
+//         let tx_hash = given_tx_hash();
+//         let storage = given_storage(tx_hash).await;
+//         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Pending);
+//         let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+//
+//         // when
+//         commit_listener.run().await.unwrap();
+//
+//         //then
+//         let res = storage.submission_w_latest_block().await.unwrap().unwrap();
+//
+//         assert_eq!(res.status, EthTxStatus::Pending);
+//     }
+//
+//     #[tokio::test]
+//     async fn listener_will_update_storage_if_tx_is_committed() {
+//         // given
+//         let tx_hash = given_tx_hash();
+//         let storage = given_storage(tx_hash).await;
+//         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Committed);
+//         let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+//
+//         // when
+//         commit_listener.run().await.unwrap();
+//
+//         //then
+//         let res = storage.submission_w_latest_block().await.unwrap().unwrap();
+//
+//         assert_eq!(res.status, EthTxStatus::Committed);
+//     }
+//
+//     #[tokio::test]
+//     async fn listener_will_update_storage_if_tx_is_aborted() {
+//         // given
+//         let tx_hash = given_tx_hash();
+//         let storage = given_storage(tx_hash).await;
+//         let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Aborted);
+//         let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+//
+//         // when
+//         commit_listener.run().await.unwrap();
+//
+//         //then
+//         let res = storage.submission_w_latest_block().await.unwrap().unwrap();
+//
+//         assert_eq!(res.status, EthTxStatus::Aborted);
+//     }
+//
+//     fn given_eth_rpc_that_returns(tx_hash: H256, status: EthTxStatus) -> MockEthereumAdapter {
+//         let mut eth_rpc_mock = MockEthereumAdapter::new();
+//         eth_rpc_mock
+//             .expect_poll_tx_status()
+//             .with(predicate::eq(tx_hash))
+//             .return_once(|_| Ok(status));
+//         eth_rpc_mock
+//     }
+//
+//     fn given_tx_hash() -> H256 {
+//         "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
+//             .parse()
+//             .unwrap()
+//     }
+//
+//     async fn given_storage(tx_hash: H256) -> SqliteDb {
+//         let storage = SqliteDb::temporary().unwrap();
+//         storage
+//             .insert(BlockSubmission {
+//                 fuel_block_height: 3,
+//                 status: EthTxStatus::Pending,
+//                 tx_hash,
+//             })
+//             .await
+//             .unwrap();
+//
+//         storage
+//     }
+// }

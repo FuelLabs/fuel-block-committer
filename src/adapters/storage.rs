@@ -1,10 +1,10 @@
-pub mod sled_db;
+pub mod sqlite_db;
 
 use async_trait::async_trait;
 use fuels::tx::Bytes32;
 use serde::{Deserialize, Serialize};
 
-use crate::{common::EthTxStatus, errors::Result};
+use crate::{errors::Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {
@@ -17,7 +17,6 @@ pub struct BlockSubmission {
 #[async_trait]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
-    async fn update(&self, submission: BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<()>;
 }

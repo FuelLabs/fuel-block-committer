@@ -16,10 +16,14 @@ use prometheus::Registry;
 async fn main() -> Result<()> {
     let config = cli::parse();
     let internal_config = InternalConfig::default();
-    let metrics_registry = Registry::default();
-    let storage = setup_storage(&config)?;
+    let _metrics_registry = Registry::default();
+    let _storage = setup_storage(&config).await?;
 
     setup_logger();
+
+    let storage = setup_storage(&config).await?;
+
+    let metrics_registry = Registry::default();
 
     let (rx_fuel_block, _block_watcher_handle, fuel_health_check) = spawn_block_watcher(
         &config,

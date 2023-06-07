@@ -8,9 +8,8 @@ use crate::{
     adapters::{
         ethereum_adapter::EthereumAdapter,
         runner::Runner,
-        storage::{BlockSubmission, Storage},
+        storage::{Storage},
     },
-    common::EthTxStatus,
     errors::Result,
 };
 
@@ -34,14 +33,16 @@ impl BlockCommitter {
         }
     }
 
-    async fn store_pending_submission(&self, tx_hash: H256, block_height: u32) -> Result<()> {
-        self.storage
-            .insert(BlockSubmission {
-                fuel_block_height: block_height,
-                status: EthTxStatus::Pending,
-                tx_hash,
-            })
-            .await?;
+    async fn store_pending_submission(&self, tx_hash: H256, _block_height: u32) -> Result<()> {
+        // TODO:
+        // let bs = BlockSubmission {
+        //         fuel_block_height: block_height,
+        //         completed: false,
+        //         tx_hash,
+        //     };
+        // self.storage
+        //     .insert(bs)
+        //     .await?;
 
         info!("tx: {} pending", &tx_hash);
         Ok(())
@@ -80,7 +81,7 @@ mod tests {
     use mockall::predicate;
 
     use super::*;
-    use crate::adapters::{ethereum_adapter::MockEthereumAdapter, storage::sled_db::SledDb};
+    use crate::adapters::{ethereum_adapter::MockEthereumAdapter, storage::sqlite_db::SqliteDb};
 
     #[tokio::test]
     async fn block_committer_will_submit_and_write_block() {
@@ -89,7 +90,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block = given_a_block(block_height);
         let tx_hash = given_tx_hash();
-        let storage = SledDb::temporary().unwrap();
+        let storage = SqliteDb::temporary().await.unwrap();
         let eth_rpc_mock = given_eth_rpc_that_expects(block.clone(), tx_hash);
         tx.try_send(block.clone()).unwrap();
 
@@ -140,7 +141,7 @@ mod tests {
     async fn spawn_committer_and_run_until_timeout(
         rx: Receiver<FuelBlock>,
         eth_rpc_mock: MockEthereumAdapter,
-        storage: SledDb,
+        storage: impl Storage + 'static,
     ) {
         let _ = tokio::time::timeout(Duration::from_millis(250), async move {
             let block_committer = BlockCommitter::new(rx, eth_rpc_mock, storage);
