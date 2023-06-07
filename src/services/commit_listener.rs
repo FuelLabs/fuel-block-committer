@@ -33,6 +33,7 @@ impl Runner for CommitListener {
 #[cfg(test)]
 mod tests {
     use ethers::types::H256;
+    use fuels::tx::Bytes32;
     use mockall::predicate;
 
     use super::*;
@@ -46,24 +47,7 @@ mod tests {
 
 /*
     #[tokio::test]
-    async fn listener_will_not_update_storage_if_tx_is_still_pending() {
-        // given
-        let tx_hash = given_tx_hash();
-        let storage = given_storage(tx_hash).await;
-        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Pending);
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
-
-        // when
-        commit_listener.run().await.unwrap();
-
-        //then
-        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
-
-        assert_eq!(res.status, EthTxStatus::Pending);
-    }
-
-    #[tokio::test]
-    async fn listener_will_update_storage_if_tx_is_committed() {
+    async fn listener_will_update_storage_if_event_is_emitted() {
         // given
         let tx_hash = given_tx_hash();
         let storage = given_storage(tx_hash).await;
@@ -76,30 +60,13 @@ mod tests {
         //then
         let res = storage.submission_w_latest_block().await.unwrap().unwrap();
 
-        assert_eq!(res.status, EthTxStatus::Committed);
-    }
-
-    #[tokio::test]
-    async fn listener_will_update_storage_if_tx_is_aborted() {
-        // given
-        let tx_hash = given_tx_hash();
-        let storage = given_storage(tx_hash).await;
-        let eth_rpc_mock = given_eth_rpc_that_returns(tx_hash, EthTxStatus::Aborted);
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
-
-        // when
-        commit_listener.run().await.unwrap();
-
-        //then
-        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
-
-        assert_eq!(res.status, EthTxStatus::Aborted);
+        assert!(res.completed);
     }
 
     fn given_eth_rpc_that_returns(tx_hash: H256, status: EthTxStatus) -> MockEthereumAdapter {
         let mut eth_rpc_mock = MockEthereumAdapter::new();
         eth_rpc_mock
-            .expect_poll_tx_status()
+            .expect_()
             .with(predicate::eq(tx_hash))
             .return_once(|_| Ok(status));
         eth_rpc_mock
@@ -112,17 +79,18 @@ mod tests {
     }
 
     async fn given_storage(tx_hash: H256) -> SqliteDb {
-        let storage = SqliteDb::temporary().unwrap();
+        let storage = SqliteDb::temporary().await.unwrap();
         storage
             .insert(BlockSubmission {
                 fuel_block_height: 3,
-                status: EthTxStatus::Pending,
-                tx_hash,
+                fuel_block_hash: Bytes32::default(),
+                completed: false,
+                submitted_at_height: Default::default(),
             })
             .await
             .unwrap();
 
         storage
     }
-    */
+     */
 }

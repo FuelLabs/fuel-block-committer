@@ -65,23 +65,21 @@ impl Runner for BlockCommitter {
 mod tests {
     use std::time::Duration;
 
-    use ethers::types::H256;
+    use ethers::types::{H256, U64};
     use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
     use mockall::predicate;
 
     use super::*;
-    use crate::adapters::{storage::sqlite_db::SqliteDb};
+    use crate::adapters::{storage::sqlite_db::SqliteDb, ethereum_adapter::MockEthereumAdapter};
 
-/*
     #[tokio::test]
     async fn block_committer_will_submit_and_write_block() {
         // given
         let block_height = 5;
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block = given_a_block(block_height);
-        let tx_hash = given_tx_hash();
         let storage = SqliteDb::temporary().await.unwrap();
-        let eth_rpc_mock = given_eth_rpc_that_expects(block.clone(), tx_hash);
+        let eth_rpc_mock = given_eth_rpc_that_expects(block.clone());
         tx.try_send(block.clone()).unwrap();
 
         // when
@@ -119,12 +117,17 @@ mod tests {
             .unwrap()
     }
 
-    fn given_eth_rpc_that_expects(block: FuelBlock, tx_hash: H256) -> MockEthereumAdapter {
+    fn given_eth_rpc_that_expects(block: FuelBlock) -> MockEthereumAdapter {
         let mut eth_rpc_mock = MockEthereumAdapter::new();
         eth_rpc_mock
             .expect_submit()
             .with(predicate::eq(block))
-            .return_once(move |_| Ok(tx_hash));
+            .return_once(move |_| Ok(()));
+
+        eth_rpc_mock
+            .expect_get_latest_eth_block()
+            .return_once(move || Ok(U64::default()));
+
         eth_rpc_mock
     }
 
@@ -142,5 +145,4 @@ mod tests {
         })
         .await;
     }
-     */
 }

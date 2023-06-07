@@ -21,8 +21,7 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EthereumAdapter: Send + Sync {
-    async fn submit(&self, block: Block) -> Result<H256>;
-    async fn poll_tx_status(&self, tx_hash: H256) -> Result<EthTxStatus>;
+    async fn submit(&self, block: Block) -> Result<()>;
     async fn get_latest_eth_block(&self) -> Result<U64>;
     async fn watch_events(
         &self, 
@@ -140,9 +139,9 @@ impl RegistersMetrics for EthereumRPC {
 
 #[async_trait]
 impl EthereumAdapter for EthereumRPC {
-    async fn submit(&self, block: Block) -> Result<H256> {
+    async fn submit(&self, block: Block) -> Result<()> {
         let contract_call = self.contract.commit(*block.id, block.header.height.into());
-        let tx = contract_call
+        let _tx = contract_call
             .send()
             .await
             .map_err(|contract_err| match contract_err {
@@ -161,21 +160,7 @@ impl EthereumAdapter for EthereumRPC {
 
         self.record_balance().await?;
 
-        Ok(tx.tx_hash())
-    }
-
-    async fn poll_tx_status(&self, tx_hash: H256) -> Result<EthTxStatus> {
-        let result = self
-            .provider
-            .get_transaction_receipt(tx_hash)
-            .await
-            .map_err(|err| {
-                self.handle_network_error();
-                Error::NetworkError(err.to_string())
-            })?;
-        self.handle_network_success();
-
-        Ok(EthereumRPC::extract_status(result))
+        Ok(())
     }
 
     async fn get_latest_eth_block(&self) -> Result<U64> {
