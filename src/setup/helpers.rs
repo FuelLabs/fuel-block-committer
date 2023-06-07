@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use fuels::types::block::Block as FuelBlock;
 use prometheus::Registry;
@@ -78,7 +78,6 @@ pub async fn create_eth_rpc(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
-    storage: Arc<Box<dyn Storage>>,
 ) -> Result<(EthereumRPC, HealthChecker)> {
     let ethereum_rpc = EthereumRPC::connect(
         &config.ethereum_rpc,
@@ -86,7 +85,6 @@ pub async fn create_eth_rpc(
         config.state_contract_address,
         &config.ethereum_wallet_key,
         internal_config.eth_errors_before_unhealthy,
-        storage,
     )
     .await?;
     ethereum_rpc.register_metrics(registry);

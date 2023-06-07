@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use futures::StreamExt;
+use tracing::info;
 
 use crate::{
     adapters::{ethereum_adapter::EthereumAdapter, runner::Runner, storage::Storage},
@@ -26,19 +28,18 @@ impl CommitListener {
 impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
         let eth_block = self.storage.latest_eth_block().await.unwrap_or(0);
-        self.ethereum_rpc.watch_events(eth_block).await
+        let commit_streamer = self.ethereum_rpc.commit_streamer(eth_block).unwrap();
+        let mut stream = commit_streamer.stream().await;
+        while let Some(Ok(a)) = stream.next().await {
+            self.storage.set_submission_completed(a).await?;
+            info!("block with hash: {:x} completed", a);
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    
-    
-    
-
-    
-    
-
     /*
     #[tokio::test]
     async fn listener_will_update_storage_if_event_is_emitted() {

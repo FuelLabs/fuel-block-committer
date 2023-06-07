@@ -4,8 +4,10 @@ use fuels::tx::Bytes32;
 use rusqlite::Connection;
 use tokio::{sync::Mutex, task};
 
-use super::BlockSubmission;
-use crate::{adapters::storage::Storage, errors::Result};
+use crate::{
+    adapters::storage::{BlockSubmission, Storage},
+    errors::Result,
+};
 
 #[derive(Clone)]
 pub struct SqliteDb {
