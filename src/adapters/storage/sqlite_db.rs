@@ -42,9 +42,9 @@ impl SqliteDb {
         connection.execute(
             r#"CREATE TABLE IF NOT EXISTS eth_tx_submission (
                     fuel_block_hash     BLOB PRIMARY KEY NOT NULL,
-                    fuel_block_height   INTEGER NOT NULL,
+                    fuel_block_height   INTEGER NOT NULL UNIQUE,
                     completed           INTEGER NOT NULL,
-                    submitted_at_height INTEGER NOT NULL
+                    submitted_at_height BLOB NOT NULL
                 )"#,
             (), // empty list of parameters.
         )?;
@@ -77,10 +77,11 @@ impl Storage for SqliteDb {
             completed,
             submitted_at_height,
         } = submission;
+        let submitted_at_height = submitted_at_height.as_u64().to_le_bytes();
 
         self.run_blocking(move |connection| {
             let query = "INSERT INTO eth_tx_submission (fuel_block_hash, fuel_block_height, completed, submitted_at_height) VALUES (?1, ?2, ?3, ?4)";
-            connection.execute( query, (*fuel_block_hash, fuel_block_height, completed, submitted_at_height.as_u64()))
+            connection.execute( query, (*fuel_block_hash, fuel_block_height, completed, submitted_at_height))
         }).await?;
 
         Ok(())
@@ -98,7 +99,11 @@ impl Storage for SqliteDb {
                         let fuel_block_hash: [u8; 32] = row.get(0)?;
                         let fuel_block_height: u32 = row.get(1)?;
                         let completed: bool = row.get(2)?;
-                        let submitted_at_height: u64 = row.get(3)?;
+
+                        let submitted_at_height = {
+                            let le_bytes: [u8; 8] = row.get(3)?;
+                            u64::from_le_bytes(le_bytes)
+                        };
 
                         Ok(BlockSubmission {
                             fuel_block_hash: fuel_block_hash.into(),
@@ -128,8 +133,6 @@ impl Storage for SqliteDb {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
-
     use super::*;
     use crate::adapters::storage::BlockSubmission;
 
@@ -187,12 +190,9 @@ mod tests {
     }
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {
-        let fuel_block_hash: [u8; 32] = rand::thread_rng().gen();
         BlockSubmission {
-            fuel_block_hash: fuel_block_hash.into(),
             fuel_block_height,
-            completed: false,
-            submitted_at_height: Default::default(),
+            ..BlockSubmission::random()
         }
     }
 }

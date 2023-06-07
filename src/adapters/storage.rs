@@ -14,6 +14,21 @@ pub struct BlockSubmission {
     pub submitted_at_height: ethers::types::U64,
 }
 
+impl BlockSubmission {
+    #[cfg(test)]
+    pub fn random() -> Self {
+        use rand::Rng;
+
+        let mut rand = rand::thread_rng();
+        Self {
+            fuel_block_hash: rand.gen::<[u8; 32]>().into(),
+            fuel_block_height: rand.gen(),
+            completed: false,
+            submitted_at_height: rand.gen::<u64>().into(),
+        }
+    }
+}
+
 #[async_trait]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;

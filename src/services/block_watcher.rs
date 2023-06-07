@@ -121,7 +121,6 @@ mod tests {
 
     use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
     use prometheus::Registry;
-    use rand::Rng;
 
     use super::*;
     use crate::adapters::{
@@ -259,13 +258,9 @@ mod tests {
     }
 
     fn given_an_pending_submission(block_height: u32) -> BlockSubmission {
-        let fuel_block_hash: [u8; 32] = rand::thread_rng().gen();
-
         BlockSubmission {
             fuel_block_height: block_height,
-            fuel_block_hash: fuel_block_hash.into(),
-            completed: false,
-            submitted_at_height: 0u64.into(),
+            ..BlockSubmission::random()
         }
     }
 
