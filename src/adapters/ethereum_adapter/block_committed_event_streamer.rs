@@ -13,17 +13,17 @@ use crate::{
     errors::{Error, Result},
 };
 
-type CommitEvent = Event<
+type CommitEventStreamer = Event<
     Arc<SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>>,
     SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>,
     CommitSubmittedFilter,
 >;
-pub struct CommitStreamer {
-    events: CommitEvent,
+pub struct BlockCommittedEventStreamer {
+    events: CommitEventStreamer,
 }
 
-impl CommitStreamer {
-    pub fn new(events: CommitEvent) -> Self {
+impl BlockCommittedEventStreamer {
+    pub fn new(events: CommitEventStreamer) -> Self {
         Self { events }
     }
     pub async fn stream(&self) -> impl Stream<Item = Result<Bytes32>> + '_ {

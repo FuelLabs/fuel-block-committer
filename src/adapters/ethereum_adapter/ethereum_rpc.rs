@@ -8,14 +8,15 @@ use ethers::{
     types::{Address, Chain, TransactionReceipt, U256, U64},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
-use futures::stream::TryStreamExt;
 use tracing::info;
 use url::Url;
 
 use crate::{
     adapters::{
         eth_metrics::EthMetrics,
-        ethereum_adapter::{commit_streamer::CommitStreamer, EthereumAdapter},
+        ethereum_adapter::{
+            block_committed_event_streamer::BlockCommittedEventStreamer, EthereumAdapter,
+        },
     },
     common::EthTxStatus,
     errors::{Error, Result},
@@ -162,13 +163,13 @@ impl EthereumAdapter for EthereumRPC {
         })
     }
 
-    fn commit_streamer(&self, eth_block_height: u64) -> Result<CommitStreamer> {
+    fn commit_streamer(&self, eth_block_height: u64) -> Result<BlockCommittedEventStreamer> {
         let events = self
             .contract
             .event::<CommitSubmittedFilter>()
             .from_block(eth_block_height);
 
-        Ok(CommitStreamer::new(events))
+        Ok(BlockCommittedEventStreamer::new(events))
     }
 }
 
