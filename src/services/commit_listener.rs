@@ -31,7 +31,13 @@ impl CommitListener {
 #[async_trait]
 impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
-        let eth_block = self.storage.latest_eth_block().await.unwrap_or(0);
+        let eth_block = self
+            .storage
+            .submission_w_latest_block()
+            .await?
+            .map(|submission| submission.submitted_at_height.as_u64())
+            .unwrap_or(0);
+
         let commit_streamer = self.ethereum_rpc.block_committed_event_streamer(eth_block);
 
         let mut stream = commit_streamer.establish_stream().await?;
