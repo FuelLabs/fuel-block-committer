@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-
 use crate::{
     adapters::{ethereum_adapter::EthereumAdapter, runner::Runner, storage::Storage},
     errors::Result,

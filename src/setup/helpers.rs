@@ -8,7 +8,9 @@ use tracing::error;
 use crate::{
     adapters::{
         block_fetcher::FuelBlockFetcher,
-        storage::{sqlite_db::SqliteDb, Storage}, ethereum_adapter::EthereumRPC, runner::Runner,
+        ethereum_adapter::EthereumRPC,
+        runner::Runner,
+        storage::{sqlite_db::SqliteDb, Storage},
     },
     errors::Result,
     services::{BlockCommitter, BlockWatcher, CommitListener},

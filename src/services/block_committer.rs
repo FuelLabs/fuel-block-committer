@@ -5,11 +5,7 @@ use tokio::sync::{mpsc::Receiver, Mutex};
 use tracing::{error, info};
 
 use crate::{
-    adapters::{
-        ethereum_adapter::EthereumAdapter,
-        runner::Runner,
-        storage::{Storage},
-    },
+    adapters::{ethereum_adapter::EthereumAdapter, runner::Runner, storage::Storage},
     errors::Result,
 };
 

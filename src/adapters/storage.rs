@@ -4,14 +4,14 @@ use async_trait::async_trait;
 use fuels::tx::Bytes32;
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::Result};
+use crate::errors::Result;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {
     pub fuel_block_hash: Bytes32,
     pub fuel_block_height: u32,
     pub completed: bool,
-    pub submitted_at_height: ethers::types::U64
+    pub submitted_at_height: ethers::types::U64,
 }
 
 #[async_trait]

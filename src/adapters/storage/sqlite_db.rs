@@ -1,12 +1,11 @@
-use crate::{adapters::storage::Storage};
+use std::{path::PathBuf, sync::Arc};
+
 use fuels::tx::Bytes32;
 use rusqlite::Connection;
-use std::{path::PathBuf, sync::Arc};
 use tokio::{sync::Mutex, task};
 
-use crate::errors::Result;
-
 use super::BlockSubmission;
+use crate::{adapters::storage::Storage, errors::Result};
 
 #[derive(Clone)]
 pub struct SqliteDb {
@@ -131,9 +130,8 @@ impl Storage for SqliteDb {
 mod tests {
     use rand::Rng;
 
-    use crate::adapters::storage::BlockSubmission;
-
     use super::*;
+    use crate::adapters::storage::BlockSubmission;
 
     #[tokio::test]
     async fn can_insert_and_find_latest_block() {
