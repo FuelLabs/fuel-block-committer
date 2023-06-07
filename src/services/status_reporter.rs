@@ -45,7 +45,7 @@ impl StatusReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::storage::{sled_db::SledDb, EthTxSubmission};
+    use crate::adapters::storage::{sled_db::SledDb, BlockSubmission};
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {
@@ -53,7 +53,7 @@ mod tests {
             async move {
                 // given
                 let storage = SledDb::temporary().unwrap();
-                let latest_submission = EthTxSubmission {
+                let latest_submission = BlockSubmission {
                     fuel_block_height: 1,
                     status: submission_status,
                     tx_hash: ethers::types::H256::default(),

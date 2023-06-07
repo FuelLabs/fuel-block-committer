@@ -64,7 +64,7 @@ mod tests {
     use crate::{
         adapters::{
             ethereum_adapter::MockEthereumAdapter,
-            storage::{sled_db::SledDb, EthTxSubmission},
+            storage::{sled_db::SledDb, BlockSubmission},
         },
         common::EthTxStatus,
     };
@@ -138,7 +138,7 @@ mod tests {
     async fn given_storage(tx_hash: H256) -> SledDb {
         let storage = SledDb::temporary().unwrap();
         storage
-            .insert(EthTxSubmission {
+            .insert(BlockSubmission {
                 fuel_block_height: 3,
                 status: EthTxStatus::Pending,
                 tx_hash,

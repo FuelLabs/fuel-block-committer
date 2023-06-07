@@ -8,7 +8,7 @@ use crate::{
     adapters::{
         ethereum_adapter::EthereumAdapter,
         runner::Runner,
-        storage::{EthTxSubmission, Storage},
+        storage::{BlockSubmission, Storage},
     },
     common::EthTxStatus,
     errors::Result,
@@ -36,7 +36,7 @@ impl BlockCommitter {
 
     async fn store_pending_submission(&self, tx_hash: H256, block_height: u32) -> Result<()> {
         self.storage
-            .insert(EthTxSubmission {
+            .insert(BlockSubmission {
                 fuel_block_height: block_height,
                 status: EthTxStatus::Pending,
                 tx_hash,

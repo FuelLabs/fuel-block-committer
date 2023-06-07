@@ -9,7 +9,7 @@ use crate::{
     adapters::{
         block_fetcher::BlockFetcher,
         runner::Runner,
-        storage::{EthTxSubmission, Storage},
+        storage::{BlockSubmission, Storage},
     },
     common::EthTxStatus,
     errors::{Error, Result},
@@ -75,7 +75,7 @@ impl BlockWatcher {
     fn should_propagate_update(
         commit_epoch: u32,
         current_block: &FuelBlock,
-        last_block_submission: Option<&EthTxSubmission>,
+        last_block_submission: Option<&BlockSubmission>,
     ) -> bool {
         let Some(submission) = last_block_submission else {
             return true;
@@ -128,7 +128,7 @@ mod tests {
     use crate::{
         adapters::{
             block_fetcher::MockBlockFetcher,
-            storage::{sled_db::SledDb, EthTxSubmission},
+            storage::{sled_db::SledDb, BlockSubmission},
         },
         common::EthTxStatus,
     };
@@ -144,7 +144,7 @@ mod tests {
 
         let storage = SledDb::temporary().unwrap();
         storage
-            .insert(EthTxSubmission {
+            .insert(BlockSubmission {
                 fuel_block_height: 3,
                 status: EthTxStatus::Committed,
                 tx_hash: H256::default(),
@@ -207,7 +207,7 @@ mod tests {
     async fn respects_epoch_when_posting_block_updates() {
         let commit_epoch = 3;
 
-        let last_block_submission = EthTxSubmission {
+        let last_block_submission = BlockSubmission {
             fuel_block_height: 1,
             status: EthTxStatus::Committed,
             tx_hash: Default::default(),
@@ -232,7 +232,7 @@ mod tests {
     #[tokio::test]
     async fn will_post_the_next_block_after_failure() {
         // given
-        let last_block_submission = EthTxSubmission {
+        let last_block_submission = BlockSubmission {
             fuel_block_height: 2,
             status: EthTxStatus::Aborted,
             tx_hash: H256::default(),
@@ -286,16 +286,16 @@ mod tests {
         fetcher
     }
 
-    fn given_successful_submission(block_height: u32) -> EthTxSubmission {
-        EthTxSubmission {
+    fn given_successful_submission(block_height: u32) -> BlockSubmission {
+        BlockSubmission {
             fuel_block_height: block_height,
             status: EthTxStatus::Pending,
             tx_hash: H256::default(),
         }
     }
 
-    fn given_pending_submission(block_height: u32) -> EthTxSubmission {
-        EthTxSubmission {
+    fn given_pending_submission(block_height: u32) -> BlockSubmission {
+        BlockSubmission {
             fuel_block_height: block_height,
             status: EthTxStatus::Pending,
             tx_hash: H256::default(),

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use sled::{Config, Db};
 
-use super::{EthTxSubmission, Storage};
+use super::{BlockSubmission, Storage};
 use crate::{
     common::EthTxStatus,
     errors::{Error, Result},
@@ -31,26 +31,26 @@ impl SledDb {
         })
     }
 
-    fn encode(submission: &EthTxSubmission) -> Result<([u8; 4], Vec<u8>)> {
+    fn encode(submission: &BlockSubmission) -> Result<([u8; 4], Vec<u8>)> {
         let key = submission.fuel_block_height.to_be_bytes();
         let value = serde_json::to_vec(&submission)?;
         Ok((key, value))
     }
 
-    fn decode(value: &[u8]) -> Result<EthTxSubmission> {
+    fn decode(value: &[u8]) -> Result<BlockSubmission> {
         Ok(serde_json::from_slice(value)?)
     }
 }
 
 #[async_trait::async_trait]
 impl Storage for SledDb {
-    async fn insert(&self, submission: EthTxSubmission) -> Result<()> {
+    async fn insert(&self, submission: BlockSubmission) -> Result<()> {
         let (key, value) = Self::encode(&submission)?;
         self.db.insert(key, value)?;
         Ok(())
     }
 
-    async fn update(&self, submission: EthTxSubmission) -> Result<()> {
+    async fn update(&self, submission: BlockSubmission) -> Result<()> {
         let (key, value) = Self::encode(&submission)?;
 
         let mut batch = sled::Batch::default();
@@ -60,7 +60,7 @@ impl Storage for SledDb {
         Ok(self.db.apply_batch(batch)?)
     }
 
-    async fn submission_w_latest_block(&self) -> Result<Option<EthTxSubmission>> {
+    async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
         let Some((_, value)) = self.db.last()? else {
             return Ok(None);
         };
@@ -143,8 +143,8 @@ mod tests {
         }
     }
 
-    fn given_pending_submission(fuel_block_height: u32) -> EthTxSubmission {
-        EthTxSubmission {
+    fn given_pending_submission(fuel_block_height: u32) -> BlockSubmission {
+        BlockSubmission {
             fuel_block_height,
             status: EthTxStatus::Pending,
             tx_hash: H256::default(),
