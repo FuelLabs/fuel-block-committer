@@ -3,11 +3,7 @@ use futures::StreamExt;
 use tracing::{error, info, warn};
 
 use crate::{
-    adapters::{
-        ethereum_adapter::{BlockCommittedEventStreamer, EthereumAdapter},
-        runner::Runner,
-        storage::Storage,
-    },
+    adapters::{ethereum_adapter::EthereumAdapter, runner::Runner, storage::Storage},
     errors::Result,
 };
 
@@ -38,7 +34,7 @@ impl Runner for CommitListener {
             .map(|submission| submission.submitted_at_height.as_u64())
             .unwrap_or(0);
 
-        let commit_streamer = self.ethereum_rpc.block_committed_event_streamer(eth_block);
+        let commit_streamer = self.ethereum_rpc.event_streamer(eth_block);
 
         let mut stream = commit_streamer.establish_stream().await?;
 
@@ -62,15 +58,13 @@ impl Runner for CommitListener {
 
 #[cfg(test)]
 mod tests {
-
     use fuels::tx::Bytes32;
     use futures::stream;
     use mockall::predicate;
-    use rand::Rng;
 
     use crate::{
         adapters::{
-            ethereum_adapter::{MockBlockCommittedEventStreamer, MockEthereumAdapter},
+            ethereum_adapter::{MockEthereumAdapter, MockEventStreamer},
             runner::Runner,
             storage::{sqlite_db::SqliteDb, BlockSubmission, Storage},
         },
@@ -119,22 +113,15 @@ mod tests {
 
         let event_streamer = Box::new(given_event_streamer_w_events(events));
         eth_rpc
-            .expect_block_committed_event_streamer()
+            .expect_event_streamer()
             .with(predicate::eq(starting_from_height))
             .return_once(move |_| event_streamer);
 
         eth_rpc
     }
 
-    fn given_random_block_hash() -> Bytes32 {
-        let bytes = rand::thread_rng().gen::<[u8; 32]>();
-        Bytes32::from(bytes)
-    }
-
-    fn given_event_streamer_w_events(
-        events: Vec<Result<Bytes32>>,
-    ) -> MockBlockCommittedEventStreamer {
-        let mut streamer = MockBlockCommittedEventStreamer::new();
+    fn given_event_streamer_w_events(events: Vec<Result<Bytes32>>) -> MockEventStreamer {
+        let mut streamer = MockEventStreamer::new();
 
         streamer
             .expect_establish_stream()
@@ -142,21 +129,4 @@ mod tests {
 
         streamer
     }
-
-    /*
-    fn given_eth_rpc_that_returns(tx_hash: H256, status: EthTxStatus) -> MockEthereumAdapter {
-        let mut eth_rpc_mock = MockEthereumAdapter::new();
-        eth_rpc_mock
-            .expect_()
-            .with(predicate::eq(tx_hash))
-            .return_once(|_| Ok(status));
-        eth_rpc_mock
-    }
-
-    fn given_tx_hash() -> H256 {
-        "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
-            .parse()
-            .unwrap()
-    }
-     */
 }

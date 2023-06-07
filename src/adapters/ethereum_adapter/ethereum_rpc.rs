@@ -11,14 +11,9 @@ use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
 use tracing::info;
 use url::Url;
 
-use super::BlockCommittedEventStreamer;
+use super::{eth_event_streamer::EthEventStreamer, EventStreamer};
 use crate::{
-    adapters::{
-        eth_metrics::EthMetrics,
-        ethereum_adapter::{
-            block_committed_event_streamer::EthBlockCommittedEventStreamer, EthereumAdapter,
-        },
-    },
+    adapters::{eth_metrics::EthMetrics, ethereum_adapter::EthereumAdapter},
     common::EthTxStatus,
     errors::{Error, Result},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
@@ -164,16 +159,13 @@ impl EthereumAdapter for EthereumRPC {
         })
     }
 
-    fn block_committed_event_streamer(
-        &self,
-        eth_block_height: u64,
-    ) -> Box<dyn BlockCommittedEventStreamer + Send + Sync> {
+    fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync> {
         let events = self
             .contract
             .event::<CommitSubmittedFilter>()
             .from_block(eth_block_height);
 
-        Box::new(EthBlockCommittedEventStreamer::new(events))
+        Box::new(EthEventStreamer::new(events))
     }
 }
 

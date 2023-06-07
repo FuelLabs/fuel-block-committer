@@ -8,24 +8,24 @@ use ethers::{
 use fuels::tx::Bytes32;
 use futures::{stream::TryStreamExt, Stream};
 
-use super::BlockCommittedEventStreamer;
+use super::EventStreamer;
 use crate::{
     adapters::ethereum_adapter::ethereum_rpc::CommitSubmittedFilter,
     errors::{Error, Result},
 };
 
-type CommitEventStreamer = Event<
+type EthStreamInitializer = Event<
     Arc<SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>>,
     SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>,
     CommitSubmittedFilter,
 >;
 
-pub struct EthBlockCommittedEventStreamer {
-    events: CommitEventStreamer,
+pub struct EthEventStreamer {
+    events: EthStreamInitializer,
 }
 
 #[async_trait::async_trait]
-impl BlockCommittedEventStreamer for EthBlockCommittedEventStreamer {
+impl EventStreamer for EthEventStreamer {
     async fn establish_stream(
         &self,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes32>> + '_ + Send>>> {
@@ -40,8 +40,8 @@ impl BlockCommittedEventStreamer for EthBlockCommittedEventStreamer {
     }
 }
 
-impl EthBlockCommittedEventStreamer {
-    pub fn new(events: CommitEventStreamer) -> Self {
+impl EthEventStreamer {
+    pub fn new(events: EthStreamInitializer) -> Self {
         Self { events }
     }
 }
