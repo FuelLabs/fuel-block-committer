@@ -8,7 +8,7 @@ use tracing::error;
 use crate::{
     adapters::{
         block_fetcher::FuelBlockFetcher,
-        ethereum_adapter::EthereumRPC,
+        ethereum_adapter::ethereum_rpc::EthereumRPC,
         runner::Runner,
         storage::{sqlite_db::SqliteDb, Storage},
     },
