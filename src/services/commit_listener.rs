@@ -40,12 +40,12 @@ mod tests {
     use crate::{
         adapters::{
             ethereum_adapter::MockEthereumAdapter,
-            storage::{BlockSubmission, sqlite_db::SqliteDb},
+            storage::{sqlite_db::SqliteDb, BlockSubmission},
         },
         common::EthTxStatus,
     };
 
-/*
+    /*
     #[tokio::test]
     async fn listener_will_update_storage_if_event_is_emitted() {
         // given
