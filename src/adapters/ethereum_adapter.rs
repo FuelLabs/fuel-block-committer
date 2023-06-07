@@ -3,11 +3,11 @@ use std::{str::FromStr, sync::Arc};
 use async_trait::async_trait;
 use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
-    providers::{Middleware, Provider, Ws, StreamExt},
+    providers::{Middleware, Provider, StreamExt, Ws},
     signers::{LocalWallet, Signer},
     types::{Address, Chain, TransactionReceipt, H256, U256, U64},
 };
-use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
+use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32, types::block::Block};
 use tracing::info;
 use url::Url;
 
@@ -23,10 +23,7 @@ use crate::{
 pub trait EthereumAdapter: Send + Sync {
     async fn submit(&self, block: Block) -> Result<()>;
     async fn get_latest_eth_block(&self) -> Result<U64>;
-    async fn watch_events(
-        &self, 
-        from_block: u64, 
-    ) -> Result<()>;
+    async fn watch_events(&self, from_block: u64) -> Result<()>;
 }
 
 abigen!(
@@ -54,7 +51,7 @@ impl EthereumRPC {
         contract_address: Bytes20,
         ethereum_wallet_key: &str,
         unhealthy_after_n_errors: usize,
-        storage: Arc<Box<dyn Storage>>
+        storage: Arc<Box<dyn Storage>>,
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(ethereum_rpc.to_string())
             .await
@@ -141,7 +138,7 @@ impl RegistersMetrics for EthereumRPC {
 impl EthereumAdapter for EthereumRPC {
     async fn submit(&self, block: Block) -> Result<()> {
         let contract_call = self.contract.commit(*block.id, block.header.height.into());
-        let _tx = contract_call
+        let tx = contract_call
             .send()
             .await
             .map_err(|contract_err| match contract_err {
@@ -156,6 +153,8 @@ impl EthereumAdapter for EthereumRPC {
                 _ => Error::Other(contract_err.to_string()),
             })?;
 
+        info!("tx: {} submitted", tx.tx_hash());
+
         self.handle_network_success();
 
         self.record_balance().await?;
@@ -164,30 +163,29 @@ impl EthereumAdapter for EthereumRPC {
     }
 
     async fn get_latest_eth_block(&self) -> Result<U64> {
-        self.provider.get_block_number().await
-        .map_err(|err| {
+        self.provider.get_block_number().await.map_err(|err| {
             //self.handle_network_error();
             Error::NetworkError(err.to_string())
         })
     }
 
-    async fn watch_events(
-        &self, 
-        from_block: u64,
-    ) -> Result<()>
-    {
-        let events = self.contract
+    async fn watch_events(&self, from_block: u64) -> Result<()> {
+        let events = self
+            .contract
             .event::<CommitSubmittedFilter>()
             .from_block(from_block);
 
         let mut stream = events
             .stream()
             .await
-            .map_err(|e| Error::NetworkError(e.to_string()))?
-            .take(1); 
+            .map_err(|e| Error::NetworkError(e.to_string()))? //TODO: handle this error
+            .take(1);
 
         while let Some(Ok(event)) = stream.next().await {
-            self.storage.set_submission_completed(event.block_hash.into()).await?
+            let block_hash: Bytes32 = event.block_hash.into();
+            self.storage.set_submission_completed(block_hash).await?; //TODO: handle this error
+
+            info!("block with hash: {:x} completed", block_hash);
         }
 
         Ok(())
@@ -275,9 +273,16 @@ mod tests {
         let url = Url::parse("http://127.0.0.42:42").unwrap();
         let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
         let storage = Arc::new(Box::new(SqliteDb::temporary().await.unwrap()) as Box<dyn Storage>);
-        EthereumRPC::connect(&url, Default::default(), Default::default(), wallet_key, 3, storage)
-            .await
-            .unwrap()
+        EthereumRPC::connect(
+            &url,
+            Default::default(),
+            Default::default(),
+            wallet_key,
+            3,
+            storage,
+        )
+        .await
+        .unwrap()
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {
