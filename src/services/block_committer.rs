@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use fuels::types::block::Block as FuelBlock;
 use tokio::sync::{mpsc::Receiver, Mutex};
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
     adapters::{
@@ -31,40 +31,56 @@ impl BlockCommitter {
             storage: Box::new(storage),
         }
     }
+
+    async fn dequeue(&self) -> Option<FuelBlock> {
+        self.rx_block.lock().await.recv().await
+    }
+
+    async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
+        // let submitted_at_height = match self.ethereum_rpc.get_latest_eth_block().await {
+        //     Ok(submitted_at_height) => submitted_at_height,
+        //     Err(error) => {
+        //         error!("{error}");
+        //         continue;
+        //     }
+        // };
+        let submitted_at_height = 0.into();
+
+        let fuel_block_height = fuel_block.header.height;
+
+        let submission = BlockSubmission {
+            fuel_block_height,
+            submitted_at_height,
+            fuel_block_hash: fuel_block.id,
+            completed: false,
+        };
+
+        self.storage.insert(submission).await?;
+
+        // if we have a network failure the DB entry will be left at completed:false.
+        self.ethereum_rpc.submit(fuel_block).await?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl Runner for BlockCommitter {
     async fn run(&self) -> Result<()> {
         // listen for new blocks
-        while let Some(block) = self.rx_block.lock().await.recv().await {
-            // let submitted_at_height = match self.ethereum_rpc.get_latest_eth_block().await {
-            //     Ok(submitted_at_height) => submitted_at_height,
-            //     Err(error) => {
-            //         error!("{error}");
-            //         continue;
-            //     }
-            // };
-            let submitted_at_height = 0.into();
-
-            let fuel_block_height = block.header.height;
-
-            let submission = BlockSubmission {
-                fuel_block_height,
-                submitted_at_height,
-                fuel_block_hash: block.id,
-                completed: false,
-            };
-
-            let maybe_error = match self.ethereum_rpc.submit(block).await {
-                Ok(_) => self.storage.insert(submission).await.err(),
-                Err(e) => Some(e),
-            };
-
-            if let Some(error) = maybe_error {
+        while let Some(fuel_block) = self.dequeue().await {
+            let block_hash = fuel_block.id;
+            let block_height = fuel_block.header.height;
+            if let Err(error) = self.submit_block(fuel_block).await {
                 error!("{error}");
+            } else {
+                info!(
+                    "Submitted fuel block! (block_hash: {}, block_height: {})",
+                    block_hash, block_height
+                );
             }
         }
+
         Ok(())
     }
 }
