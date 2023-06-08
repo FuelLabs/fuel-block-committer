@@ -16,8 +16,6 @@ use prometheus::Registry;
 async fn main() -> Result<()> {
     let config = cli::parse();
     let internal_config = InternalConfig::default();
-    let _metrics_registry = Registry::default();
-    let _storage = setup_storage(&config).await?;
 
     setup_logger();
 
