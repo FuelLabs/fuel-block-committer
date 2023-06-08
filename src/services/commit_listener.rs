@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use fuels::tx::Bytes32;
 use futures::StreamExt;
 use tracing::{error, info, warn};
 
@@ -35,6 +36,21 @@ impl CommitListener {
             .map(|submission| submission.submitted_at_height.as_u64())
             .unwrap_or(0))
     }
+
+    async fn handle_block_committed(&self, fuel_block_hash: Bytes32) -> Result<()> {
+        info!("block with hash: {:x} completed", fuel_block_hash);
+
+        let updated = self
+            .storage
+            .set_submission_completed(fuel_block_hash)
+            .await?;
+
+        if !updated {
+            warn!("Couldn't update submission status! Didn't find submission in DB (block_hash: {fuel_block_hash})");
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -47,10 +63,7 @@ impl Runner for CommitListener {
         while let Some(event) = stream.next().await {
             match event {
                 Ok(FuelBlockCommitedOnEth { fuel_block_hash }) => {
-                    self.storage
-                        .set_submission_completed(fuel_block_hash)
-                        .await?;
-                    info!("block with hash: {:x} completed", fuel_block_hash);
+                    self.handle_block_committed(fuel_block_hash).await?;
                 }
                 Err(error) => {
                     error!("Received an error from block commit event stream: {error}");

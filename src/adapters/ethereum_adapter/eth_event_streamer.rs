@@ -31,7 +31,7 @@ impl EventStreamer for EthEventStreamer {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommitedOnEth>> + '_ + Send>>> {
         Ok(Box::pin(
             self.events
-                .stream()
+                .subscribe()
                 .await
                 .map_err(|e| Error::NetworkError(e.to_string()))?
                 .map_ok(|event| {

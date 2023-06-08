@@ -119,14 +119,16 @@ impl Storage for SqliteDb {
             .await?)
     }
 
-    async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<()> {
-        self.run_blocking(move |connection| {
-            let query = "UPDATE eth_tx_submission SET completed = 1 WHERE fuel_block_hash = (?1)";
-            connection.execute(query, (*fuel_block_hash,))
-        })
-        .await?;
+    async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<bool> {
+        let rows_updated = self
+            .run_blocking(move |connection| {
+                let query =
+                    "UPDATE eth_tx_submission SET completed = 1 WHERE fuel_block_hash = (?1)";
+                connection.execute(query, (*fuel_block_hash,))
+            })
+            .await?;
 
-        Ok(())
+        Ok(rows_updated > 0)
     }
 }
 
@@ -181,15 +183,17 @@ mod tests {
         db.insert(submission).await.unwrap();
 
         // when
-        db.set_submission_completed(block_hash).await.unwrap();
+        let updated = db.set_submission_completed(block_hash).await.unwrap();
 
         // then
+        assert!(updated);
+
         let received_submission = db.submission_w_latest_block().await.unwrap().unwrap();
         assert!(received_submission.completed)
     }
 
     #[tokio::test]
-    async fn updating_completion_status_of_missing_submission_fails_silently() {
+    async fn signals_that_update_didnt_happen_due_to_missing_submission() {
         // given
         let db = SqliteDb::temporary().await.unwrap();
 
@@ -197,10 +201,10 @@ mod tests {
         let block_hash = submission.fuel_block_hash;
 
         // when
-        let result = db.set_submission_completed(block_hash).await;
+        let updated = db.set_submission_completed(block_hash).await.unwrap();
 
         // then
-        assert!(result.is_ok());
+        assert!(!updated);
     }
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {

@@ -33,5 +33,5 @@ impl BlockSubmission {
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-    async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<()>;
+    async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<bool>;
 }
