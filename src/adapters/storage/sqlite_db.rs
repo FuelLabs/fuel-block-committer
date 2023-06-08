@@ -188,6 +188,21 @@ mod tests {
         assert!(received_submission.completed)
     }
 
+    #[tokio::test]
+    async fn updating_completion_status_of_missing_submission_fails_silently() {
+        // given
+        let db = SqliteDb::temporary().await.unwrap();
+
+        let submission = given_incomplete_submission(10);
+        let block_hash = submission.fuel_block_hash;
+
+        // when
+        let result = db.set_submission_completed(block_hash).await;
+
+        // then
+        assert!(result.is_ok());
+    }
+
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {
         BlockSubmission {
             fuel_block_height,

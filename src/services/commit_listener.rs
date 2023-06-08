@@ -26,22 +26,24 @@ impl CommitListener {
             storage: Box::new(storage),
         }
     }
+
+    async fn determine_starting_eth_block(&self) -> Result<u64> {
+        Ok(self
+            .storage
+            .submission_w_latest_block()
+            .await?
+            .map(|submission| submission.submitted_at_height.as_u64())
+            .unwrap_or(0))
+    }
 }
 
 #[async_trait]
 impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
-        let eth_block = self
-            .storage
-            .submission_w_latest_block()
-            .await?
-            .map(|submission| submission.submitted_at_height.as_u64())
-            .unwrap_or(0);
+        let eth_block = self.determine_starting_eth_block().await?;
+        let event_streamer = self.ethereum_rpc.event_streamer(eth_block);
 
-        let commit_streamer = self.ethereum_rpc.event_streamer(eth_block);
-
-        let mut stream = commit_streamer.establish_stream().await?;
-
+        let mut stream = event_streamer.establish_stream().await?;
         while let Some(event) = stream.next().await {
             match event {
                 Ok(FuelBlockCommitedOnEth { fuel_block_hash }) => {
