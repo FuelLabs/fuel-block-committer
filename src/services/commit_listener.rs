@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use ethers::types::U256;
 use fuels::tx::Bytes32;
 use futures::StreamExt;
 use tracing::{error, info, warn};
@@ -37,8 +38,12 @@ impl CommitListener {
             .unwrap_or(0))
     }
 
-    async fn handle_block_committed(&self, fuel_block_hash: Bytes32) -> Result<()> {
-        info!("block with hash: {:x} completed", fuel_block_hash);
+    async fn handle_block_committed(
+        &self,
+        fuel_block_hash: Bytes32,
+        commit_height: U256,
+    ) -> Result<()> {
+        info!("block comitted on eth (hash: {fuel_block_hash:x}, commit_height: {commit_height})");
 
         let updated = self
             .storage
@@ -62,8 +67,12 @@ impl Runner for CommitListener {
         let mut stream = event_streamer.establish_stream().await?;
         while let Some(event) = stream.next().await {
             match event {
-                Ok(FuelBlockCommitedOnEth { fuel_block_hash }) => {
-                    self.handle_block_committed(fuel_block_hash).await?;
+                Ok(FuelBlockCommitedOnEth {
+                    fuel_block_hash,
+                    commit_height,
+                }) => {
+                    self.handle_block_committed(fuel_block_hash, commit_height)
+                        .await?;
                 }
                 Err(error) => {
                     error!("Received an error from block commit event stream: {error}");
@@ -145,7 +154,12 @@ mod tests {
         let mut streamer = MockEventStreamer::new();
         let events = events
             .into_iter()
-            .map(|e| e.map(|fuel_block_hash| FuelBlockCommitedOnEth { fuel_block_hash }))
+            .map(|e| {
+                e.map(|fuel_block_hash| FuelBlockCommitedOnEth {
+                    fuel_block_hash,
+                    commit_height: Default::default(),
+                })
+            })
             .collect::<Vec<_>>();
 
         streamer

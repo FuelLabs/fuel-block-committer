@@ -95,7 +95,7 @@ pub fn parse() -> Config {
         ethereum_chain_id: cli.ethereum_chain,
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
         state_contract_address: cli.state_contract_address,
-        commit_epoch: cli.commit_interval,
+        commit_interval: cli.commit_interval,
         port: cli.port,
         host: cli.host,
         db_path: cli.db_path,

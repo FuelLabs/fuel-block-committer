@@ -36,7 +36,11 @@ impl EventStreamer for EthEventStreamer {
                 .map_err(|e| Error::NetworkError(e.to_string()))?
                 .map_ok(|event| {
                     let fuel_block_hash = Bytes32::from(event.block_hash);
-                    FuelBlockCommitedOnEth { fuel_block_hash }
+                    let commit_height = event.commit_height;
+                    FuelBlockCommitedOnEth {
+                        fuel_block_hash,
+                        commit_height,
+                    }
                 })
                 .map_err(|e| Error::Other(e.to_string())),
         ))

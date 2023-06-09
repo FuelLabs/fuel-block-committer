@@ -11,7 +11,7 @@ pub struct Config {
     pub ethereum_chain_id: Chain,
     pub fuel_graphql_endpoint: Url,
     pub state_contract_address: Bytes20,
-    pub commit_epoch: u32,
+    pub commit_interval: u32,
     pub port: u16,
     pub host: Ipv4Addr,
     pub db_path: Option<PathBuf>,

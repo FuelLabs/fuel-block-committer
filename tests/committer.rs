@@ -1,4 +1,5 @@
 use tokio::process::Command;
+
 pub fn run_committer(
     fuel_port: u16,
     eth_port: u16,

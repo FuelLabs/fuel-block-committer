@@ -34,6 +34,7 @@ pub struct EthereumRPC {
     wallet_address: Address,
     metrics: EthMetrics,
     health_tracker: ConnectionHealthTracker,
+    commit_interval: u32,
 }
 
 impl EthereumRPC {
@@ -43,6 +44,7 @@ impl EthereumRPC {
         contract_address: Bytes20,
         ethereum_wallet_key: &str,
         unhealthy_after_n_errors: usize,
+        commit_interval: u32,
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(ethereum_rpc.to_string())
             .await
@@ -63,6 +65,7 @@ impl EthereumRPC {
             wallet_address,
             metrics: EthMetrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
+            commit_interval,
         })
     }
 
@@ -116,6 +119,10 @@ impl EthereumRPC {
 
         Ok(())
     }
+
+    fn calculate_commit_height(block_height: u32, commit_interval: u32) -> U256 {
+        (block_height / commit_interval).into()
+    }
 }
 
 impl RegistersMetrics for EthereumRPC {
@@ -127,7 +134,9 @@ impl RegistersMetrics for EthereumRPC {
 #[async_trait]
 impl EthereumAdapter for EthereumRPC {
     async fn submit(&self, block: Block) -> Result<()> {
-        let contract_call = self.contract.commit(*block.id, block.header.height.into());
+        let commit_height =
+            Self::calculate_commit_height(block.header.height, self.commit_interval);
+        let contract_call = self.contract.commit(*block.id, commit_height);
         let tx = contract_call
             .send()
             .await
@@ -244,12 +253,24 @@ mod tests {
         assert!(!health_check.healthy());
     }
 
+    #[test]
+    fn calculates_correctly_the_commit_height() {
+        assert_eq!(EthereumRPC::calculate_commit_height(10, 3), 3.into());
+    }
+
     async fn given_eth_rpc() -> EthereumRPC {
         let url = Url::parse("http://127.0.0.42:42").unwrap();
         let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
-        EthereumRPC::connect(&url, Default::default(), Default::default(), wallet_key, 3)
-            .await
-            .unwrap()
+        EthereumRPC::connect(
+            &url,
+            Default::default(),
+            Default::default(),
+            wallet_key,
+            3,
+            3,
+        )
+        .await
+        .unwrap()
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {

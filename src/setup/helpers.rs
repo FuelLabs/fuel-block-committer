@@ -85,6 +85,7 @@ pub async fn create_eth_rpc(
         config.state_contract_address,
         &config.ethereum_wallet_key,
         internal_config.eth_errors_before_unhealthy,
+        config.commit_interval,
     )
     .await?;
     ethereum_rpc.register_metrics(registry);
@@ -131,8 +132,12 @@ fn create_block_watcher(
     storage: impl Storage + 'static,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
-    let block_watcher =
-        BlockWatcher::new(config.commit_epoch, tx_fuel_block, block_fetcher, storage);
+    let block_watcher = BlockWatcher::new(
+        config.commit_interval,
+        tx_fuel_block,
+        block_fetcher,
+        storage,
+    );
     block_watcher.register_metrics(registry);
 
     (block_watcher, rx_fuel_block)

@@ -4,7 +4,7 @@ pub mod ethereum_rpc;
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use ethers::types::U64;
+use ethers::types::{U256, U64};
 use fuels::{tx::Bytes32, types::block::Block};
 use futures::Stream;
 
@@ -13,6 +13,7 @@ use crate::errors::Result;
 #[derive(Debug, Clone, Copy)]
 pub struct FuelBlockCommitedOnEth {
     pub fuel_block_hash: Bytes32,
+    pub commit_height: U256,
 }
 
 #[cfg_attr(test, mockall::automock)]
