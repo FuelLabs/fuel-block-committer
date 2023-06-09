@@ -1,10 +1,11 @@
+use anyhow::Result;
 use tokio::process::Command;
 
 pub fn run_committer(
     fuel_port: u16,
     eth_port: u16,
     commit_interval: usize,
-) -> tokio::process::Child {
+) -> Result<tokio::process::Child> {
     let args = [
         "run",
         "--",
@@ -16,9 +17,8 @@ pub fn run_committer(
         &format!("--commit-interval={commit_interval}"),
     ];
 
-    Command::new(env!("CARGO"))
+    Ok(Command::new(env!("CARGO"))
         .kill_on_drop(true)
         .args(&args)
-        .spawn()
-        .unwrap()
+        .spawn()?)
 }

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::{
     io::{BufRead, BufReader},
     process::Stdio,
@@ -12,7 +13,7 @@ use tokio::{
 };
 
 pub struct EthNode {
-    _process: Child,
+    pub _process: Child,
     _process_output_processor: JoinHandle<()>,
     contracts_deployed_notif: Arc<Notify>,
     config: EthNodeConfig,
@@ -33,11 +34,11 @@ impl Default for EthNodeConfig {
 }
 
 impl EthNode {
-    pub fn run(config: EthNodeConfig) -> Self {
+    pub fn run(config: EthNodeConfig) -> Result<Self> {
         let port = config.port;
 
-        let (reader, stdout) = os_pipe::pipe().unwrap();
-        let stderr = stdout.try_clone().unwrap();
+        let (reader, stdout) = os_pipe::pipe()?;
+        let stderr = stdout.try_clone()?;
 
         let child = Command::new("docker")
             .args(["run", "-p", &format!("{port}:8545"), "eth_node"])
@@ -45,18 +46,17 @@ impl EthNode {
             .stdout(stdout)
             .stderr(stderr)
             .stdin(Stdio::null())
-            .spawn()
-            .unwrap();
+            .spawn()?;
 
         let (process_output_processor, notify_ready) =
             Self::setup_watch_on_output(reader, config.print_output);
 
-        Self {
+        Ok(Self {
             _process: child,
             config,
             _process_output_processor: process_output_processor,
             contracts_deployed_notif: notify_ready,
-        }
+        })
     }
 
     pub async fn wait_until_ready(&self) {
