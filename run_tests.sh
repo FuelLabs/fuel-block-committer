@@ -2,4 +2,4 @@
 
 docker build ./eth_node -t eth_node
 
-cargo test --test e2e
+cargo test --test e2e -- --nocapture
