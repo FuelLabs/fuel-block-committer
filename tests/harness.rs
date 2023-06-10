@@ -1,7 +1,8 @@
 mod eth_test_adapter;
 
-use anyhow::Result;
 use std::time::Duration;
+
+use anyhow::Result;
 
 use crate::eth_test_adapter::FuelStateContract;
 

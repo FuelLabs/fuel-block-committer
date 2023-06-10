@@ -24,22 +24,13 @@ const config: HardhatUserConfig = {
             },
         ],
     },
-    mocha: {
-        timeout: 180_000,
-    },
     networks: {
         hardhat: {
-            mining: {
-                auto: false,
-                interval: [MINING_INTERVAL_MIN, MINING_INTERVAL_MAX]
-            },
-            accounts: {
-                WALLET_KEY,
-            },
+            accounts: [ { privateKey: "WALLET_KEY", balance: "10000000000000000000000" } ], 
         },
         custom: {
-            accounts: [WALLET_KEY],
-            url: URL,
+            accounts: [ "WALLET_KEY" ], 
+            url: "URL",
             live: true,
         },
     },

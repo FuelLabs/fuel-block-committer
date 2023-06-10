@@ -1,5 +1,6 @@
 #!/bin/bash -e
 
-docker build ./eth_node -t eth_node
+docker compose up -d
+trap 'docker compose down' EXIT
 
 cargo test --test e2e -- --nocapture

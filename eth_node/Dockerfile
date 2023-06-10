@@ -7,7 +7,7 @@ RUN apk add --no-cache git \
 FROM alpine:3.18
 RUN apk add --no-cache nodejs npm bash
 
-COPY --from=fetcher fuel-v2-contracts /
+COPY --from=fetcher fuel-v2-contracts /fuel-v2-contracts/
 
 WORKDIR /fuel-v2-contracts
 
