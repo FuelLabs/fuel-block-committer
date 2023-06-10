@@ -15,4 +15,5 @@ done
 
 yes Y | npm run script-deploy
 
+trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 wait
