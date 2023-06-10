@@ -28,7 +28,7 @@ impl FuelStateContract {
         let provider = Provider::<Ws>::connect(format!("ws://127.0.0.1:{eth_node_port}")).await?;
 
         let wallet = LocalWallet::from_str(
-            "0xd7cb3084b252751f5a6a3ec06a267451d390724fdb3f572560d998af8d00dae0",
+            "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36",
         )?
         .with_chain_id(Chain::AnvilHardhat);
 

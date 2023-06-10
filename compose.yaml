@@ -4,11 +4,17 @@ services:
     ports:
       - "8545:8545"
     healthcheck:
-      test: ["CMD", "./health_check.sh" ]
+      test: [ "CMD", "./health_check.sh" ]
       start_period: 15s
       interval: 5s
       timeout: 30s
       retries: 5
+    environment:
+      - name=value
+      - MINING_INTERVAL_MIN=3000
+      - MINING_INTERVAL_MAX=6000
+      - WALLET_KEY=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36
+      - URL=http://0.0.0.0:7545
 
   fuel_node:
     build: fuel_node
