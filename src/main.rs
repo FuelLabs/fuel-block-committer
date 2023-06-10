@@ -30,6 +30,7 @@ async fn main() -> Result<()> {
         &metrics_registry,
     );
 
+    // TODO: handle not being able to connect, don't process work until connected
     let (ethereum_rpc, eth_health_check) =
         create_eth_rpc(&config, &internal_config, &metrics_registry).await?;
 

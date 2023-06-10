@@ -1,0 +1,46 @@
+services:
+  eth_node:
+    build: eth_node
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: nc -zv localhost 8545
+      interval: 5s
+      timeout: 30s
+      retries: 5
+
+  fuel_node:
+    build: fuel_node
+    environment:
+      - PORT=4000
+      - IP=0.0.0.0
+      - DB_TYPE=in-memory
+      - MANUAL_BLOCKS_ENABLED=true
+      - POA_INTERVAL_PERIOD=6s
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://0.0.0.0:4000/health" ]
+      retries: 5
+      interval: 5s
+      timeout: 30s
+
+  fuel_block_committer:
+    restart: always
+    depends_on:
+      fuel_node:
+        condition: service_healthy
+      eth_node:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - FUEL_GRAPHQL_ENDPOINT=http://fuel_node:4000
+      - ETHEREUM_RPC=ws://eth_node:8545
+      - ETHEREUM_WALLET_KEY=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36
+      - STATE_CONTRACT_ADDRESS=0xdAad669b06d79Cb48C8cfef789972436dBe6F24d
+      - ETHEREUM_CHAIN=anvil
+      - COMMIT_INTERVAL=3
