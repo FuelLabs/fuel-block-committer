@@ -4,7 +4,8 @@ services:
     ports:
       - "8545:8545"
     healthcheck:
-      test: nc -zv localhost 8545
+      test: ["CMD", "./health_check.sh" ]
+      start_period: 15s
       interval: 5s
       timeout: 30s
       retries: 5
@@ -14,9 +15,9 @@ services:
     environment:
       - PORT=4000
       - IP=0.0.0.0
-      - DB_TYPE=in-memory
+      - DATABASE_TYPE=in-memory
       - MANUAL_BLOCKS_ENABLED=true
-      - POA_INTERVAL_PERIOD=6s
+      - INSTANT=true
     ports:
       - "4000:4000"
     healthcheck:

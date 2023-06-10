@@ -1,39 +1,24 @@
-mod committer;
-mod eth_node;
 mod eth_test_adapter;
-mod fuel_node;
 
 use anyhow::Result;
 use std::time::Duration;
 
-use crate::{
-    committer::run_committer,
-    eth_node::{EthNode, EthNodeConfig},
-    eth_test_adapter::FuelStateContract,
-    fuel_node::FuelNode,
-};
+use crate::eth_test_adapter::FuelStateContract;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn cli_can_run_hello_world() -> Result<()> {
-    let eth_node = EthNode::run(EthNodeConfig {
-        print_output: true,
-        ..Default::default()
-    })?;
-
-    eth_node.wait_until_ready().await;
-
-    let eth_port = eth_node.port();
-
-    let fuel_node = FuelNode::run().await;
-    let provider = &fuel_node.provider;
-    let fuel_port = fuel_node.port();
-
-    let _committer = run_committer(fuel_port, eth_port, 3);
-    let fuel_contract = FuelStateContract::connect(eth_port).await?;
+async fn will_commit_correct_block_at_the_correct_commit_height() -> Result<()> {
+    let provider = fuels::accounts::provider::Provider::connect("http://localhost:4000")
+        .await
+        .unwrap();
+    let fuel_contract = FuelStateContract::connect(8545).await?;
 
     provider.produce_blocks(3, None).await?;
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let block_hash = provider.chain_info().await?.latest_block.id;
+    let latest_block = provider.chain_info().await?.latest_block;
+
+    assert_eq!(latest_block.header.height, 3);
+
+    let block_hash = latest_block.id;
     assert_eq!(
         block_hash,
         fuel_contract.block_hash_at_commit_height(1).await?

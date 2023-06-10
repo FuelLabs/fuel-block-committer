@@ -11,13 +11,16 @@ use fuel_block_committer::{
     },
 };
 use prometheus::Registry;
+use tracing::log::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    setup_logger();
+
     let config = cli::parse();
     let internal_config = InternalConfig::default();
 
-    setup_logger();
+    info!("{config:?}");
 
     let storage = setup_storage(&config).await?;
 

@@ -15,5 +15,9 @@ done
 
 yes Y | npm run script-deploy
 
+# part of health checking, so that we don't start the committer before the
+# deployment is done
+touch /contracts_deployed
+
 trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 wait
