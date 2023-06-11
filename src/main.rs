@@ -12,7 +12,6 @@ use fuel_block_committer::{
 };
 use prometheus::Registry;
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_logger();

@@ -26,6 +26,10 @@ const config: HardhatUserConfig = {
     },
     networks: {
         hardhat: {
+            mining: {
+                auto: true,
+                interval: 1000,
+            },
             accounts: [ { privateKey: "WALLET_KEY", balance: "10000000000000000000000" } ], 
         },
         custom: {
