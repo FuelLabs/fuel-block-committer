@@ -6,12 +6,17 @@ use anyhow::Result;
 
 use crate::eth_test_adapter::FuelStateContract;
 
+const FUEL_NODE_PORT: u16 = 4000;
+const ETH_NODE_PORT: u16 = 8545;
+
 #[tokio::test(flavor = "multi_thread")]
 async fn submitted_correct_block_and_was_finalized() -> Result<()> {
-    let provider = fuels::accounts::provider::Provider::connect("http://localhost:4000")
+    let fuel_node_address = format!("http://localhost:{FUEL_NODE_PORT}");
+    let provider = fuels::accounts::provider::Provider::connect(&fuel_node_address)
         .await
         .unwrap();
-    let fuel_contract = FuelStateContract::connect(8545).await?;
+
+    let fuel_contract = FuelStateContract::connect(ETH_NODE_PORT).await?;
 
     provider.produce_blocks(3, None).await?;
 
