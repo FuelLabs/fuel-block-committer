@@ -10,7 +10,7 @@ use ethers::{
 use fuels::tx::Bytes32;
 
 pub struct FuelStateContract {
-    provider: Provider<Ws>,
+    _provider: Provider<Ws>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
 }
 
@@ -37,7 +37,10 @@ impl FuelStateContract {
         let contract_address: H160 = contract_address.parse()?;
         let contract = FUEL_STATE_CONTRACT::new(contract_address, Arc::new(signer));
 
-        Ok(Self { provider, contract })
+        Ok(Self {
+            _provider: provider,
+            contract,
+        })
     }
 
     pub async fn finalized(&self, block_hash: Bytes32, block_height: u32) -> Result<bool> {
@@ -48,7 +51,7 @@ impl FuelStateContract {
             .await?)
     }
 
-    pub async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<Bytes32> {
+    pub async fn _block_hash_at_commit_height(&self, commit_height: u32) -> Result<Bytes32> {
         Ok(self
             .contract
             .block_hash_at_commit(commit_height.into())

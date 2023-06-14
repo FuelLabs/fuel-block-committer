@@ -88,9 +88,11 @@ pub async fn create_eth_rpc(
         config.commit_interval,
     )
     .await?;
+
     ethereum_rpc.register_metrics(registry);
 
     let eth_health_check = ethereum_rpc.connection_health_checker();
+
     Ok((ethereum_rpc, eth_health_check))
 }
 

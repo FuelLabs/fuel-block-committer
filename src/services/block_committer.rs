@@ -89,7 +89,7 @@ impl Runner for BlockCommitter {
 mod tests {
     use std::time::Duration;
 
-    use ethers::types::{H256, U64};
+    use ethers::types::U64;
     use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
     use mockall::predicate;
 
@@ -133,12 +133,6 @@ mod tests {
             header,
             transactions: vec![],
         }
-    }
-
-    fn given_tx_hash() -> H256 {
-        "0x049d33c83c7c4115521d47f5fd285ee9b1481fe4a172e4f208d685781bea1ecc"
-            .parse()
-            .unwrap()
     }
 
     fn given_eth_rpc_that_expects(block: FuelBlock) -> MockEthereumAdapter {

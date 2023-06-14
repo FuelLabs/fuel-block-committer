@@ -1,10 +1,11 @@
 services:
   eth_node:
+    container_name: eth-node
     build: eth_node
     ports:
       - "8545:8545"
     healthcheck:
-      test: [ "CMD", "./health_check.sh" ]
+      test: [ "CMD", "test", "-f", "/contracts_deployed" ]
       start_period: 15s
       interval: 5s
       timeout: 30s
@@ -14,6 +15,7 @@ services:
       - URL=http://0.0.0.0:8545/
 
   fuel_node:
+    container_name: fuel-node
     build: fuel_node
     environment:
       - PORT=4000
@@ -29,8 +31,8 @@ services:
       interval: 5s
       timeout: 30s
 
-  fuel_block_committer:
-    restart: always
+  block_committer:
+    container_name: block-committer
     depends_on:
       fuel_node:
         condition: service_healthy
@@ -48,3 +50,7 @@ services:
       - STATE_CONTRACT_ADDRESS=0xdAad669b06d79Cb48C8cfef789972436dBe6F24d
       - ETHEREUM_CHAIN=anvil
       - COMMIT_INTERVAL=3
+
+networks:
+  default:
+    name: e2e-network
