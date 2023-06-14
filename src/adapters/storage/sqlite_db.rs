@@ -1,12 +1,12 @@
 use std::{path::PathBuf, sync::Arc};
 
 use fuels::tx::Bytes32;
-use rusqlite::Connection;
+use rusqlite::{Connection, Row};
 use tokio::{sync::Mutex, task};
 
 use crate::{
     adapters::storage::{BlockSubmission, Storage},
-    errors::Result,
+    errors::{Error, Result},
 };
 
 #[derive(Clone)]
@@ -68,6 +68,24 @@ impl SqliteDb {
         .unwrap()
         .await
     }
+
+    fn decode_submission(row: &Row) -> std::result::Result<BlockSubmission, rusqlite::Error> {
+        let fuel_block_hash: [u8; 32] = row.get(0)?;
+        let fuel_block_height: u32 = row.get(1)?;
+        let completed: bool = row.get(2)?;
+
+        let submitted_at_height = {
+            let le_bytes: [u8; 8] = row.get(3)?;
+            u64::from_le_bytes(le_bytes)
+        };
+
+        Ok(BlockSubmission {
+            fuel_block_hash: fuel_block_hash.into(),
+            fuel_block_height,
+            completed,
+            submitted_at_height: submitted_at_height.into(),
+        })
+    }
 }
 
 #[async_trait::async_trait]
@@ -96,39 +114,33 @@ impl Storage for SqliteDb {
                     r#"SELECT * FROM eth_tx_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
                 )?;
 
-                let mut submission = statement.query_map([], |row| {
-                    let fuel_block_hash: [u8; 32] = row.get(0)?;
-                    let fuel_block_height: u32 = row.get(1)?;
-                    let completed: bool = row.get(2)?;
-
-                    let submitted_at_height = {
-                        let le_bytes: [u8; 8] = row.get(3)?;
-                        u64::from_le_bytes(le_bytes)
-                    };
-
-                    Ok(BlockSubmission {
-                        fuel_block_hash: fuel_block_hash.into(),
-                        fuel_block_height,
-                        completed,
-                        submitted_at_height: submitted_at_height.into(),
-                    })
-                })?;
+                let mut submission = statement.query_map([], Self::decode_submission)?;
 
                 submission.next().transpose()
             })
             .await?)
     }
 
-    async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<bool> {
-        let rows_updated = self
-            .run_blocking(move |connection| {
-                let query =
-                    "UPDATE eth_tx_submission SET completed = 1 WHERE fuel_block_hash = (?1)";
-                connection.execute(query, (*fuel_block_hash,))
-            })
-            .await?;
+    async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<BlockSubmission> {
+        self.run_blocking(move |connection| {
+            let query = "UPDATE eth_tx_submission SET completed = 1 WHERE fuel_block_hash = (?1)";
+            let rows_updated = connection.execute(query, (*fuel_block_hash,))?;
 
-        Ok(rows_updated > 0)
+            if rows_updated == 0 {
+                return Err(Error::StorageError(format!(
+                    "Block: `{fuel_block_hash}` in DB"
+                )));
+            }
+
+            let submission = connection.query_row(
+                r#"SELECT * FROM eth_tx_submission WHERE fuel_block_hash = (?1)"#,
+                (*fuel_block_hash,),
+                Self::decode_submission,
+            )?;
+
+            Result::Ok(submission)
+        })
+        .await
     }
 }
 
@@ -183,13 +195,10 @@ mod tests {
         db.insert(submission).await.unwrap();
 
         // when
-        let updated = db.set_submission_completed(block_hash).await.unwrap();
+        let submission = db.set_submission_completed(block_hash).await.unwrap();
 
         // then
-        assert!(updated);
-
-        let received_submission = db.submission_w_latest_block().await.unwrap().unwrap();
-        assert!(received_submission.completed)
+        assert!(submission.completed);
     }
 
     #[tokio::test]
@@ -201,10 +210,14 @@ mod tests {
         let block_hash = submission.fuel_block_hash;
 
         // when
-        let updated = db.set_submission_completed(block_hash).await.unwrap();
+        let result = db.set_submission_completed(block_hash).await;
 
         // then
-        assert!(!updated);
+        let Err(Error::StorageError(msg)) = result else {
+            panic!("should be storage error");
+        };
+
+        assert_eq!(msg, format!("Block: `{block_hash}` in DB"))
     }
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {

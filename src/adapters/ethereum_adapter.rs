@@ -1,4 +1,5 @@
 pub mod eth_event_streamer;
+pub mod eth_metrics;
 pub mod ethereum_rpc;
 
 use std::pin::Pin;

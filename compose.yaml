@@ -22,7 +22,7 @@ services:
       - IP=0.0.0.0
       - DATABASE_TYPE=in-memory
       - MANUAL_BLOCKS_ENABLED=true
-      - INSTANT=true
+      - PERIOD=6s
     ports:
       - "4000:4000"
     healthcheck:

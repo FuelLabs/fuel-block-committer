@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use ethers::types::U256;
 use fuels::tx::Bytes32;
 use futures::StreamExt;
+use prometheus::{IntGauge, Opts};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -11,11 +12,38 @@ use crate::{
         storage::Storage,
     },
     errors::Result,
+    telemetry::RegistersMetrics,
 };
+
+#[derive(Clone)]
+pub struct CommitListenerMetrics {
+    pub latest_committed_block: IntGauge,
+}
+
+impl RegistersMetrics for CommitListener {
+    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+        vec![Box::new(self.metrics.latest_committed_block.clone())]
+    }
+}
+
+impl Default for CommitListenerMetrics {
+    fn default() -> Self {
+        let latest_committed_block = IntGauge::with_opts(Opts::new(
+            "latest_committed_block",
+            "The height of the latest fuel block committed on Ethereum.",
+        ))
+        .expect("latest_committed_block metric to be correctly configured");
+
+        Self {
+            latest_committed_block,
+        }
+    }
+}
 
 pub struct CommitListener {
     ethereum_rpc: Box<dyn EthereumAdapter>,
     storage: Box<dyn Storage>,
+    metrics: CommitListenerMetrics,
 }
 
 impl CommitListener {
@@ -26,6 +54,7 @@ impl CommitListener {
         Self {
             ethereum_rpc: Box::new(ethereum_rpc),
             storage: Box::new(storage),
+            metrics: Default::default(),
         }
     }
 
@@ -45,14 +74,14 @@ impl CommitListener {
     ) -> Result<()> {
         info!("block comitted on eth (hash: {fuel_block_hash:x}, commit_height: {commit_height})");
 
-        let updated = self
+        let submission = self
             .storage
             .set_submission_completed(fuel_block_hash)
             .await?;
 
-        if !updated {
-            warn!("Couldn't update submission status! Didn't find submission in DB (block_hash: {fuel_block_hash})");
-        }
+        self.metrics
+            .latest_committed_block
+            .set(submission.fuel_block_height as i64);
 
         Ok(())
     }

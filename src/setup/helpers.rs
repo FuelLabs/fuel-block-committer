@@ -47,13 +47,17 @@ pub fn spawn_eth_committer_and_listener(
     rx_fuel_block: Receiver<FuelBlock>,
     ethereum_rpc: EthereumRPC,
     storage: SqliteDb,
+    registry: &Registry,
 ) -> Result<(tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)> {
     let committer_handler =
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
 
+    let commit_listener = CommitListener::new(ethereum_rpc, storage);
+    commit_listener.register_metrics(registry);
+
     let listener_handle = schedule_polling(
         internal_config.between_eth_event_stream_restablishing_attempts,
-        CommitListener::new(ethereum_rpc, storage),
+        commit_listener,
         "Commit Listener",
     );
 

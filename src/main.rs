@@ -39,6 +39,7 @@ async fn main() -> Result<()> {
         rx_fuel_block,
         ethereum_rpc,
         storage.clone(),
+        &metrics_registry,
     )?;
 
     launch_api_server(

@@ -5,7 +5,7 @@ use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer},
-    types::{Address, Chain, TransactionReceipt, U256, U64},
+    types::{Address, Chain, U256, U64},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
 use tracing::info;
@@ -13,8 +13,7 @@ use url::Url;
 
 use super::{eth_event_streamer::EthEventStreamer, EventStreamer};
 use crate::{
-    adapters::{eth_metrics::EthMetrics, ethereum_adapter::EthereumAdapter},
-    common::EthTxStatus,
+    adapters::ethereum_adapter::{eth_metrics::EthMetrics, EthereumAdapter},
     errors::{Error, Result},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
@@ -80,22 +79,6 @@ impl EthereumRPC {
 
     fn handle_network_success(&self) {
         self.health_tracker.note_success();
-    }
-
-    fn extract_status(receipt: Option<TransactionReceipt>) -> EthTxStatus {
-        let Some(receipt) = receipt else {
-            return EthTxStatus::Pending;
-        };
-
-        let status = receipt
-            .status
-            .expect("Status field should be present after EIP-658!");
-
-        if status.is_zero() {
-            EthTxStatus::Aborted
-        } else {
-            EthTxStatus::Committed
-        }
     }
 
     async fn record_balance(&self) -> Result<()> {
