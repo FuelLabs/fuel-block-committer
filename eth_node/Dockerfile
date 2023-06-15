@@ -14,6 +14,6 @@ WORKDIR /fuel-v2-contracts
 
 RUN npm install && npm run compile &> /dev/null && npm cache clean --force
 
-COPY hardhat.config.ts run.sh health_check.sh ./
+COPY hardhat.config.ts run.sh ./
 
 CMD ["./run.sh"]
