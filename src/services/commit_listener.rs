@@ -1,7 +1,5 @@
 use async_trait::async_trait;
-use ethers::types::U256;
-use fuels::tx::Bytes32;
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use prometheus::{IntGauge, Opts};
 use tracing::{error, info, warn};
 
@@ -69,8 +67,10 @@ impl CommitListener {
 
     async fn handle_block_committed(
         &self,
-        fuel_block_hash: Bytes32,
-        commit_height: U256,
+        FuelBlockCommitedOnEth {
+            fuel_block_hash,
+            commit_height,
+        }: FuelBlockCommitedOnEth,
     ) -> Result<()> {
         info!("block comitted on eth (hash: {fuel_block_hash:x}, commit_height: {commit_height})");
 
@@ -85,29 +85,26 @@ impl CommitListener {
 
         Ok(())
     }
+
+    async fn log_if_error(result: Result<()>) {
+        if let Err(error) = result {
+            error!("Received an error from block commit event stream: {error}");
+        }
+    }
 }
 
 #[async_trait]
 impl Runner for CommitListener {
     async fn run(&self) -> Result<()> {
         let eth_block = self.determine_starting_eth_block().await?;
-        let event_streamer = self.ethereum_rpc.event_streamer(eth_block);
 
-        let mut stream = event_streamer.establish_stream().await?;
-        while let Some(event) = stream.next().await {
-            match event {
-                Ok(FuelBlockCommitedOnEth {
-                    fuel_block_hash,
-                    commit_height,
-                }) => {
-                    self.handle_block_committed(fuel_block_hash, commit_height)
-                        .await?;
-                }
-                Err(error) => {
-                    error!("Received an error from block commit event stream: {error}");
-                }
-            }
-        }
+        self.ethereum_rpc
+            .event_streamer(eth_block)
+            .establish_stream()
+            .await?
+            .and_then(|event| self.handle_block_committed(event))
+            .for_each(Self::log_if_error)
+            .await;
 
         warn!("Block commit event stream finished!");
 
@@ -120,6 +117,7 @@ mod tests {
     use fuels::tx::Bytes32;
     use futures::stream;
     use mockall::predicate;
+    use prometheus::Registry;
 
     use crate::{
         adapters::{
@@ -129,6 +127,7 @@ mod tests {
         },
         errors::Result,
         services::CommitListener,
+        telemetry::RegistersMetrics,
     };
 
     #[tokio::test]
@@ -155,6 +154,86 @@ mod tests {
         let res = storage.submission_w_latest_block().await.unwrap().unwrap();
 
         assert!(res.completed);
+    }
+
+    #[tokio::test]
+    async fn listener_will_update_metrics_if_event_is_emitted() {
+        // given
+        let submission = BlockSubmission {
+            completed: false,
+            ..BlockSubmission::random()
+        };
+        let block_hash = submission.fuel_block_hash;
+        let fuel_block_height = submission.fuel_block_height;
+
+        let eth_rpc_mock = given_eth_rpc_that_will_stream(
+            vec![Ok(block_hash)],
+            submission.submitted_at_height.as_u64(),
+        );
+
+        let storage = given_storage_containing(submission).await;
+
+        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+
+        let registry = Registry::new();
+        commit_listener.register_metrics(&registry);
+
+        // when
+        commit_listener.run().await.unwrap();
+
+        //then
+        let metrics = registry.gather();
+        let latest_committed_block_metric = metrics
+            .iter()
+            .find(|metric| metric.get_name() == "latest_committed_block")
+            .and_then(|metric| metric.get_metric().get(0))
+            .map(|metric| metric.get_gauge())
+            .unwrap();
+
+        assert_eq!(
+            latest_committed_block_metric.get_value(),
+            fuel_block_height as f64
+        );
+    }
+
+    #[tokio::test]
+    async fn error_while_handling_event_will_not_close_stream() {
+        // given
+        let old_block_missing_from_db = BlockSubmission {
+            completed: false,
+            fuel_block_height: 10,
+            ..BlockSubmission::random()
+        };
+
+        let new_block = BlockSubmission {
+            completed: false,
+            fuel_block_height: 11,
+            ..BlockSubmission::random()
+        };
+
+        let older_hash = old_block_missing_from_db.fuel_block_hash;
+        let newer_hash = new_block.fuel_block_hash;
+
+        let eth_rpc_mock = given_eth_rpc_that_will_stream(
+            vec![Ok(older_hash), Ok(newer_hash)],
+            new_block.submitted_at_height.as_u64(),
+        );
+
+        let storage = given_storage_containing(new_block.clone()).await;
+        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+
+        // when
+        commit_listener.run().await.unwrap();
+
+        //then
+        let latest_submission = storage.submission_w_latest_block().await.unwrap().unwrap();
+        assert_eq!(
+            BlockSubmission {
+                completed: true,
+                ..new_block.clone()
+            },
+            latest_submission
+        );
     }
 
     async fn given_storage_containing(submission: BlockSubmission) -> SqliteDb {
