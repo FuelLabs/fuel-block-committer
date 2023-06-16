@@ -61,7 +61,7 @@ impl CommitListener {
             .storage
             .submission_w_latest_block()
             .await?
-            .map(|submission| submission.submitted_at_height.as_u64())
+            .map(|submission| submission.submittal_height.as_u64())
             .unwrap_or(0))
     }
 
@@ -141,7 +141,7 @@ mod tests {
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
             vec![Ok(block_hash)],
-            submission.submitted_at_height.as_u64(),
+            submission.submittal_height.as_u64(),
         );
 
         let storage = given_storage_containing(submission).await;
@@ -168,7 +168,7 @@ mod tests {
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
             vec![Ok(block_hash)],
-            submission.submitted_at_height.as_u64(),
+            submission.submittal_height.as_u64(),
         );
 
         let storage = given_storage_containing(submission).await;
@@ -216,7 +216,7 @@ mod tests {
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
             vec![Ok(older_hash), Ok(newer_hash)],
-            new_block.submitted_at_height.as_u64(),
+            new_block.submittal_height.as_u64(),
         );
 
         let storage = given_storage_containing(new_block.clone()).await;

@@ -46,7 +46,7 @@ impl SqliteDb {
                     fuel_block_hash     BLOB PRIMARY KEY NOT NULL,
                     fuel_block_height   INTEGER NOT NULL UNIQUE,
                     completed           INTEGER NOT NULL,
-                    submitted_at_height BLOB NOT NULL
+                    submittal_height BLOB NOT NULL
                 )"#,
             (), // empty list of parameters.
         )?;
@@ -74,7 +74,7 @@ impl SqliteDb {
         let fuel_block_height: u32 = row.get(1)?;
         let completed: bool = row.get(2)?;
 
-        let submitted_at_height = {
+        let submittal_height = {
             let le_bytes: [u8; 8] = row.get(3)?;
             u64::from_le_bytes(le_bytes)
         };
@@ -83,7 +83,7 @@ impl SqliteDb {
             fuel_block_hash: fuel_block_hash.into(),
             fuel_block_height,
             completed,
-            submitted_at_height: submitted_at_height.into(),
+            submittal_height: submittal_height.into(),
         })
     }
 }
@@ -95,13 +95,13 @@ impl Storage for SqliteDb {
             fuel_block_hash,
             fuel_block_height,
             completed,
-            submitted_at_height,
+            submittal_height,
         } = submission;
-        let submitted_at_height = submitted_at_height.as_u64().to_le_bytes();
+        let submittal_height = submittal_height.as_u64().to_le_bytes();
 
         self.run_blocking(move |connection| {
-            let query = "INSERT INTO eth_tx_submission (fuel_block_hash, fuel_block_height, completed, submitted_at_height) VALUES (?1, ?2, ?3, ?4)";
-            connection.execute( query, (*fuel_block_hash, fuel_block_height, completed, submitted_at_height))
+            let query = "INSERT INTO eth_tx_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES (?1, ?2, ?3, ?4)";
+            connection.execute( query, (*fuel_block_hash, fuel_block_height, completed, submittal_height))
         }).await?;
 
         Ok(())

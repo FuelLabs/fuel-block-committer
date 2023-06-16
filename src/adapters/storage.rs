@@ -11,7 +11,9 @@ pub struct BlockSubmission {
     pub fuel_block_hash: Bytes32,
     pub fuel_block_height: u32,
     pub completed: bool,
-    pub submitted_at_height: ethers::types::U64,
+    // Eth block height moments before submitting the fuel block. Used to filter stale events in
+    // the commit listener.
+    pub submittal_height: ethers::types::U64,
 }
 
 impl BlockSubmission {
@@ -24,7 +26,7 @@ impl BlockSubmission {
             fuel_block_hash: rand.gen::<[u8; 32]>().into(),
             fuel_block_height: rand.gen(),
             completed: false,
-            submitted_at_height: rand.gen::<u64>().into(),
+            submittal_height: rand.gen::<u64>().into(),
         }
     }
 }

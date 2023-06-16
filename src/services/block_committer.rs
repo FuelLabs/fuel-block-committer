@@ -50,7 +50,7 @@ impl BlockCommitter {
 
         let submission = BlockSubmission {
             fuel_block_height,
-            submitted_at_height,
+            submittal_height: submitted_at_height,
             fuel_block_hash: fuel_block.id,
             completed: false,
         };
