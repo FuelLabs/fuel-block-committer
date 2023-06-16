@@ -1,12 +1,14 @@
-pub mod eth_event_streamer;
-pub mod eth_metrics;
-pub mod ethereum_rpc;
+mod monitored_adapter;
+mod websocket;
+
+pub use monitored_adapter::MonitoredEthAdapter;
+pub use websocket::EthereumWs;
 
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use ethers::types::{U256, U64};
-use fuels::{tx::Bytes32, types::block::Block};
+use fuels::{tx::Bytes32, types::block::Block as FuelBlock};
 use futures::Stream;
 
 use crate::errors::Result;
@@ -28,7 +30,7 @@ pub trait EventStreamer {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EthereumAdapter: Send + Sync {
-    async fn submit(&self, block: Block) -> Result<()>;
+    async fn submit(&self, block: FuelBlock) -> Result<()>;
     async fn get_latest_eth_block(&self) -> Result<U64>;
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync>;
 }

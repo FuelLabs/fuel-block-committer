@@ -8,7 +8,7 @@ use tracing::error;
 use crate::{
     adapters::{
         block_fetcher::FuelBlockFetcher,
-        ethereum_adapter::ethereum_rpc::EthereumRPC,
+        ethereum_adapter::{EthereumWs, MonitoredEthAdapter},
         runner::Runner,
         storage::{sqlite_db::SqliteDb, Storage},
     },
@@ -45,7 +45,7 @@ pub fn spawn_block_watcher(
 pub fn spawn_eth_committer_and_listener(
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
-    ethereum_rpc: EthereumRPC,
+    ethereum_rpc: MonitoredEthAdapter<EthereumWs>,
     storage: SqliteDb,
     registry: &Registry,
 ) -> Result<(tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)> {
@@ -66,7 +66,7 @@ pub fn spawn_eth_committer_and_listener(
 
 fn create_block_committer(
     rx_fuel_block: Receiver<FuelBlock>,
-    ethereum_rpc: EthereumRPC,
+    ethereum_rpc: MonitoredEthAdapter<EthereumWs>,
     storage: impl Storage + 'static,
 ) -> tokio::task::JoinHandle<()> {
     let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc, storage);
@@ -78,26 +78,28 @@ fn create_block_committer(
     })
 }
 
-pub async fn create_eth_rpc(
+pub async fn create_eth_adapter(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
-) -> Result<(EthereumRPC, HealthChecker)> {
-    let ethereum_rpc = EthereumRPC::connect(
+) -> Result<(MonitoredEthAdapter<EthereumWs>, HealthChecker)> {
+    let ethereum_rpc = EthereumWs::connect(
         &config.ethereum_rpc,
         config.ethereum_chain_id,
         config.state_contract_address,
         &config.ethereum_wallet_key,
-        internal_config.eth_errors_before_unhealthy,
         config.commit_interval,
     )
     .await?;
 
     ethereum_rpc.register_metrics(registry);
 
-    let eth_health_check = ethereum_rpc.connection_health_checker();
+    let monitored =
+        MonitoredEthAdapter::new(ethereum_rpc, internal_config.eth_errors_before_unhealthy);
 
-    Ok((ethereum_rpc, eth_health_check))
+    let health_check = monitored.connection_health_checker();
+
+    Ok((monitored, health_check))
 }
 
 fn schedule_polling(

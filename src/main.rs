@@ -5,7 +5,7 @@ use fuel_block_committer::{
     setup::{
         config::InternalConfig,
         helpers::{
-            create_eth_rpc, setup_logger, setup_storage, spawn_block_watcher,
+            create_eth_adapter, setup_logger, setup_storage, spawn_block_watcher,
             spawn_eth_committer_and_listener,
         },
     },
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
 
     // TODO: handle not being able to connect, don't process work until connected
     let (ethereum_rpc, eth_health_check) =
-        create_eth_rpc(&config, &internal_config, &metrics_registry).await?;
+        create_eth_adapter(&config, &internal_config, &metrics_registry).await?;
 
     let (_committer_handle, _listener_handle) = spawn_eth_committer_and_listener(
         &internal_config,

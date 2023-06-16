@@ -8,11 +8,12 @@ use ethers::{
 use fuels::tx::Bytes32;
 use futures::{stream::TryStreamExt, Stream};
 
-use super::{EventStreamer, FuelBlockCommitedOnEth};
 use crate::{
-    adapters::ethereum_adapter::ethereum_rpc::CommitSubmittedFilter,
+    adapters::ethereum_adapter::{EventStreamer, FuelBlockCommitedOnEth},
     errors::{Error, Result},
 };
+
+use super::adapter::CommitSubmittedFilter;
 
 type EthStreamInitializer = Event<
     Arc<SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>>,

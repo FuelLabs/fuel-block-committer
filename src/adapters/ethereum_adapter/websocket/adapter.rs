@@ -8,15 +8,17 @@ use ethers::{
     types::{Address, Chain, U256, U64},
 };
 use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
+use prometheus::{IntGauge, Opts};
 use tracing::info;
 use url::Url;
 
-use super::{eth_event_streamer::EthEventStreamer, EventStreamer};
 use crate::{
-    adapters::ethereum_adapter::{eth_metrics::EthMetrics, EthereumAdapter},
+    adapters::ethereum_adapter::{EthereumAdapter, EventStreamer},
     errors::{Error, Result},
-    telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
+    telemetry::RegistersMetrics,
 };
+
+use super::event_streamer::EthEventStreamer;
 
 abigen!(
     FUEL_STATE_CONTRACT,
@@ -27,22 +29,20 @@ abigen!(
 );
 
 #[derive(Clone)]
-pub struct EthereumRPC {
+pub struct EthereumWs {
     provider: Provider<Ws>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     wallet_address: Address,
-    metrics: EthMetrics,
-    health_tracker: ConnectionHealthTracker,
     commit_interval: u32,
+    metrics: Metrics,
 }
 
-impl EthereumRPC {
+impl EthereumWs {
     pub async fn connect(
         ethereum_rpc: &Url,
         chain_id: Chain,
         contract_address: Bytes20,
         ethereum_wallet_key: &str,
-        unhealthy_after_n_errors: usize,
         commit_interval: u32,
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(ethereum_rpc.to_string())
@@ -62,23 +62,9 @@ impl EthereumRPC {
             provider,
             contract,
             wallet_address,
-            metrics: EthMetrics::default(),
-            health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
             commit_interval,
+            metrics: Default::default(),
         })
-    }
-
-    pub fn connection_health_checker(&self) -> HealthChecker {
-        self.health_tracker.tracker()
-    }
-
-    fn handle_network_error(&self) {
-        self.health_tracker.note_failure();
-        self.metrics.eth_network_errors.inc();
-    }
-
-    fn handle_network_success(&self) {
-        self.health_tracker.note_success();
     }
 
     async fn record_balance(&self) -> Result<()> {
@@ -86,11 +72,7 @@ impl EthereumRPC {
             .provider
             .get_balance(self.wallet_address, None)
             .await
-            .map_err(|err| {
-                self.handle_network_error();
-                Error::NetworkError(err.to_string())
-            })?;
-        self.handle_network_success();
+            .map_err(|err| Error::NetworkError(err.to_string()))?;
 
         info!("wallet balance: {}", &balance);
 
@@ -108,14 +90,14 @@ impl EthereumRPC {
     }
 }
 
-impl RegistersMetrics for EthereumRPC {
+impl RegistersMetrics for EthereumWs {
     fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
         self.metrics.metrics()
     }
 }
 
 #[async_trait]
-impl EthereumAdapter for EthereumRPC {
+impl EthereumAdapter for EthereumWs {
     async fn submit(&self, block: Block) -> Result<()> {
         let commit_height =
             Self::calculate_commit_height(block.header.height, self.commit_interval);
@@ -124,20 +106,12 @@ impl EthereumAdapter for EthereumRPC {
             .send()
             .await
             .map_err(|contract_err| match contract_err {
-                ContractError::ProviderError { e } => {
-                    self.handle_network_error();
-                    Error::NetworkError(e.to_string())
-                }
-                ContractError::MiddlewareError { e } => {
-                    self.handle_network_error();
-                    Error::NetworkError(e.to_string())
-                }
+                ContractError::ProviderError { e } => Error::NetworkError(e.to_string()),
+                ContractError::MiddlewareError { e } => Error::NetworkError(e.to_string()),
                 _ => Error::Other(contract_err.to_string()),
             })?;
 
         info!("tx: {} submitted", tx.tx_hash());
-
-        self.handle_network_success();
 
         self.record_balance().await?;
 
@@ -161,99 +135,49 @@ impl EthereumAdapter for EthereumRPC {
     }
 }
 
+#[derive(Clone)]
+struct Metrics {
+    eth_wallet_balance: IntGauge,
+}
+
+impl RegistersMetrics for Metrics {
+    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+        vec![Box::new(self.eth_wallet_balance.clone())]
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let eth_wallet_balance = IntGauge::with_opts(Opts::new(
+            "eth_wallet_balance",
+            "Ethereum wallet balance [gwei].",
+        ))
+        .expect("eth_wallet_balance metric to be correctly configured");
+
+        Self { eth_wallet_balance }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use fuels::{
         tx::Bytes32,
         types::block::{Block as FuelBlock, Header as FuelBlockHeader},
     };
-    use prometheus::Registry;
 
     use super::*;
 
-    #[tokio::test]
-    async fn eth_rpc_updates_metrics_in_case_of_network_err() {
-        // given
-        let ethereum_rpc = given_eth_rpc().await;
-        let registry = Registry::default();
-        ethereum_rpc.register_metrics(&registry);
-
-        // when
-        let result = ethereum_rpc.submit(given_a_block(42)).await;
-
-        // then
-        assert!(result.is_err());
-        let metrics = registry.gather();
-        let network_errors_metric = metrics
-            .iter()
-            .find(|metric| metric.get_name() == "eth_network_errors")
-            .and_then(|metric| metric.get_metric().get(0))
-            .map(|metric| metric.get_counter())
-            .unwrap();
-
-        assert_eq!(network_errors_metric.get_value(), 1f64);
-    }
-
-    #[tokio::test]
-    async fn eth_rpc_clone_updates_shared_metrics() {
-        // given
-        let ethereum_rpc = given_eth_rpc().await;
-        let registry = Registry::default();
-        ethereum_rpc.register_metrics(&registry);
-
-        let ethereum_rpc_clone = ethereum_rpc.clone();
-
-        // when
-        let _ = ethereum_rpc.submit(given_a_block(42)).await;
-        let _ = ethereum_rpc_clone.submit(given_a_block(42)).await;
-
-        // then
-        let metrics = registry.gather();
-        let network_errors_metric = metrics
-            .iter()
-            .find(|metric| metric.get_name() == "eth_network_errors")
-            .and_then(|metric| metric.get_metric().get(0))
-            .map(|metric| metric.get_counter())
-            .unwrap();
-
-        assert_eq!(network_errors_metric.get_value(), 2f64);
-    }
-
-    #[tokio::test]
-    async fn eth_rpc_correctly_tracks_network_health() {
-        let ethereum_rpc = given_eth_rpc().await;
-        let health_check = ethereum_rpc.connection_health_checker();
-
-        assert!(health_check.healthy());
-
-        let _ = ethereum_rpc.submit(given_a_block(42)).await;
-        assert!(health_check.healthy());
-
-        let _ = ethereum_rpc.submit(given_a_block(42)).await;
-        assert!(health_check.healthy());
-
-        let _ = ethereum_rpc.submit(given_a_block(42)).await;
-        assert!(!health_check.healthy());
-    }
-
     #[test]
     fn calculates_correctly_the_commit_height() {
-        assert_eq!(EthereumRPC::calculate_commit_height(10, 3), 3.into());
+        assert_eq!(EthereumWs::calculate_commit_height(10, 3), 3.into());
     }
 
-    async fn given_eth_rpc() -> EthereumRPC {
+    async fn given_eth_rpc() -> EthereumWs {
         let url = Url::parse("http://127.0.0.42:42").unwrap();
         let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
-        EthereumRPC::connect(
-            &url,
-            Default::default(),
-            Default::default(),
-            wallet_key,
-            3,
-            3,
-        )
-        .await
-        .unwrap()
+        EthereumWs::connect(&url, Default::default(), Default::default(), wallet_key, 3)
+            .await
+            .unwrap()
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {
