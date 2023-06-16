@@ -18,6 +18,6 @@ trap 'docker compose down' EXIT
 
 cargo test --test e2e -- --nocapture
 
-if [ $show_logs = "true" ]; then
+if [[ $show_logs = "true" ]]; then
     docker compose logs block_committer
 fi
