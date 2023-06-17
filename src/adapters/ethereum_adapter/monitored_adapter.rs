@@ -1,4 +1,3 @@
-use ethers::types::U64;
 use prometheus::{IntCounter, Opts};
 
 use crate::{
@@ -59,7 +58,7 @@ impl<T: EthereumAdapter> EthereumAdapter for MonitoredEthAdapter<T> {
         response
     }
 
-    async fn get_latest_eth_block(&self) -> Result<U64> {
+    async fn get_latest_eth_block(&self) -> Result<u64> {
         let response = self.adapter.get_latest_eth_block().await;
         self.note_network_status(&response);
         response
@@ -110,7 +109,7 @@ mod tests {
 
         eth_adapter
             .expect_get_latest_eth_block()
-            .returning(|| Ok(10.into()));
+            .returning(|| Ok(10));
 
         let adapter = MonitoredEthAdapter::new(eth_adapter, 1);
         let health_check = adapter.connection_health_checker();

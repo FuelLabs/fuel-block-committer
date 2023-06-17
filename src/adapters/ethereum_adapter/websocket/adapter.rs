@@ -5,7 +5,7 @@ use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer},
-    types::{Address, Chain, U256, U64},
+    types::{Address, Chain, U256},
 };
 use prometheus::{IntGauge, Opts};
 use tracing::info;
@@ -119,11 +119,12 @@ impl EthereumAdapter for EthereumWs {
         Ok(())
     }
 
-    async fn get_latest_eth_block(&self) -> Result<U64> {
-        self.provider.get_block_number().await.map_err(|err| {
-            //self.handle_network_error();
-            Error::NetworkError(err.to_string())
-        })
+    async fn get_latest_eth_block(&self) -> Result<u64> {
+        self.provider
+            .get_block_number()
+            .await
+            .map_err(|err| Error::NetworkError(err.to_string()))
+            .map(|height| height.as_u64())
     }
 
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync> {

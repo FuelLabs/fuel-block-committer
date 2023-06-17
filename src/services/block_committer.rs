@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio::sync::mpsc::Receiver;
 use tracing::{error, info};
 
 use crate::{
@@ -12,9 +12,8 @@ use crate::{
     errors::Result,
 };
 
-#[allow(dead_code)]
 pub struct BlockCommitter {
-    rx_block: Mutex<Receiver<FuelBlock>>,
+    rx_block: Receiver<FuelBlock>,
     ethereum_rpc: Box<dyn EthereumAdapter>,
     storage: Box<dyn Storage>,
 }
@@ -26,25 +25,18 @@ impl BlockCommitter {
         storage: impl Storage + 'static,
     ) -> Self {
         Self {
-            rx_block: Mutex::new(rx_block),
+            rx_block,
             ethereum_rpc: Box::new(ethereum_rpc),
             storage: Box::new(storage),
         }
     }
 
-    async fn dequeue(&self) -> Option<FuelBlock> {
-        self.rx_block.lock().await.recv().await
+    async fn next_fuel_block_for_committal(&mut self) -> Option<FuelBlock> {
+        self.rx_block.recv().await
     }
 
     async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
-        // let submitted_at_height = match self.ethereum_rpc.get_latest_eth_block().await {
-        //     Ok(submitted_at_height) => submitted_at_height,
-        //     Err(error) => {
-        //         error!("{error}");
-        //         continue;
-        //     }
-        // };
-        let submitted_at_height = 0.into();
+        let submitted_at_height = self.ethereum_rpc.get_latest_eth_block().await?;
 
         let submission = BlockSubmission {
             block: fuel_block,
@@ -63,9 +55,8 @@ impl BlockCommitter {
 
 #[async_trait]
 impl Runner for BlockCommitter {
-    async fn run(&self) -> Result<()> {
-        // listen for new blocks
-        while let Some(fuel_block) = self.dequeue().await {
+    async fn run(&mut self) -> Result<()> {
+        while let Some(fuel_block) = self.next_fuel_block_for_committal().await {
             if let Err(error) = self.submit_block(fuel_block).await {
                 error!("{error}");
             } else {
@@ -81,7 +72,6 @@ impl Runner for BlockCommitter {
 mod tests {
     use std::time::Duration;
 
-    use ethers::types::U64;
     use mockall::predicate;
 
     use super::*;
@@ -121,7 +111,7 @@ mod tests {
 
         eth_rpc_mock
             .expect_get_latest_eth_block()
-            .return_once(move || Ok(U64::default()));
+            .return_once(move || Ok(0));
 
         eth_rpc_mock
     }
@@ -132,7 +122,7 @@ mod tests {
         storage: impl Storage + 'static,
     ) {
         let _ = tokio::time::timeout(Duration::from_millis(250), async move {
-            let block_committer = BlockCommitter::new(rx, eth_rpc_mock, storage);
+            let mut block_committer = BlockCommitter::new(rx, eth_rpc_mock, storage);
             block_committer
                 .run()
                 .await

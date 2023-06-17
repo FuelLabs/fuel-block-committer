@@ -44,7 +44,7 @@ impl SqliteDb {
 
     fn initialize(connection: Connection) -> Result<Arc<Mutex<Connection>>> {
         connection.execute(
-            r#"CREATE TABLE IF NOT EXISTS eth_tx_submission (
+            r#"CREATE TABLE IF NOT EXISTS eth_fuel_block_submission (
                     fuel_block_hash     BLOB PRIMARY KEY NOT NULL,
                     fuel_block_height   INTEGER NOT NULL UNIQUE,
                     completed           INTEGER NOT NULL,
@@ -100,10 +100,10 @@ impl Storage for SqliteDb {
             completed,
             submittal_height,
         } = submission;
-        let submittal_height = submittal_height.as_u64().to_le_bytes();
+        let submittal_height = submittal_height.to_le_bytes();
 
         self.run_blocking(move |connection| {
-            let query = "INSERT INTO eth_tx_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES (?1, ?2, ?3, ?4)";
+            let query = "INSERT INTO eth_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES (?1, ?2, ?3, ?4)";
             connection.execute( query, (hash, height, completed, submittal_height))
         }).await?;
 
@@ -114,7 +114,7 @@ impl Storage for SqliteDb {
         Ok(self
             .run_blocking(move |connection| {
                 let mut statement = connection.prepare(
-                    r#"SELECT * FROM eth_tx_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
+                    r#"SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
                 )?;
 
                 let mut submission = statement.query_map([], Self::decode_submission)?;
@@ -126,7 +126,8 @@ impl Storage for SqliteDb {
 
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
         self.run_blocking(move |connection| {
-            let query = "UPDATE eth_tx_submission SET completed = 1 WHERE fuel_block_hash = (?1)";
+            let query =
+                "UPDATE eth_fuel_block_submission SET completed = 1 WHERE fuel_block_hash = (?1)";
             let rows_updated = connection.execute(query, (fuel_block_hash,))?;
 
             if rows_updated == 0 {
@@ -136,7 +137,7 @@ impl Storage for SqliteDb {
             }
 
             let submission = connection.query_row(
-                r#"SELECT * FROM eth_tx_submission WHERE fuel_block_hash = (?1)"#,
+                r#"SELECT * FROM eth_fuel_block_submission WHERE fuel_block_hash = (?1)"#,
                 (fuel_block_hash,),
                 Self::decode_submission,
             )?;

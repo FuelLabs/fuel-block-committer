@@ -94,7 +94,7 @@ impl BlockWatcher {
 
 #[async_trait]
 impl Runner for BlockWatcher {
-    async fn run(&self) -> Result<()> {
+    async fn run(&mut self) -> Result<()> {
         let current_block = self.fetch_latest_block().await?;
 
         let latest_block_submission = self.storage.submission_w_latest_block().await?;
@@ -226,7 +226,7 @@ mod tests {
             .await
             .unwrap();
 
-        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);

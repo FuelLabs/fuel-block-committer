@@ -61,7 +61,7 @@ impl CommitListener {
             .storage
             .submission_w_latest_block()
             .await?
-            .map(|submission| submission.submittal_height.as_u64())
+            .map(|submission| submission.submittal_height)
             .unwrap_or(0))
     }
 
@@ -95,7 +95,7 @@ impl CommitListener {
 
 #[async_trait]
 impl Runner for CommitListener {
-    async fn run(&self) -> Result<()> {
+    async fn run(&mut self) -> Result<()> {
         let eth_block = self.determine_starting_eth_block().await?;
 
         self.ethereum_rpc
@@ -139,13 +139,11 @@ mod tests {
         };
         let block_hash = submission.block.hash;
 
-        let eth_rpc_mock = given_eth_rpc_that_will_stream(
-            vec![Ok(block_hash)],
-            submission.submittal_height.as_u64(),
-        );
+        let eth_rpc_mock =
+            given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
         let storage = given_storage_containing(submission).await;
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+        let mut commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
 
         // when
         commit_listener.run().await.unwrap();
@@ -166,14 +164,12 @@ mod tests {
         let block_hash = submission.block.hash;
         let fuel_block_height = submission.block.height;
 
-        let eth_rpc_mock = given_eth_rpc_that_will_stream(
-            vec![Ok(block_hash)],
-            submission.submittal_height.as_u64(),
-        );
+        let eth_rpc_mock =
+            given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
         let storage = given_storage_containing(submission).await;
 
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+        let mut commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
 
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);
@@ -222,11 +218,11 @@ mod tests {
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
             vec![Ok(older_hash), Ok(newer_hash)],
-            new_block.submittal_height.as_u64(),
+            new_block.submittal_height,
         );
 
         let storage = given_storage_containing(new_block.clone()).await;
-        let commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+        let mut commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
 
         // when
         commit_listener.run().await.unwrap();

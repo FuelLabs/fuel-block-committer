@@ -68,7 +68,7 @@ fn create_block_committer(
     ethereum_rpc: MonitoredEthAdapter<EthereumWs>,
     storage: impl Storage + 'static,
 ) -> tokio::task::JoinHandle<()> {
-    let block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc, storage);
+    let mut block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc, storage);
     tokio::spawn(async move {
         block_committer
             .run()
@@ -103,7 +103,7 @@ pub async fn create_eth_adapter(
 
 fn schedule_polling(
     polling_interval: Duration,
-    runner: impl Runner + 'static,
+    mut runner: impl Runner + 'static,
     name: &'static str,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
