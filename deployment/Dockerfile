@@ -2,13 +2,6 @@
 FROM lukemathwalker/cargo-chef:latest-rust-1.70 as chef
 WORKDIR /build/
 # hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    lld \
-    clang \
-    libclang-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
 FROM chef as planner
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
@@ -26,13 +19,6 @@ RUN cargo build --release
 
 # Stage 2: Run
 FROM ubuntu:22.04 as run
-
-RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    # Clean up
-    && apt-get autoremove -y \
-    && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/
 
