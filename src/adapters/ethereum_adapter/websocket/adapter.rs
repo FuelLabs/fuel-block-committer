@@ -7,7 +7,7 @@ use ethers::{
     signers::{LocalWallet, Signer},
     types::{Address, Chain, U256, U64},
 };
-use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, types::block::Block};
+use fuels::types::block::Block;
 use prometheus::{IntGauge, Opts};
 use tracing::info;
 use url::Url;
@@ -41,7 +41,7 @@ impl EthereumWs {
     pub async fn connect(
         ethereum_rpc: &Url,
         chain_id: Chain,
-        contract_address: Bytes20,
+        contract_address: Address,
         ethereum_wallet_key: &str,
         commit_interval: u32,
     ) -> Result<Self> {
@@ -160,44 +160,10 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
-    use fuels::{
-        tx::Bytes32,
-        types::block::{Block as FuelBlock, Header as FuelBlockHeader},
-    };
-
     use super::*;
 
     #[test]
     fn calculates_correctly_the_commit_height() {
         assert_eq!(EthereumWs::calculate_commit_height(10, 3), 3.into());
-    }
-
-    async fn given_eth_rpc() -> EthereumWs {
-        let url = Url::parse("http://127.0.0.42:42").unwrap();
-        let wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36";
-        EthereumWs::connect(&url, Default::default(), Default::default(), wallet_key, 3)
-            .await
-            .unwrap()
-    }
-
-    fn given_a_block(block_height: u32) -> FuelBlock {
-        let header = FuelBlockHeader {
-            id: Bytes32::zeroed(),
-            da_height: 0,
-            transactions_count: 0,
-            message_receipt_count: 0,
-            transactions_root: Bytes32::zeroed(),
-            message_receipt_root: Bytes32::zeroed(),
-            height: block_height,
-            prev_root: Bytes32::zeroed(),
-            time: None,
-            application_hash: Bytes32::zeroed(),
-        };
-
-        FuelBlock {
-            id: Bytes32::default(),
-            header,
-            transactions: vec![],
-        }
     }
 }

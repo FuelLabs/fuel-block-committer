@@ -39,8 +39,6 @@ WORKDIR /root/
 COPY --from=builder /build/target/release/fuel-block-committer .
 COPY --from=builder /build/target/release/fuel-block-committer.d .
 
-EXPOSE 3000
-
 # https://stackoverflow.com/a/44671685
 # https://stackoverflow.com/a/40454758
 # hadolint ignore=DL3025

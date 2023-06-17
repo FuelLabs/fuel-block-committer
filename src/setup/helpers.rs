@@ -91,11 +91,11 @@ pub async fn create_eth_adapter(
         config.commit_interval,
     )
     .await?;
-
     ethereum_rpc.register_metrics(registry);
 
     let monitored =
         MonitoredEthAdapter::new(ethereum_rpc, internal_config.eth_errors_before_unhealthy);
+    monitored.register_metrics(registry);
 
     let health_check = monitored.connection_health_checker();
 

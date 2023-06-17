@@ -1,15 +1,14 @@
 use std::{net::Ipv4Addr, path::PathBuf};
 
 use clap::{command, Parser};
-use ethers::types::Chain;
-use fuels::accounts::fuel_crypto::fuel_types::Bytes20;
+use ethers::types::{Chain, Address};
 use url::Url;
 
 use crate::setup::config::Config;
 
 const ETHEREUM_RPC: &str = "http://127.0.0.1:8545/";
 const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
-const STATE_CONTRACT_ADDRESS: Bytes20 = Bytes20::zeroed();
+const STATE_CONTRACT_ADDRESS: Address = Address::zero();
 const COMMIT_INTERVAL: u32 = 1;
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 8080;
@@ -48,7 +47,7 @@ struct Cli {
     #[arg(long,
     env = "STATE_CONTRACT_ADDRESS",
     default_value_t = STATE_CONTRACT_ADDRESS, value_name = "BYTES20", help = "Ethereum address of the fuel chain state contract.")]
-    state_contract_address: Bytes20,
+    state_contract_address: Address,
 
     /// Commit interval
     #[arg(long,
