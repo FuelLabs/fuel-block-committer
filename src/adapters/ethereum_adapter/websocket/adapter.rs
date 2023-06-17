@@ -5,9 +5,10 @@ use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer},
-    types::{Address, Chain, U256},
+    types::{Address, Chain, U256, U64},
 };
 use prometheus::{IntGauge, Opts};
+use serde_json::Value;
 use tracing::info;
 use url::Url;
 
@@ -120,11 +121,15 @@ impl EthereumAdapter for EthereumWs {
     }
 
     async fn get_latest_eth_block(&self) -> Result<u64> {
+        // if provider.get_block_number is used the outgoing JSON RPC request would have the
+        // 'params' field set as `params: null`. This is accepted by Anvil but rejected by hardhat.
+        // By passing a preconstructed serde_json Value::Array it will cause params to be defined
+        // as `params: []` which is acceptable by both Anvil and Hardhat.
         self.provider
-            .get_block_number()
+            .request("eth_blockNumber", Value::Array(vec![]))
             .await
             .map_err(|err| Error::NetworkError(err.to_string()))
-            .map(|height| height.as_u64())
+            .map(|height: U64| height.as_u64())
     }
 
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync> {
