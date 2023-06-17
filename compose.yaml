@@ -6,10 +6,9 @@ services:
       - "8545:8545"
     healthcheck:
       test: [ "CMD", "test", "-f", "/contracts_deployed" ]
-      start_period: 15s
-      interval: 5s
+      interval: 1s
       timeout: 30s
-      retries: 5
+      retries: 50
     environment:
       - WALLET_KEY=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36
       - URL=http://0.0.0.0:8545/
@@ -29,7 +28,7 @@ services:
     healthcheck:
       test: [ "CMD", "curl", "--fail", "http://0.0.0.0:4000/health" ]
       retries: 5
-      interval: 5s
+      interval: 2s
       timeout: 30s
 
   block_committer:
