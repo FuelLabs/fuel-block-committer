@@ -1,16 +1,22 @@
-use fuel_block_committer::{
-    api::launch_api_server,
-    cli,
-    errors::Result,
-    setup::{
-        config::InternalConfig,
-        helpers::{
-            create_eth_adapter, setup_logger, setup_storage, spawn_block_watcher,
-            spawn_eth_committer_and_listener,
-        },
+mod adapters;
+mod api;
+mod cli;
+mod common;
+mod errors;
+mod services;
+mod setup;
+mod telemetry;
+
+use api::launch_api_server;
+use errors::Result;
+use prometheus::Registry;
+use setup::{
+    config::InternalConfig,
+    helpers::{
+        create_eth_adapter, setup_logger, setup_storage, spawn_block_watcher,
+        spawn_eth_committer_and_listener,
     },
 };
-use prometheus::Registry;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -31,7 +31,7 @@ strum = "0.24.1"
 futures = "0.3.28"
 
 [dev-dependencies]
-fuels-test-helpers="0.43.0"
+fuels-test-helpers="0.43"
 rand = "0.8.5"
 mockall = "0.11.4"
 anyhow = "1.0.71"
