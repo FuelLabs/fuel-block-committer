@@ -13,6 +13,8 @@ while true; do
   esac
 done
 
+cargo test --bin fuel-block-committer
+
 docker compose up -d
 trap 'docker compose down' EXIT
 
