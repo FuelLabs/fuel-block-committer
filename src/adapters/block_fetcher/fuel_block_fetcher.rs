@@ -2,12 +2,10 @@ use fuel_core_client::client::FuelClient;
 use url::Url;
 
 use crate::{
-    adapters::block_fetcher::{fuel_metrics::FuelMetrics, BlockFetcher},
+    adapters::block_fetcher::{fuel_metrics::FuelMetrics, BlockFetcher, FuelBlock},
     errors::{Error, Result},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
-
-use super::FuelBlock;
 
 impl RegistersMetrics for FuelBlockFetcher {
     fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {

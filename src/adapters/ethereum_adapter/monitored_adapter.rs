@@ -1,13 +1,14 @@
 use ethers::types::U64;
 use prometheus::{IntCounter, Opts};
 
-use crate::adapters::block_fetcher::FuelBlock;
-use crate::errors::Result;
-use crate::telemetry::{HealthChecker, RegistersMetrics};
-use crate::{errors::Error, telemetry::ConnectionHealthTracker};
-
-use super::EthereumAdapter;
-use super::EventStreamer;
+use crate::{
+    adapters::{
+        block_fetcher::FuelBlock,
+        ethereum_adapter::{EthereumAdapter, EventStreamer},
+    },
+    errors::{Error, Result},
+    telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
+};
 
 #[derive(Clone)]
 pub struct MonitoredEthAdapter<T> {
@@ -96,9 +97,8 @@ impl Default for Metrics {
 mod tests {
     use prometheus::Registry;
 
-    use crate::adapters::ethereum_adapter::MockEthereumAdapter;
-
     use super::*;
+    use crate::adapters::ethereum_adapter::MockEthereumAdapter;
 
     #[tokio::test]
     async fn recovers_after_successful_network_request() {

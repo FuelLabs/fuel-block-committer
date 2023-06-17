@@ -1,18 +1,15 @@
 mod monitored_adapter;
 mod websocket;
 
-pub use monitored_adapter::MonitoredEthAdapter;
-pub use websocket::EthereumWs;
-
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use ethers::types::{U256, U64};
 use futures::Stream;
+pub use monitored_adapter::MonitoredEthAdapter;
+pub use websocket::EthereumWs;
 
-use crate::errors::Result;
-
-use super::block_fetcher::FuelBlock;
+use crate::{adapters::block_fetcher::FuelBlock, errors::Result};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FuelBlockCommitedOnEth {

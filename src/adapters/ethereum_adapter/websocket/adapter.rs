@@ -14,13 +14,13 @@ use url::Url;
 use crate::{
     adapters::{
         block_fetcher::FuelBlock,
-        ethereum_adapter::{EthereumAdapter, EventStreamer},
+        ethereum_adapter::{
+            websocket::event_streamer::EthEventStreamer, EthereumAdapter, EventStreamer,
+        },
     },
     errors::{Error, Result},
     telemetry::RegistersMetrics,
 };
-
-use super::event_streamer::EthEventStreamer;
 
 abigen!(
     FUEL_STATE_CONTRACT,
