@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use fuels::types::block::Block as FuelBlock;
 use tokio::sync::{mpsc::Receiver, Mutex};
 use tracing::{error, info};
 
 use crate::{
     adapters::{
+        block_fetcher::FuelBlock,
         ethereum_adapter::EthereumAdapter,
         runner::Runner,
         storage::{BlockSubmission, Storage},
@@ -46,12 +46,9 @@ impl BlockCommitter {
         // };
         let submitted_at_height = 0.into();
 
-        let fuel_block_height = fuel_block.header.height;
-
         let submission = BlockSubmission {
-            fuel_block_height,
+            block: fuel_block,
             submittal_height: submitted_at_height,
-            fuel_block_hash: fuel_block.id,
             completed: false,
         };
 
@@ -69,15 +66,10 @@ impl Runner for BlockCommitter {
     async fn run(&self) -> Result<()> {
         // listen for new blocks
         while let Some(fuel_block) = self.dequeue().await {
-            let block_hash = fuel_block.id;
-            let block_height = fuel_block.header.height;
             if let Err(error) = self.submit_block(fuel_block).await {
                 error!("{error}");
             } else {
-                info!(
-                    "Submitted fuel block! (block_hash: {}, block_height: {})",
-                    block_hash, block_height
-                );
+                info!("Submitted fuel block! ({fuel_block:?})",);
             }
         }
 
@@ -90,7 +82,6 @@ mod tests {
     use std::time::Duration;
 
     use ethers::types::U64;
-    use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
     use mockall::predicate;
 
     use super::*;
@@ -111,27 +102,13 @@ mod tests {
 
         //then
         let last_submission = storage.submission_w_latest_block().await.unwrap().unwrap();
-        assert_eq!(block_height, last_submission.fuel_block_height);
+        assert_eq!(block_height, last_submission.block.height);
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {
-        let header = FuelBlockHeader {
-            id: Bytes32::zeroed(),
-            da_height: 0,
-            transactions_count: 0,
-            message_receipt_count: 0,
-            transactions_root: Bytes32::zeroed(),
-            message_receipt_root: Bytes32::zeroed(),
-            height: block_height,
-            prev_root: Bytes32::zeroed(),
-            time: None,
-            application_hash: Bytes32::zeroed(),
-        };
-
         FuelBlock {
-            id: Bytes32::default(),
-            header,
-            transactions: vec![],
+            hash: Default::default(),
+            height: block_height,
         }
     }
 

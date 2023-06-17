@@ -1,10 +1,10 @@
 use ethers::types::U64;
 use prometheus::{IntCounter, Opts};
 
+use crate::adapters::block_fetcher::FuelBlock;
 use crate::errors::Result;
 use crate::telemetry::{HealthChecker, RegistersMetrics};
 use crate::{errors::Error, telemetry::ConnectionHealthTracker};
-use fuels::types::block::Block as FuelBlock;
 
 use super::EthereumAdapter;
 use super::EventStreamer;
@@ -94,8 +94,6 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
-    use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
-
     use prometheus::Registry;
 
     use crate::adapters::ethereum_adapter::MockEthereumAdapter;
@@ -205,23 +203,9 @@ mod tests {
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {
-        let header = FuelBlockHeader {
-            id: Bytes32::zeroed(),
-            da_height: 0,
-            transactions_count: 0,
-            message_receipt_count: 0,
-            transactions_root: Bytes32::zeroed(),
-            message_receipt_root: Bytes32::zeroed(),
-            height: block_height,
-            prev_root: Bytes32::zeroed(),
-            time: None,
-            application_hash: Bytes32::zeroed(),
-        };
-
         FuelBlock {
-            id: Bytes32::default(),
-            header,
-            transactions: vec![],
+            hash: [0; 32],
+            height: block_height,
         }
     }
 }

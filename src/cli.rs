@@ -1,7 +1,7 @@
 use std::{net::Ipv4Addr, path::PathBuf};
 
 use clap::{command, Parser};
-use ethers::types::{Chain, Address};
+use ethers::types::{Address, Chain};
 use url::Url;
 
 use crate::setup::config::Config;

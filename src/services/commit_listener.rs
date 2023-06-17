@@ -72,7 +72,7 @@ impl CommitListener {
             commit_height,
         }: FuelBlockCommitedOnEth,
     ) -> Result<()> {
-        info!("block comitted on eth (hash: {fuel_block_hash:x}, commit_height: {commit_height})");
+        info!("block comitted on eth (hash: {fuel_block_hash:x?}, commit_height: {commit_height})");
 
         let submission = self
             .storage
@@ -81,7 +81,7 @@ impl CommitListener {
 
         self.metrics
             .latest_committed_block
-            .set(submission.fuel_block_height as i64);
+            .set(submission.block.height as i64);
 
         Ok(())
     }
@@ -114,13 +114,13 @@ impl Runner for CommitListener {
 
 #[cfg(test)]
 mod tests {
-    use fuels::tx::Bytes32;
     use futures::stream;
     use mockall::predicate;
     use prometheus::Registry;
 
     use crate::{
         adapters::{
+            block_fetcher::FuelBlock,
             ethereum_adapter::{FuelBlockCommitedOnEth, MockEthereumAdapter, MockEventStreamer},
             runner::Runner,
             storage::{sqlite_db::SqliteDb, BlockSubmission, Storage},
@@ -137,7 +137,7 @@ mod tests {
             completed: false,
             ..BlockSubmission::random()
         };
-        let block_hash = submission.fuel_block_hash;
+        let block_hash = submission.block.hash;
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
             vec![Ok(block_hash)],
@@ -163,8 +163,8 @@ mod tests {
             completed: false,
             ..BlockSubmission::random()
         };
-        let block_hash = submission.fuel_block_hash;
-        let fuel_block_height = submission.fuel_block_height;
+        let block_hash = submission.block.hash;
+        let fuel_block_height = submission.block.height;
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
             vec![Ok(block_hash)],
@@ -201,18 +201,24 @@ mod tests {
         // given
         let old_block_missing_from_db = BlockSubmission {
             completed: false,
-            fuel_block_height: 10,
+            block: FuelBlock {
+                hash: Default::default(),
+                height: 10,
+            },
             ..BlockSubmission::random()
         };
 
         let new_block = BlockSubmission {
             completed: false,
-            fuel_block_height: 11,
+            block: FuelBlock {
+                hash: Default::default(),
+                height: 11,
+            },
             ..BlockSubmission::random()
         };
 
-        let older_hash = old_block_missing_from_db.fuel_block_hash;
-        let newer_hash = new_block.fuel_block_hash;
+        let older_hash = old_block_missing_from_db.block.hash;
+        let newer_hash = new_block.block.hash;
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
             vec![Ok(older_hash), Ok(newer_hash)],
@@ -244,7 +250,7 @@ mod tests {
     }
 
     fn given_eth_rpc_that_will_stream(
-        events: Vec<Result<Bytes32>>,
+        events: Vec<Result<[u8; 32]>>,
         starting_from_height: u64,
     ) -> MockEthereumAdapter {
         let mut eth_rpc = MockEthereumAdapter::new();
@@ -258,7 +264,7 @@ mod tests {
         eth_rpc
     }
 
-    fn given_event_streamer_w_events(events: Vec<Result<Bytes32>>) -> MockEventStreamer {
+    fn given_event_streamer_w_events(events: Vec<Result<[u8; 32]>>) -> MockEventStreamer {
         let mut streamer = MockEventStreamer::new();
         let events = events
             .into_iter()

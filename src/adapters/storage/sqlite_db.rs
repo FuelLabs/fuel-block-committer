@@ -1,11 +1,13 @@
 use std::{path::PathBuf, sync::Arc};
 
-use fuels::tx::Bytes32;
 use rusqlite::{Connection, Row};
 use tokio::{sync::Mutex, task};
 
 use crate::{
-    adapters::storage::{BlockSubmission, Storage},
+    adapters::{
+        block_fetcher::FuelBlock,
+        storage::{BlockSubmission, Storage},
+    },
     errors::{Error, Result},
 };
 
@@ -80,8 +82,10 @@ impl SqliteDb {
         };
 
         Ok(BlockSubmission {
-            fuel_block_hash: fuel_block_hash.into(),
-            fuel_block_height,
+            block: FuelBlock {
+                hash: fuel_block_hash.into(),
+                height: fuel_block_height,
+            },
             completed,
             submittal_height: submittal_height.into(),
         })
@@ -92,8 +96,7 @@ impl SqliteDb {
 impl Storage for SqliteDb {
     async fn insert(&self, submission: BlockSubmission) -> Result<()> {
         let BlockSubmission {
-            fuel_block_hash,
-            fuel_block_height,
+            block: FuelBlock { hash, height },
             completed,
             submittal_height,
         } = submission;
@@ -101,7 +104,7 @@ impl Storage for SqliteDb {
 
         self.run_blocking(move |connection| {
             let query = "INSERT INTO eth_tx_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES (?1, ?2, ?3, ?4)";
-            connection.execute( query, (*fuel_block_hash, fuel_block_height, completed, submittal_height))
+            connection.execute( query, (hash, height, completed, submittal_height))
         }).await?;
 
         Ok(())
@@ -121,20 +124,20 @@ impl Storage for SqliteDb {
             .await?)
     }
 
-    async fn set_submission_completed(&self, fuel_block_hash: Bytes32) -> Result<BlockSubmission> {
+    async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
         self.run_blocking(move |connection| {
             let query = "UPDATE eth_tx_submission SET completed = 1 WHERE fuel_block_hash = (?1)";
-            let rows_updated = connection.execute(query, (*fuel_block_hash,))?;
+            let rows_updated = connection.execute(query, (fuel_block_hash,))?;
 
             if rows_updated == 0 {
                 return Err(Error::StorageError(format!(
-                    "Block: `{fuel_block_hash}` in DB"
+                    "Block: `{fuel_block_hash:?}` in DB"
                 )));
             }
 
             let submission = connection.query_row(
                 r#"SELECT * FROM eth_tx_submission WHERE fuel_block_hash = (?1)"#,
-                (*fuel_block_hash,),
+                (fuel_block_hash,),
                 Self::decode_submission,
             )?;
 
@@ -179,7 +182,8 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap()
-                .fuel_block_height;
+                .block
+                .height;
 
             assert_eq!(highest_block_height, current_height);
         }
@@ -191,7 +195,7 @@ mod tests {
         let db = SqliteDb::temporary().await.unwrap();
 
         let submission = given_incomplete_submission(10);
-        let block_hash = submission.fuel_block_hash;
+        let block_hash = submission.block.hash;
         db.insert(submission).await.unwrap();
 
         // when
@@ -207,7 +211,7 @@ mod tests {
         let db = SqliteDb::temporary().await.unwrap();
 
         let submission = given_incomplete_submission(10);
-        let block_hash = submission.fuel_block_hash;
+        let block_hash = submission.block.hash;
 
         // when
         let result = db.set_submission_completed(block_hash).await;
@@ -217,13 +221,13 @@ mod tests {
             panic!("should be storage error");
         };
 
-        assert_eq!(msg, format!("Block: `{block_hash}` in DB"))
+        assert_eq!(msg, format!("Block: `{block_hash:?}` in DB"))
     }
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {
-        BlockSubmission {
-            fuel_block_height,
-            ..BlockSubmission::random()
-        }
+        let mut submission = BlockSubmission::random();
+        submission.block.height = fuel_block_height;
+
+        submission
     }
 }

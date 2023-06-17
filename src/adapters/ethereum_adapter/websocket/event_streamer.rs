@@ -5,7 +5,6 @@ use ethers::{
     providers::{Provider, Ws},
     signers::Wallet,
 };
-use fuels::tx::Bytes32;
 use futures::{stream::TryStreamExt, Stream};
 
 use crate::{
@@ -36,7 +35,7 @@ impl EventStreamer for EthEventStreamer {
                 .await
                 .map_err(|e| Error::NetworkError(e.to_string()))?
                 .map_ok(|event| {
-                    let fuel_block_hash = Bytes32::from(event.block_hash);
+                    let fuel_block_hash = event.block_hash;
                     let commit_height = event.commit_height;
                     FuelBlockCommitedOnEth {
                         fuel_block_hash,

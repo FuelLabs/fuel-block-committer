@@ -1,13 +1,12 @@
 use std::time::Duration;
 
-use fuels::types::block::Block as FuelBlock;
 use prometheus::Registry;
 use tokio::sync::mpsc::Receiver;
 use tracing::error;
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlockFetcher,
+        block_fetcher::{FuelBlock, FuelBlockFetcher},
         ethereum_adapter::{EthereumWs, MonitoredEthAdapter},
         runner::Runner,
         storage::{sqlite_db::SqliteDb, Storage},

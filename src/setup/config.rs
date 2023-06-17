@@ -1,6 +1,6 @@
 use std::{net::Ipv4Addr, path::PathBuf, time::Duration};
 
-use ethers::types::{Chain, Address};
+use ethers::types::{Address, Chain};
 use url::Url;
 
 #[derive(Debug, Clone)]

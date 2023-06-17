@@ -45,7 +45,10 @@ impl StatusReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::storage::{sqlite_db::SqliteDb, BlockSubmission};
+    use crate::adapters::{
+        block_fetcher::FuelBlock,
+        storage::{sqlite_db::SqliteDb, BlockSubmission},
+    };
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {
@@ -55,7 +58,10 @@ mod tests {
                 let storage = SqliteDb::temporary().await.unwrap();
                 if let Some(is_completed) = submission_status {
                     let latest_submission = BlockSubmission {
-                        fuel_block_height: 1,
+                        block: FuelBlock {
+                            hash: Default::default(),
+                            height: 1,
+                        },
                         completed: is_completed,
                         ..BlockSubmission::random()
                     };

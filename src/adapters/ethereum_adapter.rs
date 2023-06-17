@@ -8,14 +8,15 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use ethers::types::{U256, U64};
-use fuels::{tx::Bytes32, types::block::Block as FuelBlock};
 use futures::Stream;
 
 use crate::errors::Result;
 
+use super::block_fetcher::FuelBlock;
+
 #[derive(Debug, Clone, Copy)]
 pub struct FuelBlockCommitedOnEth {
-    pub fuel_block_hash: Bytes32,
+    pub fuel_block_hash: [u8; 32],
     pub commit_height: U256,
 }
 

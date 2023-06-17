@@ -7,7 +7,6 @@ use ethers::{
     signers::{LocalWallet, Signer},
     types::{Chain, H160},
 };
-use fuels::tx::Bytes32;
 
 pub struct FuelStateContract {
     _provider: Provider<Ws>,
@@ -43,7 +42,7 @@ impl FuelStateContract {
         })
     }
 
-    pub async fn finalized(&self, block_hash: Bytes32, block_height: u32) -> Result<bool> {
+    pub async fn finalized(&self, block_hash: [u8; 32], block_height: u32) -> Result<bool> {
         Ok(self
             .contract
             .finalized(block_hash.into(), block_height.into())
@@ -51,7 +50,7 @@ impl FuelStateContract {
             .await?)
     }
 
-    pub async fn _block_hash_at_commit_height(&self, commit_height: u32) -> Result<Bytes32> {
+    pub async fn _block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]> {
         Ok(self
             .contract
             .block_hash_at_commit(commit_height.into())

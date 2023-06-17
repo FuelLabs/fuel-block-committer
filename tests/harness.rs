@@ -3,6 +3,7 @@ mod eth_test_adapter;
 use std::time::Duration;
 
 use anyhow::Result;
+use fuel_core_client::client::FuelClient;
 
 use crate::eth_test_adapter::FuelStateContract;
 
@@ -12,9 +13,7 @@ const ETH_NODE_PORT: u16 = 8545;
 #[tokio::test(flavor = "multi_thread")]
 async fn submitted_correct_block_and_was_finalized() -> Result<()> {
     let fuel_node_address = format!("http://localhost:{FUEL_NODE_PORT}");
-    let provider = fuels::accounts::provider::Provider::connect(&fuel_node_address)
-        .await
-        .unwrap();
+    let provider = FuelClient::new(&fuel_node_address).unwrap();
 
     let fuel_contract = FuelStateContract::connect(ETH_NODE_PORT).await?;
 
@@ -24,13 +23,11 @@ async fn submitted_correct_block_and_was_finalized() -> Result<()> {
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let latest_block = provider.chain_info().await?.latest_block;
-    assert_eq!(latest_block.header.height, 3);
+    let height = latest_block.header.height.0;
+    let hash = *latest_block.id.0 .0;
 
-    assert!(
-        fuel_contract
-            .finalized(latest_block.id, latest_block.header.height)
-            .await?
-    );
+    assert_eq!(height, 3);
+    assert!(fuel_contract.finalized(hash, height).await?);
 
     Ok(())
 }

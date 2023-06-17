@@ -7,13 +7,15 @@ use ethers::{
     signers::{LocalWallet, Signer},
     types::{Address, Chain, U256, U64},
 };
-use fuels::types::block::Block;
 use prometheus::{IntGauge, Opts};
 use tracing::info;
 use url::Url;
 
 use crate::{
-    adapters::ethereum_adapter::{EthereumAdapter, EventStreamer},
+    adapters::{
+        block_fetcher::FuelBlock,
+        ethereum_adapter::{EthereumAdapter, EventStreamer},
+    },
     errors::{Error, Result},
     telemetry::RegistersMetrics,
 };
@@ -98,10 +100,9 @@ impl RegistersMetrics for EthereumWs {
 
 #[async_trait]
 impl EthereumAdapter for EthereumWs {
-    async fn submit(&self, block: Block) -> Result<()> {
-        let commit_height =
-            Self::calculate_commit_height(block.header.height, self.commit_interval);
-        let contract_call = self.contract.commit(*block.id, commit_height);
+    async fn submit(&self, block: FuelBlock) -> Result<()> {
+        let commit_height = Self::calculate_commit_height(block.height, self.commit_interval);
+        let contract_call = self.contract.commit(block.hash, commit_height);
         let tx = contract_call
             .send()
             .await
