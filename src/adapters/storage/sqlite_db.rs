@@ -83,11 +83,11 @@ impl SqliteDb {
 
         Ok(BlockSubmission {
             block: FuelBlock {
-                hash: fuel_block_hash.into(),
+                hash: fuel_block_hash,
                 height: fuel_block_height,
             },
             completed,
-            submittal_height: submittal_height.into(),
+            submittal_height,
         })
     }
 }

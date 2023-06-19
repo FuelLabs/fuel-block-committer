@@ -84,8 +84,8 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block = given_a_block(block_height);
         let storage = SqliteDb::temporary().await.unwrap();
-        let eth_rpc_mock = given_eth_rpc_that_expects(block.clone());
-        tx.try_send(block.clone()).unwrap();
+        let eth_rpc_mock = given_eth_rpc_that_expects(block);
+        tx.try_send(block).unwrap();
 
         // when
         spawn_committer_and_run_until_timeout(rx, eth_rpc_mock, storage.clone()).await;

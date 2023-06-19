@@ -45,7 +45,7 @@ impl FuelStateContract {
     pub async fn finalized(&self, block_hash: [u8; 32], block_height: u32) -> Result<bool> {
         Ok(self
             .contract
-            .finalized(block_hash.into(), block_height.into())
+            .finalized(block_hash, block_height.into())
             .call()
             .await?)
     }
@@ -55,7 +55,6 @@ impl FuelStateContract {
             .contract
             .block_hash_at_commit(commit_height.into())
             .call()
-            .await?
-            .into())
+            .await?)
     }
 }

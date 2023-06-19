@@ -22,11 +22,11 @@ impl BlockSubmission {
         let mut rand = rand::thread_rng();
         Self {
             block: FuelBlock {
-                hash: rand.gen::<[u8; 32]>().into(),
+                hash: rand.gen::<[u8; 32]>(),
                 height: rand.gen(),
             },
             completed: false,
-            submittal_height: rand.gen::<u64>().into(),
+            submittal_height: rand.gen::<u64>(),
         }
     }
 }
