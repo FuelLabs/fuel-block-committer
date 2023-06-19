@@ -29,6 +29,6 @@ pub trait EventStreamer {
 #[async_trait]
 pub trait EthereumAdapter: Send + Sync {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
-    async fn get_latest_eth_block(&self) -> Result<u64>;
+    async fn get_block_number(&self) -> Result<u64>;
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync>;
 }

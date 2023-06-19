@@ -13,35 +13,10 @@ use crate::{
     telemetry::RegistersMetrics,
 };
 
-#[derive(Clone)]
-pub struct CommitListenerMetrics {
-    pub latest_committed_block: IntGauge,
-}
-
-impl RegistersMetrics for CommitListener {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
-        vec![Box::new(self.metrics.latest_committed_block.clone())]
-    }
-}
-
-impl Default for CommitListenerMetrics {
-    fn default() -> Self {
-        let latest_committed_block = IntGauge::with_opts(Opts::new(
-            "latest_committed_block",
-            "The height of the latest fuel block committed on Ethereum.",
-        ))
-        .expect("latest_committed_block metric to be correctly configured");
-
-        Self {
-            latest_committed_block,
-        }
-    }
-}
-
 pub struct CommitListener {
     ethereum_rpc: Box<dyn EthereumAdapter>,
     storage: Box<dyn Storage>,
-    metrics: CommitListenerMetrics,
+    metrics: Metrics,
 }
 
 impl CommitListener {
@@ -109,6 +84,31 @@ impl Runner for CommitListener {
         warn!("Block commit event stream finished!");
 
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct Metrics {
+    latest_committed_block: IntGauge,
+}
+
+impl RegistersMetrics for CommitListener {
+    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+        vec![Box::new(self.metrics.latest_committed_block.clone())]
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let latest_committed_block = IntGauge::with_opts(Opts::new(
+            "latest_committed_block",
+            "The height of the latest fuel block committed on Ethereum.",
+        ))
+        .expect("latest_committed_block metric to be correctly configured");
+
+        Self {
+            latest_committed_block,
+        }
     }
 }
 

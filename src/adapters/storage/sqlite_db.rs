@@ -132,7 +132,7 @@ impl Storage for SqliteDb {
 
             if rows_updated == 0 {
                 return Err(Error::StorageError(format!(
-                    "Block: `{fuel_block_hash:?}` in DB"
+                    "Cannot set submission to completed! Submission of block: `{fuel_block_hash:?}` not found in DB."
                 )));
             }
 
@@ -207,7 +207,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn signals_that_update_didnt_happen_due_to_missing_submission() {
+    async fn updating_a_missing_submission_causes_an_error() {
         // given
         let db = SqliteDb::temporary().await.unwrap();
 
@@ -222,7 +222,7 @@ mod tests {
             panic!("should be storage error");
         };
 
-        assert_eq!(msg, format!("Block: `{block_hash:?}` in DB"))
+        assert_eq!(msg, format!("Cannot set submission to completed! Submission of block: `{block_hash:?}` not found in DB."));
     }
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {

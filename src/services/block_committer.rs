@@ -36,7 +36,7 @@ impl BlockCommitter {
     }
 
     async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
-        let submitted_at_height = self.ethereum_rpc.get_latest_eth_block().await?;
+        let submitted_at_height = self.ethereum_rpc.get_block_number().await?;
 
         let submission = BlockSubmission {
             block: fuel_block,
@@ -110,7 +110,7 @@ mod tests {
             .return_once(move |_| Ok(()));
 
         eth_rpc_mock
-            .expect_get_latest_eth_block()
+            .expect_get_block_number()
             .return_once(move || Ok(0));
 
         eth_rpc_mock

@@ -55,7 +55,6 @@ impl EthereumWs {
         let wallet = LocalWallet::from_str(ethereum_wallet_key)?.with_chain_id(chain_id);
         let wallet_address = wallet.address();
 
-        // provider is cloned, is connection shared?
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
         let contract_address = Address::from_slice(contract_address.as_ref());
@@ -120,7 +119,7 @@ impl EthereumAdapter for EthereumWs {
         Ok(())
     }
 
-    async fn get_latest_eth_block(&self) -> Result<u64> {
+    async fn get_block_number(&self) -> Result<u64> {
         // if provider.get_block_number is used the outgoing JSON RPC request would have the
         // 'params' field set as `params: null`. This is accepted by Anvil but rejected by hardhat.
         // By passing a preconstructed serde_json Value::Array it will cause params to be defined

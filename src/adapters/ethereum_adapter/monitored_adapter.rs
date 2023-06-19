@@ -58,8 +58,8 @@ impl<T: EthereumAdapter> EthereumAdapter for MonitoredEthAdapter<T> {
         response
     }
 
-    async fn get_latest_eth_block(&self) -> Result<u64> {
-        let response = self.adapter.get_latest_eth_block().await;
+    async fn get_block_number(&self) -> Result<u64> {
+        let response = self.adapter.get_block_number().await;
         self.note_network_status(&response);
         response
     }
@@ -107,9 +107,7 @@ mod tests {
             .expect_submit()
             .returning(|_| Err(Error::NetworkError("An error".into())));
 
-        eth_adapter
-            .expect_get_latest_eth_block()
-            .returning(|| Ok(10));
+        eth_adapter.expect_get_block_number().returning(|| Ok(10));
 
         let adapter = MonitoredEthAdapter::new(eth_adapter, 1);
         let health_check = adapter.connection_health_checker();
@@ -117,7 +115,7 @@ mod tests {
         let _ = adapter.submit(given_a_block(42)).await;
 
         // when
-        let _ = adapter.get_latest_eth_block().await;
+        let _ = adapter.get_block_number().await;
 
         // then
         assert!(health_check.healthy());
@@ -132,7 +130,7 @@ mod tests {
             .returning(|_| Err(Error::Other("An error".into())));
 
         eth_adapter
-            .expect_get_latest_eth_block()
+            .expect_get_block_number()
             .returning(|| Err(Error::Other("An error".into())));
 
         let adapter = MonitoredEthAdapter::new(eth_adapter, 2);
@@ -141,7 +139,7 @@ mod tests {
         let _ = adapter.submit(given_a_block(42)).await;
 
         // when
-        let _ = adapter.get_latest_eth_block().await;
+        let _ = adapter.get_block_number().await;
 
         // then
         assert!(health_check.healthy());
@@ -155,7 +153,7 @@ mod tests {
             .returning(|_| Err(Error::NetworkError("An error".into())));
 
         eth_adapter
-            .expect_get_latest_eth_block()
+            .expect_get_block_number()
             .returning(|| Err(Error::NetworkError("An error".into())));
 
         let adapter = MonitoredEthAdapter::new(eth_adapter, 3);
@@ -165,10 +163,10 @@ mod tests {
         let _ = adapter.submit(given_a_block(42)).await;
         assert!(health_check.healthy());
 
-        let _ = adapter.get_latest_eth_block().await;
+        let _ = adapter.get_block_number().await;
         assert!(health_check.healthy());
 
-        let _ = adapter.get_latest_eth_block().await;
+        let _ = adapter.get_block_number().await;
         assert!(!health_check.healthy());
     }
 
@@ -180,7 +178,7 @@ mod tests {
             .returning(|_| Err(Error::NetworkError("An error".into())));
 
         eth_adapter
-            .expect_get_latest_eth_block()
+            .expect_get_block_number()
             .returning(|| Err(Error::NetworkError("An error".into())));
 
         let registry = Registry::new();
@@ -188,7 +186,7 @@ mod tests {
         adapter.register_metrics(&registry);
 
         let _ = adapter.submit(given_a_block(42)).await;
-        let _ = adapter.get_latest_eth_block().await;
+        let _ = adapter.get_block_number().await;
 
         let metrics = registry.gather();
         let latest_block_metric = metrics

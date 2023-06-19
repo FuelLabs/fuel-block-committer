@@ -9,7 +9,6 @@ use ethers::{
 };
 
 pub struct FuelStateContract {
-    _provider: Provider<Ws>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
 }
 
@@ -31,15 +30,12 @@ impl FuelStateContract {
         )?
         .with_chain_id(Chain::AnvilHardhat);
 
-        let signer = SignerMiddleware::new(provider.clone(), wallet);
+        let signer = SignerMiddleware::new(provider, wallet);
 
         let contract_address: H160 = contract_address.parse()?;
         let contract = FUEL_STATE_CONTRACT::new(contract_address, Arc::new(signer));
 
-        Ok(Self {
-            _provider: provider,
-            contract,
-        })
+        Ok(Self { contract })
     }
 
     pub async fn finalized(&self, block_hash: [u8; 32], block_height: u32) -> Result<bool> {

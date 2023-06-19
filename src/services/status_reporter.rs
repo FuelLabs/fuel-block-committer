@@ -52,7 +52,7 @@ mod tests {
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {
-        let doit = |submission_status, expected_app_status| {
+        let test = |submission_status, expected_app_status| {
             async move {
                 // given
                 let storage = SqliteDb::temporary().await.unwrap();
@@ -84,10 +84,10 @@ mod tests {
         };
 
         // has an entry, not completed
-        doit(Some(false), Status::Committing).await;
+        test(Some(false), Status::Committing).await;
         // has an entry, completed
-        doit(Some(true), Status::Idle).await;
+        test(Some(true), Status::Idle).await;
         // has no entry
-        doit(None, Status::Idle).await;
+        test(None, Status::Idle).await;
     }
 }

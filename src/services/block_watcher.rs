@@ -126,41 +126,32 @@ mod tests {
         storage::{sqlite_db::SqliteDb, BlockSubmission},
     };
 
-    // #[tokio::test]
-    // async fn will_propagate_a_received_block() {
-    //     // given
-    //     let (tx, mut rx) = tokio::sync::mpsc::channel(10);
-    //
-    //     let block = given_a_block(5);
-    //
-    //     let block_fetcher = given_fetcher_that_returns(vec![block.clone()]);
-    //
-    //     let storage = SqliteDb::temporary().await.unwrap();
-    //     storage
-    //         .insert(BlockSubmission {
-    //             fuel_block_hash: Default::default(),
-    //             fuel_block_height: 3,
-    //             completed: true,
-    //             tx_hash: H256::default(),
-    //         })
-    //         .await
-    //         .unwrap();
-    //     let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
-    //
-    //     // when
-    //     block_watcher.run().await.unwrap();
-    //
-    //     //then
-    //     let Ok(announced_block) = rx.try_recv() else {
-    //         panic!("Didn't receive the block")
-    //     };
-    //
-    //     assert_eq!(block, announced_block);
-    // }
+    #[tokio::test]
+    async fn will_propagate_a_received_block() {
+        // given
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+
+        let block = given_a_block(4);
+
+        let block_fetcher = given_fetcher_that_returns(vec![block]);
+
+        let storage = SqliteDb::temporary().await.unwrap();
+        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+
+        // when
+        block_watcher.run().await.unwrap();
+
+        //then
+        let Ok(announced_block) = rx.try_recv() else {
+            panic!("Didn't receive the block")
+        };
+
+        assert_eq!(block, announced_block);
+    }
 
     #[tokio::test]
     async fn will_not_propagate_a_stale_block() {
-        let last_block_submission = given_an_pending_submission(2);
+        let last_block_submission = given_a_pending_submission(2);
 
         {
             let current_block = given_a_block(1);
@@ -189,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn will_propagate_even_if_last_tx_is_pending() {
         let current_block = given_a_block(2);
-        let last_block_submission = given_an_pending_submission(1);
+        let last_block_submission = given_a_pending_submission(1);
 
         let should_propagate =
             BlockWatcher::should_propagate_update(1, &current_block, Some(&last_block_submission));
@@ -221,10 +212,7 @@ mod tests {
         let block_fetcher = given_fetcher_that_returns(vec![given_a_block(5)]);
 
         let storage = SqliteDb::temporary().await.unwrap();
-        storage
-            .insert(given_an_pending_submission(4))
-            .await
-            .unwrap();
+        storage.insert(given_a_pending_submission(4)).await.unwrap();
 
         let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
 
@@ -255,7 +243,7 @@ mod tests {
         fetcher
     }
 
-    fn given_an_pending_submission(block_height: u32) -> BlockSubmission {
+    fn given_a_pending_submission(block_height: u32) -> BlockSubmission {
         BlockSubmission {
             block: FuelBlock {
                 hash: Default::default(),
