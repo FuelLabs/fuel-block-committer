@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - feature/e2e_tests_in_ci
   pull_request:
   release:
     types: [published]
