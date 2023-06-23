@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, path::PathBuf, time::Duration};
+use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf, time::Duration};
 
 use ethers::types::{Address, Chain};
 use url::Url;
@@ -10,7 +10,7 @@ pub struct Config {
     pub ethereum_chain_id: Chain,
     pub fuel_graphql_endpoint: Url,
     pub state_contract_address: Address,
-    pub commit_interval: u32,
+    pub commit_interval: NonZeroU32,
     pub port: u16,
     pub host: Ipv4Addr,
     pub db_path: Option<PathBuf>,

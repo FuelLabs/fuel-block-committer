@@ -1,11 +1,13 @@
-use std::{net::Ipv4Addr, path::PathBuf};
+use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf};
 
 use clap::{command, Parser};
 use ethers::types::{Address, Chain};
 use url::Url;
 
-use crate::setup::config::Config;
-
+use crate::{
+    errors::{Error, Result},
+    setup::config::Config,
+};
 const ETHEREUM_RPC: &str = "http://127.0.0.1:8545/";
 const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
 const STATE_CONTRACT_ADDRESS: Address = Address::zero();
@@ -86,17 +88,19 @@ struct Cli {
     db_path: Option<PathBuf>,
 }
 
-pub fn parse() -> Config {
+pub fn parse() -> Result<Config> {
     let cli = Cli::parse();
-    Config {
+    let commit_interval = NonZeroU32::new(cli.commit_interval)
+        .ok_or_else(|| Error::Other("Commit interval must not be 0!".to_string()))?;
+    Ok(Config {
         ethereum_wallet_key: cli.ethereum_wallet_key,
         ethereum_rpc: cli.ethereum_rpc,
         ethereum_chain_id: cli.ethereum_chain,
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
         state_contract_address: cli.state_contract_address,
-        commit_interval: cli.commit_interval,
+        commit_interval,
         port: cli.port,
         host: cli.host,
         db_path: cli.db_path,
-    }
+    })
 }

@@ -1,4 +1,4 @@
-use std::vec;
+use std::{num::NonZeroU32, vec};
 
 use async_trait::async_trait;
 use prometheus::{core::Collector, IntGauge, Opts};
@@ -40,19 +40,19 @@ pub struct BlockWatcher {
     block_fetcher: Box<dyn BlockFetcher>,
     tx_fuel_block: Sender<FuelBlock>,
     storage: Box<dyn Storage>,
-    commit_epoch: u32,
+    commit_interval: NonZeroU32,
     metrics: Metrics,
 }
 
 impl BlockWatcher {
     pub fn new(
-        commit_epoch: u32,
+        commit_interval: NonZeroU32,
         tx_fuel_block: Sender<FuelBlock>,
         block_fetcher: impl BlockFetcher + 'static,
         storage: impl Storage + 'static,
     ) -> Self {
         Self {
-            commit_epoch,
+            commit_interval,
             block_fetcher: Box::new(block_fetcher),
             tx_fuel_block,
             storage: Box::new(storage),
@@ -78,12 +78,12 @@ impl BlockWatcher {
             .is_some_and(|submission| current_block.height <= submission.block.height)
     }
 
-    fn is_epoch_reached(current_block: &FuelBlock, commit_epoch: u32) -> bool {
+    fn is_epoch_reached(current_block: &FuelBlock, commit_epoch: NonZeroU32) -> bool {
         current_block.height % commit_epoch == 0
     }
 
     fn should_propagate_update(
-        commit_epoch: u32,
+        commit_epoch: NonZeroU32,
         current_block: &FuelBlock,
         last_block_submission: Option<&BlockSubmission>,
     ) -> bool {
@@ -100,7 +100,7 @@ impl Runner for BlockWatcher {
         let latest_block_submission = self.storage.submission_w_latest_block().await?;
 
         if Self::should_propagate_update(
-            self.commit_epoch,
+            self.commit_interval,
             &current_block,
             latest_block_submission.as_ref(),
         ) {
@@ -136,7 +136,8 @@ mod tests {
         let block_fetcher = given_fetcher_that_returns(vec![block]);
 
         let storage = SqliteDb::temporary().await.unwrap();
-        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -157,7 +158,7 @@ mod tests {
             let current_block = given_a_block(1);
 
             let should_propagate = BlockWatcher::should_propagate_update(
-                1,
+                1.try_into().unwrap(),
                 &current_block,
                 Some(&last_block_submission),
             );
@@ -168,7 +169,7 @@ mod tests {
             let current_block = given_a_block(2);
 
             let should_propagate = BlockWatcher::should_propagate_update(
-                1,
+                1.try_into().unwrap(),
                 &current_block,
                 Some(&last_block_submission),
             );
@@ -182,15 +183,18 @@ mod tests {
         let current_block = given_a_block(2);
         let last_block_submission = given_a_pending_submission(1);
 
-        let should_propagate =
-            BlockWatcher::should_propagate_update(1, &current_block, Some(&last_block_submission));
+        let should_propagate = BlockWatcher::should_propagate_update(
+            1.try_into().unwrap(),
+            &current_block,
+            Some(&last_block_submission),
+        );
 
         assert!(should_propagate);
     }
 
     #[tokio::test]
     async fn respects_epoch_when_posting_block_updates() {
-        let commit_epoch = 3;
+        let commit_epoch = NonZeroU32::new(3).unwrap();
 
         let check_should_submit = |block_height, should_submit| {
             let current_block = given_a_block(block_height);
@@ -214,7 +218,8 @@ mod tests {
         let storage = SqliteDb::temporary().await.unwrap();
         storage.insert(given_a_pending_submission(4)).await.unwrap();
 
-        let mut block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);

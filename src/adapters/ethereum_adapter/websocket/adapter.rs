@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{num::NonZeroU32, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use ethers::{
@@ -36,7 +36,7 @@ pub struct EthereumWs {
     provider: Provider<Ws>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     wallet_address: Address,
-    commit_interval: u32,
+    commit_interval: NonZeroU32,
     metrics: Metrics,
 }
 
@@ -46,7 +46,7 @@ impl EthereumWs {
         chain_id: Chain,
         contract_address: Address,
         ethereum_wallet_key: &str,
-        commit_interval: u32,
+        commit_interval: NonZeroU32,
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(ethereum_rpc.to_string())
             .await
@@ -87,7 +87,7 @@ impl EthereumWs {
         Ok(())
     }
 
-    fn calculate_commit_height(block_height: u32, commit_interval: u32) -> U256 {
+    fn calculate_commit_height(block_height: u32, commit_interval: NonZeroU32) -> U256 {
         (block_height / commit_interval).into()
     }
 }
@@ -170,6 +170,9 @@ mod tests {
 
     #[test]
     fn calculates_correctly_the_commit_height() {
-        assert_eq!(EthereumWs::calculate_commit_height(10, 3), 3.into());
+        assert_eq!(
+            EthereumWs::calculate_commit_height(10, 3.try_into().unwrap()),
+            3.into()
+        );
     }
 }

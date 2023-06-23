@@ -14,8 +14,11 @@ services:
       - URL=http://0.0.0.0:8545/
 
   fuel_node:
+    build: 
+      context: fuel_node  
+      args:
+        fuel_core_version: "v0.18.2"
     container_name: fuel-node
-    build: fuel_node
     environment:
       - PORT=4000
       - IP=0.0.0.0
