@@ -36,6 +36,12 @@ impl From<ParseError> for Error {
     }
 }
 
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::Other(error.to_string())
+    }
+}
+
 impl ResponseError for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;

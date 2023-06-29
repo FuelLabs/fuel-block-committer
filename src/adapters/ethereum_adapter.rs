@@ -11,10 +11,22 @@ pub use websocket::EthereumWs;
 
 use crate::{adapters::block_fetcher::FuelBlock, errors::Result};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct FuelBlockCommitedOnEth {
     pub fuel_block_hash: [u8; 32],
     pub commit_height: U256,
+}
+
+impl std::fmt::Debug for FuelBlockCommitedOnEth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FuelBlockCommitedOnEth {{ hash: 0x")?;
+
+        for h in &self.fuel_block_hash {
+            write!(f, "{:x}", h)?;
+        }
+
+        write!(f, ", commit_height: {}}}", &self.commit_height)
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]

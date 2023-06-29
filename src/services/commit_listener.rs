@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use prometheus::{IntGauge, Opts};
-use tracing::{error, info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 use crate::{
     adapters::{
@@ -17,17 +18,20 @@ pub struct CommitListener {
     ethereum_rpc: Box<dyn EthereumAdapter>,
     storage: Box<dyn Storage>,
     metrics: Metrics,
+    cancel_token: CancellationToken,
 }
 
 impl CommitListener {
     pub fn new(
         ethereum_rpc: impl EthereumAdapter + 'static,
         storage: impl Storage + 'static,
+        cancel_token: CancellationToken,
     ) -> Self {
         Self {
             ethereum_rpc: Box::new(ethereum_rpc),
             storage: Box::new(storage),
             metrics: Default::default(),
+            cancel_token,
         }
     }
 
@@ -40,18 +44,12 @@ impl CommitListener {
             .unwrap_or(0))
     }
 
-    async fn handle_block_committed(
-        &self,
-        FuelBlockCommitedOnEth {
-            fuel_block_hash,
-            commit_height,
-        }: FuelBlockCommitedOnEth,
-    ) -> Result<()> {
-        info!("block comitted on eth (hash: {fuel_block_hash:x?}, commit_height: {commit_height})");
+    async fn handle_block_committed(&self, committed_on_eth: FuelBlockCommitedOnEth) -> Result<()> {
+        info!("block comitted on eth {committed_on_eth:?}");
 
         let submission = self
             .storage
-            .set_submission_completed(fuel_block_hash)
+            .set_submission_completed(committed_on_eth.fuel_block_hash)
             .await?;
 
         self.metrics
@@ -78,10 +76,9 @@ impl Runner for CommitListener {
             .establish_stream()
             .await?
             .and_then(|event| self.handle_block_committed(event))
+            .take_until(self.cancel_token.cancelled())
             .for_each(Self::log_if_error)
             .await;
-
-        warn!("Block commit event stream finished!");
 
         Ok(())
     }
@@ -143,7 +140,8 @@ mod tests {
             given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
         let storage = given_storage_containing(submission).await;
-        let mut commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+        let mut commit_listener =
+            CommitListener::new(eth_rpc_mock, storage.clone(), Default::default());
 
         // when
         commit_listener.run().await.unwrap();
@@ -169,7 +167,8 @@ mod tests {
 
         let storage = given_storage_containing(submission).await;
 
-        let mut commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+        let mut commit_listener =
+            CommitListener::new(eth_rpc_mock, storage.clone(), Default::default());
 
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);
@@ -222,7 +221,8 @@ mod tests {
         );
 
         let storage = given_storage_containing(new_block.clone()).await;
-        let mut commit_listener = CommitListener::new(eth_rpc_mock, storage.clone());
+        let mut commit_listener =
+            CommitListener::new(eth_rpc_mock, storage.clone(), Default::default());
 
         // when
         commit_listener.run().await.unwrap();

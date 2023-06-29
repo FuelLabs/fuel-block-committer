@@ -8,9 +8,9 @@ use crate::{
     errors::{Error, Result},
     setup::config::Config,
 };
-const ETHEREUM_RPC: &str = "http://127.0.0.1:8545/";
-const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
-const STATE_CONTRACT_ADDRESS: Address = Address::zero();
+
+const ETHEREUM_RPC: &str = "ws://127.0.0.1:8545/";
+const FUEL_GRAPHQL_ENDPOINT: &str = "http://127.0.0.1:4000";
 const COMMIT_INTERVAL: u32 = 1;
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 8080;
@@ -46,9 +46,12 @@ struct Cli {
     fuel_graphql_endpoint: Url,
 
     /// State contract address
-    #[arg(long,
-    env = "STATE_CONTRACT_ADDRESS",
-    default_value_t = STATE_CONTRACT_ADDRESS, value_name = "BYTES20", help = "Ethereum address of the fuel chain state contract.")]
+    #[arg(
+        long,
+        env = "STATE_CONTRACT_ADDRESS",
+        value_name = "Address",
+        help = "Ethereum address of the fuel chain state contract."
+    )]
     state_contract_address: Address,
 
     /// Commit interval
