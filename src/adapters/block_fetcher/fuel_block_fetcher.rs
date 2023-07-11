@@ -1,14 +1,10 @@
-use fuels::{
-    client::FuelClient,
-    prelude::{Provider, ProviderError},
-    types::block::Block as FuelBlock,
-};
+use fuel_core_client::client::FuelClient;
 use url::Url;
 
 use crate::{
-    adapters::block_fetcher::{health_tracker::FuelHealthTracker, metrics::Metrics, BlockFetcher},
+    adapters::block_fetcher::{fuel_metrics::FuelMetrics, BlockFetcher, FuelBlock},
     errors::{Error, Result},
-    telemetry::{HealthChecker, RegistersMetrics},
+    telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
 
 impl RegistersMetrics for FuelBlockFetcher {
@@ -18,19 +14,18 @@ impl RegistersMetrics for FuelBlockFetcher {
 }
 
 pub struct FuelBlockFetcher {
-    provider: Provider,
-    metrics: Metrics,
-    health_tracker: FuelHealthTracker,
+    client: FuelClient,
+    metrics: FuelMetrics,
+    health_tracker: ConnectionHealthTracker,
 }
 
 impl FuelBlockFetcher {
     pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
         let client = FuelClient::new(url).expect("Url to be well formed");
-        let provider = Provider::new(client, Default::default());
         Self {
-            provider,
-            metrics: Metrics::default(),
-            health_tracker: FuelHealthTracker::new(unhealthy_after_n_errors),
+            client,
+            metrics: FuelMetrics::default(),
+            health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
         }
     }
 
@@ -51,12 +46,17 @@ impl FuelBlockFetcher {
 #[async_trait::async_trait]
 impl BlockFetcher for FuelBlockFetcher {
     async fn latest_block(&self) -> Result<FuelBlock> {
-        match self.provider.chain_info().await {
+        match self.client.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();
-                Ok(chain_info.latest_block)
+
+                let latest_block = chain_info.latest_block;
+                Ok(FuelBlock {
+                    hash: *latest_block.id.0 .0,
+                    height: latest_block.header.height.0,
+                })
             }
-            Err(ProviderError::ClientRequestError(err)) => {
+            Err(err) => {
                 self.handle_network_error();
                 Err(Error::NetworkError(err.to_string()))
             }
@@ -66,8 +66,7 @@ impl BlockFetcher for FuelBlockFetcher {
 
 #[cfg(test)]
 mod tests {
-
-    use fuels::test_helpers::{setup_test_provider, Config};
+    use fuels_test_helpers::{setup_test_provider, Config};
     use prometheus::Registry;
 
     use super::*;
@@ -92,7 +91,7 @@ mod tests {
         let result = block_fetcher.latest_block().await.unwrap();
 
         // then
-        assert_eq!(result.header.height, 5);
+        assert_eq!(result.height, 5);
     }
 
     #[tokio::test]

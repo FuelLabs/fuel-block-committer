@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{adapters::storage::Storage, common::EthTxStatus, errors::Result};
+use crate::{adapters::storage::Storage, errors::Result};
 
 #[derive(Debug, Serialize, Default, PartialEq, Eq)]
 pub struct StatusReport {
@@ -26,13 +26,13 @@ impl StatusReporter {
     }
 
     pub async fn current_status(&self) -> Result<StatusReport> {
-        let status_of_latest_submission = self
+        let last_submission_completed = self
             .storage
             .submission_w_latest_block()
             .await?
-            .map(|submission| submission.status);
+            .map(|submission| submission.completed);
 
-        let status = if let Some(EthTxStatus::Pending) = status_of_latest_submission {
+        let status = if let Some(false) = last_submission_completed {
             Status::Committing
         } else {
             Status::Idle
@@ -45,20 +45,29 @@ impl StatusReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::storage::{sled_db::SledDb, EthTxSubmission};
+    use crate::adapters::{
+        block_fetcher::FuelBlock,
+        storage::{sqlite_db::SqliteDb, BlockSubmission},
+    };
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {
-        let doit = |submission_status, expected_app_status| {
+        let test = |submission_status, expected_app_status| {
             async move {
                 // given
-                let storage = SledDb::temporary().unwrap();
-                let latest_submission = EthTxSubmission {
-                    fuel_block_height: 1,
-                    status: submission_status,
-                    tx_hash: ethers::types::H256::default(),
-                };
-                storage.insert(latest_submission).await.unwrap();
+                let storage = SqliteDb::temporary().await.unwrap();
+                if let Some(is_completed) = submission_status {
+                    let latest_submission = BlockSubmission {
+                        block: FuelBlock {
+                            hash: Default::default(),
+                            height: 1,
+                        },
+                        completed: is_completed,
+                        ..BlockSubmission::random()
+                    };
+                    storage.insert(latest_submission).await.unwrap();
+                }
+
                 let status_reporter = StatusReporter::new(storage);
 
                 // when
@@ -74,25 +83,11 @@ mod tests {
             }
         };
 
-        doit(EthTxStatus::Pending, Status::Committing).await;
-        doit(EthTxStatus::Aborted, Status::Idle).await;
-        doit(EthTxStatus::Committed, Status::Idle).await;
-    }
-    #[tokio::test]
-    async fn status_is_idle_if_no_submission() {
-        // given
-        let storage = SledDb::temporary().unwrap();
-        let status_reporter = StatusReporter::new(storage);
-
-        // when
-        let status = status_reporter.current_status().await.unwrap();
-
-        // then
-        assert_eq!(
-            status,
-            StatusReport {
-                status: Status::Idle
-            }
-        );
+        // has an entry, not completed
+        test(Some(false), Status::Committing).await;
+        // has an entry, completed
+        test(Some(true), Status::Idle).await;
+        // has no entry
+        test(None, Status::Idle).await;
     }
 }

@@ -1,0 +1,59 @@
+services:
+  eth_node:
+    container_name: eth-node
+    build: eth_node
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: [ "CMD", "test", "-f", "/contracts_deployed" ]
+      interval: 1s
+      timeout: 30s
+      retries: 50
+    environment:
+      - WALLET_KEY=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36
+      - URL=http://0.0.0.0:8545/
+
+  fuel_node:
+    build: 
+      context: fuel_node  
+      args:
+        fuel_core_version: "v${FUEL_CORE_VERSION:-0.18.3}"
+    container_name: fuel-node
+    environment:
+      - PORT=4000
+      - IP=0.0.0.0
+      - DATABASE_TYPE=in-memory
+      - MANUAL_BLOCKS_ENABLED=true
+      - INSTANT=true
+      # - PERIOD=6s
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://0.0.0.0:4000/health" ]
+      retries: 5
+      interval: 2s
+      timeout: 30s
+
+  block_committer:
+    container_name: block-committer
+    depends_on:
+      fuel_node:
+        condition: service_healthy
+      eth_node:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - FUEL_GRAPHQL_ENDPOINT=http://fuel_node:4000
+      - ETHEREUM_RPC=ws://eth_node:8545
+      - ETHEREUM_WALLET_KEY=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36
+      - STATE_CONTRACT_ADDRESS=0xdAad669b06d79Cb48C8cfef789972436dBe6F24d
+      - ETHEREUM_CHAIN=anvil
+      - COMMIT_INTERVAL=3
+
+networks:
+  default:
+    name: e2e-network

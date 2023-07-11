@@ -1,17 +1,20 @@
-use std::{net::Ipv4Addr, path::PathBuf};
+use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf};
 
 use clap::{command, Parser};
-use fuels::{accounts::fuel_crypto::fuel_types::Bytes20, tx::Bytes32};
+use ethers::types::{Address, Chain};
 use url::Url;
 
-use crate::setup::config::Config;
-
-const ETHEREUM_RPC: &str = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID";
+use crate::{
+    errors::{Error, Result},
+    setup::config::Config,
+};
+const ETHEREUM_RPC: &str = "http://127.0.0.1:8545/";
 const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
-const STATE_CONTRACT_ADDRESS: Bytes20 = Bytes20::zeroed();
+const STATE_CONTRACT_ADDRESS: Address = Address::zero();
 const COMMIT_INTERVAL: u32 = 1;
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 8080;
+const CHAIN_NAME: Chain = Chain::Mainnet;
 
 #[derive(Parser)]
 #[command(
@@ -25,10 +28,10 @@ struct Cli {
     #[arg(
         long,
         env = "ETHEREUM_WALLET_KEY",
-        value_name = "BYTES32",
+        value_name = "String",
         help = "The secret key authorized by the L1 bridging contracts to post block commitments."
     )]
-    ethereum_wallet_key: Bytes32,
+    ethereum_wallet_key: String,
 
     /// Ethereum RPC
     #[arg(long,
@@ -46,7 +49,7 @@ struct Cli {
     #[arg(long,
     env = "STATE_CONTRACT_ADDRESS",
     default_value_t = STATE_CONTRACT_ADDRESS, value_name = "BYTES20", help = "Ethereum address of the fuel chain state contract.")]
-    state_contract_address: Bytes20,
+    state_contract_address: Address,
 
     /// Commit interval
     #[arg(long,
@@ -70,6 +73,12 @@ struct Cli {
     default_value_t = PORT, value_name = "U16", help = "Port on which to start the API server.")]
     port: u16,
 
+    /// Ethereum chain id
+    #[arg(long,
+        env = "ETHEREUM_CHAIN",
+        default_value_t = CHAIN_NAME, value_name = "ChainName", help = "Chain id of the ethereum network.")]
+    ethereum_chain: Chain,
+
     #[arg(
         long,
         env = "DB_PATH",
@@ -79,16 +88,19 @@ struct Cli {
     db_path: Option<PathBuf>,
 }
 
-pub fn parse() -> Config {
+pub fn parse() -> Result<Config> {
     let cli = Cli::parse();
-    Config {
+    let commit_interval = NonZeroU32::new(cli.commit_interval)
+        .ok_or_else(|| Error::Other("Commit interval must not be 0!".to_string()))?;
+    Ok(Config {
         ethereum_wallet_key: cli.ethereum_wallet_key,
         ethereum_rpc: cli.ethereum_rpc,
+        ethereum_chain_id: cli.ethereum_chain,
         fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
         state_contract_address: cli.state_contract_address,
-        commit_epoch: cli.commit_interval,
+        commit_interval,
         port: cli.port,
         host: cli.host,
         db_path: cli.db_path,
-    }
+    })
 }

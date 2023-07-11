@@ -1,15 +1,15 @@
-use std::vec;
+use std::{num::NonZeroU32, vec};
 
-use fuels::types::block::Block as FuelBlock;
+use async_trait::async_trait;
 use prometheus::{core::Collector, IntGauge, Opts};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
     adapters::{
-        block_fetcher::BlockFetcher,
-        storage::{EthTxSubmission, Storage},
+        block_fetcher::{BlockFetcher, FuelBlock},
+        runner::Runner,
+        storage::{BlockSubmission, Storage},
     },
-    common::EthTxStatus,
     errors::{Error, Result},
     telemetry::RegistersMetrics,
 };
@@ -40,19 +40,19 @@ pub struct BlockWatcher {
     block_fetcher: Box<dyn BlockFetcher>,
     tx_fuel_block: Sender<FuelBlock>,
     storage: Box<dyn Storage>,
-    commit_epoch: u32,
+    commit_interval: NonZeroU32,
     metrics: Metrics,
 }
 
 impl BlockWatcher {
     pub fn new(
-        commit_epoch: u32,
+        commit_interval: NonZeroU32,
         tx_fuel_block: Sender<FuelBlock>,
         block_fetcher: impl BlockFetcher + 'static,
         storage: impl Storage + 'static,
     ) -> Self {
         Self {
-            commit_epoch,
+            commit_interval,
             block_fetcher: Box::new(block_fetcher),
             tx_fuel_block,
             storage: Box::new(storage),
@@ -60,13 +60,47 @@ impl BlockWatcher {
         }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
+        let current_block = self.block_fetcher.latest_block().await?;
+
+        self.metrics
+            .latest_fuel_block
+            .set(current_block.height as i64);
+
+        Ok(current_block)
+    }
+
+    fn block_not_stale(
+        current_block: &FuelBlock,
+        last_block_submission: Option<&BlockSubmission>,
+    ) -> bool {
+        !last_block_submission
+            .is_some_and(|submission| current_block.height <= submission.block.height)
+    }
+
+    fn is_epoch_reached(current_block: &FuelBlock, commit_epoch: NonZeroU32) -> bool {
+        current_block.height % commit_epoch == 0
+    }
+
+    fn should_propagate_update(
+        commit_epoch: NonZeroU32,
+        current_block: &FuelBlock,
+        last_block_submission: Option<&BlockSubmission>,
+    ) -> bool {
+        Self::block_not_stale(current_block, last_block_submission)
+            && Self::is_epoch_reached(current_block, commit_epoch)
+    }
+}
+
+#[async_trait]
+impl Runner for BlockWatcher {
+    async fn run(&mut self) -> Result<()> {
         let current_block = self.fetch_latest_block().await?;
 
         let latest_block_submission = self.storage.submission_w_latest_block().await?;
 
         if Self::should_propagate_update(
-            self.commit_epoch,
+            self.commit_interval,
             &current_block,
             latest_block_submission.as_ref(),
         ) {
@@ -78,54 +112,18 @@ impl BlockWatcher {
 
         Ok(())
     }
-
-    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
-        let current_block = self.block_fetcher.latest_block().await?;
-
-        self.metrics
-            .latest_fuel_block
-            .set(current_block.header.height as i64);
-
-        Ok(current_block)
-    }
-
-    fn should_propagate_update(
-        commit_epoch: u32,
-        current_block: &FuelBlock,
-        last_block_submission: Option<&EthTxSubmission>,
-    ) -> bool {
-        let Some(submission) = last_block_submission else {
-            return true;
-        };
-
-        if current_block.header.height <= submission.fuel_block_height {
-            return false;
-        }
-
-        let height_diff = current_block.header.height - submission.fuel_block_height;
-        match submission.status {
-            EthTxStatus::Pending => false,
-            EthTxStatus::Committed if height_diff % commit_epoch != 0 => false,
-            _ => true,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{sync::Arc, vec};
 
-    use ethers::types::H256;
-    use fuels::{tx::Bytes32, types::block::Header as FuelBlockHeader};
     use prometheus::Registry;
 
     use super::*;
-    use crate::{
-        adapters::{
-            block_fetcher::MockBlockFetcher,
-            storage::{sled_db::SledDb, EthTxSubmission},
-        },
-        common::EthTxStatus,
+    use crate::adapters::{
+        block_fetcher::MockBlockFetcher,
+        storage::{sqlite_db::SqliteDb, BlockSubmission},
     };
 
     #[tokio::test]
@@ -133,20 +131,13 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let block = given_a_block(5);
+        let block = given_a_block(4);
 
-        let block_fetcher = given_fetcher_that_returns(vec![block.clone()]);
+        let block_fetcher = given_fetcher_that_returns(vec![block]);
 
-        let storage = SledDb::temporary().unwrap();
-        storage
-            .insert(EthTxSubmission {
-                fuel_block_height: 3,
-                status: EthTxStatus::Committed,
-                tx_hash: H256::default(),
-            })
-            .await
-            .unwrap();
-        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let storage = SqliteDb::temporary().await.unwrap();
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -161,13 +152,13 @@ mod tests {
 
     #[tokio::test]
     async fn will_not_propagate_a_stale_block() {
-        let last_block_submission = given_successful_submission(2);
+        let last_block_submission = given_a_pending_submission(2);
 
         {
             let current_block = given_a_block(1);
 
             let should_propagate = BlockWatcher::should_propagate_update(
-                1,
+                1.try_into().unwrap(),
                 &current_block,
                 Some(&last_block_submission),
             );
@@ -178,7 +169,7 @@ mod tests {
             let current_block = given_a_block(2);
 
             let should_propagate = BlockWatcher::should_propagate_update(
-                1,
+                1.try_into().unwrap(),
                 &current_block,
                 Some(&last_block_submission),
             );
@@ -188,58 +179,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn will_not_propagate_if_last_tx_is_pending() {
+    async fn will_propagate_even_if_last_tx_is_pending() {
         let current_block = given_a_block(2);
-        let last_block_submission = given_pending_submission(1);
+        let last_block_submission = given_a_pending_submission(1);
 
-        let should_propagate =
-            BlockWatcher::should_propagate_update(1, &current_block, Some(&last_block_submission));
+        let should_propagate = BlockWatcher::should_propagate_update(
+            1.try_into().unwrap(),
+            &current_block,
+            Some(&last_block_submission),
+        );
 
-        assert!(!should_propagate);
+        assert!(should_propagate);
     }
 
     #[tokio::test]
     async fn respects_epoch_when_posting_block_updates() {
-        let commit_epoch = 3;
-
-        let last_block_submission = EthTxSubmission {
-            fuel_block_height: 1,
-            status: EthTxStatus::Committed,
-            tx_hash: Default::default(),
-        };
+        let commit_epoch = NonZeroU32::new(3).unwrap();
 
         let check_should_submit = |block_height, should_submit| {
             let current_block = given_a_block(block_height);
-            let actual = BlockWatcher::should_propagate_update(
-                commit_epoch,
-                &current_block,
-                Some(&last_block_submission),
-            );
+            let actual = BlockWatcher::should_propagate_update(commit_epoch, &current_block, None);
 
             assert_eq!(actual, should_submit);
         };
 
         check_should_submit(2, false);
-        check_should_submit(3, false);
-        check_should_submit(4, true);
-    }
-
-    #[tokio::test]
-    async fn will_post_the_next_block_after_failure() {
-        // given
-        let last_block_submission = EthTxSubmission {
-            fuel_block_height: 2,
-            status: EthTxStatus::Aborted,
-            tx_hash: H256::default(),
-        };
-        let current_block = given_a_block(4);
-
-        // when
-        let should_propagate =
-            BlockWatcher::should_propagate_update(7, &current_block, Some(&last_block_submission));
-
-        // then
-        assert!(should_propagate);
+        check_should_submit(3, true);
+        check_should_submit(4, false);
     }
 
     #[tokio::test]
@@ -249,10 +215,11 @@ mod tests {
 
         let block_fetcher = given_fetcher_that_returns(vec![given_a_block(5)]);
 
-        let storage = SledDb::temporary().unwrap();
-        storage.insert(given_pending_submission(4)).await.unwrap();
+        let storage = SqliteDb::temporary().await.unwrap();
+        storage.insert(given_a_pending_submission(4)).await.unwrap();
 
-        let block_watcher = BlockWatcher::new(2, tx, block_fetcher, storage);
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);
@@ -281,39 +248,20 @@ mod tests {
         fetcher
     }
 
-    fn given_successful_submission(block_height: u32) -> EthTxSubmission {
-        EthTxSubmission {
-            fuel_block_height: block_height,
-            status: EthTxStatus::Pending,
-            tx_hash: H256::default(),
-        }
-    }
-    fn given_pending_submission(block_height: u32) -> EthTxSubmission {
-        EthTxSubmission {
-            fuel_block_height: block_height,
-            status: EthTxStatus::Pending,
-            tx_hash: H256::default(),
+    fn given_a_pending_submission(block_height: u32) -> BlockSubmission {
+        BlockSubmission {
+            block: FuelBlock {
+                hash: Default::default(),
+                height: block_height,
+            },
+            ..BlockSubmission::random()
         }
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {
-        let header = FuelBlockHeader {
-            id: Bytes32::zeroed(),
-            da_height: 0,
-            transactions_count: 0,
-            message_receipt_count: 0,
-            transactions_root: Bytes32::zeroed(),
-            message_receipt_root: Bytes32::zeroed(),
-            height: block_height,
-            prev_root: Bytes32::zeroed(),
-            time: None,
-            application_hash: Bytes32::zeroed(),
-        };
-
         FuelBlock {
-            id: Bytes32::default(),
-            header,
-            transactions: vec![],
+            hash: Default::default(),
+            height: block_height,
         }
     }
 }

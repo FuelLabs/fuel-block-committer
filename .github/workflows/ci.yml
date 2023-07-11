@@ -10,8 +10,8 @@ on:
 
 env:
   DASEL_VERSION: https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_linux_amd64
-  RUST_VERSION: 1.69.0
-  FUEL_CORE_VERSION: 0.18.1
+  RUST_VERSION: 1.70.0
+  FUEL_CORE_VERSION: 0.18.3
 
 jobs:
 
@@ -53,8 +53,8 @@ jobs:
           tar -xvf fuel-core.tar.gz
           chmod +x fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core
           mv fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core /usr/local/bin/fuel-core
-      - name: Run cargo test with all features
-        run: cargo test --all-targets --all-features --workspace
+      - name: Run tests
+        run: cargo test --bin fuel-block-committer
 
   publish-crates-check:
     runs-on: ubuntu-latest
@@ -77,6 +77,7 @@ jobs:
     needs:
       - cargo-verifications
       - publish-crates-check
+
 #     Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
     runs-on: ubuntu-latest

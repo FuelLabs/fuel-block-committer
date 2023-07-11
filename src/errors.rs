@@ -1,4 +1,6 @@
 use actix_web::ResponseError;
+use ethers::signers::WalletError;
+use url::ParseError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -10,8 +12,8 @@ pub enum Error {
     StorageError(String),
 }
 
-impl From<sled::Error> for Error {
-    fn from(value: sled::Error) -> Self {
+impl From<rusqlite::Error> for Error {
+    fn from(value: rusqlite::Error) -> Self {
         Self::StorageError(value.to_string())
     }
 }
@@ -19,6 +21,18 @@ impl From<sled::Error> for Error {
 impl From<serde_json::Error> for Error {
     fn from(value: serde_json::Error) -> Self {
         Self::StorageError(value.to_string())
+    }
+}
+
+impl From<WalletError> for Error {
+    fn from(error: WalletError) -> Self {
+        Self::Other(error.to_string())
+    }
+}
+
+impl From<ParseError> for Error {
+    fn from(error: ParseError) -> Self {
+        Self::Other(error.to_string())
     }
 }
 

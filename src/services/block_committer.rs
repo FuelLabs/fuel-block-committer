@@ -1,34 +1,133 @@
-use actix_web::dev::Url;
-use fuels::types::block::Block as FuelBlock;
+use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
+use tracing::{error, info};
 
-use crate::errors::Result;
+use crate::{
+    adapters::{
+        block_fetcher::FuelBlock,
+        ethereum_adapter::EthereumAdapter,
+        runner::Runner,
+        storage::{BlockSubmission, Storage},
+    },
+    errors::Result,
+};
 
-#[allow(dead_code)]
 pub struct BlockCommitter {
     rx_block: Receiver<FuelBlock>,
-    etherem_rpc: Url,
+    ethereum_rpc: Box<dyn EthereumAdapter>,
+    storage: Box<dyn Storage>,
 }
 
 impl BlockCommitter {
-    #[allow(dead_code)]
-    pub fn new(rx_block: Receiver<FuelBlock>, etherem_rpc: Url) -> Self {
+    pub fn new(
+        rx_block: Receiver<FuelBlock>,
+        ethereum_rpc: impl EthereumAdapter + 'static,
+        storage: impl Storage + 'static,
+    ) -> Self {
         Self {
             rx_block,
-            etherem_rpc,
+            ethereum_rpc: Box::new(ethereum_rpc),
+            storage: Box::new(storage),
         }
     }
 
-    // todo: this should probably run as a stream
-    #[allow(dead_code)]
-    pub async fn run(&mut self) -> Result<()> {
-        // listen to the newly received block
-        if let Some(_block) = self.rx_block.recv().await {
-            // enhancment: consume all the blocks from the channel to get the latest one
+    async fn next_fuel_block_for_committal(&mut self) -> Option<FuelBlock> {
+        self.rx_block.recv().await
+    }
 
-            // commit the block to ethereum
+    async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
+        let submitted_at_height = self.ethereum_rpc.get_block_number().await?;
+
+        let submission = BlockSubmission {
+            block: fuel_block,
+            submittal_height: submitted_at_height,
+            completed: false,
+        };
+
+        self.storage.insert(submission).await?;
+
+        // if we have a network failure the DB entry will be left at completed:false.
+        self.ethereum_rpc.submit(fuel_block).await?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Runner for BlockCommitter {
+    async fn run(&mut self) -> Result<()> {
+        while let Some(fuel_block) = self.next_fuel_block_for_committal().await {
+            if let Err(error) = self.submit_block(fuel_block).await {
+                error!("{error}");
+            } else {
+                info!("Submitted fuel block! ({fuel_block:?})",);
+            }
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use mockall::predicate;
+
+    use super::*;
+    use crate::adapters::{ethereum_adapter::MockEthereumAdapter, storage::sqlite_db::SqliteDb};
+
+    #[tokio::test]
+    async fn block_committer_will_submit_and_write_block() {
+        // given
+        let block_height = 5;
+        let (tx, rx) = tokio::sync::mpsc::channel(10);
+        let block = given_a_block(block_height);
+        let storage = SqliteDb::temporary().await.unwrap();
+        let eth_rpc_mock = given_eth_rpc_that_expects(block);
+        tx.try_send(block).unwrap();
+
+        // when
+        spawn_committer_and_run_until_timeout(rx, eth_rpc_mock, storage.clone()).await;
+
+        //then
+        let last_submission = storage.submission_w_latest_block().await.unwrap().unwrap();
+        assert_eq!(block_height, last_submission.block.height);
+    }
+
+    fn given_a_block(block_height: u32) -> FuelBlock {
+        FuelBlock {
+            hash: Default::default(),
+            height: block_height,
+        }
+    }
+
+    fn given_eth_rpc_that_expects(block: FuelBlock) -> MockEthereumAdapter {
+        let mut eth_rpc_mock = MockEthereumAdapter::new();
+        eth_rpc_mock
+            .expect_submit()
+            .with(predicate::eq(block))
+            .return_once(move |_| Ok(()));
+
+        eth_rpc_mock
+            .expect_get_block_number()
+            .return_once(move || Ok(0));
+
+        eth_rpc_mock
+    }
+
+    async fn spawn_committer_and_run_until_timeout(
+        rx: Receiver<FuelBlock>,
+        eth_rpc_mock: MockEthereumAdapter,
+        storage: impl Storage + 'static,
+    ) {
+        let _ = tokio::time::timeout(Duration::from_millis(250), async move {
+            let mut block_committer = BlockCommitter::new(rx, eth_rpc_mock, storage);
+            block_committer
+                .run()
+                .await
+                .expect("Errors are handled inside of run");
+        })
+        .await;
     }
 }
