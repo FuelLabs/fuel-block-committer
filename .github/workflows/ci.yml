@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - feat/e2e_test
   pull_request:
   release:
     types: [published]
@@ -54,7 +55,7 @@ jobs:
           chmod +x fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core
           mv fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core /usr/local/bin/fuel-core
       - name: Run tests
-        run: cargo test --bin fuel-block-committer
+        run: ./run_tests.sh
 
   publish-crates-check:
     runs-on: ubuntu-latest
