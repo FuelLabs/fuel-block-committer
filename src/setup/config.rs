@@ -22,6 +22,7 @@ pub struct InternalConfig {
     pub fuel_errors_before_unhealthy: usize,
     pub between_eth_event_stream_restablishing_attempts: Duration,
     pub eth_errors_before_unhealthy: usize,
+    pub balance_update_interval: Duration,
 }
 
 impl Default for InternalConfig {
@@ -31,6 +32,7 @@ impl Default for InternalConfig {
             fuel_errors_before_unhealthy: 3,
             between_eth_event_stream_restablishing_attempts: Duration::from_secs(3),
             eth_errors_before_unhealthy: 3,
+            balance_update_interval: Duration::from_secs(10),
         }
     }
 }
