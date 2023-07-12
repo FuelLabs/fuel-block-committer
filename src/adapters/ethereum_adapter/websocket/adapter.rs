@@ -49,7 +49,6 @@ impl EthereumWs {
             .map_err(|e| Error::NetworkError(e.to_string()))?;
 
         let wallet = LocalWallet::from_str(ethereum_wallet_key)?.with_chain_id(chain_id);
-        let _wallet_address = wallet.address();
 
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
