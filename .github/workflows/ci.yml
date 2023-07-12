@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - feat/e2e_test
   pull_request:
   release:
     types: [published]
