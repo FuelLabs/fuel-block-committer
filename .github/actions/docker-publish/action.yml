@@ -28,14 +28,14 @@ runs:
       uses: docker/metadata-action@v3
       with:
         images: |
-            ${{ inputs.docker_registry }}/${{ inputs.image_name }}
+          ${{ inputs.docker_registry }}/${{ inputs.image_name }}
         tags: |
-            type=sha
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{raw}}
+          type=sha
+          type=ref,event=branch
+          type=ref,event=tag
+          type=semver,pattern={{raw}}
         flavor: |
-            latest=${{ github.ref == 'refs/heads/' + inputs.default_branch }}
+          latest=${{ format('refs/heads/{0}', inputs.default_branch) == github.ref }}
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v1
