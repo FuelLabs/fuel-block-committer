@@ -6,7 +6,7 @@ use tracing::error;
 
 use crate::{
     adapters::{
-        block_fetcher::{FuelBlock, FuelBlockFetcher},
+        block_fetcher::{FuelBlock, FuelClientAdapter},
         ethereum_adapter::{EthereumWs, MonitoredEthAdapter},
         runner::Runner,
         storage::{sqlite_db::SqliteDb, Storage},
@@ -120,8 +120,8 @@ fn create_block_fetcher(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
-) -> (FuelBlockFetcher, HealthChecker) {
-    let block_fetcher = FuelBlockFetcher::new(
+) -> (FuelClientAdapter, HealthChecker) {
+    let block_fetcher = FuelClientAdapter::new(
         &config.fuel_graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
     );
@@ -135,7 +135,7 @@ fn create_block_fetcher(
 fn create_block_watcher(
     config: &Config,
     registry: &Registry,
-    block_fetcher: FuelBlockFetcher,
+    block_fetcher: FuelClientAdapter,
     storage: impl Storage + 'static,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
