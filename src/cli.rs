@@ -8,9 +8,9 @@ use crate::{
     errors::{Error, Result},
     setup::config::Config,
 };
-const ETHEREUM_RPC: &str = "http://127.0.0.1:8545/";
-const FUEL_GRAPHQL_ENDPOINT: &str = "https://127.0.0.1:4000";
-const STATE_CONTRACT_ADDRESS: Address = Address::zero();
+
+const ETHEREUM_RPC: &str = "ws://127.0.0.1:8545/";
+const FUEL_GRAPHQL_ENDPOINT: &str = "http://127.0.0.1:4000";
 const COMMIT_INTERVAL: u32 = 1;
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 8080;
@@ -34,27 +34,37 @@ struct Cli {
     ethereum_wallet_key: String,
 
     /// Ethereum RPC
-    #[arg(long,
-    env = "ETHEREUM_RPC",
-    default_value = ETHEREUM_RPC, value_name = "URL", help = "URL to a Ethereum RPC endpoint.")]
+    #[arg(
+        long,
+        env = "ETHEREUM_RPC",
+        default_value = ETHEREUM_RPC, value_name = "URL", help = "URL to a Ethereum RPC endpoint."
+    )]
     ethereum_rpc: Url,
 
     /// Fuel GraphQL endpoint
-    #[arg(long,
-    env = "FUEL_GRAPHQL_ENDPOINT",
-    default_value = FUEL_GRAPHQL_ENDPOINT, value_name = "URL", help = "URL to a fuel-core graphql endpoint.")]
+    #[arg(
+        long,
+        env = "FUEL_GRAPHQL_ENDPOINT",
+        default_value = FUEL_GRAPHQL_ENDPOINT, value_name = "URL", help = "URL to a fuel-core graphql endpoint."
+    )]
     fuel_graphql_endpoint: Url,
 
     /// State contract address
-    #[arg(long,
-    env = "STATE_CONTRACT_ADDRESS",
-    default_value_t = STATE_CONTRACT_ADDRESS, value_name = "BYTES20", help = "Ethereum address of the fuel chain state contract.")]
+    #[arg(
+        long,
+        env = "STATE_CONTRACT_ADDRESS",
+        value_name = "Address",
+        help = "Ethereum address of the fuel chain state contract."
+    )]
     state_contract_address: Address,
 
     /// Commit interval
-    #[arg(long,
-    env = "COMMIT_INTERVAL",
-    default_value_t = COMMIT_INTERVAL, value_name = "U32", help = "The number of fuel blocks between ethereum commits. If set to 1, then every block should be pushed to Ethereum.")]
+    #[arg(
+        long,
+        env = "COMMIT_INTERVAL",
+        default_value_t = COMMIT_INTERVAL, value_name = "U32", help = "The number of fuel \\
+        blocks between ethereum commits. If set to 1, then every block should be pushed to Ethereum."
+    )]
     commit_interval: u32,
 
     /// Host of the started API server
@@ -68,15 +78,19 @@ struct Cli {
     host: Ipv4Addr,
 
     /// Port of the started API server
-    #[arg(long,
-    env = "PORT",
-    default_value_t = PORT, value_name = "U16", help = "Port on which to start the API server.")]
+    #[arg(
+        long,
+        env = "PORT",
+        default_value_t = PORT, value_name = "U16", help = "Port on which to start the API server."
+    )]
     port: u16,
 
     /// Ethereum chain id
-    #[arg(long,
+    #[arg(
+        long,
         env = "ETHEREUM_CHAIN",
-        default_value_t = CHAIN_NAME, value_name = "ChainName", help = "Chain id of the ethereum network.")]
+        default_value_t = CHAIN_NAME, value_name = "ChainName", help = "Chain id of the ethereum network."
+    )]
     ethereum_chain: Chain,
 
     #[arg(

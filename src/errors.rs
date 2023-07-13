@@ -1,5 +1,6 @@
 use actix_web::ResponseError;
 use ethers::signers::WalletError;
+use tokio::task::JoinError;
 use url::ParseError;
 
 #[derive(thiserror::Error, Debug)]
@@ -32,6 +33,18 @@ impl From<WalletError> for Error {
 
 impl From<ParseError> for Error {
     fn from(error: ParseError) -> Self {
+        Self::Other(error.to_string())
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::Other(error.to_string())
+    }
+}
+
+impl From<JoinError> for Error {
+    fn from(error: JoinError) -> Self {
         Self::Other(error.to_string())
     }
 }

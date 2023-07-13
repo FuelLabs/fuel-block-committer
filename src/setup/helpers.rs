@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use prometheus::Registry;
-use tokio::sync::mpsc::Receiver;
-use tracing::error;
+use tokio::{sync::mpsc::Receiver, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 use crate::{
     adapters::{
@@ -22,6 +23,7 @@ pub fn spawn_block_watcher(
     internal_config: &InternalConfig,
     storage: impl Storage + 'static,
     registry: &Registry,
+    cancel_token: CancellationToken,
 ) -> (
     Receiver<FuelBlock>,
     tokio::task::JoinHandle<()>,
@@ -36,6 +38,7 @@ pub fn spawn_block_watcher(
         internal_config.fuel_polling_interval,
         block_watcher,
         "Block Watcher",
+        cancel_token,
     );
 
     (rx, handle, fuel_connection_health)
@@ -47,17 +50,19 @@ pub fn spawn_eth_committer_and_listener(
     ethereum_rpc: MonitoredEthAdapter<EthereumWs>,
     storage: SqliteDb,
     registry: &Registry,
+    cancel_token: CancellationToken,
 ) -> Result<(tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)> {
     let committer_handler =
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
 
-    let commit_listener = CommitListener::new(ethereum_rpc, storage);
+    let commit_listener = CommitListener::new(ethereum_rpc, storage, cancel_token.clone());
     commit_listener.register_metrics(registry);
 
     let listener_handle = schedule_polling(
         internal_config.between_eth_event_stream_restablishing_attempts,
         commit_listener,
         "Commit Listener",
+        cancel_token,
     );
 
     Ok((committer_handler, listener_handle))
@@ -105,14 +110,22 @@ fn schedule_polling(
     polling_interval: Duration,
     mut runner: impl Runner + 'static,
     name: &'static str,
+    cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             if let Err(e) = runner.run().await {
                 error!("{name} encountered an error: {e}");
             }
+
+            if cancel_token.is_cancelled() {
+                break;
+            }
+
             tokio::time::sleep(polling_interval).await;
         }
+
+        info!("{name} stopped");
     })
 }
 
@@ -160,4 +173,19 @@ pub async fn setup_storage(config: &Config) -> Result<SqliteDb> {
     } else {
         SqliteDb::temporary().await
     }
+}
+
+pub async fn shut_down(
+    cancel_token: CancellationToken,
+    block_watcher_handle: JoinHandle<()>,
+    committer_handle: JoinHandle<()>,
+    listener_handle: JoinHandle<()>,
+) -> Result<()> {
+    cancel_token.cancel();
+
+    for handle in [block_watcher_handle, committer_handle, listener_handle] {
+        handle.await?
+    }
+
+    Ok(())
 }

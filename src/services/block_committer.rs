@@ -60,9 +60,11 @@ impl Runner for BlockCommitter {
             if let Err(error) = self.submit_block(fuel_block).await {
                 error!("{error}");
             } else {
-                info!("Submitted fuel block! ({fuel_block:?})",);
+                info!("submitted {fuel_block:?}!");
             }
         }
+
+        info!("Block Committer stopped");
 
         Ok(())
     }
