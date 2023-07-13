@@ -15,7 +15,6 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-
   verify-rust-version:
     runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
@@ -116,7 +115,9 @@ jobs:
         uses: ./.github/actions/docker-publish
         with:
           image_name: ${{ env.IMAGE_NAME }}
-          default: linux/amd64,linux/arm64
+          docker_username: ${{ github.repository_owner }}
+          docker_password: ${{ secrets.GITHUB_TOKEN }}
+          docker_platforms: linux/amd64,linux/arm64
 
       - uses: FuelLabs/.github/.github/actions/slack-notify-template@master
         if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
