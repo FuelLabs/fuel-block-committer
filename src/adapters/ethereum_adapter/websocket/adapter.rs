@@ -14,10 +14,10 @@ use url::Url;
 
 use crate::{
     adapters::{
-        fuel_adapter::FuelBlock,
         ethereum_adapter::{
             websocket::event_streamer::EthEventStreamer, EthereumAdapter, EventStreamer,
         },
+        fuel_adapter::FuelBlock,
     },
     errors::{Error, Result},
     telemetry::RegistersMetrics,

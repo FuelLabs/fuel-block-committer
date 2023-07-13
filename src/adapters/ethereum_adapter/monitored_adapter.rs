@@ -2,8 +2,8 @@ use prometheus::{IntCounter, Opts};
 
 use crate::{
     adapters::{
-        fuel_adapter::FuelBlock,
         ethereum_adapter::{EthereumAdapter, EventStreamer},
+        fuel_adapter::FuelBlock,
     },
     errors::{Error, Result},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
