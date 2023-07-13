@@ -1,27 +1,27 @@
-use fuel_core_client::client::{schema::block::Block as FuelGqlBlock, FuelClient};
+use fuel_core_client::client::{schema::block::Block as FuelGqlBlock, FuelClient as FuelGqlClient};
 use url::Url;
 
 use crate::{
-    adapters::block_fetcher::{fuel_metrics::FuelMetrics, FuelAdapter, FuelBlock},
+    adapters::fuel_adapter::{fuel_metrics::FuelMetrics, FuelAdapter, FuelBlock},
     errors::{Error, Result},
     telemetry::{ConnectionHealthTracker, HealthChecker, RegistersMetrics},
 };
 
-impl RegistersMetrics for FuelClientAdapter {
+impl RegistersMetrics for FuelClient {
     fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
         self.metrics.metrics()
     }
 }
 
-pub struct FuelClientAdapter {
-    client: FuelClient,
+pub struct FuelClient {
+    client: FuelGqlClient,
     metrics: FuelMetrics,
     health_tracker: ConnectionHealthTracker,
 }
 
-impl FuelClientAdapter {
+impl FuelClient {
     pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
-        let client = FuelClient::new(url).expect("Url to be well formed");
+        let client = FuelGqlClient::new(url).expect("Url to be well formed");
         Self {
             client,
             metrics: FuelMetrics::default(),
@@ -53,7 +53,7 @@ impl From<FuelGqlBlock> for FuelBlock {
 }
 
 #[async_trait::async_trait]
-impl FuelAdapter for FuelClientAdapter {
+impl FuelAdapter for FuelClient {
     async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>> {
         let maybe_block = self
             .client
@@ -99,10 +99,10 @@ mod tests {
 
         let url = Url::parse(&format!("http://{addr}")).unwrap();
 
-        let block_fetcher = FuelClientAdapter::new(&url, 1);
+        let fuel_adapter = FuelClient::new(&url, 1);
 
         // when
-        let result = block_fetcher.latest_block().await.unwrap();
+        let result = fuel_adapter.latest_block().await.unwrap();
 
         // then
         assert_eq!(result.height, 5);
@@ -122,10 +122,10 @@ mod tests {
 
         let url = Url::parse(&format!("http://{addr}")).unwrap();
 
-        let block_fetcher = FuelClientAdapter::new(&url, 1);
+        let fuel_adapter = FuelClient::new(&url, 1);
 
         // when
-        let result = block_fetcher.block_at_height(3).await.unwrap().unwrap();
+        let result = fuel_adapter.block_at_height(3).await.unwrap().unwrap();
 
         // then
         assert_eq!(result.height, 3);
@@ -137,13 +137,13 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("localhost:12344").unwrap();
 
-        let block_fetcher = FuelClientAdapter::new(&url, 1);
+        let fuel_adapter = FuelClient::new(&url, 1);
 
         let registry = Registry::default();
-        block_fetcher.register_metrics(&registry);
+        fuel_adapter.register_metrics(&registry);
 
         // when
-        let result = block_fetcher.latest_block().await;
+        let result = fuel_adapter.latest_block().await;
 
         // then
         assert!(result.is_err());
@@ -164,18 +164,18 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("http://localhost:12344").unwrap();
 
-        let block_fetcher = FuelClientAdapter::new(&url, 3);
-        let health_check = block_fetcher.connection_health_checker();
+        let fuel_adapter = FuelClient::new(&url, 3);
+        let health_check = fuel_adapter.connection_health_checker();
 
         assert!(health_check.healthy());
 
-        let _ = block_fetcher.latest_block().await;
+        let _ = fuel_adapter.latest_block().await;
         assert!(health_check.healthy());
 
-        let _ = block_fetcher.latest_block().await;
+        let _ = fuel_adapter.latest_block().await;
         assert!(health_check.healthy());
 
-        let _ = block_fetcher.latest_block().await;
+        let _ = fuel_adapter.latest_block().await;
         assert!(!health_check.healthy());
     }
 }

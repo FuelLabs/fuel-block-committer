@@ -9,7 +9,7 @@ use futures::Stream;
 pub use monitored_adapter::MonitoredEthAdapter;
 pub use websocket::EthereumWs;
 
-use crate::{adapters::block_fetcher::FuelBlock, errors::Result};
+use crate::{adapters::fuel_adapter::FuelBlock, errors::Result};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FuelBlockCommitedOnEth {

@@ -6,7 +6,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{
     adapters::{
-        block_fetcher::{FuelAdapter, FuelBlock},
+        fuel_adapter::{FuelAdapter, FuelBlock},
         runner::Runner,
         storage::Storage,
     },
@@ -48,12 +48,12 @@ impl BlockWatcher {
     pub fn new(
         commit_interval: NonZeroU32,
         tx_fuel_block: Sender<FuelBlock>,
-        block_fetcher: impl FuelAdapter + 'static,
+        fuel_adapter: impl FuelAdapter + 'static,
         storage: impl Storage + 'static,
     ) -> Self {
         Self {
             commit_interval,
-            fuel_adapter: Box::new(block_fetcher),
+            fuel_adapter: Box::new(fuel_adapter),
             tx_fuel_block,
             storage: Box::new(storage),
             metrics: Default::default(),
@@ -136,7 +136,7 @@ mod tests {
 
     use super::*;
     use crate::adapters::{
-        block_fetcher::MockFuelAdapter,
+        fuel_adapter::MockFuelAdapter,
         storage::{sqlite_db::SqliteDb, BlockSubmission},
     };
 
@@ -147,11 +147,11 @@ mod tests {
 
         let missed_block = given_a_block(4);
         let latest_block = given_a_block(5);
-        let block_fetcher = given_fetcher(vec![latest_block, missed_block]);
+        let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
         let storage = given_storage(vec![0, 2]).await;
         let mut block_watcher =
-            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -171,11 +171,11 @@ mod tests {
 
         let missed_block = given_a_block(4);
         let latest_block = given_a_block(5);
-        let block_fetcher = given_fetcher(vec![latest_block, missed_block]);
+        let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
         let storage = given_storage(vec![0, 2, 4]).await;
         let mut block_watcher =
-            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -192,11 +192,11 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
         let latest_block = given_a_block(6);
-        let block_fetcher = given_fetcher(vec![latest_block]);
+        let fuel_adapter = given_fetcher(vec![latest_block]);
 
         let storage = given_storage(vec![0, 2, 4, 6]).await;
         let mut block_watcher =
-            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -213,11 +213,11 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
         let block = given_a_block(4);
-        let block_fetcher = given_fetcher(vec![block]);
+        let fuel_adapter = given_fetcher(vec![block]);
 
         let storage = given_storage(vec![0, 2]).await;
         let mut block_watcher =
-            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
 
         // when
         block_watcher.run().await.unwrap();
@@ -235,11 +235,11 @@ mod tests {
         // given
         let (tx, _) = tokio::sync::mpsc::channel(10);
 
-        let block_fetcher = given_fetcher(vec![given_a_block(5)]);
+        let fuel_adapter = given_fetcher(vec![given_a_block(5)]);
 
         let storage = given_storage(vec![0, 2, 4]).await;
         let mut block_watcher =
-            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);

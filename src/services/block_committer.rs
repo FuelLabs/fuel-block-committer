@@ -4,7 +4,7 @@ use tracing::{error, info};
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlock,
+        fuel_adapter::FuelBlock,
         ethereum_adapter::EthereumAdapter,
         runner::Runner,
         storage::{BlockSubmission, Storage},

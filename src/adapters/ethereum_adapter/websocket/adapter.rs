@@ -14,7 +14,7 @@ use url::Url;
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlock,
+        fuel_adapter::FuelBlock,
         ethereum_adapter::{
             websocket::event_streamer::EthEventStreamer, EthereumAdapter, EventStreamer,
         },

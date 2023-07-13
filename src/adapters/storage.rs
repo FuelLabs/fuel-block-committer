@@ -3,7 +3,7 @@ pub mod sqlite_db;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{adapters::block_fetcher::FuelBlock, errors::Result};
+use crate::{adapters::fuel_adapter::FuelBlock, errors::Result};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {

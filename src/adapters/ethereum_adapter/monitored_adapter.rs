@@ -2,7 +2,7 @@ use prometheus::{IntCounter, Opts};
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlock,
+        fuel_adapter::FuelBlock,
         ethereum_adapter::{EthereumAdapter, EventStreamer},
     },
     errors::{Error, Result},

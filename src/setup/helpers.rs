@@ -6,8 +6,8 @@ use tracing::error;
 
 use crate::{
     adapters::{
-        block_fetcher::{FuelBlock, FuelClientAdapter},
         ethereum_adapter::{EthereumWs, MonitoredEthAdapter},
+        fuel_adapter::{FuelBlock, FuelClient},
         runner::Runner,
         storage::{sqlite_db::SqliteDb, Storage},
     },
@@ -27,10 +27,10 @@ pub fn spawn_block_watcher(
     tokio::task::JoinHandle<()>,
     HealthChecker,
 ) {
-    let (block_fetcher, fuel_connection_health) =
-        create_block_fetcher(config, internal_config, registry);
+    let (fuel_adapter, fuel_connection_health) =
+        create_fuel_adapter(config, internal_config, registry);
 
-    let (block_watcher, rx) = create_block_watcher(config, registry, block_fetcher, storage);
+    let (block_watcher, rx) = create_block_watcher(config, registry, fuel_adapter, storage);
 
     let handle = schedule_polling(
         internal_config.fuel_polling_interval,
@@ -116,35 +116,31 @@ fn schedule_polling(
     })
 }
 
-fn create_block_fetcher(
+fn create_fuel_adapter(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
-) -> (FuelClientAdapter, HealthChecker) {
-    let block_fetcher = FuelClientAdapter::new(
+) -> (FuelClient, HealthChecker) {
+    let fuel_adapter = FuelClient::new(
         &config.fuel_graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
     );
-    block_fetcher.register_metrics(registry);
+    fuel_adapter.register_metrics(registry);
 
-    let fuel_connection_health = block_fetcher.connection_health_checker();
+    let fuel_connection_health = fuel_adapter.connection_health_checker();
 
-    (block_fetcher, fuel_connection_health)
+    (fuel_adapter, fuel_connection_health)
 }
 
 fn create_block_watcher(
     config: &Config,
     registry: &Registry,
-    block_fetcher: FuelClientAdapter,
+    fuel_adapter: FuelClient,
     storage: impl Storage + 'static,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
-    let block_watcher = BlockWatcher::new(
-        config.commit_interval,
-        tx_fuel_block,
-        block_fetcher,
-        storage,
-    );
+    let block_watcher =
+        BlockWatcher::new(config.commit_interval, tx_fuel_block, fuel_adapter, storage);
     block_watcher.register_metrics(registry);
 
     (block_watcher, rx_fuel_block)

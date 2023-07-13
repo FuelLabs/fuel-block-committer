@@ -1,7 +1,7 @@
-mod fuel_block_fetcher;
+mod fuel_client;
 mod fuel_metrics;
 
-pub use fuel_block_fetcher::FuelClientAdapter;
+pub use fuel_client::FuelClient;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::Result;
