@@ -1,5 +1,4 @@
-use fuel_core_client::client::schema::block::Block as FuelGqlBlock;
-use fuel_core_client::client::FuelClient;
+use fuel_core_client::client::{schema::block::Block as FuelGqlBlock, FuelClient};
 use url::Url;
 
 use crate::{

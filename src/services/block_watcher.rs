@@ -8,7 +8,7 @@ use crate::{
     adapters::{
         block_fetcher::{FuelAdapter, FuelBlock},
         runner::Runner,
-        storage::{BlockSubmission, Storage},
+        storage::Storage,
     },
     errors::{Error, Result},
     telemetry::RegistersMetrics,
@@ -70,41 +70,35 @@ impl BlockWatcher {
         Ok(current_block)
     }
 
-    fn block_not_stale(
-        current_block_height: u32,
-        height_of_latest_submitted_block: Option<u32>,
-    ) -> bool {
-        !height_of_latest_submitted_block
-            .is_some_and(|submitted_height| current_block_height <= submitted_height)
-    }
-
-    fn is_epoch_reached(current_block_height: u32, commit_epoch: NonZeroU32) -> bool {
-        current_block_height % commit_epoch == 0
-    }
-
-    fn should_propagate_update(
-        commit_epoch: NonZeroU32,
-        current_block_height: u32,
-        height_of_latest_submitted_block: Option<u32>,
-    ) -> bool {
-        Self::block_not_stale(current_block_height, height_of_latest_submitted_block)
-            && Self::is_epoch_reached(current_block_height, commit_epoch)
-    }
-
-    fn expected_block_height(commit_interval: NonZeroU32, current_block_height: u32) -> u32 {
-        current_block_height - (current_block_height % commit_interval)
-    }
-
-    fn should_commit_previous_epoch_block(
-        commit_interval: NonZeroU32,
-        current_block_height: u32,
-        height_of_latest_submitted_block: Option<u32>,
-    ) -> bool {
-        let Some(submission_height) = height_of_latest_submitted_block else {
-            return true;
+    async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
+        let Some(submitted_height) = self.last_submitted_block_height().await? else {
+            return Ok(false)
         };
 
-        submission_height < Self::expected_block_height(commit_interval, current_block_height)
+        Ok(submitted_height >= block_height)
+    }
+
+    fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
+        current_block_height - (current_block_height % self.commit_interval)
+    }
+
+    async fn last_submitted_block_height(&self) -> Result<Option<u32>> {
+        Ok(self
+            .storage
+            .submission_w_latest_block()
+            .await?
+            .map(|submission| submission.block.height))
+    }
+
+    async fn fetch_block(&self, height: u32) -> Result<FuelBlock> {
+        self.fuel_adapter
+            .block_at_height(height)
+            .await?
+            .ok_or_else(|| {
+                Error::Other(format!(
+                    "Fuel node could not provide block at height: {height}"
+                ))
+            })
     }
 }
 
@@ -112,36 +106,16 @@ impl BlockWatcher {
 impl Runner for BlockWatcher {
     async fn run(&mut self) -> Result<()> {
         let current_block = self.fetch_latest_block().await?;
+        let current_epoch_block_height = self.current_epoch_block_height(current_block.height);
 
-        let latest_block_submission = self
-            .storage
-            .submission_w_latest_block()
-            .await?
-            .map(|submission| submission.block.height);
+        if self.check_if_stale(current_epoch_block_height).await? {
+            return Ok(());
+        }
 
-        let block = if Self::should_propagate_update(
-            self.commit_interval,
-            current_block.height,
-            latest_block_submission,
-        ) {
+        let block = if current_block.height == current_epoch_block_height {
             current_block
-        } else if Self::should_commit_previous_epoch_block(
-            self.commit_interval,
-            current_block.height,
-            latest_block_submission,
-        ) {
-            let last_epoch_block_height =
-                Self::expected_block_height(self.commit_interval, current_block.height);
-            self.fuel_adapter
-                .block_at_height(last_epoch_block_height)
-                .await?
-                .ok_or_else(|| {
-                    Error::Other(format!(
-                        "Fuel node could not provide block at height: {last_epoch_block_height}"
-                    ))
-                })?
         } else {
-            return Ok(())
+            self.fetch_block(current_epoch_block_height).await?
         };
 
         self.tx_fuel_block
@@ -155,14 +129,14 @@ impl Runner for BlockWatcher {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, vec};
+    use std::vec;
 
     use mockall::predicate::eq;
     use prometheus::Registry;
 
     use super::*;
     use crate::adapters::{
-        block_fetcher::{FuelAdapter, MockFuelAdapter},
+        block_fetcher::MockFuelAdapter,
         storage::{sqlite_db::SqliteDb, BlockSubmission},
     };
 
@@ -171,12 +145,11 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let latest_block = given_a_block(5);
         let missed_block = given_a_block(4);
-
+        let latest_block = given_a_block(5);
         let block_fetcher = given_fetcher(vec![latest_block, missed_block]);
 
-        let storage = SqliteDb::temporary().await.unwrap();
+        let storage = given_storage(vec![0, 2]).await;
         let mut block_watcher =
             BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
 
@@ -192,15 +165,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn will_propagate_a_received_block() {
+    async fn will_not_reattempt_commiting_missed_block() {
+        // given
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+
+        let missed_block = given_a_block(4);
+        let latest_block = given_a_block(5);
+        let block_fetcher = given_fetcher(vec![latest_block, missed_block]);
+
+        let storage = given_storage(vec![0, 2, 4]).await;
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
+
+        // when
+        block_watcher.run().await.unwrap();
+
+        //then
+        if let Ok(block) = rx.try_recv() {
+            panic!("Should not have received a block. Block: {block:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn will_not_reattempt_commiting_latest_block() {
+        // given
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+
+        let latest_block = given_a_block(6);
+        let block_fetcher = given_fetcher(vec![latest_block]);
+
+        let storage = given_storage(vec![0, 2, 4, 6]).await;
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
+
+        // when
+        block_watcher.run().await.unwrap();
+
+        //then
+        if let Ok(block) = rx.try_recv() {
+            panic!("Should not have received a block. Block: {block:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn propagates_block_if_epoch_reached() {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
         let block = given_a_block(4);
-
         let block_fetcher = given_fetcher(vec![block]);
 
-        let storage = SqliteDb::temporary().await.unwrap();
+        let storage = given_storage(vec![0, 2]).await;
         let mut block_watcher =
             BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
 
@@ -216,72 +231,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn will_not_propagate_a_stale_block() {
-        let height_of_latest_submitted_block = 2;
-
-        {
-            let current_block_height = 1;
-
-            let should_propagate = BlockWatcher::should_propagate_update(
-                1.try_into().unwrap(),
-                current_block_height,
-                Some(height_of_latest_submitted_block),
-            );
-
-            assert!(!should_propagate);
-        }
-        {
-            let current_block_height = 2;
-
-            let should_propagate = BlockWatcher::should_propagate_update(
-                1.try_into().unwrap(),
-                current_block_height,
-                Some(height_of_latest_submitted_block),
-            );
-
-            assert!(!should_propagate);
-        }
-    }
-
-    #[tokio::test]
-    async fn will_propagate_even_if_last_tx_is_pending() {
-        let current_block_height = 2;
-        let height_of_latest_submitted_block = 1;
-
-        let should_propagate = BlockWatcher::should_propagate_update(
-            1.try_into().unwrap(),
-            current_block_height,
-            Some(height_of_latest_submitted_block),
-        );
-
-        assert!(should_propagate);
-    }
-
-    #[tokio::test]
-    async fn respects_epoch_when_posting_block_updates() {
-        let commit_epoch = NonZeroU32::new(3).unwrap();
-
-        let check_should_submit = |block_height, should_submit| {
-            let actual = BlockWatcher::should_propagate_update(commit_epoch, block_height, None);
-
-            assert_eq!(actual, should_submit);
-        };
-
-        check_should_submit(2, false);
-        check_should_submit(3, true);
-        check_should_submit(4, false);
-    }
-
-    #[tokio::test]
     async fn updates_block_metric_regardless_if_block_is_published() {
         // given
         let (tx, _) = tokio::sync::mpsc::channel(10);
 
         let block_fetcher = given_fetcher(vec![given_a_block(5)]);
 
-        let storage = SqliteDb::temporary().await.unwrap();
-        storage.insert(given_a_pending_submission(4)).await.unwrap();
-
+        let storage = given_storage(vec![0, 2, 4]).await;
         let mut block_watcher =
             BlockWatcher::new(2.try_into().unwrap(), tx, block_fetcher, storage);
 
@@ -303,6 +259,18 @@ mod tests {
         assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
+    async fn given_storage(pending_submissions: Vec<u32>) -> SqliteDb {
+        let storage = SqliteDb::temporary().await.unwrap();
+        for height in pending_submissions {
+            storage
+                .insert(given_a_pending_submission(height))
+                .await
+                .unwrap();
+        }
+
+        storage
+    }
+
     fn given_fetcher(available_blocks: Vec<FuelBlock>) -> MockFuelAdapter {
         let mut fetcher = MockFuelAdapter::new();
         for block in available_blocks.clone() {
@@ -319,13 +287,9 @@ mod tests {
     }
 
     fn given_a_pending_submission(block_height: u32) -> BlockSubmission {
-        BlockSubmission {
-            block: FuelBlock {
-                hash: Default::default(),
-                height: block_height,
-            },
-            ..BlockSubmission::random()
-        }
+        let mut submission = BlockSubmission::random();
+        submission.block.height = block_height;
+        submission
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {
