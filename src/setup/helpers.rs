@@ -12,7 +12,7 @@ use crate::{
         storage::{sqlite_db::SqliteDb, Storage},
     },
     errors::Result,
-    services::{BlockCommitter, BlockWatcher, CommitListener},
+    services::{BlockCommitter, BlockWatcher, CommitListener, WalletBalanceTracker},
     setup::config::{Config, InternalConfig},
     telemetry::{HealthChecker, RegistersMetrics},
 };
@@ -39,6 +39,26 @@ pub fn spawn_block_watcher(
     );
 
     (rx, handle, fuel_connection_health)
+}
+
+pub fn spawn_wallet_balance_tracker(
+    config: &Config,
+    internal_config: &InternalConfig,
+    registry: &Registry,
+    ethereum_rpc: MonitoredEthAdapter<EthereumWs>,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let wallet_balance_tracker =
+        WalletBalanceTracker::new(ethereum_rpc, &config.ethereum_wallet_key);
+
+    wallet_balance_tracker.register_metrics(registry);
+
+    let listener_handle = schedule_polling(
+        internal_config.balance_update_interval,
+        wallet_balance_tracker,
+        "Wallet Balance Tracker",
+    );
+
+    Ok(listener_handle)
 }
 
 pub fn spawn_eth_committer_and_listener(
@@ -90,7 +110,6 @@ pub async fn create_eth_adapter(
         config.commit_interval,
     )
     .await?;
-    ethereum_rpc.register_metrics(registry);
 
     let monitored =
         MonitoredEthAdapter::new(ethereum_rpc, internal_config.eth_errors_before_unhealthy);

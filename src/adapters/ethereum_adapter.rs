@@ -4,7 +4,7 @@ mod websocket;
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use ethers::types::U256;
+use ethers::types::{H160, U256};
 use futures::Stream;
 pub use monitored_adapter::MonitoredEthAdapter;
 pub use websocket::EthereumWs;
@@ -30,5 +30,6 @@ pub trait EventStreamer {
 pub trait EthereumAdapter: Send + Sync {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
+    async fn balance(&self, address: H160) -> Result<U256>;
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync>;
 }
