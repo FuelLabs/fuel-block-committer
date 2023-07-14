@@ -1,3 +1,4 @@
+use ethers::types::{H160, U256};
 use prometheus::{IntCounter, Opts};
 
 use crate::{
@@ -66,6 +67,12 @@ impl<T: EthereumAdapter> EthereumAdapter for MonitoredEthAdapter<T> {
 
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync> {
         self.adapter.event_streamer(eth_block_height)
+    }
+
+    async fn balance(&self, address: H160) -> Result<U256> {
+        let response = self.adapter.balance(address).await;
+        self.note_network_status(&response);
+        response
     }
 }
 
