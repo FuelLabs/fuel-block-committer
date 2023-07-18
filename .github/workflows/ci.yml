@@ -8,15 +8,19 @@ on:
   release:
     types: [published]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   DASEL_VERSION: https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_linux_amd64
   RUST_VERSION: 1.70.0
   FUEL_CORE_VERSION: 0.18.3
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-
   verify-rust-version:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v3
       # Ensure CI is using the same minimum toolchain specified in fuels Cargo.toml
@@ -31,7 +35,7 @@ jobs:
   cargo-verifications:
     needs:
       - verify-rust-version
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -57,7 +61,7 @@ jobs:
         run: ./run_tests.sh
 
   publish-crates-check:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -73,14 +77,13 @@ jobs:
           check-repo: false
           ignore-unpublished-changes: true
 
-  publish:
+  publish-crates:
     needs:
       - cargo-verifications
       - publish-crates-check
-
-#     Only do this job if publishing a release
+    # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
 
     steps:
       - name: Checkout repository
@@ -100,3 +103,28 @@ jobs:
         with:
           publish-delay: 30000
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-docker-image:
+    needs:
+      - cargo-verifications
+    runs-on: buildjet-4vcpu-ubuntu-2204
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Publish Docker image
+        uses: ./.github/actions/docker-publish
+        with:
+          image_name: ${{ env.IMAGE_NAME }}
+          docker_username: ${{ github.repository_owner }}
+          docker_password: ${{ secrets.GITHUB_TOKEN }}
+          docker_platforms: linux/amd64,linux/arm64
+
+      - uses: FuelLabs/.github/.github/actions/slack-notify-template@master
+        if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          slack_webhook: ${{ secrets.SLACK_WEBHOOK_NOTIFY_BUILD }}

@@ -13,7 +13,7 @@ use setup::{
     config::InternalConfig,
     helpers::{
         create_eth_adapter, setup_logger, setup_storage, shut_down, spawn_block_watcher,
-        spawn_eth_committer_and_listener,
+        spawn_eth_committer_and_listener, spawn_wallet_balance_tracker,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -41,6 +41,14 @@ async fn main() -> Result<()> {
     let (ethereum_rpc, eth_health_check) =
         create_eth_adapter(&config, &internal_config, &metrics_registry).await?;
 
+    let wallet_balance_tracker_handle = spawn_wallet_balance_tracker(
+        &config,
+        &internal_config,
+        &metrics_registry,
+        ethereum_rpc.clone(),
+        cancel_token.clone(),
+    )?;
+
     let (committer_handle, listener_handle) = spawn_eth_committer_and_listener(
         &internal_config,
         rx_fuel_block,
@@ -62,6 +70,7 @@ async fn main() -> Result<()> {
     shut_down(
         cancel_token,
         block_watcher_handle,
+        wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,
     )

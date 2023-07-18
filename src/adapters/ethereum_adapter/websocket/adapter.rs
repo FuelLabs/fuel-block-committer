@@ -5,9 +5,8 @@ use ethers::{
     prelude::{abigen, ContractError, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer},
-    types::{Address, Chain, U256, U64},
+    types::{Address, Chain, H160, U256, U64},
 };
-use prometheus::{IntGauge, Opts};
 use serde_json::Value;
 use tracing::info;
 use url::Url;
@@ -20,7 +19,6 @@ use crate::{
         },
     },
     errors::{Error, Result},
-    telemetry::RegistersMetrics,
 };
 
 abigen!(
@@ -35,9 +33,7 @@ abigen!(
 pub struct EthereumWs {
     provider: Provider<Ws>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
-    wallet_address: Address,
     commit_interval: NonZeroU32,
-    metrics: Metrics,
 }
 
 impl EthereumWs {
@@ -53,7 +49,6 @@ impl EthereumWs {
             .map_err(|e| Error::NetworkError(e.to_string()))?;
 
         let wallet = LocalWallet::from_str(ethereum_wallet_key)?.with_chain_id(chain_id);
-        let wallet_address = wallet.address();
 
         let signer = SignerMiddleware::new(provider.clone(), wallet);
 
@@ -63,38 +58,12 @@ impl EthereumWs {
         Ok(Self {
             provider,
             contract,
-            wallet_address,
             commit_interval,
-            metrics: Default::default(),
         })
-    }
-
-    async fn record_balance(&self) -> Result<()> {
-        let balance = self
-            .provider
-            .get_balance(self.wallet_address, None)
-            .await
-            .map_err(|err| Error::NetworkError(err.to_string()))?;
-
-        info!("wallet balance: {}", &balance);
-
-        // Note: might lead to wrong metrics if we have more than 500k ETH
-        let balance_gwei = balance / U256::from(1_000_000_000);
-        self.metrics
-            .eth_wallet_balance
-            .set(balance_gwei.as_u64() as i64);
-
-        Ok(())
     }
 
     fn calculate_commit_height(block_height: u32, commit_interval: NonZeroU32) -> U256 {
         (block_height / commit_interval).into()
-    }
-}
-
-impl RegistersMetrics for EthereumWs {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
-        self.metrics.metrics()
     }
 }
 
@@ -113,8 +82,6 @@ impl EthereumAdapter for EthereumWs {
             })?;
 
         info!("tx: {} submitted", tx.tx_hash());
-
-        self.record_balance().await?;
 
         Ok(())
     }
@@ -139,28 +106,12 @@ impl EthereumAdapter for EthereumWs {
 
         Box::new(EthEventStreamer::new(events))
     }
-}
 
-#[derive(Clone)]
-struct Metrics {
-    eth_wallet_balance: IntGauge,
-}
-
-impl RegistersMetrics for Metrics {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
-        vec![Box::new(self.eth_wallet_balance.clone())]
-    }
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        let eth_wallet_balance = IntGauge::with_opts(Opts::new(
-            "eth_wallet_balance",
-            "Ethereum wallet balance [gwei].",
-        ))
-        .expect("eth_wallet_balance metric to be correctly configured");
-
-        Self { eth_wallet_balance }
+    async fn balance(&self, address: H160) -> Result<U256> {
+        self.provider
+            .get_balance(address, None)
+            .await
+            .map_err(|err| Error::NetworkError(err.to_string()))
     }
 }
 
