@@ -5,7 +5,7 @@ use tokio::{sync::Mutex, task};
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlock,
+        fuel_adapter::FuelBlock,
         storage::{BlockSubmission, Storage},
     },
     errors::{Error, Result},

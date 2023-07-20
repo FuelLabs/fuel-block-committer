@@ -46,7 +46,7 @@ impl StatusReporter {
 mod tests {
     use super::*;
     use crate::adapters::{
-        block_fetcher::FuelBlock,
+        fuel_adapter::FuelBlock,
         storage::{sqlite_db::SqliteDb, BlockSubmission},
     };
 
