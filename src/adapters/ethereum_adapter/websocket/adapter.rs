@@ -13,10 +13,10 @@ use url::Url;
 
 use crate::{
     adapters::{
-        block_fetcher::FuelBlock,
         ethereum_adapter::{
             websocket::event_streamer::EthEventStreamer, EthereumAdapter, EventStreamer,
         },
+        fuel_adapter::FuelBlock,
     },
     errors::{Error, Result},
 };

@@ -120,8 +120,8 @@ mod tests {
 
     use crate::{
         adapters::{
-            block_fetcher::FuelBlock,
             ethereum_adapter::{FuelBlockCommitedOnEth, MockEthereumAdapter, MockEventStreamer},
+            fuel_adapter::FuelBlock,
             runner::Runner,
             storage::{sqlite_db::SqliteDb, BlockSubmission, Storage},
         },
