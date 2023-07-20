@@ -61,14 +61,26 @@ impl FuelAdapter for FuelClient {
             .await
             .map_err(|e| Error::NetworkError(e.to_string()))?;
 
-        Ok(maybe_block.map(Into::into))
+        match maybe_block {
+            Some(block) => Ok(Some(FuelBlock {
+                hash: *block.id,
+                height: block.header.height,
+            })),
+            None => Ok(None),
+        }
     }
 
     async fn latest_block(&self) -> Result<FuelBlock> {
         match self.client.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();
-                Ok(chain_info.latest_block.into())
+
+                let latest_block = chain_info.latest_block;
+
+                Ok(FuelBlock {
+                    hash: *latest_block.id,
+                    height: latest_block.header.height,
+                })
             }
             Err(err) => {
                 self.handle_network_error();

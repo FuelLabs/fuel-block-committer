@@ -16,7 +16,7 @@ path = "tests/harness.rs"
 [dependencies]
 actix-web = "4"
 async-trait = "0.1.68"
-fuel-core-client = "0.18.3"
+fuel-core-client = "0.19.1"
 prometheus = "0.13.3"
 serde = { version = "1.0", features = ["derive"] }
 ethers = { version = "2.0", features = ["ws"] }
@@ -31,7 +31,7 @@ rusqlite = { version = "0.29", features = ["bundled"] }
 futures = "0.3.28"
 
 [dev-dependencies]
-fuels-test-helpers="0.43"
+fuels-test-helpers="0.44"
 rand = "0.8.5"
 mockall = "0.11.4"
 anyhow = "1.0.71"
