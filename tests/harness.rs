@@ -23,8 +23,8 @@ async fn submitted_correct_block_and_was_finalized() -> Result<()> {
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let latest_block = provider.chain_info().await?.latest_block;
-    let height = latest_block.header.height.0;
-    let hash = *latest_block.id.0 .0;
+    let height = latest_block.header.height;
+    let hash = *latest_block.id;
 
     assert_eq!(height, 3);
     assert!(fuel_contract.finalized(hash, height).await?);

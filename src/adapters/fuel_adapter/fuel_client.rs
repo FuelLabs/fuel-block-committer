@@ -1,4 +1,4 @@
-use fuel_core_client::client::{schema::block::Block as FuelGqlBlock, FuelClient as FuelGqlClient};
+use fuel_core_client::client::{types::Block as FuelGqlBlock, FuelClient as FuelGqlClient};
 use url::Url;
 
 use crate::{
@@ -46,8 +46,8 @@ impl FuelClient {
 impl From<FuelGqlBlock> for FuelBlock {
     fn from(value: FuelGqlBlock) -> Self {
         FuelBlock {
-            hash: *value.id.0 .0,
-            height: value.header.height.0,
+            hash: *value.id,
+            height: value.header.height,
         }
     }
 }
