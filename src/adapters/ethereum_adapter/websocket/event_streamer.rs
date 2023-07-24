@@ -9,7 +9,7 @@ use futures::{stream::TryStreamExt, Stream};
 
 use crate::{
     adapters::ethereum_adapter::{
-        websocket::adapter::CommitSubmittedFilter, EventStreamer, FuelBlockCommitedOnEth,
+        websocket::adapter::CommitSubmittedFilter, EventStreamer, FuelBlockCommittedOnEth,
     },
     errors::{Error, Result},
 };
@@ -28,7 +28,7 @@ pub struct EthEventStreamer {
 impl EventStreamer for EthEventStreamer {
     async fn establish_stream(
         &self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommitedOnEth>> + '_ + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommittedOnEth>> + '_ + Send>>> {
         Ok(Box::pin(
             self.events
                 .subscribe()
@@ -37,7 +37,7 @@ impl EventStreamer for EthEventStreamer {
                 .map_ok(|event| {
                     let fuel_block_hash = event.block_hash;
                     let commit_height = event.commit_height;
-                    FuelBlockCommitedOnEth {
+                    FuelBlockCommittedOnEth {
                         fuel_block_hash,
                         commit_height,
                     }

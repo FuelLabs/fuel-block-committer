@@ -14,13 +14,11 @@ pub struct FuelBlock {
 
 impl std::fmt::Debug for FuelBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FuelBlock {{ hash: 0x")?;
-
-        for h in &self.hash {
-            write!(f, "{:x}", h)?;
-        }
-
-        write!(f, ", height: {}}}", &self.height)
+        let hash = self.hash.map(|byte| format!("{byte:02x?}")).join("");
+        f.debug_struct("FuelBlock")
+            .field("hash", &hash)
+            .field("height", &self.height)
+            .finish()
     }
 }
 

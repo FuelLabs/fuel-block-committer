@@ -6,7 +6,7 @@ use tracing::{error, info};
 
 use crate::{
     adapters::{
-        ethereum_adapter::{EthereumAdapter, FuelBlockCommitedOnEth},
+        ethereum_adapter::{EthereumAdapter, FuelBlockCommittedOnEth},
         runner::Runner,
         storage::Storage,
     },
@@ -44,7 +44,10 @@ impl CommitListener {
             .unwrap_or(0))
     }
 
-    async fn handle_block_committed(&self, committed_on_eth: FuelBlockCommitedOnEth) -> Result<()> {
+    async fn handle_block_committed(
+        &self,
+        committed_on_eth: FuelBlockCommittedOnEth,
+    ) -> Result<()> {
         info!("block comitted on eth {committed_on_eth:?}");
 
         let submission = self
@@ -117,7 +120,7 @@ mod tests {
 
     use crate::{
         adapters::{
-            ethereum_adapter::{FuelBlockCommitedOnEth, MockEthereumAdapter, MockEventStreamer},
+            ethereum_adapter::{FuelBlockCommittedOnEth, MockEthereumAdapter, MockEventStreamer},
             fuel_adapter::FuelBlock,
             runner::Runner,
             storage::{sqlite_db::SqliteDb, BlockSubmission, Storage},
@@ -265,7 +268,7 @@ mod tests {
         let events = events
             .into_iter()
             .map(|e| {
-                e.map(|fuel_block_hash| FuelBlockCommitedOnEth {
+                e.map(|fuel_block_hash| FuelBlockCommittedOnEth {
                     fuel_block_hash,
                     commit_height: Default::default(),
                 })

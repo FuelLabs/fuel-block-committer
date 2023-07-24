@@ -12,20 +12,21 @@ pub use websocket::EthereumWs;
 use crate::{adapters::fuel_adapter::FuelBlock, errors::Result};
 
 #[derive(Clone, Copy)]
-pub struct FuelBlockCommitedOnEth {
+pub struct FuelBlockCommittedOnEth {
     pub fuel_block_hash: [u8; 32],
     pub commit_height: U256,
 }
 
-impl std::fmt::Debug for FuelBlockCommitedOnEth {
+impl std::fmt::Debug for FuelBlockCommittedOnEth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FuelBlockCommitedOnEth {{ hash: 0x")?;
-
-        for h in &self.fuel_block_hash {
-            write!(f, "{:x}", h)?;
-        }
-
-        write!(f, ", commit_height: {}}}", &self.commit_height)
+        let hash = self
+            .fuel_block_hash
+            .map(|byte| format!("{byte:02x?}"))
+            .join("");
+        f.debug_struct("FuelBlockCommittedOnEth")
+            .field("hash", &hash)
+            .field("commit_height", &self.commit_height)
+            .finish()
     }
 }
 
@@ -34,7 +35,7 @@ impl std::fmt::Debug for FuelBlockCommitedOnEth {
 pub trait EventStreamer {
     async fn establish_stream<'a>(
         &'a self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommitedOnEth>> + 'a + Send>>>;
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommittedOnEth>> + 'a + Send>>>;
 }
 
 #[cfg_attr(test, mockall::automock)]
