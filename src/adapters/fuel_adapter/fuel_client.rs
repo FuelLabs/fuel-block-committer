@@ -1,4 +1,4 @@
-use fuel_core_client::client::{schema::block::Block as FuelGqlBlock, FuelClient as FuelGqlClient};
+use fuel_core_client::client::{types::Block as FuelGqlBlock, FuelClient as FuelGqlClient};
 use url::Url;
 
 use crate::{
@@ -46,8 +46,8 @@ impl FuelClient {
 impl From<FuelGqlBlock> for FuelBlock {
     fn from(value: FuelGqlBlock) -> Self {
         FuelBlock {
-            hash: *value.id.0 .0,
-            height: value.header.height.0,
+            hash: *value.id,
+            height: value.header.height,
         }
     }
 }
@@ -61,26 +61,14 @@ impl FuelAdapter for FuelClient {
             .await
             .map_err(|e| Error::NetworkError(e.to_string()))?;
 
-        match maybe_block {
-            Some(block) => Ok(Some(FuelBlock {
-                hash: *block.id,
-                height: block.header.height,
-            })),
-            None => Ok(None),
-        }
+        Ok(maybe_block.map(Into::into))
     }
 
     async fn latest_block(&self) -> Result<FuelBlock> {
         match self.client.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();
-
-                let latest_block = chain_info.latest_block;
-
-                Ok(FuelBlock {
-                    hash: *latest_block.id,
-                    height: latest_block.header.height,
-                })
+                Ok(chain_info.latest_block.into())
             }
             Err(err) => {
                 self.handle_network_error();
