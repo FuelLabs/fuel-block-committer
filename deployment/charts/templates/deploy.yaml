@@ -1,0 +1,95 @@
+{{- if .Values.app.prometheus.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ template "fuel-block-committer.name" . }}-service-monitor
+  labels:
+    release: {{ .Values.app.prometheus.helm_release_name }}
+spec:
+  selector:
+    app: {{ template "fuel-block-committer.name" . }}
+  endpoints:
+    - path: /metrics
+      port: http
+{{- end }}
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: {{ template "fuel-block-committer.name" . }}
+    chart: {{ template "fuel-block-committer.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  name: {{ template "fuel-block-committer.name" . }}-service
+spec:
+  type: NodePort
+  selector:
+    app: {{ template "fuel-block-committer.name" . }}
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "fuel-block-committer.name" . }}-k8s
+  labels:
+    app: {{ template "fuel-block-committer.name" . }}
+    chart: {{ template "fuel-block-committer.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ template "fuel-block-committer.name" . }}
+      release: {{ .Release.Name }}
+  replicas: {{ .Values.app.replicas }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "fuel-block-committer.name" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Values.app.name }}
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          command: ["./fuel-block-committer"]
+          args:
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8080"
+            - "--db-path"
+            - "/mnt/db"
+          resources: {}
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+          volumeMounts:
+            - name: "fuel-block-committer"
+              mountPath: "/mnt/db"
+          env:
+            - name: ETHEREUM_WALLET_KEY
+              value: "{{ .Values.app.ethereum_wallet_key | default false }}"
+            - name: ETHEREUM_RPC
+              value: "{{ .Values.app.ethereum_rpc }}"
+            - name: ETHEREUM_CHAIN
+              value: "{{ .Values.app.ethereum_chain_id }}"
+            - name: FUEL_GRAPHQL_ENDPOINT
+              value: "{{ .Values.app.fuel_graphql_endpoint }}"
+            - name: STATE_CONTRACT_ADDRESS
+              value: "{{ .Values.app.state_contract_address }}"
+            - name: COMMIT_INTERVAL
+              value: "{{ .Values.app.commit_interval }}"
