@@ -16,10 +16,10 @@ done
 cargo test --bin fuel-block-committer
 
 docker compose up -d
-trap 'docker compose down' EXIT
+trap 'docker compose down > /dev/null 2>&1' EXIT
 
 cargo test --test e2e -- --nocapture
 
 if [[ $show_logs = "true" ]]; then
-    docker compose logs block_committer
+    docker compose logs -f block_committer &
 fi
