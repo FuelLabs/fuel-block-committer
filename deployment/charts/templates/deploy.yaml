@@ -13,6 +13,21 @@ spec:
       port: http
 {{- end }}
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: "fuel-block-committer-claim"
+  labels:
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "1Gi"
+  storageClassName: "gp3"
+---
 kind: Service
 apiVersion: v1
 metadata:
