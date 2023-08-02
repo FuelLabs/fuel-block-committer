@@ -93,3 +93,7 @@ spec:
               value: "{{ .Values.app.state_contract_address }}"
             - name: COMMIT_INTERVAL
               value: "{{ .Values.app.commit_interval }}"
+      volumes:
+        - name: "fuel-block-committer"
+          persistentVolumeClaim:
+            claimName: "fuel-block-committer-claim"
