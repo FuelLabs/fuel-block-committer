@@ -78,7 +78,7 @@ spec:
             - "--port"
             - "8080"
             - "--db-path"
-            - "/mnt/db"
+            - "/mnt/db/db.db3"
           resources: {}
           imagePullPolicy: {{ .Values.app.image.pullPolicy }}
           ports:
