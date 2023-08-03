@@ -12,13 +12,13 @@ status() {
 # install dasel
 curl -sSLf "https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_linux_amd64" -L -o dasel
 chmod +x dasel
-#mv ./dasel /usr/local/bin/dasel
-# check appVersion with fuel-core
+mv ./dasel /usr/local/bin/dasel
+# check appVersion with crate package metadata
 HELM_APP_VERSION=$(cat deployment/charts/Chart.yaml | dasel -r yaml 'appVersion')
 CRATE_VERSION=$(cat Cargo.toml | dasel -r toml 'package.version')
 if [ "$HELM_APP_VERSION" != "$CRATE_VERSION" ]; then
-    err "fuel-core version $CRATE_VERSION, doesn't match helm app version $HELM_APP_VERSION"
+    err "crate version $CRATE_VERSION, doesn't match helm app version $HELM_APP_VERSION"
     exit 1
 else
-  status "fuel-core version matches helm chart app version $HELM_APP_VERSION"
+  status "crate version matches helm chart app version $HELM_APP_VERSION"
 fi
