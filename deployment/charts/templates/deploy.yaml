@@ -2,12 +2,13 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ template "fuel-block-committer.name" . }}-service-monitor
+  name: {{ .Release.Name }}-service-monitor
   labels:
     release: {{ .Values.app.prometheus.helm_release_name }}
 spec:
   selector:
     app: {{ template "fuel-block-committer.name" . }}
+    release: {{ .Release.Name }}
   endpoints:
     - path: /metrics
       port: http
@@ -16,7 +17,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: "fuel-block-committer-claim"
+  name: "{{ .Release.Name }}-committer-claim"
   labels:
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
@@ -36,11 +37,12 @@ metadata:
     chart: {{ template "fuel-block-committer.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
-  name: {{ template "fuel-block-committer.name" . }}-service
+  name: {{ .Release.Name }}-committer-service
 spec:
   type: NodePort
   selector:
     app: {{ template "fuel-block-committer.name" . }}
+    release: {{ .Release.Name }}
   ports:
     - name: http
       port: 80
@@ -50,7 +52,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ template "fuel-block-committer.name" . }}-k8s
+  name: {{ .Release.Name }}-committer-deployment
   labels:
     app: {{ template "fuel-block-committer.name" . }}
     chart: {{ template "fuel-block-committer.chart" . }}
@@ -61,7 +63,7 @@ spec:
     matchLabels:
       app: {{ template "fuel-block-committer.name" . }}
       release: {{ .Release.Name }}
-  replicas: {{ .Values.app.replicas }}
+  replicas: 1
   template:
     metadata:
       labels:
@@ -93,7 +95,7 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 10
           volumeMounts:
-            - name: "fuel-block-committer"
+            - name: "{{ .Release.Name }}-committer-volume"
               mountPath: "/mnt/db"
           env:
             - name: ETHEREUM_WALLET_KEY
@@ -109,6 +111,6 @@ spec:
             - name: COMMIT_INTERVAL
               value: "{{ .Values.app.commit_interval }}"
       volumes:
-        - name: "fuel-block-committer"
+        - name: "{{ .Release.Name }}-committer-volume"
           persistentVolumeClaim:
-            claimName: "fuel-block-committer-claim"
+            claimName: "{{ .Release.Name }}-committer-claim"
