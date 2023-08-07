@@ -17,7 +17,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: "{{ .Release.Name }}-committer-claim"
+  name: "{{ .Release.Name }}-claim"
   labels:
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
@@ -37,7 +37,7 @@ metadata:
     chart: {{ template "fuel-block-committer.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
-  name: {{ .Release.Name }}-committer-service
+  name: {{ .Release.Name }}-service
 spec:
   type: NodePort
   selector:
@@ -52,7 +52,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-committer-deployment
+  name: {{ .Release.Name }}-deployment
   labels:
     app: {{ template "fuel-block-committer.name" . }}
     chart: {{ template "fuel-block-committer.chart" . }}
@@ -95,7 +95,7 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 10
           volumeMounts:
-            - name: "{{ .Release.Name }}-committer-volume"
+            - name: "{{ .Release.Name }}-volume"
               mountPath: "/mnt/db"
           env:
             - name: ETHEREUM_WALLET_KEY
@@ -111,6 +111,6 @@ spec:
             - name: COMMIT_INTERVAL
               value: "{{ .Values.app.commit_interval }}"
       volumes:
-        - name: "{{ .Release.Name }}-committer-volume"
+        - name: "{{ .Release.Name }}-volume"
           persistentVolumeClaim:
-            claimName: "{{ .Release.Name }}-committer-claim"
+            claimName: "{{ .Release.Name }}-claim"
