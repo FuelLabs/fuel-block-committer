@@ -1,0 +1,17 @@
+# Default values for fuel block committer
+
+app:
+  name: fuel-block-committer
+  ethereum_wallet_key: "${fuel_committer_eth_wallet_key}"
+  ethereum_rpc: "${fuel_committer_eth_rpc}"
+  ethereum_chain_id: "${fuel_committer_eth_chain_id}"
+  fuel_graphql_endpoint: "${fuel_committer_node_graphql_endpoint}"
+  state_contract_address: "${fuel_committer_state_contract_address}"
+  commit_interval: "${fuel_committer_commit_interval}"
+  image:
+    repository: "${fuel_committer_image_repository}"
+    tag: "${fuel_committer_image_tag}"
+    pullPolicy: Always
+  prometheus:
+    enabled: ${fuel_committer_prometheus_enabled}
+    helm_release_name: ${fuel_committer_prometheus_helm_release_name}

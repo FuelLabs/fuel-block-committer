@@ -181,7 +181,13 @@ fn create_block_watcher(
 }
 
 pub fn setup_logger() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .with_level(true)
+        .with_line_number(true)
+        .json()
+        .init();
 }
 
 pub async fn setup_storage(config: &Config) -> Result<SqliteDb> {
