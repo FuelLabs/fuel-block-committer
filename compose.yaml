@@ -17,7 +17,7 @@ services:
     build:
       context: fuel_node
       args:
-        fuel_core_version: "v${FUEL_CORE_VERSION:-0.19.1}"
+        fuel_core_version: "v${FUEL_CORE_VERSION:-0.20.4}"
     container_name: fuel-node
     environment:
       - PORT=4000
