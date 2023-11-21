@@ -3,7 +3,7 @@ name: Build and publish Helm Chart
 on:
   push:
     branches:
-      - master
+      - debug/helm-publish
     paths:
       - 'helm/fuel-block-committer/Chart.yaml'
 
