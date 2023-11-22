@@ -58,7 +58,7 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 10
           volumeMounts:
-            - name: {{ include "fuel-block-committer.fullname" . }}
+            - name: {{ include "fuel-block-committer.fullname" . }}-vol
               mountPath: "/mnt/db"
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
