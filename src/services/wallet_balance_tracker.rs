@@ -81,7 +81,7 @@ impl Runner for WalletBalanceTracker {
 #[cfg(test)]
 mod tests {
     use mockall::predicate::eq;
-    use prometheus::Registry;
+    use prometheus::{proto::Metric, Registry};
 
     use super::*;
     use crate::adapters::ethereum_adapter::MockEthereumAdapter;
@@ -104,14 +104,14 @@ mod tests {
 
         // then
         let metrics = registry.gather();
-        let latest_block_metric = metrics
+        let eth_balance_metric = metrics
             .iter()
             .find(|metric| metric.get_name() == "eth_wallet_balance")
-            .and_then(|metric| metric.get_metric().get(0))
-            .map(|metric| metric.get_gauge())
+            .and_then(|metric| metric.get_metric().first())
+            .map(Metric::get_gauge)
             .unwrap();
 
-        assert_eq!(latest_block_metric.get_value(), 500000000000f64);
+        assert_eq!(eth_balance_metric.get_value(), 500_000_000_000_f64);
     }
 
     fn given_eth_adapter(wei_balance: &str, expected_addr: &str) -> MockEthereumAdapter {

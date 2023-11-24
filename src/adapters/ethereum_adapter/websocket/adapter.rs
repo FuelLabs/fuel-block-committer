@@ -46,7 +46,7 @@ impl EthereumWs {
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(ethereum_rpc.to_string())
             .await
-            .map_err(|e| Error::NetworkError(e.to_string()))?;
+            .map_err(|e| Error::Network(e.to_string()))?;
 
         let wallet = LocalWallet::from_str(ethereum_wallet_key)?.with_chain_id(chain_id);
 
@@ -76,8 +76,8 @@ impl EthereumAdapter for EthereumWs {
             .send()
             .await
             .map_err(|contract_err| match contract_err {
-                ContractError::ProviderError { e } => Error::NetworkError(e.to_string()),
-                ContractError::MiddlewareError { e } => Error::NetworkError(e.to_string()),
+                ContractError::ProviderError { e } => Error::Network(e.to_string()),
+                ContractError::MiddlewareError { e } => Error::Network(e.to_string()),
                 _ => Error::Other(contract_err.to_string()),
             })?;
 
@@ -94,7 +94,7 @@ impl EthereumAdapter for EthereumWs {
         self.provider
             .request("eth_blockNumber", Value::Array(vec![]))
             .await
-            .map_err(|err| Error::NetworkError(err.to_string()))
+            .map_err(|err| Error::Network(err.to_string()))
             .map(|height: U64| height.as_u64())
     }
 
@@ -111,7 +111,7 @@ impl EthereumAdapter for EthereumWs {
         self.provider
             .get_balance(address, None)
             .await
-            .map_err(|err| Error::NetworkError(err.to_string()))
+            .map_err(|err| Error::Network(err.to_string()))
     }
 }
 

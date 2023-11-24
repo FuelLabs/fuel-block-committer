@@ -56,7 +56,7 @@ impl BlockWatcher {
             fuel_adapter: Box::new(fuel_adapter),
             tx_fuel_block,
             storage: Box::new(storage),
-            metrics: Default::default(),
+            metrics: Metrics::default(),
         }
     }
 
@@ -65,14 +65,14 @@ impl BlockWatcher {
 
         self.metrics
             .latest_fuel_block
-            .set(current_block.height as i64);
+            .set(i64::from(current_block.height));
 
         Ok(current_block)
     }
 
     async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
         let Some(submitted_height) = self.last_submitted_block_height().await? else {
-            return Ok(false)
+            return Ok(false);
         };
 
         Ok(submitted_height >= block_height)
@@ -132,7 +132,7 @@ mod tests {
     use std::vec;
 
     use mockall::predicate::eq;
-    use prometheus::Registry;
+    use prometheus::{proto::Metric, Registry};
 
     use super::*;
     use crate::adapters::{
@@ -247,8 +247,8 @@ mod tests {
         let latest_block_metric = metrics
             .iter()
             .find(|metric| metric.get_name() == "latest_fuel_block")
-            .and_then(|metric| metric.get_metric().get(0))
-            .map(|metric| metric.get_gauge())
+            .and_then(|metric| metric.get_metric().first())
+            .map(Metric::get_gauge)
             .unwrap();
 
         assert_eq!(latest_block_metric.get_value(), 5f64);

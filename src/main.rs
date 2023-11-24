@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
         &metrics_registry,
         ethereum_rpc.clone(),
         cancel_token.clone(),
-    )?;
+    );
 
     let (committer_handle, listener_handle) = spawn_eth_committer_and_listener(
         &internal_config,
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
         storage.clone(),
         &metrics_registry,
         cancel_token.clone(),
-    )?;
+    );
 
     launch_api_server(
         &config,
