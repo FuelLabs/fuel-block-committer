@@ -101,8 +101,6 @@ mod tests {
 
         let addr = provider.url();
         let url = Url::parse(addr).unwrap();
-        dbg!(&url);
-
         let fuel_adapter = FuelClient::new(&url, 1);
 
         // when
