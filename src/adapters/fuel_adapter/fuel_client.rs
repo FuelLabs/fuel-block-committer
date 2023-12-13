@@ -80,59 +80,62 @@ impl FuelAdapter for FuelClient {
 
 #[cfg(test)]
 mod tests {
+    use fuels_test_helpers::{setup_test_provider, Config};
     use prometheus::{proto::Metric, Registry};
 
     use super::*;
 
-    // TODO: Disabled until the SDK is updated with a non rc version of fuel-core. Conflict between
-    // versions of fuel-types used.
-    // #[tokio::test]
-    // async fn can_fetch_latest_block() {
-    //     // given
-    //     let node_config = Config {
-    //         manual_blocks_enabled: true,
-    //         ..Config::local_node()
-    //     };
-    //
-    //     let (provider, addr) =
-    //         setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default())).await;
-    //     provider.produce_blocks(5, None).await.unwrap();
-    //
-    //     let url = Url::parse(&format!("http://{addr}")).unwrap();
-    //
-    //     let fuel_adapter = FuelClient::new(&url, 1);
-    //
-    //     // when
-    //     let result = fuel_adapter.latest_block().await.unwrap();
-    //
-    //     // then
-    //     assert_eq!(result.height, 5);
-    // }
+    #[tokio::test]
+    async fn can_fetch_latest_block() {
+        // given
+        let node_config = Config {
+            debug: true,
+            ..Default::default()
+        };
 
-    // TODO: Disabled until the SDK is updated with a non rc version of fuel-core. Conflict between
-    // versions of fuel-types used.
-    // #[tokio::test]
-    // async fn can_fetch_block_at_height() {
-    //     // given
-    //     let node_config = Config {
-    //         manual_blocks_enabled: true,
-    //         ..Config::local_node()
-    //     };
-    //
-    //     let (provider, addr) =
-    //         setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default())).await;
-    //     provider.produce_blocks(5, None).await.unwrap();
-    //
-    //     let url = Url::parse(&format!("http://{addr}")).unwrap();
-    //
-    //     let fuel_adapter = FuelClient::new(&url, 1);
-    //
-    //     // when
-    //     let result = fuel_adapter.block_at_height(3).await.unwrap().unwrap();
-    //
-    //     // then
-    //     assert_eq!(result.height, 3);
-    // }
+        let provider =
+            setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default()))
+                .await
+                .unwrap();
+        provider.produce_blocks(5, None).await.unwrap();
+
+        let addr = provider.url();
+        let url = Url::parse(addr).unwrap();
+        dbg!(&url);
+
+        let fuel_adapter = FuelClient::new(&url, 1);
+
+        // when
+        let result = fuel_adapter.latest_block().await.unwrap();
+
+        // then
+        assert_eq!(result.height, 5);
+    }
+
+    #[tokio::test]
+    async fn can_fetch_block_at_height() {
+        // given
+        let node_config = Config {
+            debug: true,
+            ..Default::default()
+        };
+
+        let provider =
+            setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default()))
+                .await
+                .unwrap();
+        provider.produce_blocks(5, None).await.unwrap();
+
+        let url = Url::parse(provider.url()).unwrap();
+
+        let fuel_adapter = FuelClient::new(&url, 1);
+
+        // when
+        let result = fuel_adapter.block_at_height(3).await.unwrap().unwrap();
+
+        // then
+        assert_eq!(result.height, 3);
+    }
 
     #[tokio::test]
     async fn updates_metrics_in_case_of_network_err() {
