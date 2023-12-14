@@ -17,14 +17,14 @@ services:
     build:
       context: fuel_node
       args:
-        fuel_core_version: "v${FUEL_CORE_VERSION:-0.20.4}"
+        fuel_core_version: "v${FUEL_CORE_VERSION:-0.22.0}"
     container_name: fuel-node
     environment:
       - PORT=4000
       - IP=0.0.0.0
       - DATABASE_TYPE=in-memory
-      - MANUAL_BLOCKS_ENABLED=true
       - INSTANT=true
+      - DEBUG=true
       # - PERIOD=6s
     ports:
       - "4000:4000"

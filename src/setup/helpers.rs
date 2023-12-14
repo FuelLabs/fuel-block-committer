@@ -50,20 +50,18 @@ pub fn spawn_wallet_balance_tracker(
     registry: &Registry,
     ethereum_rpc: MonitoredEthAdapter<EthereumWs>,
     cancel_token: CancellationToken,
-) -> Result<tokio::task::JoinHandle<()>> {
+) -> tokio::task::JoinHandle<()> {
     let wallet_balance_tracker =
         WalletBalanceTracker::new(ethereum_rpc, &config.ethereum_wallet_key);
 
     wallet_balance_tracker.register_metrics(registry);
 
-    let listener_handle = schedule_polling(
+    schedule_polling(
         internal_config.balance_update_interval,
         wallet_balance_tracker,
         "Wallet Balance Tracker",
         cancel_token,
-    );
-
-    Ok(listener_handle)
+    )
 }
 
 pub fn spawn_eth_committer_and_listener(
@@ -73,7 +71,7 @@ pub fn spawn_eth_committer_and_listener(
     storage: SqliteDb,
     registry: &Registry,
     cancel_token: CancellationToken,
-) -> Result<(tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)> {
+) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
     let committer_handler =
         create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
 
@@ -87,7 +85,7 @@ pub fn spawn_eth_committer_and_listener(
         cancel_token,
     );
 
-    Ok((committer_handler, listener_handle))
+    (committer_handler, listener_handle)
 }
 
 fn create_block_committer(
@@ -213,7 +211,7 @@ pub async fn shut_down(
         committer_handle,
         listener_handle,
     ] {
-        handle.await?
+        handle.await?;
     }
 
     Ok(())

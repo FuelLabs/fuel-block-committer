@@ -35,7 +35,7 @@ impl<T> MonitoredEthAdapter<T> {
             Ok(_val) => {
                 self.health_tracker.note_success();
             }
-            Err(Error::NetworkError(..)) => {
+            Err(Error::Network(..)) => {
                 self.metrics.eth_network_errors.inc();
                 self.health_tracker.note_failure();
             }
@@ -101,7 +101,7 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
-    use prometheus::Registry;
+    use prometheus::{proto::Metric, Registry};
 
     use super::*;
     use crate::adapters::ethereum_adapter::MockEthereumAdapter;
@@ -112,7 +112,7 @@ mod tests {
         let mut eth_adapter = MockEthereumAdapter::new();
         eth_adapter
             .expect_submit()
-            .returning(|_| Err(Error::NetworkError("An error".into())));
+            .returning(|_| Err(Error::Network("An error".into())));
 
         eth_adapter.expect_get_block_number().returning(|| Ok(10));
 
@@ -157,11 +157,11 @@ mod tests {
         let mut eth_adapter = MockEthereumAdapter::new();
         eth_adapter
             .expect_submit()
-            .returning(|_| Err(Error::NetworkError("An error".into())));
+            .returning(|_| Err(Error::Network("An error".into())));
 
         eth_adapter
             .expect_get_block_number()
-            .returning(|| Err(Error::NetworkError("An error".into())));
+            .returning(|| Err(Error::Network("An error".into())));
 
         let adapter = MonitoredEthAdapter::new(eth_adapter, 3);
         let health_check = adapter.connection_health_checker();
@@ -182,11 +182,11 @@ mod tests {
         let mut eth_adapter = MockEthereumAdapter::new();
         eth_adapter
             .expect_submit()
-            .returning(|_| Err(Error::NetworkError("An error".into())));
+            .returning(|_| Err(Error::Network("An error".into())));
 
         eth_adapter
             .expect_get_block_number()
-            .returning(|| Err(Error::NetworkError("An error".into())));
+            .returning(|| Err(Error::Network("An error".into())));
 
         let registry = Registry::new();
         let adapter = MonitoredEthAdapter::new(eth_adapter, 3);
@@ -196,14 +196,14 @@ mod tests {
         let _ = adapter.get_block_number().await;
 
         let metrics = registry.gather();
-        let latest_block_metric = metrics
+        let eth_network_err_metric = metrics
             .iter()
             .find(|metric| metric.get_name() == "eth_network_errors")
-            .and_then(|metric| metric.get_metric().get(0))
-            .map(|metric| metric.get_counter())
+            .and_then(|metric| metric.get_metric().first())
+            .map(Metric::get_counter)
             .unwrap();
 
-        assert_eq!(latest_block_metric.get_value(), 2f64);
+        assert_eq!(eth_network_err_metric.get_value(), 2f64);
     }
 
     fn given_a_block(block_height: u32) -> FuelBlock {

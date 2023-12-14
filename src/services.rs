@@ -9,5 +9,5 @@ pub use block_committer::BlockCommitter;
 pub use block_watcher::BlockWatcher;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
-pub use status_reporter::{Status, StatusReporter};
+pub use status_reporter::StatusReporter;
 pub use wallet_balance_tracker::WalletBalanceTracker;

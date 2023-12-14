@@ -33,7 +33,7 @@ impl EventStreamer for EthEventStreamer {
             self.events
                 .subscribe()
                 .await
-                .map_err(|e| Error::NetworkError(e.to_string()))?
+                .map_err(|e| Error::Network(e.to_string()))?
                 .map_ok(|event| {
                     let fuel_block_hash = event.block_hash;
                     let commit_height = event.commit_height;

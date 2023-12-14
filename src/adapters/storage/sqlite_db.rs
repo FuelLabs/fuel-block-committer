@@ -17,7 +17,10 @@ pub struct SqliteDb {
 }
 
 impl SqliteDb {
-    pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
+    pub async fn open<I>(path: I) -> Result<Self>
+    where
+        I: Into<PathBuf> + Send,
+    {
         let path = path.into();
         task::spawn_blocking(|| async {
             let connection = Connection::open(path)?;
@@ -44,12 +47,12 @@ impl SqliteDb {
 
     fn initialize(connection: Connection) -> Result<Arc<Mutex<Connection>>> {
         connection.execute(
-            r#"CREATE TABLE IF NOT EXISTS eth_fuel_block_submission (
+            r"CREATE TABLE IF NOT EXISTS eth_fuel_block_submission (
                     fuel_block_hash     BLOB PRIMARY KEY NOT NULL,
                     fuel_block_height   INTEGER NOT NULL UNIQUE,
                     completed           INTEGER NOT NULL,
                     submittal_height BLOB NOT NULL
-                )"#,
+                )",
             (), // empty list of parameters.
         )?;
 
@@ -114,7 +117,7 @@ impl Storage for SqliteDb {
         Ok(self
             .run_blocking(move |connection| {
                 let mut statement = connection.prepare(
-                    r#"SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"#,
+                    r"SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1",
                 )?;
 
                 let mut submission = statement.query_map([], Self::decode_submission)?;
@@ -131,13 +134,13 @@ impl Storage for SqliteDb {
             let rows_updated = connection.execute(query, (fuel_block_hash,))?;
 
             if rows_updated == 0 {
-                return Err(Error::StorageError(format!(
+                return Err(Error::Storage(format!(
                     "Cannot set submission to completed! Submission of block: `{fuel_block_hash:?}` not found in DB."
                 )));
             }
 
             let submission = connection.query_row(
-                r#"SELECT * FROM eth_fuel_block_submission WHERE fuel_block_hash = (?1)"#,
+                r"SELECT * FROM eth_fuel_block_submission WHERE fuel_block_hash = (?1)",
                 (fuel_block_hash,),
                 Self::decode_submission,
             )?;
@@ -218,7 +221,7 @@ mod tests {
         let result = db.set_submission_completed(block_hash).await;
 
         // then
-        let Err(Error::StorageError(msg)) = result else {
+        let Err(Error::Storage(msg)) = result else {
             panic!("should be storage error");
         };
 

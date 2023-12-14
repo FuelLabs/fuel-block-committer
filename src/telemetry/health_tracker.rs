@@ -32,7 +32,7 @@ impl ConnectionHealthTracker {
     fn acquire_consecutive_failures(&self) -> std::sync::MutexGuard<usize> {
         self.consecutive_failures
             .lock()
-            .expect("no need to handle poisoning since lock duration is short and no panics occurr")
+            .expect("no need to handle poisoning since lock duration is short and no panics occur")
     }
 
     pub fn tracker(&self) -> HealthChecker {

@@ -30,7 +30,7 @@ impl CommitListener {
         Self {
             ethereum_rpc: Box::new(ethereum_rpc),
             storage: Box::new(storage),
-            metrics: Default::default(),
+            metrics: Metrics::default(),
             cancel_token,
         }
     }
@@ -40,8 +40,7 @@ impl CommitListener {
             .storage
             .submission_w_latest_block()
             .await?
-            .map(|submission| submission.submittal_height)
-            .unwrap_or(0))
+            .map_or(0, |submission| submission.submittal_height))
     }
 
     async fn handle_block_committed(
@@ -57,12 +56,12 @@ impl CommitListener {
 
         self.metrics
             .latest_committed_block
-            .set(submission.block.height as i64);
+            .set(i64::from(submission.block.height));
 
         Ok(())
     }
 
-    async fn log_if_error(result: Result<()>) {
+    fn log_if_error(result: Result<()>) {
         if let Err(error) = result {
             error!("Received an error from block commit event stream: {error}");
         }
@@ -80,7 +79,7 @@ impl Runner for CommitListener {
             .await?
             .and_then(|event| self.handle_block_committed(event))
             .take_until(self.cancel_token.cancelled())
-            .for_each(Self::log_if_error)
+            .for_each(|response| async { Self::log_if_error(response) })
             .await;
 
         Ok(())
@@ -114,9 +113,11 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
+    use ethers::types::U256;
     use futures::stream;
     use mockall::predicate;
-    use prometheus::Registry;
+    use prometheus::{proto::Metric, Registry};
+    use tokio_util::sync::CancellationToken;
 
     use crate::{
         adapters::{
@@ -144,7 +145,7 @@ mod tests {
 
         let storage = given_storage_containing(submission).await;
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, storage.clone(), Default::default());
+            CommitListener::new(eth_rpc_mock, storage.clone(), CancellationToken::default());
 
         // when
         commit_listener.run().await.unwrap();
@@ -171,7 +172,7 @@ mod tests {
         let storage = given_storage_containing(submission).await;
 
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, storage.clone(), Default::default());
+            CommitListener::new(eth_rpc_mock, storage.clone(), CancellationToken::default());
 
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);
@@ -184,13 +185,13 @@ mod tests {
         let latest_committed_block_metric = metrics
             .iter()
             .find(|metric| metric.get_name() == "latest_committed_block")
-            .and_then(|metric| metric.get_metric().get(0))
-            .map(|metric| metric.get_gauge())
+            .and_then(|metric| metric.get_metric().first())
+            .map(Metric::get_gauge)
             .unwrap();
 
         assert_eq!(
             latest_committed_block_metric.get_value(),
-            fuel_block_height as f64
+            f64::from(fuel_block_height)
         );
     }
 
@@ -225,7 +226,7 @@ mod tests {
 
         let storage = given_storage_containing(new_block.clone()).await;
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, storage.clone(), Default::default());
+            CommitListener::new(eth_rpc_mock, storage.clone(), CancellationToken::default());
 
         // when
         commit_listener.run().await.unwrap();
@@ -270,7 +271,7 @@ mod tests {
             .map(|e| {
                 e.map(|fuel_block_hash| FuelBlockCommittedOnEth {
                     fuel_block_hash,
-                    commit_height: Default::default(),
+                    commit_height: U256::default(),
                 })
             })
             .collect::<Vec<_>>();

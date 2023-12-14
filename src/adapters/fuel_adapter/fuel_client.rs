@@ -45,7 +45,7 @@ impl FuelClient {
 
 impl From<FuelGqlBlock> for FuelBlock {
     fn from(value: FuelGqlBlock) -> Self {
-        FuelBlock {
+        Self {
             hash: *value.id,
             height: value.header.height,
         }
@@ -57,9 +57,9 @@ impl FuelAdapter for FuelClient {
     async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>> {
         let maybe_block = self
             .client
-            .block_by_height(height as u64)
+            .block_by_height(height)
             .await
-            .map_err(|e| Error::NetworkError(e.to_string()))?;
+            .map_err(|e| Error::Network(e.to_string()))?;
 
         Ok(maybe_block.map(Into::into))
     }
@@ -72,7 +72,7 @@ impl FuelAdapter for FuelClient {
             }
             Err(err) => {
                 self.handle_network_error();
-                Err(Error::NetworkError(err.to_string()))
+                Err(Error::Network(err.to_string()))
             }
         }
     }
@@ -81,7 +81,7 @@ impl FuelAdapter for FuelClient {
 #[cfg(test)]
 mod tests {
     use fuels_test_helpers::{setup_test_provider, Config};
-    use prometheus::Registry;
+    use prometheus::{proto::Metric, Registry};
 
     use super::*;
 
@@ -89,16 +89,18 @@ mod tests {
     async fn can_fetch_latest_block() {
         // given
         let node_config = Config {
-            manual_blocks_enabled: true,
-            ..Config::local_node()
+            debug: true,
+            ..Default::default()
         };
 
-        let (provider, addr) =
-            setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default())).await;
+        let provider =
+            setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default()))
+                .await
+                .unwrap();
         provider.produce_blocks(5, None).await.unwrap();
 
-        let url = Url::parse(&format!("http://{addr}")).unwrap();
-
+        let addr = provider.url();
+        let url = Url::parse(addr).unwrap();
         let fuel_adapter = FuelClient::new(&url, 1);
 
         // when
@@ -112,15 +114,17 @@ mod tests {
     async fn can_fetch_block_at_height() {
         // given
         let node_config = Config {
-            manual_blocks_enabled: true,
-            ..Config::local_node()
+            debug: true,
+            ..Default::default()
         };
 
-        let (provider, addr) =
-            setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default())).await;
+        let provider =
+            setup_test_provider(vec![], vec![], Some(node_config), Some(Default::default()))
+                .await
+                .unwrap();
         provider.produce_blocks(5, None).await.unwrap();
 
-        let url = Url::parse(&format!("http://{addr}")).unwrap();
+        let url = Url::parse(provider.url()).unwrap();
 
         let fuel_adapter = FuelClient::new(&url, 1);
 
@@ -151,8 +155,8 @@ mod tests {
         let network_errors_metric = metrics
             .iter()
             .find(|metric| metric.get_name() == "fuel_network_errors")
-            .and_then(|metric| metric.get_metric().get(0))
-            .map(|metric| metric.get_counter())
+            .and_then(|metric| metric.get_metric().first())
+            .map(Metric::get_counter)
             .unwrap();
 
         assert_eq!(network_errors_metric.get_value(), 1f64);
