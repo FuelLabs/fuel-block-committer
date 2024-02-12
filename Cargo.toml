@@ -4,7 +4,7 @@ edition = "2021"
 homepage = "https://fuel.network/"
 license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
-rust-version = "1.74.0"
+rust-version = "1.76.0"
 version = "0.1.0"
 name = "fuel-block-committer"
 
@@ -32,7 +32,7 @@ rusqlite = { version = "0.30", features = ["bundled"] }
 futures = "0.3.28"
 
 [dev-dependencies]
-fuels-test-helpers = "0.54.0"
+fuels-test-helpers = "0.55.0"
 rand = "0.8.5"
-mockall = "0.11.4"
+mockall = "0.12.1"
 anyhow = "1.0.71"
