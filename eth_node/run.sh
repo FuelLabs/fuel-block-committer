@@ -35,16 +35,14 @@ wait_node_healthy() {
 		exit 1
 	fi
 
-	RETRIES=${RETRIES:-120}
-	JSON='{"jsonrpc":"2.0","id":0,"method":"net_version","params":[]}'
 	curl \
 		--fail \
 		--silent \
 		-H "Content-Type: application/json" \
 		--retry-connrefused \
-		--retry "$RETRIES" \
+		--retry 120 \
 		--retry-delay 1 \
-		-d "$JSON" \
+		-d '{"jsonrpc":"2.0","id":0,"method":"net_version","params":[]}' \
 		"$URL" >/dev/null
 }
 
