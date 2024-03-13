@@ -9,15 +9,19 @@ services:
       interval: 1s
       timeout: 30s
       retries: 50
-    environment:
-      - WALLET_KEY=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36
-      - URL=http://0.0.0.0:8545/
+    command:
+      - "--key"
+      - "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36"
+      - "--ip"
+      - "0.0.0.0"
+      - "--port"
+      - "8545"
 
   fuel_node:
     build:
       context: fuel_node
       args:
-        fuel_core_version: "v${FUEL_CORE_VERSION:-0.22.0}"
+        fuel_core_version: "v${FUEL_CORE_VERSION:-0.22.1}"
     container_name: fuel-node
     environment:
       - PORT=4000

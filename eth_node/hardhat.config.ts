@@ -1,43 +1,44 @@
-import { HardhatUserConfig } from 'hardhat/types';
-import '@nomiclabs/hardhat-waffle';
-import '@nomiclabs/hardhat-etherscan';
+import type { HardhatUserConfig } from 'hardhat/types';
+import '@nomicfoundation/hardhat-ethers';
+import '@nomicfoundation/hardhat-network-helpers';
+import '@nomicfoundation/hardhat-verify';
+import '@nomicfoundation/hardhat-chai-matchers';
+import '@typechain/hardhat';
 import '@openzeppelin/hardhat-upgrades';
-import 'hardhat-typechain';
+import 'hardhat-deploy';
 import 'solidity-coverage';
-import 'hardhat-gas-reporter';
-import { config as dotEnvConfig } from 'dotenv';
-
-dotEnvConfig();
 
 const config: HardhatUserConfig = {
-    defaultNetwork: 'hardhat',
-    solidity: {
-        compilers: [
-            {
-                version: '0.8.9',
-                settings: {
-                    optimizer: {
-                        enabled: true,
-                        runs: 10000,
-                    },
-                },
-            },
-        ],
-    },
-    networks: {
-        hardhat: {
-            mining: {
-                auto: true,
-                interval: 1000,
-            },
-            accounts: [ { privateKey: "WALLET_KEY", balance: "10000000000000000000000" } ], 
+  defaultNetwork: 'hardhat',
+  solidity: {
+    compilers: [
+      {
+        version: '0.8.9',
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 10000,
+          },
         },
-        custom: {
-            accounts: [ "WALLET_KEY" ], 
-            url: "URL",
-            live: true,
+      },
+    ],
+  },
+  networks: {
+    hardhat: {
+        accounts: [ { privateKey: "KEY", balance: "10000000000000000000000" } ],
+        mining: {
+            auto: true,
+            interval: 1000,
         },
     },
+    localhost: {
+        accounts: [ "KEY" ],
+        url: "URL",
+    },
+  },
+  typechain: {
+    outDir: 'typechain',
+  },
 };
 
 export default config;
