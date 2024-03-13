@@ -19,7 +19,6 @@ replace_placeholders() {
 spawn_eth_node() {
 	IP="$1"
 	PORT="$2"
-	OUT_FILE="$3"
 	if [[ -z "$IP" ]] || [[ -z "$PORT" ]]; then
 		echo "usage: spawn_eth_node <ip> <port>"
 		exit 1
