@@ -21,7 +21,7 @@ services:
     build:
       context: fuel_node
       args:
-        fuel_core_version: "v${FUEL_CORE_VERSION:-0.22.1}"
+        fuel_core_version: "v${FUEL_CORE_VERSION:-0.24.1}"
     container_name: fuel-node
     environment:
       - PORT=4000
@@ -33,8 +33,8 @@ services:
     ports:
       - "4000:4000"
     healthcheck:
-      test: [ "CMD", "curl", "--fail", "http://0.0.0.0:4000/health" ]
-      retries: 5
+      test: [ "CMD", "curl", "--fail", "http://0.0.0.0:4000/v1/health" ]
+      retries: 50
       interval: 2s
       timeout: 30s
 

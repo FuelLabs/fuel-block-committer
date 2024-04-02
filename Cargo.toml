@@ -4,7 +4,7 @@ edition = "2021"
 homepage = "https://fuel.network/"
 license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
-rust-version = "1.74.0"
+rust-version = "1.77.0"
 version = "0.1.0"
 name = "fuel-block-committer"
 
@@ -16,7 +16,7 @@ path = "tests/harness.rs"
 [dependencies]
 actix-web = "4"
 async-trait = "0.1.68"
-fuel-core-client = "0.22.0"
+fuel-core-client = "0.24"
 prometheus = "0.13.3"
 serde = { version = "1.0", features = ["derive"] }
 ethers = { version = "2.0", features = ["ws"] }
@@ -28,11 +28,12 @@ tracing-subscriber = { version = "0.3.17", features = ["json"] }
 clap = { version = "4.3", features = ["derive", "env"] }
 url = "2.3"
 serde_json = "1.0.96"
-rusqlite = { version = "0.30", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
 futures = "0.3.28"
 
 [dev-dependencies]
-fuels-test-helpers = "0.54.0"
+#TODO: use once a new release supporting core 0.24.1 is made
+#fuels-test-helpers = "0.56.0"
 rand = "0.8.5"
-mockall = "0.11.4"
+mockall = "0.12.1"
 anyhow = "1.0.71"
