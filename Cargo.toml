@@ -32,8 +32,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 futures = "0.3.28"
 
 [dev-dependencies]
-#TODO: use once a new release supporting core 0.24.1 is made
-#fuels-test-helpers = "0.56.0"
+fuels-test-helpers = "0.57"
 rand = "0.8.5"
 mockall = "0.12.1"
 anyhow = "1.0.71"
