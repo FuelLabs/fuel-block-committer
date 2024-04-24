@@ -5,7 +5,7 @@ homepage = "https://fuel.network/"
 license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
 rust-version = "1.77.0"
-version = "0.1.0"
+version = "0.3.0"
 name = "fuel-block-committer"
 
 [[test]]
