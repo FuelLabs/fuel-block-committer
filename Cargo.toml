@@ -16,7 +16,7 @@ path = "tests/harness.rs"
 [dependencies]
 actix-web = "4"
 async-trait = "0.1.68"
-fuel-core-client = "0.24"
+fuel-core-client = "0.25"
 prometheus = "0.13.3"
 serde = { version = "1.0", features = ["derive"] }
 ethers = { version = "2.0", features = ["ws"] }
@@ -32,7 +32,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 futures = "0.3.28"
 
 [dev-dependencies]
-fuels-test-helpers = "0.57"
+#TODO: Once fuels-rs catches up tests will be reenabled
+#fuels-test-helpers = "0.57"
 rand = "0.8.5"
 mockall = "0.12.1"
 anyhow = "1.0.71"
