@@ -16,7 +16,7 @@ path = "tests/harness.rs"
 [dependencies]
 actix-web = "4"
 async-trait = "0.1.68"
-fuel-core-client = "0.25"
+fuel-core-client = "0.25.3"
 prometheus = "0.13.3"
 serde = { version = "1.0", features = ["derive"] }
 ethers = { version = "2.0", features = ["ws"] }
