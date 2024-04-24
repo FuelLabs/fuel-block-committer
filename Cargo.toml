@@ -14,26 +14,36 @@ name = "e2e"
 path = "tests/harness.rs"
 
 [dependencies]
-actix-web = "4"
-async-trait = "0.1.68"
-fuel-core-client = "0.25"
-prometheus = "0.13.3"
-serde = { version = "1.0", features = ["derive"] }
-ethers = { version = "2.0", features = ["ws"] }
-tokio = { version = "1.28.0", features = ["rt-multi-thread", "rt", "macros"] }
-tokio-util = { version = "0.7.8" }
-thiserror = "1.0.40"
-tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.17", features = ["json"] }
-clap = { version = "4.3", features = ["derive", "env"] }
-url = "2.3"
-serde_json = "1.0.96"
-rusqlite = { version = "0.31", features = ["bundled"] }
-futures = "0.3.28"
+actix-web = { version = "4", default-features = false, features = ["macros"] }
+async-trait = { version = "0.1", default-features = false }
+clap = { version = "4.3", features = [
+  "derive",
+  "env",
+  "std",
+], default-features = false }
+ethers = { version = "2.0", features = ["ws"], default-features = false }
+fuel-core-client = { version = "0.25", default-features = false }
+futures = { version = "0.3", default-features = false }
+prometheus = { version = "0.13", default-features = false }
+rusqlite = { version = "0.31", features = [
+  "bundled",
+], default-features = false }
+serde = { version = "1.0", features = ["derive"], default-features = false }
+serde_json = { version = "1.0", default-features = false }
+thiserror = { version = "1.0", default-features = false }
+tokio = { version = "1.28", features = [
+  "rt-multi-thread",
+  "rt",
+  "macros",
+], default-features = false }
+tokio-util = { version = "0.7", default-features = false }
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", features = ["json"] }
+url = { version = "2.3", default-features = false }
 
 [dev-dependencies]
+anyhow = { version = "1.0", default-features = false }
+mockall = { version = "0.12", default-features = false }
 #TODO: Once fuels-rs catches up tests will be reenabled
 #fuels-test-helpers = "0.57"
-rand = "0.8.5"
-mockall = "0.12.1"
-anyhow = "1.0.71"
+rand = { version = "0.8", default-features = false }
