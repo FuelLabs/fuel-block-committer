@@ -1444,7 +1444,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "actix-web",
  "anyhow",
