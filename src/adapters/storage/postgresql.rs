@@ -154,7 +154,7 @@ impl Storage for PostgresDb {
 mod dockerized {
     use std::sync::{Arc, OnceLock};
 
-    use testcontainers::{clients::Cli, core::WaitFor, Image, RunnableImage};
+    use testcontainers::{core::WaitFor, runners::AsyncRunner, Image, RunnableImage};
 
     use super::{ConnectionOptions, PostgresDb};
     use crate::adapters::storage::{Error, Result};
@@ -185,22 +185,17 @@ mod dockerized {
 
     #[derive(Clone)]
     pub struct PostgresProcess {
-        _container: Arc<testcontainers::Container<'static, PostgresImage>>,
+        _container: Arc<testcontainers::ContainerAsync<PostgresImage>>,
         db: PostgresDb,
     }
 
     impl PostgresProcess {
-        fn docker_client() -> &'static Cli {
-            static CLIENT: OnceLock<Cli> = OnceLock::new();
-            CLIENT.get_or_init(Cli::default)
-        }
-
         pub async fn start() -> Result<Self> {
             let username = "username".to_string();
             let password = "password".to_string();
             let db = "test".to_string();
 
-            let container = Self::start_docker_container(&username, &password, &db).await?;
+            let container = Self::start_docker_container(&username, &password, &db).await;
 
             let pool = setup_connection_pool(username, password, db, &container).await?;
 
@@ -220,34 +215,21 @@ mod dockerized {
             self.db.clone()
         }
 
-        pub async fn stop(&self) -> Result<()> {
-            let container = Arc::clone(&self._container);
-            tokio::task::spawn_blocking(move || container.stop())
-                .await
-                .map_err(|e| Error::Other(e.to_string()))?;
-            Ok(())
-        }
-
-        pub fn blocking_stop(&self) {
-            self._container.stop()
+        pub async fn stop(&self) {
+            self._container.stop().await;
         }
 
         async fn start_docker_container(
             username: &String,
             password: &String,
             db: &String,
-        ) -> Result<testcontainers::Container<'static, PostgresImage>> {
-            let container = {
-                let image = RunnableImage::from(PostgresImage)
-                    .with_env_var(("POSTGRES_USER", username))
-                    .with_env_var(("POSTGRES_PASSWORD", password))
-                    .with_env_var(("POSTGRES_DB", db));
-
-                tokio::task::spawn_blocking(|| Self::docker_client().run(image))
-                    .await
-                    .map_err(|e| Error::Other(e.to_string()))?
-            };
-            Ok(container)
+        ) -> testcontainers::ContainerAsync<PostgresImage> {
+            RunnableImage::from(PostgresImage)
+                .with_env_var(("POSTGRES_USER", username))
+                .with_env_var(("POSTGRES_PASSWORD", password))
+                .with_env_var(("POSTGRES_DB", db))
+                .start()
+                .await
         }
     }
 
@@ -255,14 +237,14 @@ mod dockerized {
         username: String,
         password: String,
         db: String,
-        container: &testcontainers::Container<'_, PostgresImage>,
+        container: &testcontainers::ContainerAsync<PostgresImage>,
     ) -> Result<sqlx::Pool<sqlx::Postgres>> {
         let config = ConnectionOptions {
             username,
             password,
             db,
             host: "localhost".to_string(),
-            port: container.get_host_port_ipv4(5432),
+            port: container.get_host_port_ipv4(5432).await,
             connections: 5,
         };
 

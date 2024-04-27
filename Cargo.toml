@@ -52,4 +52,6 @@ anyhow = { version = "1.0", default-features = false }
 mockall = { version = "0.12", default-features = false }
 #TODO: Once fuels-rs catches up tests will be reenabled
 #fuels-test-helpers = "0.57"
-testcontainers = { version = "0.15.0", default-features = false }
+testcontainers = { version = "0.16", default-features = false, features = [
+  "watchdog",
+] }
