@@ -137,7 +137,7 @@ mod tests {
     use super::*;
     use crate::adapters::{
         fuel_adapter::MockFuelAdapter,
-        storage::{sqlite_db::SqliteDb, BlockSubmission},
+        storage::{postgresql::PostgresProcess, BlockSubmission},
     };
 
     #[tokio::test]
@@ -149,8 +149,9 @@ mod tests {
         let latest_block = given_a_block(5);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let storage = given_storage(vec![0, 2]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
+        let process = start_postgress_with_submissions(vec![0, 2]).await;
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, process.db());
 
         // when
         block_watcher.run().await.unwrap();
@@ -172,8 +173,9 @@ mod tests {
         let latest_block = given_a_block(5);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let storage = given_storage(vec![0, 2, 4]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
+        let process = start_postgress_with_submissions(vec![0, 2, 4]).await;
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, process.db());
 
         // when
         block_watcher.run().await.unwrap();
@@ -192,8 +194,9 @@ mod tests {
         let latest_block = given_a_block(6);
         let fuel_adapter = given_fetcher(vec![latest_block]);
 
-        let storage = given_storage(vec![0, 2, 4, 6]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
+        let process = start_postgress_with_submissions(vec![0, 2, 4, 6]).await;
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, process.db());
 
         // when
         block_watcher.run().await.unwrap();
@@ -212,8 +215,9 @@ mod tests {
         let block = given_a_block(4);
         let fuel_adapter = given_fetcher(vec![block]);
 
-        let storage = given_storage(vec![0, 2]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
+        let process = start_postgress_with_submissions(vec![0, 2]).await;
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, process.db());
 
         // when
         block_watcher.run().await.unwrap();
@@ -233,8 +237,9 @@ mod tests {
 
         let fuel_adapter = given_fetcher(vec![given_a_block(5)]);
 
-        let storage = given_storage(vec![0, 2, 4]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, storage);
+        let process = start_postgress_with_submissions(vec![0, 2, 4]).await;
+        let mut block_watcher =
+            BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, process.db());
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);
@@ -254,8 +259,10 @@ mod tests {
         assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
-    async fn given_storage(pending_submissions: Vec<u32>) -> SqliteDb {
-        let storage = SqliteDb::temporary().await.unwrap();
+    async fn start_postgress_with_submissions(pending_submissions: Vec<u32>) -> PostgresProcess {
+        let process = PostgresProcess::start().await.unwrap();
+
+        let storage = process.db();
         for height in pending_submissions {
             storage
                 .insert(given_a_pending_submission(height))
@@ -263,7 +270,7 @@ mod tests {
                 .unwrap();
         }
 
-        storage
+        process
     }
 
     fn given_fetcher(available_blocks: Vec<FuelBlock>) -> MockFuelAdapter {

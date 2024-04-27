@@ -13,9 +13,14 @@ pub enum Error {
     Storage(String),
 }
 
-impl From<rusqlite::Error> for Error {
-    fn from(value: rusqlite::Error) -> Self {
-        Self::Storage(value.to_string())
+impl Error {
+    pub fn add_context(&mut self, ctx: &str) -> &mut Self {
+        match self {
+            Self::Other(msg) | Self::Network(msg) | Self::Storage(msg) => {
+                *msg = format!("{}:\n{}", ctx, msg);
+            }
+        }
+        self
     }
 }
 
@@ -46,6 +51,12 @@ impl From<std::io::Error> for Error {
 impl From<JoinError> for Error {
     fn from(error: JoinError) -> Self {
         Self::Other(error.to_string())
+    }
+}
+
+impl From<crate::adapters::storage::Error> for Error {
+    fn from(error: crate::adapters::storage::Error) -> Self {
+        Self::Storage(error.to_string())
     }
 }
 

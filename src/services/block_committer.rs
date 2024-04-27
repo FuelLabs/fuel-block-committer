@@ -36,11 +36,11 @@ impl BlockCommitter {
     }
 
     async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
-        let submitted_at_height = self.ethereum_rpc.get_block_number().await?;
+        let submittal_height = self.ethereum_rpc.get_block_number().await?;
 
         let submission = BlockSubmission {
             block: fuel_block,
-            submittal_height: submitted_at_height,
+            submittal_height,
             completed: false,
         };
 
@@ -77,7 +77,10 @@ mod tests {
     use mockall::predicate;
 
     use super::*;
-    use crate::adapters::{ethereum_adapter::MockEthereumAdapter, storage::sqlite_db::SqliteDb};
+    use crate::adapters::{
+        ethereum_adapter::MockEthereumAdapter,
+        storage::postgresql::{PostgresDb, PostgresProcess},
+    };
 
     #[tokio::test]
     async fn block_committer_will_submit_and_write_block() {
@@ -85,7 +88,9 @@ mod tests {
         let block_height = 5;
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block = given_a_block(block_height);
-        let storage = SqliteDb::temporary().await.unwrap();
+        let postgress_process = PostgresProcess::start().await.unwrap();
+        let storage = postgress_process.db();
+
         let eth_rpc_mock = given_eth_rpc_that_expects(block);
         tx.try_send(block).unwrap();
 
@@ -113,7 +118,7 @@ mod tests {
 
         eth_rpc_mock
             .expect_get_block_number()
-            .return_once(move || Ok(0));
+            .return_once(move || Ok(0u32.into()));
 
         eth_rpc_mock
     }

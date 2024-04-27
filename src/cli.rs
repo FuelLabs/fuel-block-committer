@@ -5,8 +5,9 @@ use ethers::types::{Address, Chain};
 use url::Url;
 
 use crate::{
+    adapters::storage::postgresql::ConnectionOptions,
     errors::{Error, Result},
-    setup::config::Config,
+    setup::config::{CommitterConfig, Config, EthConfig, FuelConfig},
 };
 
 const ETHEREUM_RPC: &str = "ws://127.0.0.1:8545/";
@@ -107,14 +108,27 @@ pub fn parse() -> Result<Config> {
     let commit_interval = NonZeroU32::new(cli.commit_interval)
         .ok_or_else(|| Error::Other("Commit interval must not be 0!".to_string()))?;
     Ok(Config {
-        ethereum_wallet_key: cli.ethereum_wallet_key,
-        ethereum_rpc: cli.ethereum_rpc,
-        ethereum_chain_id: cli.ethereum_chain,
-        fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
-        state_contract_address: cli.state_contract_address,
-        commit_interval,
-        port: cli.port,
-        host: cli.host,
-        db_path: cli.db_path,
+        eth: EthConfig {
+            ethereum_wallet_key: cli.ethereum_wallet_key,
+            ethereum_rpc: cli.ethereum_rpc,
+            ethereum_chain_id: cli.ethereum_chain,
+            state_contract_address: cli.state_contract_address,
+        },
+        fuel: FuelConfig {
+            fuel_graphql_endpoint: cli.fuel_graphql_endpoint,
+        },
+        committer: CommitterConfig {
+            commit_interval,
+            port: cli.port,
+            host: cli.host,
+            db: ConnectionOptions {
+                host: todo!(),
+                port: todo!(),
+                username: todo!(),
+                password: todo!(),
+                db: todo!(),
+                connections: todo!(),
+            },
+        },
     })
 }

@@ -47,7 +47,7 @@ mod tests {
     use super::*;
     use crate::adapters::{
         fuel_adapter::FuelBlock,
-        storage::{sqlite_db::SqliteDb, BlockSubmission},
+        storage::{postgresql::PostgresProcess, BlockSubmission},
     };
 
     #[tokio::test]
@@ -55,7 +55,7 @@ mod tests {
         let test = |submission_status, expected_app_status| {
             async move {
                 // given
-                let storage = SqliteDb::temporary().await.unwrap();
+                let process = PostgresProcess::start().await.unwrap();
                 if let Some(is_completed) = submission_status {
                     let latest_submission = BlockSubmission {
                         block: FuelBlock {
@@ -65,10 +65,10 @@ mod tests {
                         completed: is_completed,
                         ..BlockSubmission::random()
                     };
-                    storage.insert(latest_submission).await.unwrap();
+                    process.db().insert(latest_submission).await.unwrap();
                 }
 
-                let status_reporter = StatusReporter::new(storage);
+                let status_reporter = StatusReporter::new(process.db());
 
                 // when
                 let status = status_reporter.current_status().await.unwrap();

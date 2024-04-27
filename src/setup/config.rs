@@ -3,17 +3,34 @@ use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf, time::Duration};
 use ethers::types::{Address, Chain};
 use url::Url;
 
+use crate::adapters::storage::postgresql::ConnectionOptions;
+
 #[derive(Debug, Clone)]
 pub struct Config {
+    pub eth: EthConfig,
+    pub fuel: FuelConfig,
+    pub committer: CommitterConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct FuelConfig {
+    pub fuel_graphql_endpoint: Url,
+}
+
+#[derive(Debug, Clone)]
+pub struct EthConfig {
     pub ethereum_wallet_key: String,
     pub ethereum_rpc: Url,
     pub ethereum_chain_id: Chain,
-    pub fuel_graphql_endpoint: Url,
     pub state_contract_address: Address,
+}
+
+#[derive(Debug, Clone)]
+pub struct CommitterConfig {
     pub commit_interval: NonZeroU32,
     pub port: u16,
     pub host: Ipv4Addr,
-    pub db_path: Option<PathBuf>,
+    pub db: ConnectionOptions,
 }
 
 #[derive(Debug, Clone)]

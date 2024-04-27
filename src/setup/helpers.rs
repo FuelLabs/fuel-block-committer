@@ -10,7 +10,7 @@ use crate::{
         ethereum_adapter::{EthereumWs, MonitoredEthAdapter},
         fuel_adapter::{FuelBlock, FuelClient},
         runner::Runner,
-        storage::{sqlite_db::SqliteDb, Storage},
+        storage::{postgresql::PostgresDb, Storage},
     },
     errors::Result,
     services::{BlockCommitter, BlockWatcher, CommitListener, WalletBalanceTracker},
@@ -52,7 +52,7 @@ pub fn spawn_wallet_balance_tracker(
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
     let wallet_balance_tracker =
-        WalletBalanceTracker::new(ethereum_rpc, &config.ethereum_wallet_key);
+        WalletBalanceTracker::new(ethereum_rpc, &config.eth.ethereum_wallet_key);
 
     wallet_balance_tracker.register_metrics(registry);
 
@@ -68,7 +68,7 @@ pub fn spawn_eth_committer_and_listener(
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
     ethereum_rpc: MonitoredEthAdapter<EthereumWs>,
-    storage: SqliteDb,
+    storage: PostgresDb,
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
@@ -108,11 +108,11 @@ pub async fn create_eth_adapter(
     registry: &Registry,
 ) -> Result<(MonitoredEthAdapter<EthereumWs>, HealthChecker)> {
     let ethereum_rpc = EthereumWs::connect(
-        &config.ethereum_rpc,
-        config.ethereum_chain_id,
-        config.state_contract_address,
-        &config.ethereum_wallet_key,
-        config.commit_interval,
+        &config.eth.ethereum_rpc,
+        config.eth.ethereum_chain_id,
+        config.eth.state_contract_address,
+        &config.eth.ethereum_wallet_key,
+        config.committer.commit_interval,
     )
     .await?;
 
@@ -154,7 +154,7 @@ fn create_fuel_adapter(
     registry: &Registry,
 ) -> (FuelClient, HealthChecker) {
     let fuel_adapter = FuelClient::new(
-        &config.fuel_graphql_endpoint,
+        &config.fuel.fuel_graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
     );
     fuel_adapter.register_metrics(registry);
@@ -171,8 +171,12 @@ fn create_block_watcher(
     storage: impl Storage + 'static,
 ) -> (BlockWatcher, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
-    let block_watcher =
-        BlockWatcher::new(config.commit_interval, tx_fuel_block, fuel_adapter, storage);
+    let block_watcher = BlockWatcher::new(
+        config.committer.commit_interval,
+        tx_fuel_block,
+        fuel_adapter,
+        storage,
+    );
     block_watcher.register_metrics(registry);
 
     (block_watcher, rx_fuel_block)
@@ -188,12 +192,8 @@ pub fn setup_logger() {
         .init();
 }
 
-pub async fn setup_storage(config: &Config) -> Result<SqliteDb> {
-    if let Some(path) = &config.db_path {
-        SqliteDb::open(path).await
-    } else {
-        SqliteDb::temporary().await
-    }
+pub async fn setup_storage(config: &Config) -> Result<PostgresDb> {
+    Ok(PostgresDb::connect(&config.committer.db).await?)
 }
 
 pub async fn shut_down(

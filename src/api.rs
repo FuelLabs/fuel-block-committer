@@ -32,7 +32,7 @@ pub async fn launch_api_server(
             .service(metrics)
             .service(health)
     })
-    .bind((config.host, config.port))
+    .bind((config.committer.host, config.committer.port))
     .map_err(|e| Error::Other(e.to_string()))?
     .run()
     .await
