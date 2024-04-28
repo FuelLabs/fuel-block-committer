@@ -1,9 +1,36 @@
+use std::sync::Arc;
+
 use super::{BlockSubmission, Error, Storage};
 use crate::adapters::storage::Result;
 
 #[derive(Clone)]
 pub struct PostgresDb {
     connection_pool: sqlx::Pool<sqlx::Postgres>,
+}
+
+impl PostgresDb {
+    pub async fn tx(&self) -> Result<Transaction> {
+        let transaction = self.connection_pool.begin().await?;
+        Ok(Transaction {
+            transaction: Mutex::new(transaction),
+        })
+    }
+}
+
+pub struct Transaction {
+    transaction: Mutex<sqlx::Transaction<'static, sqlx::Postgres>>,
+}
+
+impl Transaction {
+    pub async fn commit(self) -> Result<()> {
+        self.transaction.into_inner().commit().await?;
+        Ok(())
+    }
+
+    pub async fn rollback(self) -> Result<()> {
+        self.transaction.into_inner().rollback().await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,38 +135,75 @@ mod tables {
 #[cfg(test)]
 pub use dockerized::*;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use tokio::sync::Mutex;
 
 #[async_trait::async_trait]
 impl Storage for PostgresDb {
     async fn insert(&self, submission: BlockSubmission) -> Result<()> {
+        let tx = self.tx().await?;
+
+        tx.insert(submission).await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
+        let tx = self.tx().await?;
+
+        let response = tx.submission_w_latest_block().await?;
+
+        tx.commit().await?;
+
+        Ok(response)
+    }
+
+    async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
+        let tx = self.tx().await?;
+
+        let response = tx.set_submission_completed(fuel_block_hash).await?;
+
+        tx.commit().await?;
+
+        Ok(response)
+    }
+}
+
+#[async_trait::async_trait]
+impl Storage for Transaction {
+    async fn insert(&self, submission: BlockSubmission) -> Result<()> {
         let row = tables::EthFuelBlockSubmission::from(submission);
+        let mut tx = self.transaction.lock().await;
         sqlx::query!(
             "INSERT INTO eth_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
             row.fuel_block_hash,
             row.fuel_block_height,
             row.completed,
             row.submittal_height
-        ).execute(&self.connection_pool).await?;
+        ).execute(tx.as_mut()).await?;
         Ok(())
     }
 
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
+        let mut tx = self.transaction.lock().await;
         sqlx::query_as!(
             tables::EthFuelBlockSubmission,
             "SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
         )
-        .fetch_optional(&self.connection_pool)
+        .fetch_optional(tx.as_mut())
         .await?
         .map(BlockSubmission::try_from)
         .transpose()
     }
 
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
+        let mut tx = self.transaction.lock().await;
         let updated_row = sqlx::query_as!(
             tables::EthFuelBlockSubmission,
             "UPDATE eth_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
             fuel_block_hash.as_slice(),
-        ).fetch_optional(&self.connection_pool).await?;
+        ).fetch_optional(tx.as_mut()).await?;
 
         if let Some(row) = updated_row {
             Ok(row.try_into()?)
@@ -152,12 +216,13 @@ impl Storage for PostgresDb {
 
 #[cfg(test)]
 mod dockerized {
-    use std::sync::{Arc, OnceLock};
+    use std::sync::{Arc, Weak};
 
     use testcontainers::{core::WaitFor, runners::AsyncRunner, Image, RunnableImage};
+    use tokio::sync::OnceCell;
 
     use super::{ConnectionOptions, PostgresDb};
-    use crate::adapters::storage::{Error, Result};
+    use crate::adapters::storage::Result;
 
     struct PostgresImage;
 
@@ -183,13 +248,31 @@ mod dockerized {
         }
     }
 
-    #[derive(Clone)]
     pub struct PostgresProcess {
-        _container: Arc<testcontainers::ContainerAsync<PostgresImage>>,
+        container: testcontainers::ContainerAsync<PostgresImage>,
         db: PostgresDb,
     }
 
     impl PostgresProcess {
+        pub async fn shared() -> Result<Arc<Self>> {
+            // If at some point no tests are running, the shared instance will be dropped. If
+            // requested again, it will be recreated.
+            // This is a workaround for the lack of a global setup/teardown for tests.
+            static LOCK: tokio::sync::Mutex<Weak<PostgresProcess>> =
+                tokio::sync::Mutex::const_new(Weak::new());
+            let mut shared_process = LOCK.lock().await;
+
+            let process = if let Some(running_process) = shared_process.upgrade() {
+                running_process
+            } else {
+                let process = Arc::new(Self::start().await?);
+                *shared_process = Arc::downgrade(&process);
+                process
+            };
+
+            Ok(process)
+        }
+
         pub async fn start() -> Result<Self> {
             let username = "username".to_string();
             let password = "password".to_string();
@@ -205,10 +288,7 @@ mod dockerized {
 
             db.migrate().await?;
 
-            Ok(Self {
-                _container: Arc::new(container),
-                db,
-            })
+            Ok(Self { container, db })
         }
 
         pub fn db(&self) -> PostgresDb {
@@ -216,7 +296,7 @@ mod dockerized {
         }
 
         pub async fn stop(&self) {
-            self._container.stop().await;
+            self.container.stop().await;
         }
 
         async fn start_docker_container(
@@ -260,17 +340,17 @@ mod tests {
     #[tokio::test]
     async fn can_insert_and_find_latest_block() {
         // given
-        let process = PostgresProcess::start().await.unwrap();
-        let db = process.db();
+        let process = PostgresProcess::shared().await.unwrap();
+        let tx = process.db().tx().await.unwrap();
 
         let latest_submission = given_incomplete_submission(10);
-        db.insert(latest_submission.clone()).await.unwrap();
+        tx.insert(latest_submission.clone()).await.unwrap();
 
         let older_submission = given_incomplete_submission(9);
-        db.insert(older_submission).await.unwrap();
+        tx.insert(older_submission).await.unwrap();
 
         // when
-        let actual = db.submission_w_latest_block().await.unwrap().unwrap();
+        let actual = tx.submission_w_latest_block().await.unwrap().unwrap();
 
         // then
         assert_eq!(actual, latest_submission);
@@ -278,14 +358,14 @@ mod tests {
 
     #[tokio::test]
     async fn correctly_gets_submission_w_latest_block() {
-        let process = PostgresProcess::start().await.unwrap();
-        let db = process.db();
+        let process = PostgresProcess::shared().await.unwrap();
+        let tx = process.db().tx().await.unwrap();
 
         for current_height in 0..=1024 {
             let current_entry = given_incomplete_submission(current_height);
-            db.insert(current_entry).await.unwrap();
+            tx.insert(current_entry).await.unwrap();
 
-            let highest_block_height = db
+            let highest_block_height = tx
                 .submission_w_latest_block()
                 .await
                 .unwrap()
@@ -300,15 +380,15 @@ mod tests {
     #[tokio::test]
     async fn can_update_completion_status() {
         // given
-        let process = PostgresProcess::start().await.unwrap();
-        let db = process.db();
+        let process = PostgresProcess::shared().await.unwrap();
+        let tx = process.db().tx().await.unwrap();
 
         let submission = given_incomplete_submission(10);
         let block_hash = submission.block.hash;
-        db.insert(submission).await.unwrap();
+        tx.insert(submission).await.unwrap();
 
         // when
-        let submission = db.set_submission_completed(block_hash).await.unwrap();
+        let submission = tx.set_submission_completed(block_hash).await.unwrap();
 
         // then
         assert!(submission.completed);
@@ -317,14 +397,14 @@ mod tests {
     #[tokio::test]
     async fn updating_a_missing_submission_causes_an_error() {
         // given
-        let process = PostgresProcess::start().await.unwrap();
-        let db = process.db();
+        let process = PostgresProcess::shared().await.unwrap();
+        let tx = process.db().tx().await.unwrap();
 
         let submission = given_incomplete_submission(10);
         let block_hash = submission.block.hash;
 
         // when
-        let result = db.set_submission_completed(block_hash).await;
+        let result = tx.set_submission_completed(block_hash).await;
 
         // then
         let Err(Error::Database(msg)) = result else {

@@ -89,16 +89,16 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block = given_a_block(block_height);
         let postgress_process = PostgresProcess::start().await.unwrap();
-        let storage = postgress_process.db();
+        let db = postgress_process.db();
 
         let eth_rpc_mock = given_eth_rpc_that_expects(block);
         tx.try_send(block).unwrap();
 
         // when
-        spawn_committer_and_run_until_timeout(rx, eth_rpc_mock, storage.clone()).await;
+        spawn_committer_and_run_until_timeout(rx, eth_rpc_mock, db.clone()).await;
 
         //then
-        let last_submission = storage.submission_w_latest_block().await.unwrap().unwrap();
+        let last_submission = db.submission_w_latest_block().await.unwrap().unwrap();
         assert_eq!(block_height, last_submission.block.height);
     }
 

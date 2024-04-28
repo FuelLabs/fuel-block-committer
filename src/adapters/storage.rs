@@ -1,5 +1,7 @@
 pub mod postgresql;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +34,7 @@ impl BlockSubmission {
 }
 
 #[async_trait]
+#[impl_tools::autoimpl(for<T: trait> &T, &mut T, Arc<T>, Box<T>)]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;

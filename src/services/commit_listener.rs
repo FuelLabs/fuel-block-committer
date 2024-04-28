@@ -35,7 +35,7 @@ impl CommitListener {
         }
     }
 
-    async fn determine_starting_eth_block(&self) -> Result<EthHeight> {
+    async fn determine_starting_eth_block(&mut self) -> Result<EthHeight> {
         Ok(self
             .storage
             .submission_w_latest_block()
@@ -113,6 +113,8 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use ethers::types::U256;
     use futures::stream;
     use mockall::predicate;
@@ -126,7 +128,10 @@ mod tests {
             },
             fuel_adapter::FuelBlock,
             runner::Runner,
-            storage::{postgresql::PostgresProcess, BlockSubmission, Storage},
+            storage::{
+                postgresql::{PostgresProcess, Transaction},
+                BlockSubmission, Storage,
+            },
         },
         errors::Result,
         services::CommitListener,
@@ -145,21 +150,19 @@ mod tests {
         let eth_rpc_mock =
             given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
-        let process = start_postgres_with_submission(submission).await;
+        let db_tx = Arc::new(start_postgres_tx_with_submission(submission).await);
 
-        let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, process.db(), CancellationToken::default());
+        let mut commit_listener = CommitListener::new(
+            eth_rpc_mock,
+            Arc::clone(&db_tx),
+            CancellationToken::default(),
+        );
 
         // when
         commit_listener.run().await.unwrap();
 
         //then
-        let res = process
-            .db()
-            .submission_w_latest_block()
-            .await
-            .unwrap()
-            .unwrap();
+        let res = db_tx.submission_w_latest_block().await.unwrap().unwrap();
 
         assert!(res.completed);
     }
@@ -177,10 +180,10 @@ mod tests {
         let eth_rpc_mock =
             given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
-        let process = start_postgres_with_submission(submission).await;
+        let db_tx = start_postgres_tx_with_submission(submission).await;
 
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, process.db(), CancellationToken::default());
+            CommitListener::new(eth_rpc_mock, db_tx, CancellationToken::default());
 
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);
@@ -232,20 +235,19 @@ mod tests {
             new_block.submittal_height,
         );
 
-        let process = start_postgres_with_submission(new_block.clone()).await;
-        let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, process.db(), CancellationToken::default());
+        let db_tx = start_postgres_tx_with_submission(new_block.clone()).await;
+        let db_tx = Arc::new(db_tx);
+        let mut commit_listener = CommitListener::new(
+            eth_rpc_mock,
+            Arc::clone(&db_tx),
+            CancellationToken::default(),
+        );
 
         // when
         commit_listener.run().await.unwrap();
 
         //then
-        let latest_submission = process
-            .db()
-            .submission_w_latest_block()
-            .await
-            .unwrap()
-            .unwrap();
+        let latest_submission = db_tx.submission_w_latest_block().await.unwrap().unwrap();
         assert_eq!(
             BlockSubmission {
                 completed: true,
@@ -255,12 +257,14 @@ mod tests {
         );
     }
 
-    async fn start_postgres_with_submission(submission: BlockSubmission) -> PostgresProcess {
-        let storage = PostgresProcess::start().await.unwrap();
+    async fn start_postgres_tx_with_submission(submission: BlockSubmission) -> Transaction {
+        let storage = PostgresProcess::shared().await.unwrap();
 
-        storage.db().insert(submission).await.unwrap();
+        let tx = storage.db().tx().await.unwrap();
 
-        storage
+        tx.insert(submission).await.unwrap();
+
+        tx
     }
 
     fn given_eth_rpc_that_will_stream(

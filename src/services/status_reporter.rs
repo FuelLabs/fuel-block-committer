@@ -55,7 +55,10 @@ mod tests {
         let test = |submission_status, expected_app_status| {
             async move {
                 // given
-                let process = PostgresProcess::start().await.unwrap();
+                let process = PostgresProcess::shared().await.unwrap();
+
+                let db_tx = process.db().tx().await.unwrap();
+
                 if let Some(is_completed) = submission_status {
                     let latest_submission = BlockSubmission {
                         block: FuelBlock {
@@ -65,10 +68,10 @@ mod tests {
                         completed: is_completed,
                         ..BlockSubmission::random()
                     };
-                    process.db().insert(latest_submission).await.unwrap();
+                    db_tx.insert(latest_submission).await.unwrap();
                 }
 
-                let status_reporter = StatusReporter::new(process.db());
+                let status_reporter = StatusReporter::new(db_tx);
 
                 // when
                 let status = status_reporter.current_status().await.unwrap();
