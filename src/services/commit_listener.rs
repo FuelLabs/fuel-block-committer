@@ -119,7 +119,6 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use ethers::types::U256;
     use futures::stream;

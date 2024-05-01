@@ -1,14 +1,9 @@
-use std::{
-    io::BufRead,
-    sync::{Arc, OnceLock, Weak},
-};
+use std::sync::{Arc, Weak};
 
-use futures::{Future, StreamExt, TryStreamExt};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, Image, RunnableImage};
-use tokio::{runtime::Handle, sync::OnceCell};
 
 use super::{DbConfig, Postgres};
-use crate::adapters::storage::{Error, Result};
+use crate::adapters::storage::Result;
 
 struct PostgresImage;
 
@@ -39,31 +34,6 @@ pub struct PostgresProcess {
     password: String,
     initial_db: String,
     container: testcontainers::ContainerAsync<PostgresImage>,
-}
-
-fn block_in_place<F, R>(f: F) -> Result<R>
-where
-    F: Future<Output = R> + Send + 'static,
-    R: Send + 'static,
-{
-    let handle = Handle::try_current().map_err(|e| Error::Other(e.to_string()))?;
-    match handle.runtime_flavor() {
-        tokio::runtime::RuntimeFlavor::CurrentThread => std::thread::spawn(move || {
-            tokio::runtime::Runtime::new()
-                .map(|rt| rt.block_on(f))
-                .map_err(|e| {
-                    Error::Other(format!(
-                        "Couldn't run a tokio tuntime to do in-place blocking: {e}"
-                    ))
-                })
-        })
-        .join()
-        .map_err(|_| Error::Other("Couldn't join the thread".to_string()))?,
-        tokio::runtime::RuntimeFlavor::MultiThread => Ok(tokio::task::block_in_place(move || {
-            Handle::current().block_on(f)
-        })),
-        _ => panic!("unsupported runtime flavor"),
-    }
 }
 
 impl PostgresProcess {

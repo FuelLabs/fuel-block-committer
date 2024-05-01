@@ -1,12 +1,7 @@
-use crate::adapters::storage::Error;
-
-use crate::adapters::storage::Result;
-
-use crate::adapters::storage::BlockSubmission;
-
 use std::marker::PhantomData;
 
 use super::tables;
+use crate::adapters::storage::{BlockSubmission, Error, Result};
 
 pub(crate) struct Queries<Executor> {
     pub(crate) _data: PhantomData<Executor>,

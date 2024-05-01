@@ -54,10 +54,7 @@ mod tests {
     use rand::Rng;
 
     use super::*;
-    use crate::adapters::{
-        fuel_adapter::FuelBlock,
-        storage::{postgresql::PostgresProcess, BlockSubmission},
-    };
+    use crate::adapters::storage::{postgresql::PostgresProcess, BlockSubmission};
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {
