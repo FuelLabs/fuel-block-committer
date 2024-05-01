@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use super::{BlockSubmission, Storage};
+use super::{BlockSubmission, Error, Storage};
 use crate::adapters::storage::Result;
 
-mod queries;
 mod tables;
 #[cfg(test)]
 mod test_instance;
@@ -28,14 +27,25 @@ pub struct DbConfig {
     /// The password used to authenticate with the PostgreSQL server.
     pub password: String,
     /// The name of the database to connect to on the PostgreSQL server.
-    pub db: String,
+    pub database: String,
     /// The maximum number of connections allowed in the connection pool.
     pub max_connections: u32,
 }
 
 impl Postgres {
     pub async fn connect(opt: &DbConfig) -> Result<Self> {
-        let connection_pool = opt.establish_pool().await?;
+        let options = PgConnectOptions::new()
+            .username(&opt.username)
+            .password(&opt.password)
+            .database(&opt.database)
+            .host(&opt.host)
+            .port(opt.port);
+
+        let connection_pool = PgPoolOptions::new()
+            .max_connections(opt.max_connections)
+            .acquire_timeout(Duration::from_secs(2))
+            .connect_with(options)
+            .await?;
 
         Ok(Self { connection_pool })
     }
@@ -52,37 +62,46 @@ impl Postgres {
     }
 }
 
-impl DbConfig {
-    async fn establish_pool(&self) -> sqlx::Result<sqlx::Pool<sqlx::Postgres>> {
-        let options = PgConnectOptions::new()
-            .username(&self.username)
-            .password(&self.password)
-            .database(&self.db)
-            .host(&self.host)
-            .port(self.port);
-
-        PgPoolOptions::new()
-            .max_connections(self.max_connections)
-            .acquire_timeout(Duration::from_secs(2))
-            .connect_with(options)
-            .await
-    }
-}
-
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 #[async_trait::async_trait]
 impl Storage for Postgres {
     async fn insert(&self, submission: BlockSubmission) -> Result<()> {
-        queries::Queries::insert(&self.connection_pool, submission).await
+        let row = tables::EthFuelBlockSubmission::from(submission);
+        sqlx::query!(
+            "INSERT INTO eth_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
+            row.fuel_block_hash,
+            row.fuel_block_height,
+            row.completed,
+            row.submittal_height
+        ).execute(&self.connection_pool).await?;
+        Ok(())
     }
 
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
-        queries::Queries::submission_w_latest_block(&self.connection_pool).await
+        sqlx::query_as!(
+            tables::EthFuelBlockSubmission,
+            "SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .map(BlockSubmission::try_from)
+        .transpose()
     }
 
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
-        queries::Queries::set_submission_completed(&self.connection_pool, fuel_block_hash).await
+        let updated_row = sqlx::query_as!(
+            tables::EthFuelBlockSubmission,
+            "UPDATE eth_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
+            fuel_block_hash.as_slice(),
+        ).fetch_optional(&self.connection_pool).await?;
+
+        if let Some(row) = updated_row {
+            Ok(row.try_into()?)
+        } else {
+            let hash = hex::encode(fuel_block_hash);
+            Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
+        }
     }
 }
 

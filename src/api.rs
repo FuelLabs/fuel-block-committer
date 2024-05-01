@@ -7,9 +7,9 @@ use prometheus::{Encoder, Registry, TextEncoder};
 
 use crate::{
     adapters::storage::Storage,
+    config::Config,
     errors::{Error, Result},
     services::{HealthReporter, StatusReporter},
-    setup::config::Config,
     telemetry::HealthChecker,
 };
 

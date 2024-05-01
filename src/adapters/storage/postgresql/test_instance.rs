@@ -83,7 +83,7 @@ impl PostgresProcess {
             port: self.container.get_host_port_ipv4(5432).await,
             username: self.username.clone(),
             password: self.password.clone(),
-            db: self.initial_db.clone(),
+            database: self.initial_db.clone(),
             max_connections: 5,
         };
         let db = Postgres::connect(&config).await?;
@@ -92,7 +92,7 @@ impl PostgresProcess {
         let query = format!("CREATE DATABASE {db_name}");
         db.execute(&query).await?;
 
-        config.db = db_name.clone();
+        config.database = db_name.clone();
 
         let db = Postgres::connect(&config).await?;
 

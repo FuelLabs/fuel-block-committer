@@ -56,7 +56,6 @@ pub struct EthHeight {
     height: i64,
 }
 
-// impl so that we can generate random heights
 impl Distribution<EthHeight> for Standard {
     fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> EthHeight {
         let height = rng.gen_range(0..=i64::MAX) as u64;

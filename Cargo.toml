@@ -35,7 +35,6 @@ sqlx = { version = "0.7.4", features = [
   "runtime-tokio",
   "migrate",
   "macros",
-  "bigdecimal",
 ], default-features = false }
 thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.28", features = [

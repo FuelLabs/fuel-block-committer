@@ -12,9 +12,9 @@ use crate::{
         runner::Runner,
         storage::{postgresql::Postgres, Storage},
     },
+    config::{Config, InternalConfig},
     errors::Result,
     services::{BlockCommitter, BlockWatcher, CommitListener, WalletBalanceTracker},
-    setup::config::{Config, InternalConfig},
     telemetry::{HealthChecker, RegistersMetrics},
 };
 
@@ -153,7 +153,7 @@ fn create_fuel_adapter(
     registry: &Registry,
 ) -> (FuelClient, HealthChecker) {
     let fuel_adapter = FuelClient::new(
-        &config.fuel.gql_address,
+        &config.fuel.graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
     );
     fuel_adapter.register_metrics(registry);

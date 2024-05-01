@@ -13,17 +13,6 @@ pub enum Error {
     Storage(String),
 }
 
-impl Error {
-    pub fn add_context(&mut self, ctx: &str) -> &mut Self {
-        match self {
-            Self::Other(msg) | Self::Network(msg) | Self::Storage(msg) => {
-                *msg = format!("{}:\n{}", ctx, msg);
-            }
-        }
-        self
-    }
-}
-
 impl From<serde_json::Error> for Error {
     fn from(value: serde_json::Error) -> Self {
         Self::Storage(value.to_string())
@@ -62,7 +51,7 @@ impl From<crate::adapters::storage::Error> for Error {
 
 impl From<config::ConfigError> for Error {
     fn from(error: config::ConfigError) -> Self {
-        Self::Storage(error.to_string())
+        Self::Other(error.to_string())
     }
 }
 

@@ -172,7 +172,6 @@ mod tests {
         };
 
         assert_eq!(missed_block, announced_block);
-        drop(block_watcher);
     }
 
     #[tokio::test]
