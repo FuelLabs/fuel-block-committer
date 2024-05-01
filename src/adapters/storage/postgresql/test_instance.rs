@@ -92,7 +92,7 @@ impl PostgresProcess {
         let query = format!("CREATE DATABASE {db_name}");
         db.execute(&query).await?;
 
-        config.database = db_name.clone();
+        config.database = db_name;
 
         let db = Postgres::connect(&config).await?;
 

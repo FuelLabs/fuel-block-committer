@@ -159,9 +159,9 @@ mod tests {
         let latest_block = given_a_block(5);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let db = PostgresProcess::shared().await.unwrap();
-        let db_tx = db_with_submissions(&db, vec![0, 2]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![0, 2]).await;
+        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
 
         // when
         block_watcher.run().await.unwrap();
@@ -183,9 +183,9 @@ mod tests {
         let latest_block = given_a_block(5);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let db = PostgresProcess::shared().await.unwrap();
-        let db_tx = db_with_submissions(&db, vec![0, 2, 4]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![0, 2, 4]).await;
+        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
 
         // when
         block_watcher.run().await.unwrap();
@@ -204,9 +204,9 @@ mod tests {
         let latest_block = given_a_block(6);
         let fuel_adapter = given_fetcher(vec![latest_block]);
 
-        let db = PostgresProcess::shared().await.unwrap();
-        let db_tx = db_with_submissions(&db, vec![0, 2, 4, 6]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![0, 2, 4, 6]).await;
+        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
 
         // when
         block_watcher.run().await.unwrap();
@@ -225,9 +225,9 @@ mod tests {
         let block = given_a_block(4);
         let fuel_adapter = given_fetcher(vec![block]);
 
-        let db = PostgresProcess::shared().await.unwrap();
-        let db_tx = db_with_submissions(&db, vec![0, 2]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![0, 2]).await;
+        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
 
         // when
         block_watcher.run().await.unwrap();
@@ -247,9 +247,9 @@ mod tests {
 
         let fuel_adapter = given_fetcher(vec![given_a_block(5)]);
 
-        let db = PostgresProcess::shared().await.unwrap();
-        let db_tx = db_with_submissions(&db, vec![0, 2, 4]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![0, 2, 4]).await;
+        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);

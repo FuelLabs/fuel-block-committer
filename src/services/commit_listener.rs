@@ -185,11 +185,11 @@ mod tests {
         let eth_rpc_mock =
             given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
-        let db = PostgresProcess::shared().await.unwrap();
-        let db_tx = db_with_submission(&db, submission).await;
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submission(&process, submission).await;
 
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, db_tx, CancellationToken::default());
+            CommitListener::new(eth_rpc_mock, db, CancellationToken::default());
 
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);

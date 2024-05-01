@@ -40,7 +40,6 @@ services:
 
   block_committer:
     container_name: block-committer
-    restart: unless-stopped
     depends_on:
       fuel_node:
         condition: service_healthy

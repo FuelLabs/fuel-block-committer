@@ -1,9 +1,6 @@
-use std::path::PathBuf;
+use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf, str::FromStr, time::Duration};
 
 use clap::{command, Parser};
-
-use std::{net::Ipv4Addr, num::NonZeroU32, str::FromStr, time::Duration};
-
 use ethers::types::{Address, Chain};
 use serde::Deserialize;
 use url::Url;
@@ -113,9 +110,5 @@ pub fn parse() -> crate::errors::Result<Config> {
         .add_source(config::Environment::with_prefix("COMMITTER").separator("__"))
         .build()?;
 
-    tracing::info!("Config: {:?}", config);
-
-    let config = config.try_deserialize()?;
-
-    Ok(config)
+    Ok(config.try_deserialize()?)
 }
