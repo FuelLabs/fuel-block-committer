@@ -14,20 +14,20 @@ name = "e2e"
 path = "tests/harness.rs"
 
 [dependencies]
+clap = { version = "4.5", features = ["derive"] }
 actix-web = { version = "4", default-features = false, features = ["macros"] }
 async-trait = { version = "0.1", default-features = false }
-clap = { version = "4.3", features = [
-  "derive",
-  "env",
-  "std",
-], default-features = false }
+config = { version = "0.14", default-features = false, features = [
+  "toml",
+  "async",
+] }
 ethers = { version = "2.0", features = ["ws"], default-features = false }
 fuel-core-client = { version = "0.25", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = "0.4.3"
 impl-tools = "0.10.0"
 prometheus = { version = "0.13", default-features = false }
-rand = { version = "0.8", default-features = false }
+rand = { version = "0.8", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = { version = "1.0", default-features = false }
 sqlx = { version = "0.7.4", features = [
@@ -51,8 +51,6 @@ url = { version = "2.3", default-features = false }
 [dev-dependencies]
 anyhow = { version = "1.0", default-features = false }
 mockall = { version = "0.12", default-features = false }
+testcontainers = { version = "0.16.6", default-features = false }
 #TODO: Once fuels-rs catches up tests will be reenabled
 #fuels-test-helpers = "0.57"
-testcontainers = { version = "0.16", default-features = false, features = [
-  "watchdog",
-] }

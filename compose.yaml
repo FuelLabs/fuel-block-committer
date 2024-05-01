@@ -53,10 +53,21 @@ services:
     environment:
       - FUEL_GRAPHQL_ENDPOINT=http://fuel_node:4000
       - ETHEREUM_RPC=ws://eth_node:8545
-      - ETHEREUM_WALLET_KEY=0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36
-      - STATE_CONTRACT_ADDRESS=0xdAad669b06d79Cb48C8cfef789972436dBe6F24d
-      - ETHEREUM_CHAIN=anvil
-      - COMMIT_INTERVAL=3
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=username
+      - POSTGRES_PASS=password
+      - POSTGRES_DB=test
+    volumes:
+      - ./configurations/development/config.toml:/app/config.toml
+    command: ["./fuel-block-committer", "--config", "/app/config.toml"]
+    
+
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: test
 
 networks:
   default:

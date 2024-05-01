@@ -6,9 +6,9 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{
     adapters::{
-        fuel_adapter::{FuelAdapter, FuelBlock},
+        fuel_adapter::{FuelAdapter, FuelBlock, FuelClient},
         runner::Runner,
-        storage::Storage,
+        storage::{postgresql::Postgres, Storage},
     },
     errors::{Error, Result},
     telemetry::RegistersMetrics,
@@ -18,7 +18,7 @@ struct Metrics {
     latest_fuel_block: IntGauge,
 }
 
-impl RegistersMetrics for BlockWatcher {
+impl<A, Db> RegistersMetrics for BlockWatcher<A, Db> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.metrics.latest_fuel_block.clone())]
     }
@@ -36,30 +36,35 @@ impl Default for Metrics {
     }
 }
 
-pub struct BlockWatcher {
-    fuel_adapter: Box<dyn FuelAdapter>,
+pub struct BlockWatcher<A = FuelClient, Db = Postgres> {
+    fuel_adapter: A,
     tx_fuel_block: Sender<FuelBlock>,
-    storage: Box<dyn Storage>,
+    storage: Db,
     commit_interval: NonZeroU32,
     metrics: Metrics,
 }
 
-impl BlockWatcher {
+impl<A, Db> BlockWatcher<A, Db> {
     pub fn new(
         commit_interval: NonZeroU32,
         tx_fuel_block: Sender<FuelBlock>,
-        fuel_adapter: impl FuelAdapter + 'static,
-        storage: impl Storage + 'static,
+        fuel_adapter: A,
+        storage: Db,
     ) -> Self {
         Self {
             commit_interval,
-            fuel_adapter: Box::new(fuel_adapter),
+            fuel_adapter,
             tx_fuel_block,
-            storage: Box::new(storage),
+            storage,
             metrics: Metrics::default(),
         }
     }
-
+}
+impl<A, Db> BlockWatcher<A, Db>
+where
+    A: FuelAdapter,
+    Db: Storage,
+{
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let current_block = self.fuel_adapter.latest_block().await?;
 
@@ -103,7 +108,11 @@ impl BlockWatcher {
 }
 
 #[async_trait]
-impl Runner for BlockWatcher {
+impl<A, Db> Runner for BlockWatcher<A, Db>
+where
+    A: FuelAdapter,
+    Db: Storage,
+{
     async fn run(&mut self) -> Result<()> {
         let current_block = self.fetch_latest_block().await?;
         let current_epoch_block_height = self.current_epoch_block_height(current_block.height);
@@ -129,18 +138,16 @@ impl Runner for BlockWatcher {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
+    use std::{sync::Arc, vec};
 
     use mockall::predicate::eq;
     use prometheus::{proto::Metric, Registry};
+    use rand::Rng;
 
     use super::*;
     use crate::adapters::{
         fuel_adapter::MockFuelAdapter,
-        storage::{
-            postgresql::{PostgresProcess, Transaction},
-            BlockSubmission,
-        },
+        storage::{postgresql::PostgresProcess, BlockSubmission},
     };
 
     #[tokio::test]
@@ -152,7 +159,8 @@ mod tests {
         let latest_block = given_a_block(5);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let db_tx = start_db_tx_with_submissions(vec![0, 2]).await;
+        let db = PostgresProcess::shared().await.unwrap();
+        let db_tx = db_with_submissions(&db, vec![0, 2]).await;
         let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
 
         // when
@@ -164,6 +172,7 @@ mod tests {
         };
 
         assert_eq!(missed_block, announced_block);
+        drop(block_watcher);
     }
 
     #[tokio::test]
@@ -175,7 +184,8 @@ mod tests {
         let latest_block = given_a_block(5);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let db_tx = start_db_tx_with_submissions(vec![0, 2, 4]).await;
+        let db = PostgresProcess::shared().await.unwrap();
+        let db_tx = db_with_submissions(&db, vec![0, 2, 4]).await;
         let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
 
         // when
@@ -195,7 +205,8 @@ mod tests {
         let latest_block = given_a_block(6);
         let fuel_adapter = given_fetcher(vec![latest_block]);
 
-        let db_tx = start_db_tx_with_submissions(vec![0, 2, 4, 6]).await;
+        let db = PostgresProcess::shared().await.unwrap();
+        let db_tx = db_with_submissions(&db, vec![0, 2, 4, 6]).await;
         let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
 
         // when
@@ -215,7 +226,8 @@ mod tests {
         let block = given_a_block(4);
         let fuel_adapter = given_fetcher(vec![block]);
 
-        let db_tx = start_db_tx_with_submissions(vec![0, 2]).await;
+        let db = PostgresProcess::shared().await.unwrap();
+        let db_tx = db_with_submissions(&db, vec![0, 2]).await;
         let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
 
         // when
@@ -236,7 +248,8 @@ mod tests {
 
         let fuel_adapter = given_fetcher(vec![given_a_block(5)]);
 
-        let db_tx = start_db_tx_with_submissions(vec![0, 2, 4]).await;
+        let db = PostgresProcess::shared().await.unwrap();
+        let db_tx = db_with_submissions(&db, vec![0, 2, 4]).await;
         let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db_tx);
 
         let registry = Registry::default();
@@ -257,15 +270,16 @@ mod tests {
         assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
-    async fn start_db_tx_with_submissions(pending_submissions: Vec<u32>) -> Transaction {
-        let process = PostgresProcess::shared().await.unwrap();
-
-        let tx = process.db().tx().await.unwrap();
+    async fn db_with_submissions(
+        process: &Arc<PostgresProcess>,
+        pending_submissions: Vec<u32>,
+    ) -> Postgres {
+        let db = process.create_random_db().await.unwrap();
         for height in pending_submissions {
-            tx.insert(given_a_pending_submission(height)).await.unwrap();
+            db.insert(given_a_pending_submission(height)).await.unwrap();
         }
 
-        tx
+        db
     }
 
     fn given_fetcher(available_blocks: Vec<FuelBlock>) -> MockFuelAdapter {
@@ -284,7 +298,7 @@ mod tests {
     }
 
     fn given_a_pending_submission(block_height: u32) -> BlockSubmission {
-        let mut submission = BlockSubmission::random();
+        let mut submission: BlockSubmission = rand::thread_rng().gen();
         submission.block.height = block_height;
         submission
     }

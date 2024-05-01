@@ -1,0 +1,21 @@
+[eth]
+wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36"
+rpc = "${ETHEREUM_RPC}"
+chain_id = "anvil"
+state_contract_address = "0xdAad669b06d79Cb48C8cfef789972436dBe6F24d"
+commit_interval = 3
+
+[fuel]
+gql_address = "${FUEL_GRAPHQL_ENDPOINT}"
+
+[app]
+port = 8080
+host = "0.0.0.0"
+
+[app.db]
+host = "${POSTGRES_HOST}"
+port = 5432
+username = "${POSTGRES_USER}"
+password = "${POSTGRES_PASS}"
+db = "${POSTGRES_DB}"
+connections = 5

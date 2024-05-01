@@ -3,7 +3,7 @@ pub mod postgresql;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use rand::distributions::{Distribution, Standard};
 
 use crate::adapters::{ethereum_adapter::EthHeight, fuel_adapter::FuelBlock};
 
@@ -16,19 +16,12 @@ pub struct BlockSubmission {
     pub submittal_height: EthHeight,
 }
 
-impl BlockSubmission {
-    #[cfg(test)]
-    pub fn random() -> Self {
-        use rand::Rng;
-
-        let mut rand = rand::thread_rng();
-        Self {
-            block: FuelBlock {
-                hash: rand.gen::<[u8; 32]>(),
-                height: rand.gen(),
-            },
-            completed: false,
-            submittal_height: rand.gen(),
+impl Distribution<BlockSubmission> for Standard {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> BlockSubmission {
+        BlockSubmission {
+            block: rng.gen(),
+            completed: rng.gen(),
+            submittal_height: rng.gen(),
         }
     }
 }
@@ -62,5 +55,12 @@ impl From<sqlx::Error> for Error {
 impl From<sqlx::migrate::MigrateError> for Error {
     fn from(e: sqlx::migrate::MigrateError) -> Self {
         Self::Database(e.to_string())
+    }
+}
+
+#[cfg(test)]
+impl From<bollard::errors::Error> for Error {
+    fn from(value: bollard::errors::Error) -> Self {
+        Self::Other(value.to_string())
     }
 }

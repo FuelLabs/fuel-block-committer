@@ -60,6 +60,12 @@ impl From<crate::adapters::storage::Error> for Error {
     }
 }
 
+impl From<config::ConfigError> for Error {
+    fn from(error: config::ConfigError) -> Self {
+        Self::Storage(error.to_string())
+    }
+}
+
 impl ResponseError for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;

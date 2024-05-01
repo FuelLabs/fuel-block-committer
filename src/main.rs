@@ -1,6 +1,6 @@
 mod adapters;
 mod api;
-mod cli;
+mod config;
 mod errors;
 mod services;
 mod setup;
@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 async fn main() -> Result<()> {
     setup_logger();
 
-    let config = cli::parse()?;
+    let config = config::parse()?;
     let internal_config = InternalConfig::default();
     let cancel_token = CancellationToken::new();
 
