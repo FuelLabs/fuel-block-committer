@@ -5,12 +5,12 @@ state_contract_address = "0xdAad669b06d79Cb48C8cfef789972436dBe6F24d"
 commit_interval = 3
 rpc = "ws://localhost:8545"
 
+[fuel]
+graphql_endpoint = "http://localhost:4000"
+
 [app]
 port = 8080
 host = "0.0.0.0"
-
-[fuel]
-graphql_endpoint = "http://localhost:4000"
 
 [app.db]
 host = "localhost"
