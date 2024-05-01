@@ -57,10 +57,3 @@ impl From<sqlx::migrate::MigrateError> for Error {
         Self::Database(e.to_string())
     }
 }
-
-#[cfg(test)]
-impl From<bollard::errors::Error> for Error {
-    fn from(value: bollard::errors::Error) -> Self {
-        Self::Other(value.to_string())
-    }
-}

@@ -3,13 +3,8 @@ use std::{
     sync::{Arc, OnceLock, Weak},
 };
 
-use bollard::{
-    container::{CreateContainerOptions, LogsOptions, StopContainerOptions},
-    service::{HostConfig, PortBinding, PortMap},
-    Docker,
-};
 use futures::{Future, StreamExt, TryStreamExt};
-use testcontainers::Image;
+use testcontainers::{core::WaitFor, runners::AsyncRunner, Image, RunnableImage};
 use tokio::{runtime::Handle, sync::OnceCell};
 
 use super::{DbConfig, Postgres};
@@ -40,7 +35,10 @@ impl Image for PostgresImage {
 }
 
 pub struct PostgresProcess {
-    container: PostgresContainer,
+    username: String,
+    password: String,
+    initial_db: String,
+    container: testcontainers::ContainerAsync<PostgresImage>,
 }
 
 fn block_in_place<F, R>(f: F) -> Result<R>
@@ -68,156 +66,6 @@ where
     }
 }
 
-struct PostgresContainer {
-    id: String,
-    port: u16,
-    username: String,
-    password: String,
-    initial_db: String,
-}
-
-impl PostgresContainer {
-    fn map_port(container: u16, host: u16) -> PortMap {
-        [(
-            format!("{container}/tcp"),
-            Some(vec![PortBinding {
-                host_ip: Some("localhost".to_string()),
-                host_port: Some(host.to_string()),
-            }]),
-        )]
-        .into()
-    }
-
-    pub fn port(&self) -> u16 {
-        self.port
-    }
-
-    pub fn host(&self) -> String {
-        "localhost".to_string()
-    }
-
-    pub async fn create(connection: &Docker) -> Result<Self> {
-        let free_host_port = portpicker::pick_unused_port().ok_or_else(|| {
-            Error::Other("No free port available to use for postgres.".to_string())
-        })?;
-
-        let host_config = HostConfig {
-            port_bindings: Some(Self::map_port(5432, free_host_port)),
-            ..Default::default()
-        };
-
-        let username = "username".to_string();
-        let password = "password".to_string();
-        let db = "test".to_string();
-
-        let container = connection
-            .create_container::<&str, _>(
-                None,
-                bollard::container::Config {
-                    image: Some("postgres:latest"),
-                    env: Some(vec![
-                        &format!("POSTGRES_USER={username}"),
-                        &format!("POSTGRES_PASSWORD={password}"),
-                        &format!("POSTGRES_DB={db}"),
-                    ]),
-                    host_config: Some(host_config),
-                    ..Default::default()
-                },
-            )
-            .await?;
-
-        Ok(Self {
-            id: container.id,
-            port: free_host_port,
-            username,
-            password,
-            initial_db: db,
-        })
-    }
-
-    pub async fn start(&self, docker: &Docker) -> Result<()> {
-        docker.start_container::<&str>(&self.id, None).await?;
-        Ok(())
-    }
-
-    pub async fn wait_ready(&self, docker: &Docker) -> Result<()> {
-        let mut log_stream = docker.logs::<String>(
-            &self.id,
-            Some(LogsOptions {
-                follow: true,
-                stderr: true,
-                ..Default::default()
-            }),
-        );
-
-        let fut = async {
-            // The expectation is that chunks are line-aligned.
-            while let Some(chunk) = log_stream.try_next().await? {
-                if chunk
-                    .to_string()
-                    .contains("database system is ready to accept connections")
-                {
-                    break;
-                }
-            }
-            Result::Ok(())
-        };
-
-        tokio::time::timeout(std::time::Duration::from_secs(10), fut)
-            .await
-            .map_err(|_| {
-                Error::Other("Timed out waiting for the database to be ready".to_string())
-            })??;
-
-        Ok(())
-    }
-
-    pub async fn stop_and_remove(connection: Docker, id: String) -> Result<()> {
-        let wait_before_forcing = 1;
-        // We use a separate step to stop the container, although the
-        // `remove_container` function can also stop and remove it. This is
-        // because `remove_container` might wait indefinitely for the container
-        // to stop, as it doesn't allow setting a timeout.
-
-        // We ignore the result of stopping the container, as it might already be stopped or
-        // not started at all.
-        let _ = connection
-            .stop_container(
-                &id,
-                Some(StopContainerOptions {
-                    t: wait_before_forcing,
-                }),
-            )
-            .await;
-
-        connection
-            .remove_container(
-                &id,
-                Some(bollard::container::RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await?;
-
-        Result::Ok(())
-    }
-}
-
-impl Drop for PostgresContainer {
-    fn drop(&mut self) {
-        let id = self.id.clone();
-
-        if let Ok(docker) = Docker::connect_with_local_defaults() {
-            block_in_place(Self::stop_and_remove(docker, id))
-                .unwrap()
-                .unwrap();
-        } else {
-            panic!("Docker connection failed");
-        }
-    }
-}
-
 impl PostgresProcess {
     pub async fn shared() -> Result<Arc<Self>> {
         // If at some point no tests are running, the shared instance will be dropped. If
@@ -240,23 +88,33 @@ impl PostgresProcess {
     }
 
     pub async fn start() -> Result<Self> {
-        let connection = Docker::connect_with_local_defaults()?;
+        let username = "username".to_string();
+        let password = "password".to_string();
+        let initial_db = "test".to_string();
 
-        let container = PostgresContainer::create(&connection).await?;
-        container.start(&connection).await?;
-        container.wait_ready(&connection).await?;
+        let container = RunnableImage::from(PostgresImage)
+            .with_env_var(("POSTGRES_USER", &username))
+            .with_env_var(("POSTGRES_PASSWORD", &password))
+            .with_env_var(("POSTGRES_DB", &initial_db))
+            .start()
+            .await;
 
-        Ok(Self { container })
+        Ok(Self {
+            container,
+            username,
+            password,
+            initial_db,
+        })
     }
 
     pub async fn create_random_db(&self) -> Result<Postgres> {
         let mut config = DbConfig {
-            host: self.container.host(),
-            port: self.container.port(),
-            username: self.container.username.clone(),
-            password: self.container.password.clone(),
-            db: self.container.initial_db.clone(),
-            connections: 1,
+            host: "localhost".to_string(),
+            port: self.container.get_host_port_ipv4(5432).await,
+            username: self.username.clone(),
+            password: self.password.clone(),
+            db: self.initial_db.clone(),
+            max_connections: 5,
         };
         let db = Postgres::connect(&config).await?;
 

@@ -30,7 +30,7 @@ pub struct DbConfig {
     /// The name of the database to connect to on the PostgreSQL server.
     pub db: String,
     /// The maximum number of connections allowed in the connection pool.
-    pub connections: u32,
+    pub max_connections: u32,
 }
 
 impl Postgres {
@@ -62,7 +62,7 @@ impl DbConfig {
             .port(self.port);
 
         PgPoolOptions::new()
-            .max_connections(self.connections)
+            .max_connections(self.max_connections)
             .acquire_timeout(Duration::from_secs(2))
             .connect_with(options)
             .await
@@ -70,7 +70,6 @@ impl DbConfig {
 }
 
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use tokio::sync::Mutex;
 
 #[async_trait::async_trait]
 impl Storage for Postgres {
@@ -89,8 +88,7 @@ impl Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
-    use fuel_core_client::client::schema::schema::__fields::ChainInfo::latestBlock;
-    use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
+    use rand::{thread_rng, Rng};
 
     use super::*;
     use crate::adapters::storage::{BlockSubmission, Error};
