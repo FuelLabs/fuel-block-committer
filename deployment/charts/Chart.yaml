@@ -2,5 +2,5 @@ apiVersion: v2
 name: fuel-block-committer
 description: Fuel Block Committer Helm Chart
 type: application
-appVersion: "0.3.0"
+appVersion: "0.4.0"
 version: 0.1.1
