@@ -201,6 +201,7 @@ pub async fn shut_down(
     wallet_balance_tracker_handle: JoinHandle<()>,
     committer_handle: JoinHandle<()>,
     listener_handle: JoinHandle<()>,
+    storage: Postgres,
 ) -> Result<()> {
     cancel_token.cancel();
 
@@ -213,5 +214,6 @@ pub async fn shut_down(
         handle.await?;
     }
 
+    storage.close().await;
     Ok(())
 }

@@ -47,6 +47,12 @@ impl Postgres {
         Ok(Self { connection_pool })
     }
 
+    /// Close only when shutting down the application. Will close the connection pool even if it is
+    /// shared.
+    pub async fn close(self) {
+        self.connection_pool.close().await;
+    }
+
     pub async fn migrate(&self) -> Result<()> {
         sqlx::migrate!().run(&self.connection_pool).await?;
         Ok(())

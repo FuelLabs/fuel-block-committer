@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     launch_api_server(
         &config,
         metrics_registry,
-        storage,
+        storage.clone(),
         fuel_health_check,
         eth_health_check,
     )
@@ -74,6 +74,7 @@ async fn main() -> Result<()> {
         wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,
+        storage,
     )
     .await
 }
