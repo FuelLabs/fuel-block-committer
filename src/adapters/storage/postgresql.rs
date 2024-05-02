@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use super::{BlockSubmission, Error, Storage};
 use crate::adapters::storage::Result;
 

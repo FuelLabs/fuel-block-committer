@@ -3,7 +3,7 @@ services:
     container_name: eth-node
     build: eth_node
     ports:
-      - "8545:8545"
+      - "8089:8545"
     healthcheck:
       test: [ "CMD", "test", "-f", "/contracts_deployed" ]
       interval: 1s
