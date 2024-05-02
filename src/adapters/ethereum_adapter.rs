@@ -58,7 +58,7 @@ pub struct EthHeight {
 
 impl Distribution<EthHeight> for Standard {
     fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> EthHeight {
-        let height = rng.gen_range(0..=i64::MAX) as u64;
+        let height: i64 = rng.gen_range(0..=i64::MAX);
         height.try_into().expect("Must be valid EthHeight")
     }
 }
