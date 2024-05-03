@@ -5,7 +5,7 @@ homepage = "https://fuel.network/"
 license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
 rust-version = "1.77.0"
-version = "0.3.0"
+version = "0.4.0"
 name = "fuel-block-committer"
 
 [[test]]
@@ -14,15 +14,15 @@ name = "e2e"
 path = "tests/harness.rs"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
 actix-web = { version = "4", default-features = false, features = ["macros"] }
 async-trait = { version = "0.1", default-features = false }
+clap = { version = "4.5", features = ["derive"] }
 config = { version = "0.14", default-features = false, features = [
   "toml",
   "async",
 ] }
 ethers = { version = "2.0", features = ["ws"], default-features = false }
-fuel-core-client = { version = "0.25", default-features = false }
+fuel-core-client = { version = "0.26", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = "0.4.3"
 impl-tools = "0.10.0"
