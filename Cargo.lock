@@ -1790,7 +1790,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -1815,9 +1815,9 @@ dependencies = [
 
 [[package]]
 name = "fuel-core-client"
-version = "0.25.3"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddbbde8ee055ee506d8104d80a138b9f8554b1c87fb84471f5d2f4e9002c7649"
+checksum = "bc636a8706e36c713606ee4226fdef5260e3650ba0e8a57f0fc06258d0078a34"
 dependencies = [
  "anyhow",
  "cynic",
@@ -1839,9 +1839,9 @@ dependencies = [
 
 [[package]]
 name = "fuel-core-types"
-version = "0.25.3"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1db88fcb920c9101021520b60c8481b4f959274d9f711dd6602cf993657adde2"
+checksum = "cf038dd8df8d3aa665a13295c9ef888ba8118600cccdf8fb4587410e0e102fdf"
 dependencies = [
  "anyhow",
  "bs58",
