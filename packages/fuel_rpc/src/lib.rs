@@ -32,9 +32,8 @@ mod tests {
     use prometheus::{proto::Metric, Registry};
     use url::Url;
 
-    use crate::client::Client;
-
     use super::*;
+    use crate::client::Client;
 
     // TODO: once a sdk release is made these can be adapted
     // #[tokio::test]

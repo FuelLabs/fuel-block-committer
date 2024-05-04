@@ -8,9 +8,8 @@ use prometheus::{core::Collector, IntGauge, Opts};
 use storage::Postgres;
 use tokio::sync::mpsc::Sender;
 
-use crate::errors::{Error, Result};
-
 use super::Runner;
+use crate::errors::{Error, Result};
 
 struct Metrics {
     latest_fuel_block: IntGauge,

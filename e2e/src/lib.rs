@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
 
     use anyhow::Result;
     use eth_rpc::{Chain, WsAdapter};
     use fuel_rpc::client::Client;
     use ports::fuel_rpc::FuelAdapter;
+
+    use super::*;
 
     const FUEL_NODE_PORT: u16 = 4000;
     const ETH_NODE_PORT: u16 = 8089;

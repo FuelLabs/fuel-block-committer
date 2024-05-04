@@ -1,38 +1,17 @@
-use ethers::providers::Middleware;
-use ethers::providers::Ws;
-use ethers::signers::Signer;
-use ethers::types::H160;
+use std::{num::NonZeroU32, str::FromStr, sync::Arc};
+
+use ethers::{
+    prelude::{abigen, SignerMiddleware},
+    providers::{Middleware, Provider, Ws},
+    signers::{LocalWallet, Signer},
+    types::{Address, Chain, H160, U256, U64},
+};
 use ports::FuelBlock;
-
-use crate::Result;
-
-use super::event_streamer::EthEventStreamer;
-use super::health_tracking_middleware::MyAdapter;
-
-use ethers::types::U64;
-
 use serde_json::Value;
-
-use ethers::types::U256;
-
-use std::str::FromStr;
-use std::sync::Arc;
-
-use ethers::types::Address;
-
-use ethers::types::Chain;
-
 use url::Url;
 
-use std::num::NonZeroU32;
-
-use ethers::signers::LocalWallet;
-
-use ethers::prelude::SignerMiddleware;
-
-use ethers::providers::Provider;
-
-use ethers::prelude::abigen;
+use super::{event_streamer::EthEventStreamer, health_tracking_middleware::MyAdapter};
+use crate::Result;
 
 abigen!(
     FUEL_STATE_CONTRACT,

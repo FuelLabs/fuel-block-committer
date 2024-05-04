@@ -1,11 +1,5 @@
-use metrics::HealthChecker;
-use prometheus::Opts;
-
-use metrics::Collector;
-
-use metrics::RegistersMetrics;
-
-use prometheus::IntCounter;
+use metrics::{Collector, HealthChecker, RegistersMetrics};
+use prometheus::{IntCounter, Opts};
 
 use crate::client::Client;
 

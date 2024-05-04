@@ -1,11 +1,9 @@
-use super::HealthCheck;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
-use super::HealthChecker;
-
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-
-use std::sync::Arc;
+use super::{HealthCheck, HealthChecker};
 
 #[derive(Debug, Clone)]
 pub struct ConnectionHealthTracker {

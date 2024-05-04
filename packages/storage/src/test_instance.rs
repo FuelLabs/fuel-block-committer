@@ -2,9 +2,8 @@ use std::sync::{Arc, Weak};
 
 use testcontainers::{core::WaitFor, runners::AsyncRunner, Image, RunnableImage};
 
+use super::postgres::{DbConfig, Postgres};
 use crate::Result;
-
-use super::{postgres::DbConfig, postgres::Postgres};
 
 struct PostgresImage;
 

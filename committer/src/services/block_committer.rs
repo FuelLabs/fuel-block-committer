@@ -5,9 +5,8 @@ use storage::Postgres;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info};
 
-use crate::errors::Result;
-
 use super::Runner;
+use crate::errors::Result;
 
 pub struct BlockCommitter<A = WsAdapter, Db = Postgres> {
     rx_block: Receiver<FuelBlock>,

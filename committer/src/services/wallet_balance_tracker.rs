@@ -4,9 +4,8 @@ use metrics::RegistersMetrics;
 use ports::{eth_rpc::EthereumAdapter, H160, U256};
 use prometheus::{IntGauge, Opts};
 
-use crate::errors::Result;
-
 use super::Runner;
+use crate::errors::Result;
 
 pub struct WalletBalanceTracker {
     eth_adapter: Box<dyn EthereumAdapter>,

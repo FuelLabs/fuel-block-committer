@@ -1,6 +1,4 @@
-use futures::{stream::TryStreamExt, Stream};
 use std::pin::Pin;
-use websocket::EthEventStreamer;
 
 use async_trait::async_trait;
 use ethers::{
@@ -9,13 +7,14 @@ use ethers::{
     signers::LocalWallet,
     types::U256,
 };
+use futures::{stream::TryStreamExt, Stream};
 use ports::{eth_rpc::FuelBlockCommittedOnEth, EthHeight};
+use websocket::EthEventStreamer;
 
 mod metrics;
 mod websocket;
 
-pub use ethers::types::Address;
-pub use ethers::types::Chain;
+pub use ethers::types::{Address, Chain};
 pub use websocket::WsAdapter;
 
 #[derive(Debug, thiserror::Error)]

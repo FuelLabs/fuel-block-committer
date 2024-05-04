@@ -9,5 +9,4 @@ pub mod storage;
 pub use ethers_core::types::{H160, U256};
 #[cfg(feature = "eth")]
 pub use futures::Stream;
-
 pub use types::{BlockSubmission, EthHeight, FuelBlock, InvalidEthHeight};

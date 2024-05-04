@@ -1,23 +1,15 @@
-use futures::TryStreamExt;
-use ports::eth_rpc::FuelBlockCommittedOnEth;
-
-use futures::Stream;
-
-use ethers::prelude::k256::ecdsa::SigningKey;
-
-use ethers::signers::Wallet;
-
-use ethers::providers::{Provider, Ws};
-
-use ethers::prelude::SignerMiddleware;
-
 use std::sync::Arc;
 
-use ethers::prelude::Event;
-
-use crate::Result;
+use ethers::{
+    prelude::{k256::ecdsa::SigningKey, Event, SignerMiddleware},
+    providers::{Provider, Ws},
+    signers::Wallet,
+};
+use futures::{Stream, TryStreamExt};
+use ports::eth_rpc::FuelBlockCommittedOnEth;
 
 use super::connection::CommitSubmittedFilter;
+use crate::Result;
 
 pub(crate) type EthStreamInitializer = Event<
     Arc<SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>>,

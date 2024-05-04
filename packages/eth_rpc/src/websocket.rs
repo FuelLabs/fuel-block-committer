@@ -5,13 +5,12 @@ use metrics::{HealthChecker, RegistersMetrics};
 use ports::{FuelBlock, H160, U256};
 use url::Url;
 
-use crate::Result;
-
 pub(crate) use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{HealthTrackingMiddleware, MyAdapter},
 };
+use crate::Result;
 
 mod connection;
 mod event_streamer;

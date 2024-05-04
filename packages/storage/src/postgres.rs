@@ -1,14 +1,8 @@
-use crate::tables;
-
-use super::Error;
-
 use ports::BlockSubmission;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
-use sqlx::postgres::PgPoolOptions;
-
-use sqlx::postgres::PgConnectOptions;
-
-use super::Result;
+use super::{Error, Result};
+use crate::tables;
 
 #[derive(Clone)]
 pub struct Postgres {
