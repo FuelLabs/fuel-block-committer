@@ -43,7 +43,7 @@ impl From<storage::Error> for Error {
 impl From<ports::eth_rpc::Error> for Error {
     fn from(value: ports::eth_rpc::Error) -> Self {
         match value {
-            ports::eth_rpc::Error::Network(e) => Self::Network(e.to_string()),
+            ports::eth_rpc::Error::Network(e) => Self::Network(e),
             _ => Self::Other(value.to_string()),
         }
     }
@@ -52,7 +52,7 @@ impl From<ports::eth_rpc::Error> for Error {
 impl From<eth_rpc::Error> for Error {
     fn from(value: eth_rpc::Error) -> Self {
         match value {
-            eth_rpc::Error::Network(e) => Self::Network(e.to_string()),
+            eth_rpc::Error::Network(e) => Self::Network(e),
             _ => Self::Other(value.to_string()),
         }
     }
@@ -61,7 +61,7 @@ impl From<eth_rpc::Error> for Error {
 impl From<ports::fuel_rpc::Error> for Error {
     fn from(value: ports::fuel_rpc::Error) -> Self {
         match value {
-            ports::fuel_rpc::Error::Network(e) => Self::Network(e.to_string()),
+            ports::fuel_rpc::Error::Network(e) => Self::Network(e),
         }
     }
 }

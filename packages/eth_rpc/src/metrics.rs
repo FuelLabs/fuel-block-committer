@@ -2,7 +2,7 @@ use metrics::RegistersMetrics;
 use prometheus::{IntCounter, Opts};
 
 #[derive(Clone)]
-pub(crate) struct Metrics {
+pub struct Metrics {
     pub(crate) eth_network_errors: IntCounter,
 }
 

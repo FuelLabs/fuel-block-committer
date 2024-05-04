@@ -70,10 +70,10 @@ impl PostgresProcess {
             .await;
 
         Ok(Self {
-            container,
             username,
             password,
             initial_db,
+            container,
         })
     }
 

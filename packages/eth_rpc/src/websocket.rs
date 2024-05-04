@@ -5,7 +5,7 @@ use metrics::{HealthChecker, RegistersMetrics};
 use ports::{FuelBlock, U256};
 use url::Url;
 
-pub(crate) use self::event_streamer::EthEventStreamer;
+pub use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{HealthTrackingMiddleware, MyAdapter},
@@ -44,6 +44,7 @@ impl WsAdapter {
         })
     }
 
+    #[must_use]
     pub fn connection_health_checker(&self) -> HealthChecker {
         self.inner.connection_health_checker()
     }

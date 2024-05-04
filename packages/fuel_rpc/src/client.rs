@@ -11,6 +11,7 @@ pub struct Client {
 }
 
 impl Client {
+    #[must_use]
     pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
         Self {
@@ -53,6 +54,7 @@ impl Client {
         }
     }
 
+    #[must_use]
     pub fn connection_health_checker(&self) -> HealthChecker {
         self.health_tracker.tracker()
     }

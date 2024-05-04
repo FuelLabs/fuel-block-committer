@@ -36,7 +36,7 @@ where
             .await?
             .map(|submission| submission.completed);
 
-        let status = if let Some(false) = last_submission_completed {
+        let status = if last_submission_completed == Some(false) {
             Status::Committing
         } else {
             Status::Idle

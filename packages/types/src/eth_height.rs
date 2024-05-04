@@ -29,7 +29,7 @@ impl TryFrom<i64> for EthHeight {
                 "must be non-negative, got {height}",
             )));
         }
-        Ok(EthHeight { height })
+        Ok(Self { height })
     }
 }
 
@@ -64,6 +64,6 @@ impl From<EthHeight> for i64 {
 
 impl From<EthHeight> for u64 {
     fn from(height: EthHeight) -> Self {
-        height.height as u64
+        height.height as Self
     }
 }

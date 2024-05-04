@@ -29,7 +29,7 @@ pub enum Error {
 
 impl From<ethers::providers::ProviderError> for Error {
     fn from(err: ethers::providers::ProviderError) -> Self {
-        Error::Network(err.to_string())
+        Self::Network(err.to_string())
     }
 }
 
@@ -38,9 +38,9 @@ type ContractErrorType =
 impl From<ContractErrorType> for Error {
     fn from(value: ContractErrorType) -> Self {
         match value {
-            ContractError::MiddlewareError { e } => Error::Other(e.to_string()),
-            ContractError::ProviderError { e } => Error::Network(e.to_string()),
-            _ => Error::Other(value.to_string()),
+            ContractError::MiddlewareError { e } => Self::Other(e.to_string()),
+            ContractError::ProviderError { e } => Self::Network(e.to_string()),
+            _ => Self::Other(value.to_string()),
         }
     }
 }
@@ -50,9 +50,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl From<Error> for ports::eth_rpc::Error {
     fn from(err: Error) -> Self {
         match err {
-            Error::Network(err) => ports::eth_rpc::Error::Network(err),
-            Error::Other(err) => ports::eth_rpc::Error::Other(err),
-            Error::Wallet(err) => ports::eth_rpc::Error::Other(err.to_string()),
+            Error::Network(err) => Self::Network(err),
+            Error::Other(err) => Self::Other(err),
+            Error::Wallet(err) => Self::Other(err.to_string()),
         }
     }
 }

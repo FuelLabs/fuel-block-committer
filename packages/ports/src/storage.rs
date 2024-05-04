@@ -7,6 +7,7 @@ pub struct Error {
 }
 
 impl Error {
+    #[must_use]
     pub fn new(msg: String) -> Self {
         Self { msg }
     }

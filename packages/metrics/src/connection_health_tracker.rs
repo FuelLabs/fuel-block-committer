@@ -14,6 +14,7 @@ pub struct ConnectionHealthTracker {
 }
 
 impl ConnectionHealthTracker {
+    #[must_use]
     pub fn new(max_consecutive_failures: usize) -> Self {
         Self {
             max_consecutive_failures,
@@ -29,6 +30,7 @@ impl ConnectionHealthTracker {
         self.consecutive_failures.store(0, Ordering::SeqCst);
     }
 
+    #[must_use]
     pub fn tracker(&self) -> HealthChecker {
         Box::new(self.clone())
     }

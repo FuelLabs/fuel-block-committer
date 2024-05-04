@@ -5,7 +5,7 @@ use crate::{metrics::Metrics, websocket::event_streamer::EthEventStreamer, Error
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub(crate) trait MyAdapter {
+pub trait MyAdapter {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
@@ -15,7 +15,7 @@ pub(crate) trait MyAdapter {
 }
 
 #[derive(Clone)]
-pub(crate) struct HealthTrackingMiddleware<T> {
+pub struct HealthTrackingMiddleware<T> {
     adapter: T,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
