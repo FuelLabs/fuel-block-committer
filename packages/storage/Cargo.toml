@@ -21,10 +21,15 @@ tokio = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 
 [dev-dependencies]
-storage = { path = ".", features = ["runnable-instance"] }
-ports = { workspace = true, features = ["storage", "rand"] }
+storage = { path = ".", features = ["test-helpers"] }
+ports = { workspace = true, features = ["storage"] }
 rand = { workspace = true }
 tokio = { workspace = true }
 
 [features]
-runnable-instance = ["dep:testcontainers", "tokio/sync", "dep:rand"]
+test-helpers = [
+  "dep:testcontainers",
+  "tokio/sync",
+  "dep:rand",
+  "ports/test-helpers",
+]

@@ -11,4 +11,4 @@ rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 
 [features]
-rand = ["dep:rand"]
+test-helpers = ["dep:rand"]

@@ -41,6 +41,7 @@ tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["json"] }
 
 [dev-dependencies]
+storage = { workspace = true, features = ["test-helpers"] }
 anyhow = { version = "1.0", default-features = false }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["test-helpers"] }

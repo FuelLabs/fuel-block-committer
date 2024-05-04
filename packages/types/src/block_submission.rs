@@ -9,7 +9,7 @@ pub struct BlockSubmission {
     pub submittal_height: EthHeight,
 }
 
-#[cfg(feature = "rand")]
+#[cfg(feature = "test-helpers")]
 impl rand::distributions::Distribution<BlockSubmission> for rand::distributions::Standard {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> BlockSubmission {
         BlockSubmission {

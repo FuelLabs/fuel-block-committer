@@ -1,7 +1,7 @@
 mod tables;
-#[cfg(feature = "runnable-instance")]
+#[cfg(feature = "test-helpers")]
 mod test_instance;
-#[cfg(feature = "runnable-instance")]
+#[cfg(feature = "test-helpers")]
 pub use test_instance::*;
 
 mod postgres;

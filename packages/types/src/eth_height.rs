@@ -12,7 +12,7 @@ impl std::fmt::Display for InvalidEthHeight {
 }
 impl std::error::Error for InvalidEthHeight {}
 
-#[cfg(feature = "rand")]
+#[cfg(feature = "test-helpers")]
 impl rand::distributions::Distribution<EthHeight> for rand::distributions::Standard {
     fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> EthHeight {
         let height: i64 = rng.gen_range(0..=i64::MAX);

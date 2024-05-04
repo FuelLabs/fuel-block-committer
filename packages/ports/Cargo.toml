@@ -15,8 +15,7 @@ ethers-core = { workspace = true, optional = true }
 futures = { workspace = true }
 
 [features]
-test-helpers = ["dep:mockall"]
-rand = ["types/rand"]
+test-helpers = ["dep:mockall", "types/test-helpers"]
 eth = ["dep:ethers-core"]
 fuel = []
 storage = []

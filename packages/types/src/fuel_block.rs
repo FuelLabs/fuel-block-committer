@@ -6,7 +6,7 @@ pub struct FuelBlock {
     pub height: u32,
 }
 
-#[cfg(feature = "rand")]
+#[cfg(feature = "test-helpers")]
 impl rand::distributions::Distribution<FuelBlock> for rand::distributions::Standard {
     fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> FuelBlock {
         FuelBlock {
