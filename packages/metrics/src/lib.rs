@@ -1,3 +1,4 @@
+#![deny(unused_crate_dependencies)]
 mod connection_health_tracker;
 pub use connection_health_tracker::*;
 

@@ -5,16 +5,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = { workspace = true }
+async-trait = { workspace = true, optional = true }
 ethers-core = { workspace = true, optional = true }
-futures = { workspace = true }
-impl-tools = { workspace = true }
+futures = { workspace = true, optional = true }
+impl-tools = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
-thiserror = { workspace = true }
+thiserror = { workspace = true, optional = true }
 types = { workspace = true }
 
 [features]
 test-helpers = ["dep:mockall", "types/test-helpers"]
-eth = ["dep:ethers-core"]
-fuel = []
-storage = []
+eth = ["dep:ethers-core", "dep:futures", "dep:thiserror", "dep:async-trait"]
+fuel = ["dep:thiserror", "dep:async-trait"]
+storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]

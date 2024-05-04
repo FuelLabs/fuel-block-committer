@@ -1,5 +1,4 @@
-// TODO: return this
-// #![deny(unused_crate_dependencies)]
+#![deny(unused_crate_dependencies)]
 mod api;
 mod config;
 mod errors;

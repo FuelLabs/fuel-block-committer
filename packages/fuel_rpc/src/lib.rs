@@ -1,3 +1,4 @@
+#![deny(unused_crate_dependencies)]
 use fuel_core_client::client::types::Block;
 use ports::FuelBlock;
 pub mod client;

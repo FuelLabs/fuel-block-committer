@@ -1,3 +1,4 @@
+#![deny(unused_crate_dependencies)]
 use std::pin::Pin;
 
 use async_trait::async_trait;

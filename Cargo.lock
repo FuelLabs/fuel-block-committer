@@ -1719,8 +1719,6 @@ dependencies = [
  "eth_rpc",
  "fuel_rpc",
  "futures",
- "hex",
- "impl-tools",
  "metrics",
  "mockall",
  "ports",
@@ -1899,7 +1897,6 @@ dependencies = [
  "metrics",
  "ports",
  "prometheus",
- "thiserror",
  "tokio",
  "url",
 ]

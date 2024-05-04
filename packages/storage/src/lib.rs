@@ -1,3 +1,4 @@
+#![deny(unused_crate_dependencies)]
 mod tables;
 #[cfg(feature = "test-helpers")]
 mod test_instance;

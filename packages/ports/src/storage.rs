@@ -17,6 +17,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[async_trait::async_trait]
 #[impl_tools::autoimpl(for<T: trait> &T, &mut T, Arc<T>, Box<T>)]
+#[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: crate::BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<crate::BlockSubmission>>;
