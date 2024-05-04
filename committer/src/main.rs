@@ -44,7 +44,6 @@ async fn main() -> Result<()> {
         create_eth_adapter(&config, &internal_config, &metrics_registry).await?;
 
     let wallet_balance_tracker_handle = spawn_wallet_balance_tracker(
-        &config,
         &internal_config,
         &metrics_registry,
         ethereum_rpc.clone(),

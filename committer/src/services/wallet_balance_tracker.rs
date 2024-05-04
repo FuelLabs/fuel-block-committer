@@ -1,7 +1,5 @@
-use std::str::FromStr;
-
 use metrics::RegistersMetrics;
-use ports::{eth_rpc::EthereumAdapter, H160, U256};
+use ports::{eth_rpc::EthereumAdapter, U256};
 use prometheus::{IntGauge, Opts};
 
 use super::Runner;
@@ -70,7 +68,7 @@ impl Runner for WalletBalanceTracker {
 
 #[cfg(test)]
 mod tests {
-    use mockall::predicate::eq;
+
     use ports::eth_rpc::MockEthereumAdapter;
     use prometheus::{proto::Metric, Registry};
 

@@ -7,10 +7,7 @@ mod tests {
     use fuel_rpc::client::Client;
     use ports::fuel_rpc::FuelAdapter;
 
-    use super::*;
-
     const FUEL_NODE_PORT: u16 = 4000;
-    const ETH_NODE_PORT: u16 = 8089;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {

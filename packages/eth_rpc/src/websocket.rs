@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use ethers::types::{Address, Chain};
 use metrics::{HealthChecker, RegistersMetrics};
-use ports::{FuelBlock, H160, U256};
+use ports::{FuelBlock, U256};
 use url::Url;
 
 pub(crate) use self::event_streamer::EthEventStreamer;

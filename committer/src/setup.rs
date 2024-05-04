@@ -43,7 +43,6 @@ pub fn spawn_block_watcher(
 }
 
 pub fn spawn_wallet_balance_tracker(
-    config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
     ethereum_rpc: WsAdapter,

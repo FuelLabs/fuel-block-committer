@@ -1,7 +1,5 @@
-use metrics::{HealthChecker, RegistersMetrics};
+use metrics::RegistersMetrics;
 use prometheus::{IntCounter, Opts};
-
-use crate::websocket::WsAdapter;
 
 #[derive(Clone)]
 pub(crate) struct Metrics {
