@@ -53,6 +53,7 @@ impl Postgres {
         Ok(())
     }
 
+    #[cfg(feature = "test-helpers")]
     pub(crate) async fn execute(&self, query: &str) -> Result<()> {
         sqlx::query(query).execute(&self.connection_pool).await?;
         Ok(())
