@@ -9,41 +9,43 @@ version = "0.4.0"
 name = "fuel-block-committer"
 
 [dependencies]
-fuel_rpc = { workspace = true }
-eth_rpc = { workspace = true }
-ports = { workspace = true }
-storage = { workspace = true }
-metrics = { workspace = true }
-
-serde = { workspace = true }
-url = { workspace = true }
-actix-web = { version = "4", default-features = false, features = ["macros"] }
-clap = { version = "4.5", features = ["derive"] }
+actix-web = { workspace = true, default-features = false, features = [
+  "macros",
+] }
 async-trait = { workspace = true }
-config = { version = "0.14", default-features = false, features = [
+clap = { workspace = true, features = ["derive"] }
+config = { workspace = true, default-features = false, features = [
   "toml",
   "async",
 ] }
-hex = "0.4.3"
+eth_rpc = { workspace = true }
+fuel_rpc = { workspace = true }
 futures = { workspace = true }
+hex = "0.4.3"
 impl-tools = { workspace = true }
-prometheus = { version = "0.13", default-features = false }
+metrics = { workspace = true }
+ports = { workspace = true }
+prometheus = { workspace = true, default-features = false }
 rand = { workspace = true, features = ["std"] }
-serde_json = { version = "1.0", default-features = false }
+
+serde = { workspace = true }
+serde_json = { workspace = true, default-features = false }
+storage = { workspace = true }
 thiserror = { workspace = true }
-tokio = { version = "1.28", features = [
+tokio = { workspace = true, features = [
   "rt-multi-thread",
   "rt",
   "macros",
 ], default-features = false }
-tokio-util = { version = "0.7", default-features = false }
-tracing = { version = "0.1", default-features = false }
-tracing-subscriber = { version = "0.3", features = ["json"] }
+tokio-util = { workspace = true, default-features = false }
+tracing = { workspace = true, default-features = false }
+tracing-subscriber = { workspace = true, features = ["json"] }
+url = { workspace = true }
 
 [dev-dependencies]
-storage = { workspace = true, features = ["test-helpers"] }
-anyhow = { version = "1.0", default-features = false }
+anyhow = { workspace = true, default-features = false }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["test-helpers"] }
+storage = { workspace = true, features = ["test-helpers"] }
 #TODO: Once fuels-rs catches up tests will be reenabled
 #fuels-test-helpers = "0.57"

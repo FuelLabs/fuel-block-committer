@@ -2,17 +2,16 @@
 name = "ports"
 version = "0.1.0"
 edition = "2021"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-types = { workspace = true }
-thiserror = { workspace = true }
 async-trait = { workspace = true }
-impl-tools = { workspace = true }
-mockall = { workspace = true, optional = true }
 ethers-core = { workspace = true, optional = true }
 futures = { workspace = true }
+impl-tools = { workspace = true }
+mockall = { workspace = true, optional = true }
+thiserror = { workspace = true }
+types = { workspace = true }
 
 [features]
 test-helpers = ["dep:mockall", "types/test-helpers"]

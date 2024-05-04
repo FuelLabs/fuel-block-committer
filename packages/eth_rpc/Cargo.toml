@@ -3,25 +3,24 @@ name = "eth_rpc"
 version = "0.1.0"
 edition = "2021"
 publish = false
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 async-trait = { workspace = true }
 ethers = { workspace = true, features = ["ws"] }
-serde_json = { workspace = true }
-tracing = { workspace = true }
-url = { workspace = true }
-thiserror = { workspace = true }
-ports = { workspace = true, features = ["eth"] }
 futures = { workspace = true }
 metrics = { workspace = true }
+ports = { workspace = true, features = ["eth"] }
 prometheus = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
+mockall = { workspace = true }
 ports = { workspace = true, features = ["eth"] }
 tokio = { workspace = true, features = ["macros"] }
-mockall = { workspace = true }
 
 [features]
 test-helpers = []

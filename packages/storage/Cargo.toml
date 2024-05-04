@@ -5,25 +5,25 @@ edition = "2021"
 publish = false
 
 [dependencies]
+async-trait = { workspace = true }
+hex = { workspace = true }
+ports = { workspace = true, features = ["storage"] }
+rand = { workspace = true, optional = true }
+serde = { workspace = true }
 sqlx = { workspace = true, features = [
   "postgres",
   "runtime-tokio",
   "migrate",
   "macros",
 ] }
-async-trait = { workspace = true }
-ports = { workspace = true, features = ["storage"] }
-thiserror = { workspace = true }
-serde = { workspace = true }
-hex = { workspace = true }
 testcontainers = { workspace = true, optional = true }
+thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
 
 [dev-dependencies]
-storage = { path = ".", features = ["test-helpers"] }
 ports = { workspace = true, features = ["storage"] }
 rand = { workspace = true }
+storage = { path = ".", features = ["test-helpers"] }
 tokio = { workspace = true }
 
 [features]
