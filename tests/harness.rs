@@ -8,7 +8,7 @@ use fuel_core_client::client::FuelClient;
 use crate::eth_test_adapter::FuelStateContract;
 
 const FUEL_NODE_PORT: u16 = 4000;
-const ETH_NODE_PORT: u16 = 8545;
+const ETH_NODE_PORT: u16 = 8089;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn submitted_correct_block_and_was_finalized() -> Result<()> {

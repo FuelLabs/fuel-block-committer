@@ -7,9 +7,9 @@ use prometheus::{Encoder, Registry, TextEncoder};
 
 use crate::{
     adapters::storage::Storage,
+    config::Config,
     errors::{Error, Result},
     services::{HealthReporter, StatusReporter},
-    setup::config::Config,
     telemetry::HealthChecker,
 };
 
@@ -32,7 +32,7 @@ pub async fn launch_api_server(
             .service(metrics)
             .service(health)
     })
-    .bind((config.host, config.port))
+    .bind((config.app.host, config.app.port))
     .map_err(|e| Error::Other(e.to_string()))?
     .run()
     .await

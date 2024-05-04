@@ -14,7 +14,7 @@ use url::Url;
 use crate::{
     adapters::{
         ethereum_adapter::{
-            websocket::event_streamer::EthEventStreamer, EthereumAdapter, EventStreamer,
+            websocket::event_streamer::EthEventStreamer, EthHeight, EthereumAdapter, EventStreamer,
         },
         fuel_adapter::FuelBlock,
     },
@@ -86,7 +86,7 @@ impl EthereumAdapter for EthereumWs {
         Ok(())
     }
 
-    async fn get_block_number(&self) -> Result<u64> {
+    async fn get_block_number(&self) -> Result<EthHeight> {
         // if provider.get_block_number is used the outgoing JSON RPC request would have the
         // 'params' field set as `params: null`. This is accepted by Anvil but rejected by hardhat.
         // By passing a preconstructed serde_json Value::Array it will cause params to be defined
@@ -95,7 +95,7 @@ impl EthereumAdapter for EthereumWs {
             .request("eth_blockNumber", Value::Array(vec![]))
             .await
             .map_err(|err| Error::Network(err.to_string()))
-            .map(|height: U64| height.as_u64())
+            .and_then(|height: U64| height.as_u64().try_into())
     }
 
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync> {

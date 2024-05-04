@@ -1,20 +1,19 @@
+#![deny(unused_crate_dependencies)]
 mod adapters;
 mod api;
-mod cli;
+mod config;
 mod errors;
 mod services;
 mod setup;
 mod telemetry;
 
 use api::launch_api_server;
+use config::InternalConfig;
 use errors::Result;
 use prometheus::Registry;
-use setup::{
-    config::InternalConfig,
-    helpers::{
-        create_eth_adapter, setup_logger, setup_storage, shut_down, spawn_block_watcher,
-        spawn_eth_committer_and_listener, spawn_wallet_balance_tracker,
-    },
+use setup::helpers::{
+    create_eth_adapter, setup_logger, setup_storage, shut_down, spawn_block_watcher,
+    spawn_eth_committer_and_listener, spawn_wallet_balance_tracker,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -22,11 +21,13 @@ use tokio_util::sync::CancellationToken;
 async fn main() -> Result<()> {
     setup_logger();
 
-    let config = cli::parse()?;
-    let internal_config = InternalConfig::default();
-    let cancel_token = CancellationToken::new();
+    let config = config::parse()?;
 
     let storage = setup_storage(&config).await?;
+    storage.migrate().await?;
+
+    let internal_config = InternalConfig::default();
+    let cancel_token = CancellationToken::new();
 
     let metrics_registry = Registry::default();
 
@@ -61,7 +62,7 @@ async fn main() -> Result<()> {
     launch_api_server(
         &config,
         metrics_registry,
-        storage,
+        storage.clone(),
         fuel_health_check,
         eth_health_check,
     )
@@ -73,6 +74,13 @@ async fn main() -> Result<()> {
         wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,
+        storage,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    // used in the harness
+    use anyhow as _;
 }

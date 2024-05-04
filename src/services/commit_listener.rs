@@ -6,41 +6,43 @@ use tracing::{error, info};
 
 use crate::{
     adapters::{
-        ethereum_adapter::{EthereumAdapter, FuelBlockCommittedOnEth},
+        ethereum_adapter::{EthHeight, EthereumAdapter, EthereumWs, FuelBlockCommittedOnEth},
         runner::Runner,
-        storage::Storage,
+        storage::{postgresql::Postgres, Storage},
     },
     errors::Result,
     telemetry::RegistersMetrics,
 };
 
-pub struct CommitListener {
-    ethereum_rpc: Box<dyn EthereumAdapter>,
-    storage: Box<dyn Storage>,
+pub struct CommitListener<E = EthereumWs, Db = Postgres> {
+    ethereum_rpc: E,
+    storage: Db,
     metrics: Metrics,
     cancel_token: CancellationToken,
 }
 
-impl CommitListener {
-    pub fn new(
-        ethereum_rpc: impl EthereumAdapter + 'static,
-        storage: impl Storage + 'static,
-        cancel_token: CancellationToken,
-    ) -> Self {
+impl<E, Db> CommitListener<E, Db> {
+    pub fn new(ethereum_rpc: E, storage: Db, cancel_token: CancellationToken) -> Self {
         Self {
-            ethereum_rpc: Box::new(ethereum_rpc),
-            storage: Box::new(storage),
+            ethereum_rpc,
+            storage,
             metrics: Metrics::default(),
             cancel_token,
         }
     }
+}
 
-    async fn determine_starting_eth_block(&self) -> Result<u64> {
+impl<E, Db> CommitListener<E, Db>
+where
+    E: EthereumAdapter,
+    Db: Storage,
+{
+    async fn determine_starting_eth_block(&mut self) -> Result<EthHeight> {
         Ok(self
             .storage
             .submission_w_latest_block()
             .await?
-            .map_or(0, |submission| submission.submittal_height))
+            .map_or(0u32.into(), |submission| submission.submittal_height))
     }
 
     async fn handle_block_committed(
@@ -69,12 +71,16 @@ impl CommitListener {
 }
 
 #[async_trait]
-impl Runner for CommitListener {
+impl<E, Db> Runner for CommitListener<E, Db>
+where
+    E: EthereumAdapter,
+    Db: Storage,
+{
     async fn run(&mut self) -> Result<()> {
         let eth_block = self.determine_starting_eth_block().await?;
 
         self.ethereum_rpc
-            .event_streamer(eth_block)
+            .event_streamer(eth_block.into())
             .establish_stream()
             .await?
             .and_then(|event| self.handle_block_committed(event))
@@ -91,7 +97,7 @@ struct Metrics {
     latest_committed_block: IntGauge,
 }
 
-impl RegistersMetrics for CommitListener {
+impl<E, Db> RegistersMetrics for CommitListener<E, Db> {
     fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
         vec![Box::new(self.metrics.latest_committed_block.clone())]
     }
@@ -113,18 +119,24 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
+
     use ethers::types::U256;
     use futures::stream;
     use mockall::predicate;
     use prometheus::{proto::Metric, Registry};
+    use rand::Rng;
     use tokio_util::sync::CancellationToken;
 
     use crate::{
         adapters::{
-            ethereum_adapter::{FuelBlockCommittedOnEth, MockEthereumAdapter, MockEventStreamer},
-            fuel_adapter::FuelBlock,
+            ethereum_adapter::{
+                EthHeight, FuelBlockCommittedOnEth, MockEthereumAdapter, MockEventStreamer,
+            },
             runner::Runner,
-            storage::{sqlite_db::SqliteDb, BlockSubmission, Storage},
+            storage::{
+                postgresql::{Postgres, PostgresProcess},
+                BlockSubmission, Storage,
+            },
         },
         errors::Result,
         services::CommitListener,
@@ -134,24 +146,27 @@ mod tests {
     #[tokio::test]
     async fn listener_will_update_storage_if_event_is_emitted() {
         // given
+        let mut rng = rand::thread_rng();
         let submission = BlockSubmission {
             completed: false,
-            ..BlockSubmission::random()
+            ..rng.gen()
         };
         let block_hash = submission.block.hash;
 
         let eth_rpc_mock =
             given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
-        let storage = given_storage_containing(submission).await;
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submission(&process, submission).await;
+
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, storage.clone(), CancellationToken::default());
+            CommitListener::new(eth_rpc_mock, db.clone(), CancellationToken::default());
 
         // when
         commit_listener.run().await.unwrap();
 
         //then
-        let res = storage.submission_w_latest_block().await.unwrap().unwrap();
+        let res = db.submission_w_latest_block().await.unwrap().unwrap();
 
         assert!(res.completed);
     }
@@ -159,9 +174,10 @@ mod tests {
     #[tokio::test]
     async fn listener_will_update_metrics_if_event_is_emitted() {
         // given
+        let mut rng = rand::thread_rng();
         let submission = BlockSubmission {
             completed: false,
-            ..BlockSubmission::random()
+            ..rng.gen()
         };
         let block_hash = submission.block.hash;
         let fuel_block_height = submission.block.height;
@@ -169,10 +185,11 @@ mod tests {
         let eth_rpc_mock =
             given_eth_rpc_that_will_stream(vec![Ok(block_hash)], submission.submittal_height);
 
-        let storage = given_storage_containing(submission).await;
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submission(&process, submission).await;
 
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, storage.clone(), CancellationToken::default());
+            CommitListener::new(eth_rpc_mock, db, CancellationToken::default());
 
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);
@@ -198,67 +215,59 @@ mod tests {
     #[tokio::test]
     async fn error_while_handling_event_will_not_close_stream() {
         // given
-        let old_block_missing_from_db = BlockSubmission {
-            completed: false,
-            block: FuelBlock {
-                hash: Default::default(),
-                height: 10,
-            },
-            ..BlockSubmission::random()
-        };
+        let mut rng = rand::thread_rng();
+        let block_missing_from_db: BlockSubmission = rng.gen();
+        let incoming_block: BlockSubmission = rng.gen();
 
-        let new_block = BlockSubmission {
-            completed: false,
-            block: FuelBlock {
-                hash: Default::default(),
-                height: 11,
-            },
-            ..BlockSubmission::random()
-        };
-
-        let older_hash = old_block_missing_from_db.block.hash;
-        let newer_hash = new_block.block.hash;
+        let missing_hash = block_missing_from_db.block.hash;
+        let incoming_hash = incoming_block.block.hash;
 
         let eth_rpc_mock = given_eth_rpc_that_will_stream(
-            vec![Ok(older_hash), Ok(newer_hash)],
-            new_block.submittal_height,
+            vec![Ok(missing_hash), Ok(incoming_hash)],
+            incoming_block.submittal_height,
         );
 
-        let storage = given_storage_containing(new_block.clone()).await;
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submission(&process, incoming_block.clone()).await;
+
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, storage.clone(), CancellationToken::default());
+            CommitListener::new(eth_rpc_mock, db.clone(), CancellationToken::default());
 
         // when
         commit_listener.run().await.unwrap();
 
         //then
-        let latest_submission = storage.submission_w_latest_block().await.unwrap().unwrap();
+        let latest_submission = db.submission_w_latest_block().await.unwrap().unwrap();
         assert_eq!(
             BlockSubmission {
                 completed: true,
-                ..new_block.clone()
+                ..incoming_block.clone()
             },
             latest_submission
         );
     }
 
-    async fn given_storage_containing(submission: BlockSubmission) -> SqliteDb {
-        let storage = SqliteDb::temporary().await.unwrap();
-        storage.insert(submission).await.unwrap();
+    async fn db_with_submission(
+        process: &PostgresProcess,
+        submission: BlockSubmission,
+    ) -> Postgres {
+        let db = process.create_random_db().await.unwrap();
 
-        storage
+        db.insert(submission).await.unwrap();
+
+        db
     }
 
     fn given_eth_rpc_that_will_stream(
         events: Vec<Result<[u8; 32]>>,
-        starting_from_height: u64,
+        starting_from_height: EthHeight,
     ) -> MockEthereumAdapter {
         let mut eth_rpc = MockEthereumAdapter::new();
 
         let event_streamer = Box::new(given_event_streamer_w_events(events));
         eth_rpc
             .expect_event_streamer()
-            .with(predicate::eq(starting_from_height))
+            .with(predicate::eq(u64::from(starting_from_height)))
             .return_once(move |_| event_streamer);
 
         eth_rpc

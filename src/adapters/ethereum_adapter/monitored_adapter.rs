@@ -1,6 +1,7 @@
 use ethers::types::{H160, U256};
 use prometheus::{IntCounter, Opts};
 
+use super::EthHeight;
 use crate::{
     adapters::{
         ethereum_adapter::{EthereumAdapter, EventStreamer},
@@ -59,7 +60,7 @@ impl<T: EthereumAdapter> EthereumAdapter for MonitoredEthAdapter<T> {
         response
     }
 
-    async fn get_block_number(&self) -> Result<u64> {
+    async fn get_block_number(&self) -> Result<EthHeight> {
         let response = self.adapter.get_block_number().await;
         self.note_network_status(&response);
         response
@@ -114,7 +115,9 @@ mod tests {
             .expect_submit()
             .returning(|_| Err(Error::Network("An error".into())));
 
-        eth_adapter.expect_get_block_number().returning(|| Ok(10));
+        eth_adapter
+            .expect_get_block_number()
+            .returning(|| Ok(10u32.into()));
 
         let adapter = MonitoredEthAdapter::new(eth_adapter, 1);
         let health_check = adapter.connection_health_checker();

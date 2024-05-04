@@ -1,6 +1,9 @@
 use serde::Serialize;
 
-use crate::{adapters::storage::Storage, errors::Result};
+use crate::{
+    adapters::storage::{postgresql::Postgres, Storage},
+    errors::Result,
+};
 
 #[derive(Debug, Serialize, Default, PartialEq, Eq)]
 pub struct StatusReport {
@@ -14,17 +17,19 @@ pub enum Status {
     Committing,
 }
 
-pub struct StatusReporter {
-    storage: Box<dyn Storage>,
+pub struct StatusReporter<Db = Postgres> {
+    storage: Db,
 }
 
-impl StatusReporter {
-    pub fn new(storage: impl Storage + 'static) -> Self {
-        Self {
-            storage: Box::new(storage),
-        }
+impl<Db> StatusReporter<Db> {
+    pub fn new(storage: Db) -> Self {
+        Self { storage }
     }
-
+}
+impl<Db> StatusReporter<Db>
+where
+    Db: Storage,
+{
     pub async fn current_status(&self) -> Result<StatusReport> {
         let last_submission_completed = self
             .storage
@@ -44,31 +49,32 @@ impl StatusReporter {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use rand::Rng;
+
     use super::*;
-    use crate::adapters::{
-        fuel_adapter::FuelBlock,
-        storage::{sqlite_db::SqliteDb, BlockSubmission},
-    };
+    use crate::adapters::storage::{postgresql::PostgresProcess, BlockSubmission};
 
     #[tokio::test]
     async fn status_depends_on_last_submission() {
+        let process = PostgresProcess::shared().await.unwrap();
         let test = |submission_status, expected_app_status| {
+            let process = Arc::clone(&process);
             async move {
                 // given
-                let storage = SqliteDb::temporary().await.unwrap();
+                let mut rng = rand::thread_rng();
+                let db = process.create_random_db().await.unwrap();
+
                 if let Some(is_completed) = submission_status {
                     let latest_submission = BlockSubmission {
-                        block: FuelBlock {
-                            hash: Default::default(),
-                            height: 1,
-                        },
                         completed: is_completed,
-                        ..BlockSubmission::random()
+                        ..rng.gen()
                     };
-                    storage.insert(latest_submission).await.unwrap();
+                    db.insert(latest_submission).await.unwrap();
                 }
 
-                let status_reporter = StatusReporter::new(storage);
+                let status_reporter = StatusReporter::new(db);
 
                 // when
                 let status = status_reporter.current_status().await.unwrap();
