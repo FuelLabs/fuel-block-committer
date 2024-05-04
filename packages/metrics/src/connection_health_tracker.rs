@@ -8,9 +8,9 @@ use super::{HealthCheck, HealthChecker};
 #[derive(Debug, Clone)]
 pub struct ConnectionHealthTracker {
     // how many failures are needed before the connection is deemed unhealhty
-    pub(crate) max_consecutive_failures: usize,
+    max_consecutive_failures: usize,
     // how many consecutive failures there currently are
-    pub(crate) consecutive_failures: Arc<AtomicUsize>,
+    consecutive_failures: Arc<AtomicUsize>,
 }
 
 impl ConnectionHealthTracker {

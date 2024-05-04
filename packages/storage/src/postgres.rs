@@ -6,7 +6,7 @@ use crate::tables;
 
 #[derive(Clone)]
 pub struct Postgres {
-    pub(crate) connection_pool: sqlx::Pool<sqlx::Postgres>,
+    connection_pool: sqlx::Pool<sqlx::Postgres>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

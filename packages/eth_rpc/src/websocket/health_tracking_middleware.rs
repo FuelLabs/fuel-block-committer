@@ -17,7 +17,7 @@ pub(crate) trait MyAdapter {
 #[derive(Clone)]
 pub(crate) struct HealthTrackingMiddleware<T> {
     adapter: T,
-    pub(crate) metrics: Metrics,
+    metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
 }
 

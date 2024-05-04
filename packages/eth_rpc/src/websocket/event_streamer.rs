@@ -11,14 +11,14 @@ use ports::eth_rpc::FuelBlockCommittedOnEth;
 use super::connection::CommitSubmittedFilter;
 use crate::Result;
 
-pub(crate) type EthStreamInitializer = Event<
+type EthStreamInitializer = Event<
     Arc<SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>>,
     SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>,
     CommitSubmittedFilter,
 >;
 
 pub struct EthEventStreamer {
-    pub(crate) events: EthStreamInitializer,
+    events: EthStreamInitializer,
 }
 
 impl EthEventStreamer {

@@ -1,13 +1,13 @@
 use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
-use metrics::ConnectionHealthTracker;
+use metrics::{Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics};
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
 
 pub struct Client {
-    pub(crate) client: GqlClient,
-    pub(crate) metrics: Metrics,
-    pub(crate) health_tracker: ConnectionHealthTracker,
+    client: GqlClient,
+    metrics: Metrics,
+    health_tracker: ConnectionHealthTracker,
 }
 
 impl Client {
@@ -51,5 +51,24 @@ impl Client {
                 Err(Error::Network(err.to_string()))
             }
         }
+    }
+
+    pub fn connection_health_checker(&self) -> HealthChecker {
+        self.health_tracker.tracker()
+    }
+
+    fn handle_network_error(&self) {
+        self.health_tracker.note_failure();
+        self.metrics.fuel_network_errors.inc();
+    }
+
+    fn handle_network_success(&self) {
+        self.health_tracker.note_success();
+    }
+}
+
+impl RegistersMetrics for Client {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
+        self.metrics.metrics()
     }
 }

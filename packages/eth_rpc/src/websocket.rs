@@ -78,6 +78,6 @@ impl WsAdapter {
 // User responsible for registering any metrics T might have
 impl RegistersMetrics for WsAdapter {
     fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
-        self.inner.metrics.metrics()
+        self.inner.metrics()
     }
 }

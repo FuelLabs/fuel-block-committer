@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub struct EthHeight {
-    pub(crate) height: i64,
+    height: i64,
 }
 
 #[derive(Debug, Clone)]

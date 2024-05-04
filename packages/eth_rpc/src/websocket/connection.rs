@@ -25,9 +25,9 @@ abigen!(
 
 #[derive(Clone)]
 pub struct WsConnection {
-    pub(crate) provider: Provider<Ws>,
+    provider: Provider<Ws>,
     pub(crate) contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
-    pub(crate) commit_interval: NonZeroU32,
+    commit_interval: NonZeroU32,
     address: H160,
 }
 
@@ -116,7 +116,7 @@ impl WsConnection {
         (block_height / commit_interval).into()
     }
 
-    pub(crate) async fn _balance(&self, address: H160) -> Result<U256> {
+    async fn _balance(&self, address: H160) -> Result<U256> {
         Ok(self.provider.get_balance(address, None).await?)
     }
 }
