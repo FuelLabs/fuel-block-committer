@@ -1,0 +1,30 @@
+[package]
+name = "storage"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sqlx = { workspace = true, features = [
+  "postgres",
+  "runtime-tokio",
+  "migrate",
+  "macros",
+] }
+async-trait = { workspace = true }
+ports = { workspace = true, features = ["storage"] }
+thiserror = { workspace = true }
+serde = { workspace = true }
+hex = { workspace = true }
+testcontainers = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+
+[dev-dependencies]
+storage = { path = ".", features = ["runnable-instance"] }
+ports = { workspace = true, features = ["storage", "rand"] }
+rand = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+runnable-instance = ["dep:testcontainers", "tokio/sync", "dep:rand"]

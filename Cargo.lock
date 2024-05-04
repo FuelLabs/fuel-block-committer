@@ -375,9 +375,9 @@ dependencies = [
 
 [[package]]
 name = "autocfg"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1fdabc7756949593fe60f30ec81974b613357de856987752631dea1e3394c80"
+checksum = "0c4b4d0bd25bd0b74681c0ad21497610ce1b7c91b1022cd21c80c6fbdd9476b0"
 
 [[package]]
 name = "backtrace"
@@ -1184,6 +1184,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56ce8c6da7551ec6c462cbaf3bfbc75131ebbfa1c944aeaa9dab51ca1c5f0c3b"
 
 [[package]]
+name = "e2e"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "eth_rpc",
+ "fuel_rpc",
+ "ports",
+ "tokio",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1326,6 +1337,24 @@ dependencies = [
  "sha3",
  "thiserror",
  "uuid",
+]
+
+[[package]]
+name = "eth_rpc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "ethers",
+ "futures",
+ "metrics",
+ "mockall",
+ "ports",
+ "prometheus",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1687,18 +1716,19 @@ dependencies = [
  "async-trait",
  "clap",
  "config",
- "ethers",
- "fuel-core-client",
+ "eth_rpc",
+ "fuel_rpc",
  "futures",
  "hex",
  "impl-tools",
+ "metrics",
  "mockall",
+ "ports",
  "prometheus",
  "rand",
  "serde",
  "serde_json",
- "sqlx",
- "testcontainers",
+ "storage",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1858,6 +1888,20 @@ dependencies = [
  "static_assertions",
  "strum 0.24.1",
  "tai64",
+]
+
+[[package]]
+name = "fuel_rpc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "fuel-core-client",
+ "metrics",
+ "ports",
+ "prometheus",
+ "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -2733,6 +2777,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
 
 [[package]]
+name = "metrics"
+version = "0.1.0"
+dependencies = [
+ "prometheus",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2857,9 +2908,9 @@ dependencies = [
 
 [[package]]
 name = "num-iter"
-version = "0.1.44"
+version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d869c01cc0c455284163fd0092f1f93835385ccab5a98a0dcc497b2f8bf055a9"
+checksum = "1429034a0490724d0075ebb2bc9e875d6503c3cf69e235a8941aa757d83ef5bf"
 dependencies = [
  "autocfg",
  "num-integer",
@@ -2868,9 +2919,9 @@ dependencies = [
 
 [[package]]
 name = "num-traits"
-version = "0.2.18"
+version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0df0e5185db44f69b44f26786fe401b6c293d1907744beaa7fa62b2e5a517a"
+checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
  "libm",
@@ -3180,6 +3231,19 @@ name = "platforms"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db23d408679286588f4d4644f965003d056e3dd5abcaaa938116871d7ce2fee7"
+
+[[package]]
+name = "ports"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "ethers-core",
+ "futures",
+ "impl-tools",
+ "mockall",
+ "thiserror",
+ "types",
+]
 
 [[package]]
 name = "postcard"
@@ -4348,6 +4412,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hex",
+ "ports",
+ "rand",
+ "serde",
+ "sqlx",
+ "storage",
+ "testcontainers",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "stringprep"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4938,6 +5018,14 @@ name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
+
+[[package]]
+name = "types"
+version = "0.1.0"
+dependencies = [
+ "rand",
+ "serde",
+]
 
 [[package]]
 name = "uint"

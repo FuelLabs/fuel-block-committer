@@ -1,0 +1,27 @@
+use metrics::{HealthChecker, RegistersMetrics};
+use prometheus::{IntCounter, Opts};
+
+use crate::websocket::WsAdapter;
+
+#[derive(Clone)]
+pub(crate) struct Metrics {
+    pub(crate) eth_network_errors: IntCounter,
+}
+
+impl RegistersMetrics for Metrics {
+    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+        vec![Box::new(self.eth_network_errors.clone())]
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let eth_network_errors = IntCounter::with_opts(Opts::new(
+            "eth_network_errors",
+            "Number of network errors encountered while running Ethereum RPCs.",
+        ))
+        .expect("eth_network_errors metric to be correctly configured");
+
+        Self { eth_network_errors }
+    }
+}

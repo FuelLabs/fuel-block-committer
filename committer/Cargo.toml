@@ -1,0 +1,48 @@
+[package]
+authors = ["Fuel Labs <contact@fuel.sh>"]
+edition = "2021"
+homepage = "https://fuel.network/"
+license = "Apache-2.0"
+repository = "https://github.com/FuelLabs/fuel-block-committer"
+rust-version = "1.77.0"
+version = "0.4.0"
+name = "fuel-block-committer"
+
+[dependencies]
+fuel_rpc = { workspace = true }
+eth_rpc = { workspace = true }
+ports = { workspace = true }
+storage = { workspace = true }
+metrics = { workspace = true }
+
+serde = { workspace = true }
+url = { workspace = true }
+actix-web = { version = "4", default-features = false, features = ["macros"] }
+clap = { version = "4.5", features = ["derive"] }
+async-trait = { workspace = true }
+config = { version = "0.14", default-features = false, features = [
+  "toml",
+  "async",
+] }
+hex = "0.4.3"
+futures = { workspace = true }
+impl-tools = { workspace = true }
+prometheus = { version = "0.13", default-features = false }
+rand = { workspace = true, features = ["std"] }
+serde_json = { version = "1.0", default-features = false }
+thiserror = { workspace = true }
+tokio = { version = "1.28", features = [
+  "rt-multi-thread",
+  "rt",
+  "macros",
+], default-features = false }
+tokio-util = { version = "0.7", default-features = false }
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", features = ["json"] }
+
+[dev-dependencies]
+anyhow = { version = "1.0", default-features = false }
+mockall = { workspace = true }
+ports = { workspace = true, features = ["test-helpers"] }
+#TODO: Once fuels-rs catches up tests will be reenabled
+#fuels-test-helpers = "0.57"

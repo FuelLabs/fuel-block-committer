@@ -1,0 +1,13 @@
+[package]
+name = "e2e"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dev-dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+fuel_rpc = { workspace = true, features = ["test-helpers"] }
+eth_rpc = { workspace = true, features = ["test-helpers"] }
+ports = { workspace = true, features = ["fuel", "eth"] }
