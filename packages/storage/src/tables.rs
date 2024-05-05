@@ -1,9 +1,7 @@
 use ports::types::{BlockSubmission, FuelBlock};
 
-use crate::Error;
-
 #[derive(sqlx::FromRow)]
-pub struct EthFuelBlockSubmission {
+pub(crate) struct EthFuelBlockSubmission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
     pub completed: bool,
@@ -11,13 +9,13 @@ pub struct EthFuelBlockSubmission {
 }
 
 impl TryFrom<EthFuelBlockSubmission> for BlockSubmission {
-    type Error = Error;
+    type Error = crate::error::Error;
 
     fn try_from(value: EthFuelBlockSubmission) -> Result<Self, Self::Error> {
         let block_hash = value.fuel_block_hash.as_slice();
         macro_rules! bail {
             ($msg: literal, $($args: expr),*) => {
-                return Err(Error::Conversion(format!($msg, $($args),*)));
+                return Err(Self::Error::Conversion(format!($msg, $($args),*)));
             };
         }
         let Ok(hash) = block_hash.try_into() else {

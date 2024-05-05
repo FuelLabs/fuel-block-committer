@@ -4,8 +4,8 @@ use ports::types::FuelBlock;
 pub mod client;
 pub mod metrics;
 
-pub type Error = ports::fuel_rpc::Error;
-pub type Result<T> = ports::fuel_rpc::Result<T>;
+type Error = ports::fuel_rpc::Error;
+type Result<T> = ports::fuel_rpc::Result<T>;
 
 fn convert_block(block: Block) -> FuelBlock {
     FuelBlock {

@@ -3,16 +3,11 @@ use std::sync::Arc;
 use crate::types::BlockSubmission;
 
 #[derive(Debug, thiserror::Error)]
-#[error("{msg}")]
-pub struct Error {
-    msg: String,
-}
-
-impl Error {
-    #[must_use]
-    pub fn new(msg: String) -> Self {
-        Self { msg }
-    }
+pub enum Error {
+    #[error("db response: {0}")]
+    Database(String),
+    #[error("data conversion app<->db failed: {0}")]
+    Conversion(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

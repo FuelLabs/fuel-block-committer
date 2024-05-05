@@ -11,7 +11,7 @@ use serde_json::Value;
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::MyAdapter};
-use crate::Result;
+use crate::error::Result;
 
 abigen!(
     FUEL_STATE_CONTRACT,

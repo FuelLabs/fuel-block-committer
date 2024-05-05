@@ -9,7 +9,7 @@ use futures::{Stream, TryStreamExt};
 use ports::types::FuelBlockCommittedOnEth;
 
 use super::connection::CommitSubmittedFilter;
-use crate::Result;
+use crate::error::Result;
 
 type EthStreamInitializer = Event<
     Arc<SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>>,

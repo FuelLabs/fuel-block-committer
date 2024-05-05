@@ -65,7 +65,6 @@ pub struct AppConfig {
     /// IPv4 address on which the server will listen for connections
     pub host: Ipv4Addr,
     /// Postgres database configuration
-    /// TODO: don't rely on this type it is not robust
     pub db: DbConfig,
 }
 

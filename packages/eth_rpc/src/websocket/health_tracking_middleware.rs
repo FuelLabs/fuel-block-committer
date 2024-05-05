@@ -1,7 +1,11 @@
 use metrics::{ConnectionHealthTracker, HealthChecker, RegistersMetrics};
 use ports::types::{FuelBlock, U256};
 
-use crate::{metrics::Metrics, websocket::event_streamer::EthEventStreamer, Error, Result};
+use crate::{
+    error::{Error, Result},
+    metrics::Metrics,
+    websocket::event_streamer::EthEventStreamer,
+};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]

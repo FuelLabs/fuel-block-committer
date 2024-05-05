@@ -1,7 +1,7 @@
 use ports::types::BlockSubmission;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
-use super::{Error, Result};
+use super::error::{Error, Result};
 use crate::tables;
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ pub struct DbConfig {
 }
 
 impl Postgres {
-    pub async fn connect(opt: &DbConfig) -> Result<Self> {
+    pub async fn connect(opt: &DbConfig) -> ports::storage::Result<Self> {
         let options = PgConnectOptions::new()
             .username(&opt.username)
             .password(&opt.password)
@@ -37,7 +37,8 @@ impl Postgres {
         let connection_pool = PgPoolOptions::new()
             .max_connections(opt.max_connections)
             .connect_with(options)
-            .await?;
+            .await
+            .map_err(crate::error::Error::from)?;
 
         Ok(Self { connection_pool })
     }
@@ -48,8 +49,11 @@ impl Postgres {
         self.connection_pool.close().await;
     }
 
-    pub async fn migrate(&self) -> Result<()> {
-        sqlx::migrate!().run(&self.connection_pool).await?;
+    pub async fn migrate(&self) -> ports::storage::Result<()> {
+        sqlx::migrate!()
+            .run(&self.connection_pool)
+            .await
+            .map_err(crate::error::Error::from)?;
         Ok(())
     }
 
@@ -59,7 +63,7 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _insert(&self, submission: BlockSubmission) -> Result<()> {
+    pub(crate) async fn _insert(&self, submission: BlockSubmission) -> crate::error::Result<()> {
         let row = tables::EthFuelBlockSubmission::from(submission);
         sqlx::query!(
             "INSERT INTO eth_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
@@ -71,7 +75,9 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
+    pub(crate) async fn _submission_w_latest_block(
+        &self,
+    ) -> crate::error::Result<Option<BlockSubmission>> {
         sqlx::query_as!(
             tables::EthFuelBlockSubmission,
             "SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"

@@ -2,7 +2,10 @@ use std::num::NonZeroU32;
 
 use ethers::types::{Address, Chain};
 use metrics::{HealthChecker, RegistersMetrics};
-use ports::types::{FuelBlock, U256};
+use ports::{
+    eth_rpc::Result,
+    types::{FuelBlock, U256},
+};
 use url::Url;
 
 pub use self::event_streamer::EthEventStreamer;
@@ -10,7 +13,6 @@ use self::{
     connection::WsConnection,
     health_tracking_middleware::{HealthTrackingMiddleware, MyAdapter},
 };
-use crate::Result;
 
 mod connection;
 mod event_streamer;
@@ -29,7 +31,7 @@ impl WsAdapter {
         ethereum_wallet_key: &str,
         commit_interval: NonZeroU32,
         unhealthy_after_n_errors: usize,
-    ) -> Result<Self> {
+    ) -> ports::eth_rpc::Result<Self> {
         let provider = WsConnection::connect(
             ethereum_rpc,
             chain_id,
@@ -54,25 +56,28 @@ impl WsAdapter {
     }
 
     pub(crate) async fn submit(&self, block: FuelBlock) -> Result<()> {
-        self.inner.submit(block).await
+        Ok(self.inner.submit(block).await?)
     }
 
     pub(crate) async fn get_block_number(&self) -> Result<u64> {
-        self.inner.get_block_number().await
+        Ok(self.inner.get_block_number().await?)
     }
 
     pub(crate) async fn balance(&self) -> Result<U256> {
-        self.inner.balance().await
+        Ok(self.inner.balance().await?)
     }
 
     #[cfg(feature = "test-helpers")]
     pub async fn finalized(&self, block: FuelBlock) -> Result<bool> {
-        self.inner.finalized(block).await
+        Ok(self.inner.finalized(block).await?)
     }
 
     #[cfg(feature = "test-helpers")]
     pub async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]> {
-        self.inner.block_hash_at_commit_height(commit_height).await
+        Ok(self
+            .inner
+            .block_hash_at_commit_height(commit_height)
+            .await?)
     }
 }
 

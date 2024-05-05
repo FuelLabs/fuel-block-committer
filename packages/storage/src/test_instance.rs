@@ -3,7 +3,6 @@ use std::sync::{Arc, Weak};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, Image, RunnableImage};
 
 use super::postgres::{DbConfig, Postgres};
-use crate::Result;
 
 struct PostgresImage;
 
@@ -37,7 +36,7 @@ pub struct PostgresProcess {
 }
 
 impl PostgresProcess {
-    pub async fn shared() -> Result<Arc<Self>> {
+    pub async fn shared() -> ports::storage::Result<Arc<Self>> {
         // If at some point no tests are running, the shared instance will be dropped. If
         // requested again, it will be recreated.
         // This is a workaround for the lack of a global setup/teardown for tests.
@@ -57,7 +56,7 @@ impl PostgresProcess {
         Ok(process)
     }
 
-    pub async fn start() -> Result<Self> {
+    pub async fn start() -> ports::storage::Result<Self> {
         let username = "username".to_string();
         let password = "password".to_string();
         let initial_db = "test".to_string();
@@ -77,7 +76,7 @@ impl PostgresProcess {
         })
     }
 
-    pub async fn create_random_db(&self) -> Result<Postgres> {
+    pub async fn create_random_db(&self) -> ports::storage::Result<Postgres> {
         let mut config = DbConfig {
             host: "localhost".to_string(),
             port: self.container.get_host_port_ipv4(5432).await,

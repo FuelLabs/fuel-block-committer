@@ -34,25 +34,11 @@ impl From<ports::storage::Error> for Error {
         Self::Storage(error.to_string())
     }
 }
-impl From<storage::Error> for Error {
-    fn from(error: storage::Error) -> Self {
-        Self::Storage(error.to_string())
-    }
-}
 
 impl From<ports::eth_rpc::Error> for Error {
     fn from(value: ports::eth_rpc::Error) -> Self {
         match value {
             ports::eth_rpc::Error::Network(e) => Self::Network(e),
-            _ => Self::Other(value.to_string()),
-        }
-    }
-}
-
-impl From<eth_rpc::Error> for Error {
-    fn from(value: eth_rpc::Error) -> Self {
-        match value {
-            eth_rpc::Error::Network(e) => Self::Network(e),
             _ => Self::Other(value.to_string()),
         }
     }
