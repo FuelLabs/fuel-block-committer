@@ -38,7 +38,7 @@ impl From<sqlx::migrate::MigrateError> for Error {
     }
 }
 
-use ports::BlockSubmission;
+use ports::types::BlockSubmission;
 
 #[async_trait::async_trait]
 impl ports::storage::Storage for postgres::Postgres {
@@ -60,9 +60,11 @@ impl ports::storage::Storage for postgres::Postgres {
 
 #[cfg(test)]
 mod tests {
+    use ports::types::BlockSubmission;
     use rand::{thread_rng, Rng};
+    use storage as _;
 
-    use super::*;
+    use crate::{Error, PostgresProcess};
 
     fn random_non_zero_height() -> u32 {
         let mut rng = thread_rng();

@@ -1,4 +1,4 @@
-use crate::{EthHeight, FuelBlock};
+use crate::types::{EthHeight, FuelBlock};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {

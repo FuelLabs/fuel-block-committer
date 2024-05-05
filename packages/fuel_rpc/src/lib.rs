@@ -1,6 +1,6 @@
 #![deny(unused_crate_dependencies)]
 use fuel_core_client::client::types::Block;
-use ports::FuelBlock;
+use ports::types::FuelBlock;
 pub mod client;
 pub mod metrics;
 

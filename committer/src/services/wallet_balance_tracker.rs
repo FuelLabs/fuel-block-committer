@@ -1,5 +1,5 @@
 use metrics::RegistersMetrics;
-use ports::{eth_rpc::EthereumAdapter, U256};
+use ports::{eth_rpc::EthereumAdapter, types::U256};
 use prometheus::{IntGauge, Opts};
 
 use super::Runner;

@@ -1,5 +1,5 @@
 use metrics::{ConnectionHealthTracker, HealthChecker, RegistersMetrics};
-use ports::{FuelBlock, U256};
+use ports::types::{FuelBlock, U256};
 
 use crate::{metrics::Metrics, websocket::event_streamer::EthEventStreamer, Error, Result};
 

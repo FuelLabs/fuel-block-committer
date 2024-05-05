@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use ethers::types::{Address, Chain};
 use metrics::{HealthChecker, RegistersMetrics};
-use ports::{FuelBlock, U256};
+use ports::types::{FuelBlock, U256};
 use url::Url;
 
 pub use self::event_streamer::EthEventStreamer;

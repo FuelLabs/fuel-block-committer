@@ -3,7 +3,7 @@ use std::time::Duration;
 use eth_rpc::WsAdapter;
 use fuel_rpc::client::Client;
 use metrics::{HealthChecker, RegistersMetrics};
-use ports::{storage::Storage, FuelBlock};
+use ports::{storage::Storage, types::FuelBlock};
 use prometheus::Registry;
 use storage::Postgres;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};

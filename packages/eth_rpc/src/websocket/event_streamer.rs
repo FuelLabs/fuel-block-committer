@@ -6,7 +6,7 @@ use ethers::{
     signers::Wallet,
 };
 use futures::{Stream, TryStreamExt};
-use ports::eth_rpc::FuelBlockCommittedOnEth;
+use ports::types::FuelBlockCommittedOnEth;
 
 use super::connection::CommitSubmittedFilter;
 use crate::Result;

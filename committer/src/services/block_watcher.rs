@@ -3,7 +3,7 @@ use std::{num::NonZeroU32, vec};
 use async_trait::async_trait;
 use fuel_rpc::client::Client;
 use metrics::RegistersMetrics;
-use ports::{fuel_rpc::FuelAdapter, storage::Storage, FuelBlock};
+use ports::{fuel_rpc::FuelAdapter, storage::Storage, types::FuelBlock};
 use prometheus::{core::Collector, IntGauge, Opts};
 use storage::Postgres;
 use tokio::sync::mpsc::Sender;
@@ -138,7 +138,7 @@ mod tests {
     use std::{sync::Arc, vec};
 
     use mockall::predicate::eq;
-    use ports::{fuel_rpc::MockFuelAdapter, BlockSubmission};
+    use ports::{fuel_rpc::MockFuelAdapter, types::BlockSubmission};
     use prometheus::{proto::Metric, Registry};
     use rand::Rng;
     use storage::PostgresProcess;

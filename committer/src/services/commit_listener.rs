@@ -3,9 +3,9 @@ use eth_rpc::WsAdapter;
 use futures::{StreamExt, TryStreamExt};
 use metrics::RegistersMetrics;
 use ports::{
-    eth_rpc::{EthereumAdapter, FuelBlockCommittedOnEth},
+    eth_rpc::EthereumAdapter,
     storage::Storage,
-    EthHeight,
+    types::{EthHeight, FuelBlockCommittedOnEth},
 };
 use prometheus::{IntGauge, Opts};
 use storage::Postgres;
@@ -124,9 +124,9 @@ mod tests {
     use metrics::RegistersMetrics;
     use mockall::predicate;
     use ports::{
-        eth_rpc::{FuelBlockCommittedOnEth, MockEthereumAdapter, MockEventStreamer},
+        eth_rpc::{MockEthereumAdapter, MockEventStreamer},
         storage::Storage,
-        BlockSubmission, EthHeight, U256,
+        types::{BlockSubmission, EthHeight, FuelBlockCommittedOnEth, U256},
     };
     use prometheus::{proto::Metric, Registry};
     use rand::Rng;

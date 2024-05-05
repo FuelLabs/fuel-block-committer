@@ -1,4 +1,4 @@
-use ports::BlockSubmission;
+use ports::types::BlockSubmission;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::{Error, Result};

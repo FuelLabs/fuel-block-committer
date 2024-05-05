@@ -1,4 +1,4 @@
-use ports::{BlockSubmission, FuelBlock};
+use ports::types::{BlockSubmission, FuelBlock};
 
 use crate::Error;
 

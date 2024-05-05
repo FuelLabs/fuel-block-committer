@@ -8,7 +8,6 @@ members = [
   "packages/metrics",
   "packages/ports",
   "packages/storage",
-  "packages/types",
 ]
 
 [workspace.dependencies]
@@ -17,7 +16,6 @@ fuel_rpc = { version = "0.1.0", path = "./packages/fuel_rpc", default-features =
 metrics = { version = "0.1.0", path = "./packages/metrics", default-features = false }
 ports = { version = "0.1.0", path = "./packages/ports", default-features = false }
 storage = { version = "0.1.0", path = "./packages/storage", default-features = false }
-types = { version = "0.1.0", path = "./packages/types/", default-features = false }
 
 actix-web = { version = "4", default-features = false }
 anyhow = { version = "1.0", default-features = false }

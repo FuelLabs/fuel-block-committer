@@ -1,12 +1,14 @@
-#[cfg(feature = "eth")]
-pub mod eth_rpc;
-#[cfg(feature = "fuel")]
-pub mod fuel_rpc;
-#[cfg(feature = "storage")]
-pub mod storage;
+mod ports {
+    #[cfg(feature = "eth")]
+    pub mod eth_rpc;
 
-#[cfg(feature = "eth")]
-pub use ethers_core::types::{H160, U256};
-#[cfg(feature = "eth")]
-pub use futures::Stream;
-pub use types::{BlockSubmission, EthHeight, FuelBlock, InvalidEthHeight};
+    #[cfg(feature = "fuel")]
+    pub mod fuel_rpc;
+
+    #[cfg(feature = "storage")]
+    pub mod storage;
+}
+
+#[cfg(any(feature = "eth", feature = "fuel", feature = "storage"))]
+pub use ports::*;
+pub mod types;

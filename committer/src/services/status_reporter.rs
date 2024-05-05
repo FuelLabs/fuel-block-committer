@@ -50,7 +50,7 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use ports::BlockSubmission;
+    use ports::types::BlockSubmission;
     use rand::Rng;
     use storage::PostgresProcess;
 

@@ -1,6 +1,10 @@
 use async_trait::async_trait;
 use eth_rpc::WsAdapter;
-use ports::{eth_rpc::EthereumAdapter, storage::Storage, BlockSubmission, FuelBlock};
+use ports::{
+    eth_rpc::EthereumAdapter,
+    storage::Storage,
+    types::{BlockSubmission, FuelBlock},
+};
 use storage::Postgres;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info};

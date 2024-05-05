@@ -9,7 +9,7 @@ use ethers::{
     types::U256,
 };
 use futures::{stream::TryStreamExt, Stream};
-use ports::{eth_rpc::FuelBlockCommittedOnEth, EthHeight};
+use ports::types::{EthHeight, FuelBlockCommittedOnEth};
 use websocket::EthEventStreamer;
 
 mod metrics;
@@ -60,11 +60,11 @@ impl From<Error> for ports::eth_rpc::Error {
 
 #[async_trait]
 impl ports::eth_rpc::EthereumAdapter for WsAdapter {
-    async fn submit(&self, block: ports::FuelBlock) -> ports::eth_rpc::Result<()> {
+    async fn submit(&self, block: ports::types::FuelBlock) -> ports::eth_rpc::Result<()> {
         Ok(self.submit(block).await?)
     }
 
-    async fn get_block_number(&self) -> ports::eth_rpc::Result<ports::EthHeight> {
+    async fn get_block_number(&self) -> ports::eth_rpc::Result<ports::types::EthHeight> {
         let block_num = self.get_block_number().await?;
         let height = EthHeight::try_from(block_num)?;
         Ok(height)

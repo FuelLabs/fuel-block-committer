@@ -6,7 +6,7 @@ use ethers::{
     signers::{LocalWallet, Signer},
     types::{Address, Chain, H160, U256, U64},
 };
-use ports::FuelBlock;
+use ports::types::FuelBlock;
 use serde_json::Value;
 use url::Url;
 
