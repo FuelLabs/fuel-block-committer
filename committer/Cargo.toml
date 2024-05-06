@@ -21,11 +21,11 @@ eth_rpc = { workspace = true }
 fuel_rpc = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true }
-services = { workspace = true }
 prometheus = { workspace = true, default-features = false }
 
 serde = { workspace = true }
 serde_json = { workspace = true, default-features = false }
+services = { workspace = true }
 storage = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
