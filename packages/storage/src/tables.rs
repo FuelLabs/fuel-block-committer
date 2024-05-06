@@ -1,7 +1,7 @@
 use ports::types::{BlockSubmission, FuelBlock};
 
 #[derive(sqlx::FromRow)]
-pub(crate) struct L1FuelBlockSubmission {
+pub struct L1FuelBlockSubmission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
     pub completed: bool,

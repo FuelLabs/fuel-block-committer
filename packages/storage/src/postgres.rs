@@ -11,15 +11,15 @@ pub struct Postgres {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct DbConfig {
-    /// The hostname or IP address of the PostgreSQL server.
+    /// The hostname or IP address of the `PostgreSQL` server.
     pub host: String,
-    /// The port number on which the PostgreSQL server is listening.
+    /// The port number on which the `PostgreSQL` server is listening.
     pub port: u16,
-    /// The username used to authenticate with the PostgreSQL server.
+    /// The username used to authenticate with the `PostgreSQL` server.
     pub username: String,
-    /// The password used to authenticate with the PostgreSQL server.
+    /// The password used to authenticate with the `PostgreSQL` server.
     pub password: String,
-    /// The name of the database to connect to on the PostgreSQL server.
+    /// The name of the database to connect to on the `PostgreSQL` server.
     pub database: String,
     /// The maximum number of connections allowed in the connection pool.
     pub max_connections: u32,

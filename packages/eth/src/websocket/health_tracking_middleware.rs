@@ -11,7 +11,7 @@ use crate::{
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub(crate) trait EthApi {
+pub trait EthApi {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;

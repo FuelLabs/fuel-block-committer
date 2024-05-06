@@ -1,7 +1,7 @@
-pub(crate) type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("Database Error {0}")]
     Database(String),
     #[error("Could not convert to/from domain/db type {0}")]
@@ -9,10 +9,10 @@ pub(crate) enum Error {
 }
 
 impl From<Error> for ports::storage::Error {
-    fn from(value: Error) -> ports::storage::Error {
+    fn from(value: Error) -> Self {
         match value {
-            Error::Database(e) => ports::storage::Error::Database(e),
-            Error::Conversion(e) => ports::storage::Error::Conversion(e),
+            Error::Database(e) => Self::Database(e),
+            Error::Conversion(e) => Self::Conversion(e),
         }
     }
 }

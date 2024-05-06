@@ -5,7 +5,7 @@ use ethers::{
 };
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("wallet error: {0}")]
     Wallet(#[from] ethers::signers::WalletError),
     #[error("network error: {0}")]
@@ -20,7 +20,7 @@ impl From<ethers::providers::ProviderError> for Error {
     }
 }
 
-pub(crate) type ContractErrorType =
+pub type ContractErrorType =
     ethers::contract::ContractError<SignerMiddleware<Provider<Ws>, LocalWallet>>;
 
 impl From<ContractErrorType> for Error {
@@ -33,7 +33,7 @@ impl From<ContractErrorType> for Error {
     }
 }
 
-pub(crate) type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 impl From<Error> for ports::l1::Error {
     fn from(err: Error) -> Self {
