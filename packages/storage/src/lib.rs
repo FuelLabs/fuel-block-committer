@@ -30,11 +30,14 @@ impl ports::storage::Storage for postgres::Postgres {
 
 #[cfg(test)]
 mod tests {
-    use ports::types::BlockSubmission;
+    use ports::{
+        storage::{Error, Storage},
+        types::BlockSubmission,
+    };
     use rand::{thread_rng, Rng};
     use storage as _;
 
-    use crate::{error::Error, PostgresProcess};
+    use crate::PostgresProcess;
 
     fn random_non_zero_height() -> u32 {
         let mut rng = thread_rng();
@@ -49,13 +52,13 @@ mod tests {
         let latest_height = random_non_zero_height();
 
         let latest_submission = given_incomplete_submission(latest_height);
-        db._insert(latest_submission.clone()).await.unwrap();
+        db.insert(latest_submission.clone()).await.unwrap();
 
         let older_submission = given_incomplete_submission(latest_height - 1);
-        db._insert(older_submission).await.unwrap();
+        db.insert(older_submission).await.unwrap();
 
         // when
-        let actual = db._submission_w_latest_block().await.unwrap().unwrap();
+        let actual = db.submission_w_latest_block().await.unwrap().unwrap();
 
         // then
         assert_eq!(actual, latest_submission);
@@ -70,10 +73,10 @@ mod tests {
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
         let block_hash = submission.block.hash;
-        db._insert(submission).await.unwrap();
+        db.insert(submission).await.unwrap();
 
         // when
-        let submission = db._set_submission_completed(block_hash).await.unwrap();
+        let submission = db.set_submission_completed(block_hash).await.unwrap();
 
         // then
         assert!(submission.completed);
@@ -90,7 +93,7 @@ mod tests {
         let block_hash = submission.block.hash;
 
         // when
-        let result = db._set_submission_completed(block_hash).await;
+        let result = db.set_submission_completed(block_hash).await;
 
         // then
         let Err(Error::Database(msg)) = result else {
