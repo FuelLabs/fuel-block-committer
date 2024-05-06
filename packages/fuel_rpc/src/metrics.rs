@@ -1,5 +1,7 @@
-use metrics::{Collector, RegistersMetrics};
-use prometheus::{IntCounter, Opts};
+use metrics::{
+    prometheus::{core::Collector, IntCounter, Opts},
+    RegistersMetrics,
+};
 
 pub struct Metrics {
     pub fuel_network_errors: IntCounter,

@@ -35,7 +35,7 @@ impl From<ContractErrorType> for Error {
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 
-impl From<Error> for ports::eth_rpc::Error {
+impl From<Error> for ports::l1::Error {
     fn from(err: Error) -> Self {
         match err {
             Error::Network(err) => Self::Network(err),

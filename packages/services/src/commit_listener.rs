@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
-use metrics::{Collector, IntGauge, Opts, RegistersMetrics};
+use metrics::{
+    prometheus::{core::Collector, IntGauge, Opts},
+    RegistersMetrics,
+};
 use ports::{
-    eth_rpc::EthereumAdapter,
     storage::Storage,
-    types::{EthHeight, FuelBlockCommittedOnEth},
+    types::{FuelBlockCommittedOnL1, L1Height},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -31,10 +33,10 @@ impl<E, Db> CommitListener<E, Db> {
 
 impl<E, Db> CommitListener<E, Db>
 where
-    E: EthereumAdapter,
+    E: ports::l1::Contract,
     Db: Storage,
 {
-    async fn determine_starting_eth_block(&mut self) -> crate::Result<EthHeight> {
+    async fn determine_starting_eth_block(&mut self) -> crate::Result<L1Height> {
         Ok(self
             .storage
             .submission_w_latest_block()
@@ -44,13 +46,13 @@ where
 
     async fn handle_block_committed(
         &self,
-        committed_on_eth: FuelBlockCommittedOnEth,
+        committed_on_l1: FuelBlockCommittedOnL1,
     ) -> crate::Result<()> {
-        info!("block comitted on eth {committed_on_eth:?}");
+        info!("block comitted on l1 {committed_on_l1:?}");
 
         let submission = self
             .storage
-            .set_submission_completed(committed_on_eth.fuel_block_hash)
+            .set_submission_completed(committed_on_l1.fuel_block_hash)
             .await?;
 
         self.metrics
@@ -68,9 +70,9 @@ where
 }
 
 #[async_trait]
-impl<E, Db> Runner for CommitListener<E, Db>
+impl<C, Db> Runner for CommitListener<C, Db>
 where
-    E: EthereumAdapter,
+    C: ports::l1::Contract,
     Db: Storage,
 {
     async fn run(&mut self) -> crate::Result<()> {
@@ -118,12 +120,15 @@ impl Default for Metrics {
 #[cfg(test)]
 mod tests {
     use futures::stream;
-    use metrics::{Metric, RegistersMetrics, Registry};
+    use metrics::{
+        prometheus::{proto::Metric, Registry},
+        RegistersMetrics,
+    };
     use mockall::predicate;
     use ports::{
-        eth_rpc::{MockEthereumAdapter, MockEventStreamer},
+        l1::{MockContract, MockEventStreamer},
         storage::Storage,
-        types::{BlockSubmission, EthHeight, FuelBlockCommittedOnEth, U256},
+        types::{BlockSubmission, FuelBlockCommittedOnL1, L1Height, U256},
     };
     use rand::Rng;
     use storage::{Postgres, PostgresProcess};
@@ -249,9 +254,9 @@ mod tests {
 
     fn given_eth_rpc_that_will_stream(
         events: Vec<[u8; 32]>,
-        starting_from_height: EthHeight,
-    ) -> MockEthereumAdapter {
-        let mut eth_rpc = MockEthereumAdapter::new();
+        starting_from_height: L1Height,
+    ) -> MockContract {
+        let mut eth_rpc = MockContract::new();
 
         let event_streamer = Box::new(given_event_streamer_w_events(events));
         eth_rpc
@@ -266,7 +271,7 @@ mod tests {
         let mut streamer = MockEventStreamer::new();
         let events = events
             .into_iter()
-            .map(|block_hash| FuelBlockCommittedOnEth {
+            .map(|block_hash| FuelBlockCommittedOnL1 {
                 fuel_block_hash: block_hash,
                 commit_height: U256::default(),
             })

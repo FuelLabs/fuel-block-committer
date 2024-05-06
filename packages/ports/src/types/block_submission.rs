@@ -1,12 +1,12 @@
-use crate::types::{EthHeight, FuelBlock};
+use crate::types::{FuelBlock, L1Height};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {
     pub block: FuelBlock,
     pub completed: bool,
-    // Eth block height moments before submitting the fuel block. Used to filter stale events in
+    // L1 block height moments before submitting the fuel block. Used to filter stale events in
     // the commit listener.
-    pub submittal_height: EthHeight,
+    pub submittal_height: L1Height,
 }
 
 #[cfg(feature = "test-helpers")]

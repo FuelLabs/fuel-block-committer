@@ -1,8 +1,11 @@
 use std::{num::NonZeroU32, vec};
 
 use async_trait::async_trait;
-use metrics::{Collector, IntGauge, Opts, RegistersMetrics};
-use ports::{fuel_rpc::FuelAdapter, storage::Storage, types::FuelBlock};
+use metrics::{
+    prometheus::{core::Collector, IntGauge, Opts},
+    RegistersMetrics,
+};
+use ports::{storage::Storage, types::FuelBlock};
 use tokio::sync::mpsc::Sender;
 
 use super::Runner;
@@ -56,7 +59,7 @@ impl<A, Db> BlockWatcher<A, Db> {
 }
 impl<A, Db> BlockWatcher<A, Db>
 where
-    A: FuelAdapter,
+    A: ports::fuel::Api,
     Db: Storage,
 {
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
@@ -104,7 +107,7 @@ where
 #[async_trait]
 impl<A, Db> Runner for BlockWatcher<A, Db>
 where
-    A: FuelAdapter,
+    A: ports::fuel::Api,
     Db: Storage,
 {
     async fn run(&mut self) -> Result<()> {
@@ -134,9 +137,9 @@ where
 mod tests {
     use std::{sync::Arc, vec};
 
-    use metrics::{Metric, Registry};
+    use metrics::prometheus::{proto::Metric, Registry};
     use mockall::predicate::eq;
-    use ports::{fuel_rpc::MockFuelAdapter, types::BlockSubmission};
+    use ports::{fuel::MockApi, types::BlockSubmission};
     use rand::Rng;
     use storage::{Postgres, PostgresProcess};
 
@@ -273,8 +276,8 @@ mod tests {
         db
     }
 
-    fn given_fetcher(available_blocks: Vec<FuelBlock>) -> MockFuelAdapter {
-        let mut fetcher = MockFuelAdapter::new();
+    fn given_fetcher(available_blocks: Vec<FuelBlock>) -> MockApi {
+        let mut fetcher = MockApi::new();
         for block in available_blocks.clone() {
             fetcher
                 .expect_block_at_height()

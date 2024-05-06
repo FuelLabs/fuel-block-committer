@@ -1,5 +1,7 @@
 use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
-use metrics::{Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics};
+use metrics::{
+    prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
+};
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};

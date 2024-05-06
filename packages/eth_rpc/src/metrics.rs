@@ -1,5 +1,7 @@
-use metrics::RegistersMetrics;
-use prometheus::{IntCounter, Opts};
+use metrics::{
+    prometheus::{core::Collector, IntCounter, Opts},
+    RegistersMetrics,
+};
 
 #[derive(Clone)]
 pub struct Metrics {
@@ -7,7 +9,7 @@ pub struct Metrics {
 }
 
 impl RegistersMetrics for Metrics {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.eth_network_errors.clone())]
     }
 }

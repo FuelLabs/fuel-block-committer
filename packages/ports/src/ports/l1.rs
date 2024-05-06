@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use crate::types::{EthHeight, FuelBlock, FuelBlockCommittedOnEth, InvalidEthHeight, Stream, U256};
+use crate::types::{FuelBlock, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, U256};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -12,19 +12,24 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl From<InvalidEthHeight> for Error {
-    fn from(err: InvalidEthHeight) -> Self {
+impl From<InvalidL1Height> for Error {
+    fn from(err: InvalidL1Height) -> Self {
         Self::Other(err.to_string())
     }
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 #[async_trait::async_trait]
-pub trait EthereumAdapter: Send + Sync {
+pub trait Contract: Send + Sync {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
-    async fn get_block_number(&self) -> Result<EthHeight>;
-    async fn balance(&self) -> Result<U256>;
+    async fn get_block_number(&self) -> Result<L1Height>;
     fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync>;
+}
+
+#[cfg_attr(feature = "test-helpers", mockall::automock)]
+#[async_trait::async_trait]
+pub trait Api {
+    async fn balance(&self) -> Result<U256>;
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -32,5 +37,5 @@ pub trait EthereumAdapter: Send + Sync {
 pub trait EventStreamer {
     async fn establish_stream<'a>(
         &'a self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommittedOnEth>> + 'a + Send>>>;
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommittedOnL1>> + 'a + Send>>>;
 }

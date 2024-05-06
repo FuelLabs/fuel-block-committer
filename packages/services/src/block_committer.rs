@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use ports::{
-    eth_rpc::EthereumAdapter,
     storage::Storage,
     types::{BlockSubmission, FuelBlock},
 };
@@ -10,9 +9,9 @@ use tracing::{error, info};
 use super::Runner;
 use crate::Result;
 
-pub struct BlockCommitter<A, Db> {
+pub struct BlockCommitter<C, Db> {
     rx_block: Receiver<FuelBlock>,
-    ethereum_rpc: A,
+    ethereum_rpc: C,
     storage: Db,
 }
 
@@ -32,7 +31,7 @@ impl<A, Db> BlockCommitter<A, Db> {
 
 impl<A, Db> BlockCommitter<A, Db>
 where
-    A: EthereumAdapter,
+    A: ports::l1::Contract,
     Db: Storage,
 {
     async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
@@ -56,7 +55,7 @@ where
 #[async_trait]
 impl<A, Db> Runner for BlockCommitter<A, Db>
 where
-    A: EthereumAdapter,
+    A: ports::l1::Contract,
     Db: Storage,
 {
     async fn run(&mut self) -> Result<()> {
@@ -79,7 +78,7 @@ mod tests {
     use std::time::Duration;
 
     use mockall::predicate;
-    use ports::eth_rpc::MockEthereumAdapter;
+    use ports::l1::MockContract;
     use rand::Rng;
     use storage::PostgresProcess;
 
@@ -105,8 +104,8 @@ mod tests {
         assert_eq!(expeted_height, last_submission.block.height);
     }
 
-    fn given_eth_rpc_that_expects(block: FuelBlock) -> MockEthereumAdapter {
-        let mut eth_rpc_mock = MockEthereumAdapter::new();
+    fn given_eth_rpc_that_expects(block: FuelBlock) -> MockContract {
+        let mut eth_rpc_mock = MockContract::new();
         eth_rpc_mock
             .expect_submit()
             .with(predicate::eq(block))
@@ -121,7 +120,7 @@ mod tests {
 
     async fn spawn_committer_and_run_until_timeout<Db: Storage>(
         rx: Receiver<FuelBlock>,
-        eth_rpc_mock: MockEthereumAdapter,
+        eth_rpc_mock: MockContract,
         storage: Db,
     ) {
         let _ = tokio::time::timeout(Duration::from_millis(250), async move {

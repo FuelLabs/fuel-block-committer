@@ -1,9 +1,9 @@
 use std::num::NonZeroU32;
 
 use ethers::types::{Address, Chain};
-use metrics::{HealthChecker, RegistersMetrics};
+use metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use ports::{
-    eth_rpc::Result,
+    l1::Result,
     types::{FuelBlock, U256},
 };
 use url::Url;
@@ -19,27 +19,22 @@ mod event_streamer;
 mod health_tracking_middleware;
 
 #[derive(Clone)]
-pub struct WsAdapter {
+pub struct WebsocketClient {
     inner: HealthTrackingMiddleware<WsConnection>,
 }
 
-impl WsAdapter {
+impl WebsocketClient {
     pub async fn connect(
-        ethereum_rpc: &Url,
+        url: &Url,
         chain_id: Chain,
         contract_address: Address,
-        ethereum_wallet_key: &str,
+        wallet_key: &str,
         commit_interval: NonZeroU32,
         unhealthy_after_n_errors: usize,
-    ) -> ports::eth_rpc::Result<Self> {
-        let provider = WsConnection::connect(
-            ethereum_rpc,
-            chain_id,
-            contract_address,
-            ethereum_wallet_key,
-            commit_interval,
-        )
-        .await?;
+    ) -> ports::l1::Result<Self> {
+        let provider =
+            WsConnection::connect(url, chain_id, contract_address, wallet_key, commit_interval)
+                .await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
@@ -82,8 +77,8 @@ impl WsAdapter {
 }
 
 // User responsible for registering any metrics T might have
-impl RegistersMetrics for WsAdapter {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+impl RegistersMetrics for WebsocketClient {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.inner.metrics()
     }
 }

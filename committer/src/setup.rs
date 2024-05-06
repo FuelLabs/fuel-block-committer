@@ -1,12 +1,8 @@
 use std::time::Duration;
 
-use eth_rpc::WsAdapter;
-use fuel_rpc::client::Client;
-use metrics::{HealthChecker, RegistersMetrics};
+use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::{storage::Storage, types::FuelBlock};
-use prometheus::Registry;
 use services::{BlockCommitter, BlockWatcher, CommitListener, Runner, WalletBalanceTracker};
-use storage::Postgres;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -14,12 +10,13 @@ use tracing::{error, info};
 use crate::{
     config::{Config, InternalConfig},
     errors::Result,
+    ContractRpc, Database, FuelApi,
 };
 
 pub fn spawn_block_watcher(
     config: &Config,
     internal_config: &InternalConfig,
-    storage: Postgres,
+    storage: Database,
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> (
@@ -45,10 +42,10 @@ pub fn spawn_block_watcher(
 pub fn spawn_wallet_balance_tracker(
     internal_config: &InternalConfig,
     registry: &Registry,
-    ethereum_rpc: WsAdapter,
+    ethereum_api: ContractRpc,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let wallet_balance_tracker = WalletBalanceTracker::new(ethereum_rpc);
+    let wallet_balance_tracker = WalletBalanceTracker::new(ethereum_api);
 
     wallet_balance_tracker.register_metrics(registry);
 
@@ -63,15 +60,15 @@ pub fn spawn_wallet_balance_tracker(
 pub fn spawn_eth_committer_and_listener(
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
-    ethereum_rpc: WsAdapter,
-    storage: Postgres,
+    ethereum_api: ContractRpc,
+    storage: Database,
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
     let committer_handler =
-        create_block_committer(rx_fuel_block, ethereum_rpc.clone(), storage.clone());
+        create_block_committer(rx_fuel_block, ethereum_api.clone(), storage.clone());
 
-    let commit_listener = CommitListener::new(ethereum_rpc, storage, cancel_token.clone());
+    let commit_listener = CommitListener::new(ethereum_api, storage, cancel_token.clone());
     commit_listener.register_metrics(registry);
 
     let listener_handle = schedule_polling(
@@ -86,10 +83,10 @@ pub fn spawn_eth_committer_and_listener(
 
 fn create_block_committer(
     rx_fuel_block: Receiver<FuelBlock>,
-    ethereum_rpc: WsAdapter,
+    ethereum_api: ContractRpc,
     storage: impl Storage + 'static,
 ) -> tokio::task::JoinHandle<()> {
-    let mut block_committer = BlockCommitter::new(rx_fuel_block, ethereum_rpc, storage);
+    let mut block_committer = BlockCommitter::new(rx_fuel_block, ethereum_api, storage);
     tokio::spawn(async move {
         block_committer
             .run()
@@ -102,8 +99,8 @@ pub async fn create_eth_adapter(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
-) -> Result<(WsAdapter, HealthChecker)> {
-    let ws_adapter = WsAdapter::connect(
+) -> Result<(ContractRpc, HealthChecker)> {
+    let ws_adapter = ContractRpc::connect(
         &config.eth.rpc,
         config.eth.chain_id,
         config.eth.state_contract_address,
@@ -147,8 +144,8 @@ fn create_fuel_adapter(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
-) -> (Client, HealthChecker) {
-    let fuel_adapter = Client::new(
+) -> (FuelApi, HealthChecker) {
+    let fuel_adapter = FuelApi::new(
         &config.fuel.graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
     );
@@ -162,9 +159,9 @@ fn create_fuel_adapter(
 fn create_block_watcher(
     config: &Config,
     registry: &Registry,
-    fuel_adapter: Client,
-    storage: Postgres,
-) -> (BlockWatcher<Client, Postgres>, Receiver<FuelBlock>) {
+    fuel_adapter: FuelApi,
+    storage: Database,
+) -> (BlockWatcher<FuelApi, Database>, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher = BlockWatcher::new(
         config.eth.commit_interval,
@@ -186,8 +183,8 @@ pub fn setup_logger() {
         .init();
 }
 
-pub async fn setup_storage(config: &Config) -> Result<Postgres> {
-    let postgres = Postgres::connect(&config.app.db).await?;
+pub async fn setup_storage(config: &Config) -> Result<Database> {
+    let postgres = Database::connect(&config.app.db).await?;
     postgres.migrate().await?;
 
     Ok(postgres)
@@ -199,7 +196,7 @@ pub async fn shut_down(
     wallet_balance_tracker_handle: JoinHandle<()>,
     committer_handle: JoinHandle<()>,
     listener_handle: JoinHandle<()>,
-    storage: Postgres,
+    storage: Database,
 ) -> Result<()> {
     cancel_token.cancel();
 

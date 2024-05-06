@@ -1,24 +1,30 @@
-use metrics::{Collector, IntGauge, Opts, RegistersMetrics};
-use ports::{eth_rpc::EthereumAdapter, types::U256};
+use metrics::{
+    prometheus::{core::Collector, IntGauge, Opts},
+    RegistersMetrics,
+};
+use ports::types::U256;
 
 use super::Runner;
 use crate::Result;
 
-pub struct WalletBalanceTracker {
-    eth_adapter: Box<dyn EthereumAdapter>,
+pub struct WalletBalanceTracker<Api> {
+    api: Api,
     metrics: Metrics,
 }
 
-impl WalletBalanceTracker {
-    pub fn new(adapter: impl EthereumAdapter + 'static) -> Self {
+impl<Api> WalletBalanceTracker<Api>
+where
+    Api: ports::l1::Api,
+{
+    pub fn new(api: Api) -> Self {
         Self {
-            eth_adapter: Box::new(adapter),
+            api,
             metrics: Metrics::default(),
         }
     }
 
     pub async fn update_balance(&self) -> Result<()> {
-        let balance = self.eth_adapter.balance().await?;
+        let balance = self.api.balance().await?;
 
         let balance_gwei = balance / U256::from(1_000_000_000);
         self.metrics
@@ -29,7 +35,7 @@ impl WalletBalanceTracker {
     }
 }
 
-impl RegistersMetrics for WalletBalanceTracker {
+impl<Api> RegistersMetrics for WalletBalanceTracker<Api> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.metrics.metrics()
     }
@@ -59,7 +65,10 @@ impl Default for Metrics {
 }
 
 #[async_trait::async_trait]
-impl Runner for WalletBalanceTracker {
+impl<Api> Runner for WalletBalanceTracker<Api>
+where
+    Api: Send + Sync + ports::l1::Api,
+{
     async fn run(&mut self) -> Result<()> {
         self.update_balance().await
     }
@@ -68,15 +77,15 @@ impl Runner for WalletBalanceTracker {
 #[cfg(test)]
 mod tests {
 
-    use metrics::{Metric, Registry};
-    use ports::eth_rpc::MockEthereumAdapter;
+    use metrics::prometheus::{proto::Metric, Registry};
+    use ports::l1;
 
     use super::*;
 
     #[tokio::test]
     async fn updates_metrics() {
         // given
-        let eth_adapter = given_eth_adapter("500000000000000000000");
+        let eth_adapter = given_l1_api("500000000000000000000");
         let registry = Registry::new();
 
         let sut = WalletBalanceTracker::new(eth_adapter);
@@ -97,10 +106,10 @@ mod tests {
         assert_eq!(eth_balance_metric.get_value(), 500_000_000_000_f64);
     }
 
-    fn given_eth_adapter(wei_balance: &str) -> MockEthereumAdapter {
+    fn given_l1_api(wei_balance: &str) -> l1::MockApi {
         let balance = U256::from_dec_str(wei_balance).unwrap();
 
-        let mut eth_adapter = MockEthereumAdapter::new();
+        let mut eth_adapter = l1::MockApi::new();
         eth_adapter
             .expect_balance()
             .return_once(move || Ok(balance));

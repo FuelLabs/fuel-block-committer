@@ -1,4 +1,6 @@
-use metrics::{ConnectionHealthTracker, HealthChecker, RegistersMetrics};
+use metrics::{
+    prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
+};
 use ports::types::{FuelBlock, U256};
 
 use crate::{
@@ -54,7 +56,7 @@ impl<T> HealthTrackingMiddleware<T> {
 
 // User responsible for registering any metrics T might have
 impl<T> RegistersMetrics for HealthTrackingMiddleware<T> {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.metrics.metrics()
     }
 }
@@ -99,7 +101,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use prometheus::{proto::Metric, Registry};
+    use metrics::prometheus::{proto::Metric, Registry};
 
     use super::*;
 

@@ -1,14 +1,14 @@
 mod ports {
-    #[cfg(feature = "eth")]
-    pub mod eth_rpc;
+    #[cfg(feature = "l1")]
+    pub mod l1;
 
     #[cfg(feature = "fuel")]
-    pub mod fuel_rpc;
+    pub mod fuel;
 
     #[cfg(feature = "storage")]
     pub mod storage;
 }
 
-#[cfg(any(feature = "eth", feature = "fuel", feature = "storage"))]
+#[cfg(any(feature = "l1", feature = "fuel", feature = "storage"))]
 pub use ports::*;
 pub mod types;

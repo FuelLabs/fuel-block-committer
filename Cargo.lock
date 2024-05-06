@@ -1349,7 +1349,6 @@ dependencies = [
  "metrics",
  "mockall",
  "ports",
- "prometheus",
  "serde_json",
  "thiserror",
  "tokio",
@@ -1719,7 +1718,6 @@ dependencies = [
  "fuel_rpc",
  "metrics",
  "ports",
- "prometheus",
  "serde",
  "serde_json",
  "services",
@@ -1893,7 +1891,6 @@ dependencies = [
  "fuel-core-client",
  "metrics",
  "ports",
- "prometheus",
  "tokio",
  "url",
 ]

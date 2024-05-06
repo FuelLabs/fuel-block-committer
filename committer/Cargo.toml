@@ -16,8 +16,6 @@ eth_rpc = { workspace = true }
 fuel_rpc = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true }
-prometheus = { workspace = true }
-
 serde = { workspace = true }
 serde_json = { workspace = true }
 services = { workspace = true }

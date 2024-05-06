@@ -3,9 +3,9 @@ mod tests {
     use std::time::Duration;
 
     use anyhow::Result;
-    use eth_rpc::{Chain, WsAdapter};
+    use eth_rpc::{Chain, WebsocketClient};
     use fuel_rpc::client::Client;
-    use ports::fuel_rpc::FuelAdapter;
+    use ports::fuel::Api;
 
     const FUEL_NODE_PORT: u16 = 4000;
 
@@ -14,7 +14,7 @@ mod tests {
         let fuel_node_address = format!("http://localhost:{FUEL_NODE_PORT}");
         let provider = Client::new(&fuel_node_address.parse()?, 10);
 
-        let fuel_contract = WsAdapter::connect(
+        let fuel_contract = WebsocketClient::connect(
             &"ws://localhost:8089".parse()?,
             Chain::AnvilHardhat,
             "0xdAad669b06d79Cb48C8cfef789972436dBe6F24d".parse()?,

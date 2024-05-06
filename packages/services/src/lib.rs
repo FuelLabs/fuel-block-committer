@@ -23,19 +23,19 @@ pub enum Error {
     Storage(String),
 }
 
-impl From<ports::eth_rpc::Error> for Error {
-    fn from(value: ports::eth_rpc::Error) -> Self {
+impl From<ports::l1::Error> for Error {
+    fn from(value: ports::l1::Error) -> Self {
         match value {
-            ports::eth_rpc::Error::Network(e) => Self::Network(e),
+            ports::l1::Error::Network(e) => Self::Network(e),
             _ => Self::Other(value.to_string()),
         }
     }
 }
 
-impl From<ports::fuel_rpc::Error> for Error {
-    fn from(value: ports::fuel_rpc::Error) -> Self {
+impl From<ports::fuel::Error> for Error {
+    fn from(value: ports::fuel::Error) -> Self {
         match value {
-            ports::fuel_rpc::Error::Network(e) => Self::Network(e),
+            ports::fuel::Error::Network(e) => Self::Network(e),
         }
     }
 }

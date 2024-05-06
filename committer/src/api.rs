@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use ::metrics::HealthChecker;
+use ::metrics::{
+    prometheus::{self, Encoder, Registry, TextEncoder},
+    HealthChecker,
+};
 use actix_web::{
     error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
 };
 use ports::storage::Storage;
-use prometheus::{Encoder, Registry, TextEncoder};
 use services::{HealthReporter, StatusReporter};
 use storage::Postgres;
 

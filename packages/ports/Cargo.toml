@@ -21,7 +21,7 @@ thiserror = { workspace = true, optional = true }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand"]
-eth = ["dep:ethers-core", "dep:futures", "dep:thiserror", "dep:async-trait"]
+l1 = ["dep:ethers-core", "dep:futures", "dep:thiserror", "dep:async-trait"]
 fuel = ["dep:thiserror", "dep:async-trait"]
 storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]
-full = ["eth", "fuel", "storage"]
+full = ["l1", "fuel", "storage"]

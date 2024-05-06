@@ -7,10 +7,10 @@ pub trait HealthCheck: Send + Sync {
     fn healthy(&self) -> bool;
 }
 
-pub use prometheus::{core::Collector, proto::Metric, IntGauge, Opts, Registry};
+pub use prometheus;
 
 pub trait RegistersMetrics {
-    fn register_metrics(&self, registry: &Registry) {
+    fn register_metrics(&self, registry: &crate::prometheus::Registry) {
         self.metrics().into_iter().for_each(|metric| {
             registry
                 .register(metric)
@@ -18,5 +18,5 @@ pub trait RegistersMetrics {
         });
     }
 
-    fn metrics(&self) -> Vec<Box<dyn Collector>>;
+    fn metrics(&self) -> Vec<Box<dyn crate::prometheus::core::Collector>>;
 }

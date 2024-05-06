@@ -4,8 +4,8 @@ use ports::types::FuelBlock;
 pub mod client;
 pub mod metrics;
 
-type Error = ports::fuel_rpc::Error;
-type Result<T> = ports::fuel_rpc::Result<T>;
+type Error = ports::fuel::Error;
+type Result<T> = ports::fuel::Result<T>;
 
 fn convert_block(block: Block) -> FuelBlock {
     FuelBlock {
@@ -15,12 +15,12 @@ fn convert_block(block: Block) -> FuelBlock {
 }
 
 #[async_trait::async_trait]
-impl ports::fuel_rpc::FuelAdapter for client::Client {
-    async fn block_at_height(&self, height: u32) -> ports::fuel_rpc::Result<Option<FuelBlock>> {
+impl ports::fuel::Api for client::Client {
+    async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>> {
         Ok(self._block_at_height(height).await?.map(convert_block))
     }
 
-    async fn latest_block(&self) -> ports::fuel_rpc::Result<FuelBlock> {
+    async fn latest_block(&self) -> ports::fuel::Result<FuelBlock> {
         let block = self._latest_block().await?;
         Ok(convert_block(block))
     }
@@ -28,9 +28,11 @@ impl ports::fuel_rpc::FuelAdapter for client::Client {
 
 #[cfg(test)]
 mod tests {
-    use ::metrics::RegistersMetrics;
-    use ports::fuel_rpc::FuelAdapter;
-    use prometheus::{proto::Metric, Registry};
+    use ::metrics::{
+        prometheus::{proto::Metric, Registry},
+        RegistersMetrics,
+    };
+    use ports::fuel::Api;
     use url::Url;
 
     use super::*;

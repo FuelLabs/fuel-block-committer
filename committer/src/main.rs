@@ -7,7 +7,7 @@ mod setup;
 use api::launch_api_server;
 use config::InternalConfig;
 use errors::Result;
-use prometheus::Registry;
+use metrics::prometheus::Registry;
 use setup::{
     create_eth_adapter, setup_logger, setup_storage, spawn_block_watcher,
     spawn_eth_committer_and_listener, spawn_wallet_balance_tracker,
@@ -15,6 +15,11 @@ use setup::{
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
+
+pub type ContractRpc = eth_rpc::WebsocketClient;
+pub type Database = storage::Postgres;
+pub type L1Api = eth_rpc::WebsocketClient;
+pub type FuelApi = fuel_rpc::client::Client;
 
 #[tokio::main]
 async fn main() -> Result<()> {

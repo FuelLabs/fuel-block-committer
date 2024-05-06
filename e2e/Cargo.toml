@@ -12,5 +12,5 @@ publish = { workspace = true }
 anyhow = { workspace = true }
 eth_rpc = { workspace = true, features = ["test-helpers"] }
 fuel_rpc = { workspace = true, features = ["test-helpers"] }
-ports = { workspace = true, features = ["fuel", "eth"] }
+ports = { workspace = true, features = ["fuel", "l1"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

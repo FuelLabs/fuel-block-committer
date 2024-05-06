@@ -6,7 +6,7 @@ use ethers::{
     signers::Wallet,
 };
 use futures::{Stream, TryStreamExt};
-use ports::types::FuelBlockCommittedOnEth;
+use ports::types::FuelBlockCommittedOnL1;
 
 use super::connection::CommitSubmittedFilter;
 use crate::error::Result;
@@ -28,13 +28,13 @@ impl EthEventStreamer {
 
     pub(crate) async fn establish_stream(
         &self,
-    ) -> Result<impl Stream<Item = Result<FuelBlockCommittedOnEth>> + Send + '_> {
+    ) -> Result<impl Stream<Item = Result<FuelBlockCommittedOnL1>> + Send + '_> {
         let events = self.events.subscribe().await?;
         let stream = events
             .map_ok(|event| {
                 let fuel_block_hash = event.block_hash;
                 let commit_height = event.commit_height;
-                FuelBlockCommittedOnEth {
+                FuelBlockCommittedOnL1 {
                     fuel_block_hash,
                     commit_height,
                 }
