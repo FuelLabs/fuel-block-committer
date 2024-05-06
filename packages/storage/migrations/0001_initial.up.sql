@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS eth_fuel_block_submission (
+CREATE TABLE IF NOT EXISTS l1_fuel_block_submission (
     fuel_block_hash     BYTEA PRIMARY KEY NOT NULL,
     fuel_block_height   BIGINT NOT NULL UNIQUE CHECK (fuel_block_height >= 0),
     completed           BOOLEAN NOT NULL,

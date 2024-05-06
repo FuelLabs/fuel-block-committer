@@ -14,16 +14,16 @@ use tracing::{error, info};
 use super::Runner;
 
 pub struct CommitListener<E, Db> {
-    ethereum_rpc: E,
+    contract: E,
     storage: Db,
     metrics: Metrics,
     cancel_token: CancellationToken,
 }
 
-impl<E, Db> CommitListener<E, Db> {
-    pub fn new(ethereum_rpc: E, storage: Db, cancel_token: CancellationToken) -> Self {
+impl<C, Db> CommitListener<C, Db> {
+    pub fn new(contract: C, storage: Db, cancel_token: CancellationToken) -> Self {
         Self {
-            ethereum_rpc,
+            contract,
             storage,
             metrics: Metrics::default(),
             cancel_token,
@@ -31,12 +31,12 @@ impl<E, Db> CommitListener<E, Db> {
     }
 }
 
-impl<E, Db> CommitListener<E, Db>
+impl<C, Db> CommitListener<C, Db>
 where
-    E: ports::l1::Contract,
+    C: ports::l1::Contract,
     Db: Storage,
 {
-    async fn determine_starting_eth_block(&mut self) -> crate::Result<L1Height> {
+    async fn determine_starting_l1_height(&mut self) -> crate::Result<L1Height> {
         Ok(self
             .storage
             .submission_w_latest_block()
@@ -76,10 +76,10 @@ where
     Db: Storage,
 {
     async fn run(&mut self) -> crate::Result<()> {
-        let eth_block = self.determine_starting_eth_block().await?;
+        let height = self.determine_starting_l1_height().await?;
 
-        self.ethereum_rpc
-            .event_streamer(eth_block.into())
+        self.contract
+            .event_streamer(height)
             .establish_stream()
             .await?
             .map_err(Into::into)
@@ -147,14 +147,13 @@ mod tests {
         };
         let block_hash = submission.block.hash;
 
-        let eth_rpc_mock =
-            given_eth_rpc_that_will_stream(vec![block_hash], submission.submittal_height);
+        let contract = given_contract_with_events(vec![block_hash], submission.submittal_height);
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submission(&process, submission).await;
 
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, db.clone(), CancellationToken::default());
+            CommitListener::new(contract, db.clone(), CancellationToken::default());
 
         // when
         commit_listener.run().await.unwrap();
@@ -176,14 +175,12 @@ mod tests {
         let block_hash = submission.block.hash;
         let fuel_block_height = submission.block.height;
 
-        let eth_rpc_mock =
-            given_eth_rpc_that_will_stream(vec![block_hash], submission.submittal_height);
+        let contract = given_contract_with_events(vec![block_hash], submission.submittal_height);
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submission(&process, submission).await;
 
-        let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, db, CancellationToken::default());
+        let mut commit_listener = CommitListener::new(contract, db, CancellationToken::default());
 
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);
@@ -216,7 +213,7 @@ mod tests {
         let missing_hash = block_missing_from_db.block.hash;
         let incoming_hash = incoming_block.block.hash;
 
-        let eth_rpc_mock = given_eth_rpc_that_will_stream(
+        let contract = given_contract_with_events(
             vec![missing_hash, incoming_hash],
             incoming_block.submittal_height,
         );
@@ -225,7 +222,7 @@ mod tests {
         let db = db_with_submission(&process, incoming_block.clone()).await;
 
         let mut commit_listener =
-            CommitListener::new(eth_rpc_mock, db.clone(), CancellationToken::default());
+            CommitListener::new(contract, db.clone(), CancellationToken::default());
 
         // when
         commit_listener.run().await.unwrap();
@@ -252,19 +249,19 @@ mod tests {
         db
     }
 
-    fn given_eth_rpc_that_will_stream(
+    fn given_contract_with_events(
         events: Vec<[u8; 32]>,
         starting_from_height: L1Height,
     ) -> MockContract {
-        let mut eth_rpc = MockContract::new();
+        let mut contract = MockContract::new();
 
         let event_streamer = Box::new(given_event_streamer_w_events(events));
-        eth_rpc
+        contract
             .expect_event_streamer()
-            .with(predicate::eq(u64::from(starting_from_height)))
+            .with(predicate::eq(starting_from_height))
             .return_once(move |_| event_streamer);
 
-        eth_rpc
+        contract
     }
 
     fn given_event_streamer_w_events(events: Vec<[u8; 32]>) -> MockEventStreamer {

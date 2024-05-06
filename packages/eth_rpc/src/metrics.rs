@@ -1,4 +1,4 @@
-use metrics::{
+use ::metrics::{
     prometheus::{core::Collector, IntCounter, Opts},
     RegistersMetrics,
 };

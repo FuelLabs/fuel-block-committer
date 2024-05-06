@@ -10,7 +10,7 @@ use ports::types::FuelBlock;
 use serde_json::Value;
 use url::Url;
 
-use super::{event_streamer::EthEventStreamer, health_tracking_middleware::MyAdapter};
+use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
 use crate::error::Result;
 
 abigen!(
@@ -32,7 +32,7 @@ pub struct WsConnection {
 }
 
 #[async_trait::async_trait]
-impl MyAdapter for WsConnection {
+impl EthApi for WsConnection {
     async fn submit(&self, block: FuelBlock) -> Result<()> {
         let commit_height = Self::calculate_commit_height(block.height, self.commit_interval);
         let contract_call = self.contract.commit(block.hash, commit_height);
@@ -88,15 +88,15 @@ impl MyAdapter for WsConnection {
 
 impl WsConnection {
     pub async fn connect(
-        ethereum_rpc: &Url,
+        url: &Url,
         chain_id: Chain,
         contract_address: Address,
-        ethereum_wallet_key: &str,
+        wallet_key: &str,
         commit_interval: NonZeroU32,
     ) -> Result<Self> {
-        let provider = Provider::<Ws>::connect(ethereum_rpc.to_string()).await?;
+        let provider = Provider::<Ws>::connect(url.to_string()).await?;
 
-        let wallet = LocalWallet::from_str(ethereum_wallet_key)?.with_chain_id(chain_id);
+        let wallet = LocalWallet::from_str(wallet_key)?.with_chain_id(chain_id);
         let address = wallet.address();
 
         let signer = SignerMiddleware::new(provider.clone(), wallet);

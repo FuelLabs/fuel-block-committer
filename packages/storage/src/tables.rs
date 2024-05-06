@@ -1,17 +1,17 @@
 use ports::types::{BlockSubmission, FuelBlock};
 
 #[derive(sqlx::FromRow)]
-pub(crate) struct EthFuelBlockSubmission {
+pub(crate) struct L1FuelBlockSubmission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
     pub completed: bool,
     pub submittal_height: i64,
 }
 
-impl TryFrom<EthFuelBlockSubmission> for BlockSubmission {
+impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
     type Error = crate::error::Error;
 
-    fn try_from(value: EthFuelBlockSubmission) -> Result<Self, Self::Error> {
+    fn try_from(value: L1FuelBlockSubmission) -> Result<Self, Self::Error> {
         let block_hash = value.fuel_block_hash.as_slice();
         macro_rules! bail {
             ($msg: literal, $($args: expr),*) => {
@@ -42,7 +42,7 @@ impl TryFrom<EthFuelBlockSubmission> for BlockSubmission {
     }
 }
 
-impl From<BlockSubmission> for EthFuelBlockSubmission {
+impl From<BlockSubmission> for L1FuelBlockSubmission {
     fn from(value: BlockSubmission) -> Self {
         Self {
             fuel_block_hash: value.block.hash.to_vec(),

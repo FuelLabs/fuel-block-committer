@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1",
+  "query": "SELECT * FROM l1_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "9774b1f03a332c68b0c646ba48723205201c7a3faf38bb0362959e8ae1ebf989"
+  "hash": "6f7e6ba876d49bef1bf870514ed38be642af65ed848f53a191ef58c2e02f227c"
 }

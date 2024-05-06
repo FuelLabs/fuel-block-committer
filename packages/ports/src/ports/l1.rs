@@ -22,13 +22,13 @@ impl From<InvalidL1Height> for Error {
 #[async_trait::async_trait]
 pub trait Contract: Send + Sync {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
-    async fn get_block_number(&self) -> Result<L1Height>;
-    fn event_streamer(&self, eth_block_height: u64) -> Box<dyn EventStreamer + Send + Sync>;
+    fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 #[async_trait::async_trait]
 pub trait Api {
+    async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;
 }
 

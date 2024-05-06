@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
+use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use ethers::types::{Address, Chain};
-use metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use ports::{
     l1::Result,
     types::{FuelBlock, U256},
@@ -11,7 +11,7 @@ use url::Url;
 pub use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
-    health_tracking_middleware::{HealthTrackingMiddleware, MyAdapter},
+    health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
 
 mod connection;

@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS eth_fuel_block_submission;
+DROP TABLE IF EXISTS l1_fuel_block_submission;

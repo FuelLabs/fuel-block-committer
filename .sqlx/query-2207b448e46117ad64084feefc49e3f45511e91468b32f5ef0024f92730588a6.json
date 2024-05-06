@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE eth_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
+  "query": "UPDATE l1_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "6389313221aa32ab73e62573b11d26eb631abbd9e7e114d6ef34207dea8152d3"
+  "hash": "2207b448e46117ad64084feefc49e3f45511e91468b32f5ef0024f92730588a6"
 }

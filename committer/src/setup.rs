@@ -10,7 +10,7 @@ use tracing::{error, info};
 use crate::{
     config::{Config, InternalConfig},
     errors::Result,
-    ContractRpc, Database, FuelApi,
+    Database, FuelApi, L1,
 };
 
 pub fn spawn_block_watcher(
@@ -42,10 +42,10 @@ pub fn spawn_block_watcher(
 pub fn spawn_wallet_balance_tracker(
     internal_config: &InternalConfig,
     registry: &Registry,
-    ethereum_api: ContractRpc,
+    l1: L1,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let wallet_balance_tracker = WalletBalanceTracker::new(ethereum_api);
+    let wallet_balance_tracker = WalletBalanceTracker::new(l1);
 
     wallet_balance_tracker.register_metrics(registry);
 
@@ -57,18 +57,17 @@ pub fn spawn_wallet_balance_tracker(
     )
 }
 
-pub fn spawn_eth_committer_and_listener(
+pub fn spawn_l1_committer_and_listener(
     internal_config: &InternalConfig,
     rx_fuel_block: Receiver<FuelBlock>,
-    ethereum_api: ContractRpc,
+    l1: L1,
     storage: Database,
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
-    let committer_handler =
-        create_block_committer(rx_fuel_block, ethereum_api.clone(), storage.clone());
+    let committer_handler = create_block_committer(rx_fuel_block, l1.clone(), storage.clone());
 
-    let commit_listener = CommitListener::new(ethereum_api, storage, cancel_token.clone());
+    let commit_listener = CommitListener::new(l1, storage, cancel_token.clone());
     commit_listener.register_metrics(registry);
 
     let listener_handle = schedule_polling(
@@ -83,10 +82,10 @@ pub fn spawn_eth_committer_and_listener(
 
 fn create_block_committer(
     rx_fuel_block: Receiver<FuelBlock>,
-    ethereum_api: ContractRpc,
+    l1: L1,
     storage: impl Storage + 'static,
 ) -> tokio::task::JoinHandle<()> {
-    let mut block_committer = BlockCommitter::new(rx_fuel_block, ethereum_api, storage);
+    let mut block_committer = BlockCommitter::new(rx_fuel_block, l1, storage);
     tokio::spawn(async move {
         block_committer
             .run()
@@ -95,12 +94,12 @@ fn create_block_committer(
     })
 }
 
-pub async fn create_eth_adapter(
+pub async fn create_l1_adapter(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
-) -> Result<(ContractRpc, HealthChecker)> {
-    let ws_adapter = ContractRpc::connect(
+) -> Result<(L1, HealthChecker)> {
+    let ws_adapter = L1::connect(
         &config.eth.rpc,
         config.eth.chain_id,
         config.eth.state_contract_address,

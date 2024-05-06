@@ -64,9 +64,9 @@ impl Postgres {
     }
 
     pub(crate) async fn _insert(&self, submission: BlockSubmission) -> crate::error::Result<()> {
-        let row = tables::EthFuelBlockSubmission::from(submission);
+        let row = tables::L1FuelBlockSubmission::from(submission);
         sqlx::query!(
-            "INSERT INTO eth_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
             row.fuel_block_hash,
             row.fuel_block_height,
             row.completed,
@@ -79,8 +79,8 @@ impl Postgres {
         &self,
     ) -> crate::error::Result<Option<BlockSubmission>> {
         sqlx::query_as!(
-            tables::EthFuelBlockSubmission,
-            "SELECT * FROM eth_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
+            tables::L1FuelBlockSubmission,
+            "SELECT * FROM l1_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
         )
         .fetch_optional(&self.connection_pool)
         .await?
@@ -93,8 +93,8 @@ impl Postgres {
         fuel_block_hash: [u8; 32],
     ) -> Result<BlockSubmission> {
         let updated_row = sqlx::query_as!(
-            tables::EthFuelBlockSubmission,
-            "UPDATE eth_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
+            tables::L1FuelBlockSubmission,
+            "UPDATE l1_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
             fuel_block_hash.as_slice(),
         ).fetch_optional(&self.connection_pool).await?;
 

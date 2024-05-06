@@ -9,16 +9,15 @@ use config::InternalConfig;
 use errors::Result;
 use metrics::prometheus::Registry;
 use setup::{
-    create_eth_adapter, setup_logger, setup_storage, spawn_block_watcher,
-    spawn_eth_committer_and_listener, spawn_wallet_balance_tracker,
+    create_l1_adapter, setup_logger, setup_storage, spawn_block_watcher,
+    spawn_l1_committer_and_listener, spawn_wallet_balance_tracker,
 };
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
 
-pub type ContractRpc = eth_rpc::WebsocketClient;
+pub type L1 = eth_rpc::WebsocketClient;
 pub type Database = storage::Postgres;
-pub type L1Api = eth_rpc::WebsocketClient;
 pub type FuelApi = fuel_rpc::client::Client;
 
 #[tokio::main]
@@ -43,7 +42,7 @@ async fn main() -> Result<()> {
     );
 
     let (ethereum_rpc, eth_health_check) =
-        create_eth_adapter(&config, &internal_config, &metrics_registry).await?;
+        create_l1_adapter(&config, &internal_config, &metrics_registry).await?;
 
     let wallet_balance_tracker_handle = spawn_wallet_balance_tracker(
         &internal_config,
@@ -52,7 +51,7 @@ async fn main() -> Result<()> {
         cancel_token.clone(),
     );
 
-    let (committer_handle, listener_handle) = spawn_eth_committer_and_listener(
+    let (committer_handle, listener_handle) = spawn_l1_committer_and_listener(
         &internal_config,
         rx_fuel_block,
         ethereum_rpc,

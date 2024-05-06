@@ -20,17 +20,8 @@ impl ports::l1::Contract for WebsocketClient {
         self.submit(block).await
     }
 
-    async fn get_block_number(&self) -> ports::l1::Result<ports::types::L1Height> {
-        let block_num = self.get_block_number().await?;
-        let height = L1Height::try_from(block_num)?;
-        Ok(height)
-    }
-
-    fn event_streamer(
-        &self,
-        eth_block_height: u64,
-    ) -> Box<dyn ports::l1::EventStreamer + Send + Sync> {
-        let stream = self.event_streamer(eth_block_height);
+    fn event_streamer(&self, height: L1Height) -> Box<dyn ports::l1::EventStreamer + Send + Sync> {
+        let stream = self.event_streamer(height.into());
         Box::new(stream)
     }
 }
@@ -39,6 +30,12 @@ impl ports::l1::Contract for WebsocketClient {
 impl ports::l1::Api for WebsocketClient {
     async fn balance(&self) -> ports::l1::Result<U256> {
         Ok(self.balance().await?)
+    }
+
+    async fn get_block_number(&self) -> ports::l1::Result<ports::types::L1Height> {
+        let block_num = self.get_block_number().await?;
+        let height = L1Height::try_from(block_num)?;
+        Ok(height)
     }
 }
 

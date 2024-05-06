@@ -1,4 +1,4 @@
-use metrics::{
+use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
 use ports::types::{FuelBlock, U256};
@@ -11,7 +11,7 @@ use crate::{
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait MyAdapter {
+pub trait EthApi {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
@@ -62,9 +62,9 @@ impl<T> RegistersMetrics for HealthTrackingMiddleware<T> {
 }
 
 #[async_trait::async_trait]
-impl<T> MyAdapter for HealthTrackingMiddleware<T>
+impl<T> EthApi for HealthTrackingMiddleware<T>
 where
-    T: MyAdapter + Send + Sync,
+    T: EthApi + Send + Sync,
 {
     async fn submit(&self, block: FuelBlock) -> Result<()> {
         let response = self.adapter.submit(block).await;
@@ -101,14 +101,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use metrics::prometheus::{proto::Metric, Registry};
+    use ::metrics::prometheus::{proto::Metric, Registry};
 
     use super::*;
 
     #[tokio::test]
     async fn recovers_after_successful_network_request() {
         // given
-        let mut eth_adapter = MockMyAdapter::new();
+        let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
             .returning(|_| Err(Error::Network("An error".into())));
@@ -132,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn other_errors_dont_impact_health_status() {
         // given
-        let mut eth_adapter = MockMyAdapter::new();
+        let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
             .returning(|_| Err(Error::Other("An error".into())));
@@ -155,7 +155,7 @@ mod tests {
 
     #[tokio::test]
     async fn network_errors_impact_health_status() {
-        let mut eth_adapter = MockMyAdapter::new();
+        let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
             .returning(|_| Err(Error::Network("An error".into())));
@@ -180,7 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn network_errors_seen_in_metrics() {
-        let mut eth_adapter = MockMyAdapter::new();
+        let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
             .returning(|_| Err(Error::Network("An error".into())));

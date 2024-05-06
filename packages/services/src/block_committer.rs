@@ -11,15 +11,15 @@ use crate::Result;
 
 pub struct BlockCommitter<C, Db> {
     rx_block: Receiver<FuelBlock>,
-    ethereum_rpc: C,
+    l1: C,
     storage: Db,
 }
 
-impl<A, Db> BlockCommitter<A, Db> {
-    pub fn new(rx_block: Receiver<FuelBlock>, ethereum_rpc: A, storage: Db) -> Self {
+impl<L1, Db> BlockCommitter<L1, Db> {
+    pub fn new(rx_block: Receiver<FuelBlock>, l1: L1, storage: Db) -> Self {
         Self {
             rx_block,
-            ethereum_rpc,
+            l1,
             storage,
         }
     }
@@ -31,11 +31,11 @@ impl<A, Db> BlockCommitter<A, Db> {
 
 impl<A, Db> BlockCommitter<A, Db>
 where
-    A: ports::l1::Contract,
+    A: ports::l1::Contract + ports::l1::Api,
     Db: Storage,
 {
     async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
-        let submittal_height = self.ethereum_rpc.get_block_number().await?;
+        let submittal_height = self.l1.get_block_number().await?;
 
         let submission = BlockSubmission {
             block: fuel_block,
@@ -46,7 +46,7 @@ where
         self.storage.insert(submission).await?;
 
         // if we have a network failure the DB entry will be left at completed:false.
-        self.ethereum_rpc.submit(fuel_block).await?;
+        self.l1.submit(fuel_block).await?;
 
         Ok(())
     }
@@ -55,7 +55,7 @@ where
 #[async_trait]
 impl<A, Db> Runner for BlockCommitter<A, Db>
 where
-    A: ports::l1::Contract,
+    A: ports::l1::Contract + ports::l1::Api,
     Db: Storage,
 {
     async fn run(&mut self) -> Result<()> {
@@ -78,11 +78,40 @@ mod tests {
     use std::time::Duration;
 
     use mockall::predicate;
-    use ports::l1::MockContract;
+    use ports::{
+        l1::{Contract, EventStreamer, MockApi, MockContract},
+        types::{L1Height, U256},
+    };
     use rand::Rng;
     use storage::PostgresProcess;
 
     use super::*;
+
+    struct MockL1 {
+        api: MockApi,
+        contract: MockContract,
+    }
+
+    #[async_trait::async_trait]
+    impl Contract for MockL1 {
+        async fn submit(&self, block: FuelBlock) -> ports::l1::Result<()> {
+            self.contract.submit(block).await
+        }
+        fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
+            self.contract.event_streamer(height)
+        }
+    }
+
+    #[cfg_attr(feature = "test-helpers", mockall::automock)]
+    #[async_trait::async_trait]
+    impl ports::l1::Api for MockL1 {
+        async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
+            self.api.get_block_number().await
+        }
+        async fn balance(&self) -> ports::l1::Result<U256> {
+            self.api.balance().await
+        }
+    }
 
     #[tokio::test]
     async fn block_committer_will_submit_and_write_block() {
@@ -93,38 +122,41 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
 
-        let eth_rpc_mock = given_eth_rpc_that_expects(block);
+        let mock_l1 = given_l1_that_expects_submission(block);
         tx.try_send(block).unwrap();
 
         // when
-        spawn_committer_and_run_until_timeout(rx, eth_rpc_mock, db.clone()).await;
+        spawn_committer_and_run_until_timeout(rx, mock_l1, db.clone()).await;
 
         // then
         let last_submission = db.submission_w_latest_block().await.unwrap().unwrap();
         assert_eq!(expeted_height, last_submission.block.height);
     }
 
-    fn given_eth_rpc_that_expects(block: FuelBlock) -> MockContract {
-        let mut eth_rpc_mock = MockContract::new();
-        eth_rpc_mock
+    fn given_l1_that_expects_submission(block: FuelBlock) -> MockL1 {
+        let mut l1 = MockL1 {
+            api: MockApi::new(),
+            contract: MockContract::new(),
+        };
+        l1.contract
             .expect_submit()
             .with(predicate::eq(block))
             .return_once(move |_| Ok(()));
 
-        eth_rpc_mock
+        l1.api
             .expect_get_block_number()
             .return_once(move || Ok(0u32.into()));
 
-        eth_rpc_mock
+        l1
     }
 
     async fn spawn_committer_and_run_until_timeout<Db: Storage>(
         rx: Receiver<FuelBlock>,
-        eth_rpc_mock: MockContract,
+        mock_l1: MockL1,
         storage: Db,
     ) {
         let _ = tokio::time::timeout(Duration::from_millis(250), async move {
-            let mut block_committer = BlockCommitter::new(rx, eth_rpc_mock, storage);
+            let mut block_committer = BlockCommitter::new(rx, mock_l1, storage);
             block_committer
                 .run()
                 .await
