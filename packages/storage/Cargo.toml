@@ -1,8 +1,12 @@
 [package]
 name = "storage"
-version = "0.1.0"
-edition = "2021"
-publish = false
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true }

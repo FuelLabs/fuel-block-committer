@@ -11,13 +11,22 @@ members = [
   "packages/storage",
 ]
 
+[workspace.package]
+version = "0.4.0"
+authors = ["Fuel Labs <contact@fuel.sh>"]
+edition = "2021"
+homepage = "https://fuel.network/"
+license = "Apache-2.0"
+repository = "https://github.com/FuelLabs/fuel-block-committer"
+publish = false
+
 [workspace.dependencies]
-eth_rpc = { version = "0.1.0", path = "./packages/eth_rpc", default-features = false }
-fuel_rpc = { version = "0.1.0", path = "./packages/fuel_rpc", default-features = false }
-metrics = { version = "0.1.0", path = "./packages/metrics", default-features = false }
-ports = { version = "0.1.0", path = "./packages/ports", default-features = false }
-storage = { version = "0.1.0", path = "./packages/storage", default-features = false }
-services = { version = "0.1.0", path = "./packages/services", default-features = false }
+eth_rpc = { path = "./packages/eth_rpc", default-features = false }
+fuel_rpc = { path = "./packages/fuel_rpc", default-features = false }
+metrics = { path = "./packages/metrics", default-features = false }
+ports = { path = "./packages/ports", default-features = false }
+storage = { path = "./packages/storage", default-features = false }
+services = { path = "./packages/services", default-features = false }
 
 actix-web = { version = "4", default-features = false }
 anyhow = { version = "1.0", default-features = false }
@@ -41,5 +50,5 @@ thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.37", default-features = false }
 tokio-util = { version = "0.7", default-features = false }
 tracing = { version = "0.1", default-features = false }
-tracing-subscriber = { version = "0.3" }
+tracing-subscriber = { version = "0.3", default-features = false }
 url = { version = "2.3", default-features = false }

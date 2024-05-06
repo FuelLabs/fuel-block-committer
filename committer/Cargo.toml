@@ -1,46 +1,35 @@
 [package]
-authors = ["Fuel Labs <contact@fuel.sh>"]
-edition = "2021"
-homepage = "https://fuel.network/"
-license = "Apache-2.0"
-repository = "https://github.com/FuelLabs/fuel-block-committer"
-rust-version = "1.77.0"
-version = "0.4.0"
 name = "fuel-block-committer"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
 
 [dependencies]
-actix-web = { workspace = true, default-features = false, features = [
-  "macros",
-] }
+actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
-config = { workspace = true, default-features = false, features = [
-  "toml",
-  "async",
-] }
+config = { workspace = true, features = ["toml", "async"] }
 eth_rpc = { workspace = true }
 fuel_rpc = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true }
-prometheus = { workspace = true, default-features = false }
+prometheus = { workspace = true }
 
 serde = { workspace = true }
-serde_json = { workspace = true, default-features = false }
+serde_json = { workspace = true }
 services = { workspace = true }
 storage = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = [
-  "rt-multi-thread",
-  "rt",
-  "macros",
-], default-features = false }
-tokio-util = { workspace = true, default-features = false }
-tracing = { workspace = true, default-features = false }
-tracing-subscriber = { workspace = true, features = ["json"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 url = { workspace = true }
 
 [dev-dependencies]
-anyhow = { workspace = true, default-features = false }
+anyhow = { workspace = true }
 ports = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }
-#TODO: Once fuels-rs catches up tests will be reenabled
-#fuels-test-helpers = "0.57"
