@@ -12,8 +12,8 @@ publish = { workspace = true }
 actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
 config = { workspace = true, features = ["toml", "async"] }
-eth_rpc = { workspace = true }
-fuel_rpc = { workspace = true }
+eth = { workspace = true }
+fuel = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true }
 serde = { workspace = true }

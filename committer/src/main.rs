@@ -16,9 +16,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
 
-pub type L1 = eth_rpc::WebsocketClient;
+pub type L1 = eth::WebsocketClient;
 pub type Database = storage::Postgres;
-pub type FuelApi = fuel_rpc::client::Client;
+pub type FuelApi = fuel::HttpClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {

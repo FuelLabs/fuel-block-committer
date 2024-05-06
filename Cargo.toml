@@ -3,8 +3,8 @@ resolver = "2"
 members = [
   "committer",
   "e2e",
-  "packages/eth_rpc",
-  "packages/fuel_rpc",
+  "packages/eth",
+  "packages/fuel",
   "packages/metrics",
   "packages/ports",
   "packages/services",
@@ -21,8 +21,8 @@ repository = "https://github.com/FuelLabs/fuel-block-committer"
 publish = false
 
 [workspace.dependencies]
-eth_rpc = { path = "./packages/eth_rpc", default-features = false }
-fuel_rpc = { path = "./packages/fuel_rpc", default-features = false }
+eth = { path = "./packages/eth", default-features = false }
+fuel = { path = "./packages/fuel", default-features = false }
 metrics = { path = "./packages/metrics", default-features = false }
 ports = { path = "./packages/ports", default-features = false }
 storage = { path = "./packages/storage", default-features = false }

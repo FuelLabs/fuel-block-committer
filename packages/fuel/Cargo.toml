@@ -1,5 +1,5 @@
 [package]
-name = "eth_rpc"
+name = "fuel"
 authors = { workspace = true }
 edition = { workspace = true }
 homepage = { workspace = true }
@@ -10,18 +10,12 @@ publish = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true }
-ethers = { workspace = true, features = ["ws"] }
-futures = { workspace = true }
+fuel-core-client = { workspace = true }
 metrics = { workspace = true }
-ports = { workspace = true, features = ["l1"] }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
+ports = { workspace = true, features = ["fuel"] }
 url = { workspace = true }
 
 [dev-dependencies]
-mockall = { workspace = true }
-ports = { workspace = true, features = ["l1"] }
 tokio = { workspace = true, features = ["macros"] }
 
 [features]

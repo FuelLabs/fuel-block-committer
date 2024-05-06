@@ -3,7 +3,7 @@ use metrics::{
     RegistersMetrics,
 };
 
-pub struct Metrics {
+pub(crate) struct Metrics {
     pub fuel_network_errors: IntCounter,
 }
 

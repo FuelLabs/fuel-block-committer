@@ -10,7 +10,7 @@ publish = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
-eth_rpc = { workspace = true, features = ["test-helpers"] }
-fuel_rpc = { workspace = true, features = ["test-helpers"] }
+eth = { workspace = true, features = ["test-helpers"] }
+fuel = { workspace = true, features = ["test-helpers"] }
 ports = { workspace = true, features = ["fuel", "l1"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

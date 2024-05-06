@@ -1188,8 +1188,8 @@ name = "e2e"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "eth_rpc",
- "fuel_rpc",
+ "eth",
+ "fuel",
  "ports",
  "tokio",
 ]
@@ -1318,6 +1318,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "eth"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "ethers",
+ "futures",
+ "metrics",
+ "mockall",
+ "ports",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "eth-keystore"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1337,23 +1354,6 @@ dependencies = [
  "sha3",
  "thiserror",
  "uuid",
-]
-
-[[package]]
-name = "eth_rpc"
-version = "0.4.0"
-dependencies = [
- "async-trait",
- "ethers",
- "futures",
- "metrics",
- "mockall",
- "ports",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -1695,6 +1695,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
 
 [[package]]
+name = "fuel"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "fuel-core-client",
+ "metrics",
+ "ports",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "fuel-asm"
 version = "0.49.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1714,8 +1726,8 @@ dependencies = [
  "anyhow",
  "clap",
  "config",
- "eth_rpc",
- "fuel_rpc",
+ "eth",
+ "fuel",
  "metrics",
  "ports",
  "serde",
@@ -1881,18 +1893,6 @@ dependencies = [
  "static_assertions",
  "strum 0.24.1",
  "tai64",
-]
-
-[[package]]
-name = "fuel_rpc"
-version = "0.4.0"
-dependencies = [
- "async-trait",
- "fuel-core-client",
- "metrics",
- "ports",
- "tokio",
- "url",
 ]
 
 [[package]]

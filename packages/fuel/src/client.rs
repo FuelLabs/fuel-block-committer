@@ -6,13 +6,13 @@ use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
 
-pub struct Client {
+pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
 }
 
-impl Client {
+impl HttpClient {
     #[must_use]
     pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
@@ -71,7 +71,7 @@ impl Client {
     }
 }
 
-impl RegistersMetrics for Client {
+impl RegistersMetrics for HttpClient {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.metrics.metrics()
     }

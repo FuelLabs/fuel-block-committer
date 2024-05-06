@@ -1,7 +1,7 @@
 use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf, str::FromStr, time::Duration};
 
 use clap::{command, Parser};
-use eth_rpc::{Address, Chain};
+use eth::{Address, Chain};
 use serde::Deserialize;
 use storage::DbConfig;
 use url::Url;

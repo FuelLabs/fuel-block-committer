@@ -1,8 +1,10 @@
 #![deny(unused_crate_dependencies)]
 use fuel_core_client::client::types::Block;
 use ports::types::FuelBlock;
-pub mod client;
-pub mod metrics;
+mod client;
+mod metrics;
+
+pub use client::*;
 
 type Error = ports::fuel::Error;
 type Result<T> = ports::fuel::Result<T>;
@@ -15,7 +17,7 @@ fn convert_block(block: Block) -> FuelBlock {
 }
 
 #[async_trait::async_trait]
-impl ports::fuel::Api for client::Client {
+impl ports::fuel::Api for client::HttpClient {
     async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>> {
         Ok(self._block_at_height(height).await?.map(convert_block))
     }
@@ -36,7 +38,7 @@ mod tests {
     use url::Url;
 
     use super::*;
-    use crate::client::Client;
+    use crate::client::HttpClient;
 
     // TODO: once a sdk release is made these can be adapted
     // #[tokio::test]
@@ -96,7 +98,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("localhost:12344").unwrap();
 
-        let fuel_adapter = Client::new(&url, 1);
+        let fuel_adapter = HttpClient::new(&url, 1);
 
         let registry = Registry::default();
         fuel_adapter.register_metrics(&registry);
@@ -123,7 +125,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("http://localhost:12344").unwrap();
 
-        let fuel_adapter = client::Client::new(&url, 3);
+        let fuel_adapter = client::HttpClient::new(&url, 3);
         let health_check = fuel_adapter.connection_health_checker();
 
         assert!(health_check.healthy());

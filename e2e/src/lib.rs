@@ -3,8 +3,8 @@ mod tests {
     use std::time::Duration;
 
     use anyhow::Result;
-    use eth_rpc::{Chain, WebsocketClient};
-    use fuel_rpc::client::Client;
+    use eth::{Chain, WebsocketClient};
+    use fuel::HttpClient;
     use ports::fuel::Api;
 
     const FUEL_NODE_PORT: u16 = 4000;
@@ -12,7 +12,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         let fuel_node_address = format!("http://localhost:{FUEL_NODE_PORT}");
-        let provider = Client::new(&fuel_node_address.parse()?, 10);
+        let provider = HttpClient::new(&fuel_node_address.parse()?, 10);
 
         let fuel_contract = WebsocketClient::connect(
             &"ws://localhost:8089".parse()?,
