@@ -7,7 +7,7 @@ license = { workspace = true }
 repository = { workspace = true }
 version = { workspace = true }
 publish = { workspace = true }
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+rust-version = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true, optional = true }
