@@ -52,6 +52,16 @@ impl From<ports::fuel_rpc::Error> for Error {
     }
 }
 
+impl From<services::Error> for Error {
+    fn from(error: services::Error) -> Self {
+        match error {
+            services::Error::Network(e) => Self::Network(e),
+            services::Error::Storage(e) => Self::Storage(e),
+            services::Error::Other(e) => Self::Other(e),
+        }
+    }
+}
+
 impl From<config::ConfigError> for Error {
     fn from(error: config::ConfigError) -> Self {
         Self::Other(error.to_string())

@@ -2,7 +2,6 @@
 mod api;
 mod config;
 mod errors;
-mod services;
 mod setup;
 
 use api::launch_api_server;
@@ -24,7 +23,6 @@ async fn main() -> Result<()> {
     let config = config::parse()?;
 
     let storage = setup_storage(&config).await?;
-    storage.migrate().await?;
 
     let internal_config = InternalConfig::default();
     let cancel_token = CancellationToken::new();

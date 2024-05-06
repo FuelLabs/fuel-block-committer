@@ -7,7 +7,7 @@ pub trait HealthCheck: Send + Sync {
     fn healthy(&self) -> bool;
 }
 
-pub use prometheus::{core::Collector, Registry};
+pub use prometheus::{core::Collector, proto::Metric, IntGauge, Opts, Registry};
 
 pub trait RegistersMetrics {
     fn register_metrics(&self, registry: &Registry) {

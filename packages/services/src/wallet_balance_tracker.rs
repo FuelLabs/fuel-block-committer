@@ -1,9 +1,8 @@
-use metrics::RegistersMetrics;
+use metrics::{Collector, IntGauge, Opts, RegistersMetrics};
 use ports::{eth_rpc::EthereumAdapter, types::U256};
-use prometheus::{IntGauge, Opts};
 
 use super::Runner;
-use crate::errors::Result;
+use crate::Result;
 
 pub struct WalletBalanceTracker {
     eth_adapter: Box<dyn EthereumAdapter>,
@@ -31,7 +30,7 @@ impl WalletBalanceTracker {
 }
 
 impl RegistersMetrics for WalletBalanceTracker {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.metrics.metrics()
     }
 }
@@ -42,7 +41,7 @@ struct Metrics {
 }
 
 impl RegistersMetrics for Metrics {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.eth_wallet_balance.clone())]
     }
 }
@@ -69,8 +68,8 @@ impl Runner for WalletBalanceTracker {
 #[cfg(test)]
 mod tests {
 
+    use metrics::{Metric, Registry};
     use ports::eth_rpc::MockEthereumAdapter;
-    use prometheus::{proto::Metric, Registry};
 
     use super::*;
 

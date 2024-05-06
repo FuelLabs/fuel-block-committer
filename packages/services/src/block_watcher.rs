@@ -1,15 +1,12 @@
 use std::{num::NonZeroU32, vec};
 
 use async_trait::async_trait;
-use fuel_rpc::client::Client;
-use metrics::RegistersMetrics;
+use metrics::{Collector, IntGauge, Opts, RegistersMetrics};
 use ports::{fuel_rpc::FuelAdapter, storage::Storage, types::FuelBlock};
-use prometheus::{core::Collector, IntGauge, Opts};
-use storage::Postgres;
 use tokio::sync::mpsc::Sender;
 
 use super::Runner;
-use crate::errors::{Error, Result};
+use crate::{Error, Result};
 
 struct Metrics {
     latest_fuel_block: IntGauge,
@@ -33,7 +30,7 @@ impl Default for Metrics {
     }
 }
 
-pub struct BlockWatcher<A = Client, Db = Postgres> {
+pub struct BlockWatcher<A, Db> {
     fuel_adapter: A,
     tx_fuel_block: Sender<FuelBlock>,
     storage: Db,
@@ -137,11 +134,11 @@ where
 mod tests {
     use std::{sync::Arc, vec};
 
+    use metrics::{Metric, Registry};
     use mockall::predicate::eq;
     use ports::{fuel_rpc::MockFuelAdapter, types::BlockSubmission};
-    use prometheus::{proto::Metric, Registry};
     use rand::Rng;
-    use storage::PostgresProcess;
+    use storage::{Postgres, PostgresProcess};
 
     use super::*;
 

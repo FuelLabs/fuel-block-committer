@@ -1,18 +1,16 @@
 use async_trait::async_trait;
-use eth_rpc::WsAdapter;
 use ports::{
     eth_rpc::EthereumAdapter,
     storage::Storage,
     types::{BlockSubmission, FuelBlock},
 };
-use storage::Postgres;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info};
 
 use super::Runner;
-use crate::errors::Result;
+use crate::Result;
 
-pub struct BlockCommitter<A = WsAdapter, Db = Postgres> {
+pub struct BlockCommitter<A, Db> {
     rx_block: Receiver<FuelBlock>,
     ethereum_rpc: A,
     storage: Db,

@@ -6,11 +6,12 @@ use actix_web::{
 };
 use ports::storage::Storage;
 use prometheus::{Encoder, Registry, TextEncoder};
+use services::{HealthReporter, StatusReporter};
+use storage::Postgres;
 
 use crate::{
     config::Config,
     errors::{Error, Result},
-    services::{HealthReporter, StatusReporter},
 };
 
 pub async fn launch_api_server(
@@ -53,7 +54,7 @@ async fn health(data: web::Data<Arc<HealthReporter>>) -> impl Responder {
 }
 
 #[get("/status")]
-async fn status(data: web::Data<Arc<StatusReporter>>) -> impl Responder {
+async fn status(data: web::Data<Arc<StatusReporter<Postgres>>>) -> impl Responder {
     let report = data.current_status().await?;
 
     Result::Ok(web::Json(report))

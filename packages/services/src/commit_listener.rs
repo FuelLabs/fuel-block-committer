@@ -1,20 +1,17 @@
 use async_trait::async_trait;
-use eth_rpc::WsAdapter;
 use futures::{StreamExt, TryStreamExt};
-use metrics::RegistersMetrics;
+use metrics::{Collector, IntGauge, Opts, RegistersMetrics};
 use ports::{
     eth_rpc::EthereumAdapter,
     storage::Storage,
     types::{EthHeight, FuelBlockCommittedOnEth},
 };
-use prometheus::{IntGauge, Opts};
-use storage::Postgres;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use super::Runner;
 
-pub struct CommitListener<E = WsAdapter, Db = Postgres> {
+pub struct CommitListener<E, Db> {
     ethereum_rpc: E,
     storage: Db,
     metrics: Metrics,
@@ -37,7 +34,7 @@ where
     E: EthereumAdapter,
     Db: Storage,
 {
-    async fn determine_starting_eth_block(&mut self) -> crate::errors::Result<EthHeight> {
+    async fn determine_starting_eth_block(&mut self) -> crate::Result<EthHeight> {
         Ok(self
             .storage
             .submission_w_latest_block()
@@ -48,7 +45,7 @@ where
     async fn handle_block_committed(
         &self,
         committed_on_eth: FuelBlockCommittedOnEth,
-    ) -> crate::errors::Result<()> {
+    ) -> crate::Result<()> {
         info!("block comitted on eth {committed_on_eth:?}");
 
         let submission = self
@@ -63,7 +60,7 @@ where
         Ok(())
     }
 
-    fn log_if_error(result: crate::errors::Result<()>) {
+    fn log_if_error(result: crate::Result<()>) {
         if let Err(error) = result {
             error!("Received an error from block commit event stream: {error}");
         }
@@ -76,7 +73,7 @@ where
     E: EthereumAdapter,
     Db: Storage,
 {
-    async fn run(&mut self) -> crate::errors::Result<()> {
+    async fn run(&mut self) -> crate::Result<()> {
         let eth_block = self.determine_starting_eth_block().await?;
 
         self.ethereum_rpc
@@ -99,7 +96,7 @@ struct Metrics {
 }
 
 impl<E, Db> RegistersMetrics for CommitListener<E, Db> {
-    fn metrics(&self) -> Vec<Box<dyn prometheus::core::Collector>> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.metrics.latest_committed_block.clone())]
     }
 }
@@ -121,19 +118,18 @@ impl Default for Metrics {
 #[cfg(test)]
 mod tests {
     use futures::stream;
-    use metrics::RegistersMetrics;
+    use metrics::{Metric, RegistersMetrics, Registry};
     use mockall::predicate;
     use ports::{
         eth_rpc::{MockEthereumAdapter, MockEventStreamer},
         storage::Storage,
         types::{BlockSubmission, EthHeight, FuelBlockCommittedOnEth, U256},
     };
-    use prometheus::{proto::Metric, Registry};
     use rand::Rng;
     use storage::{Postgres, PostgresProcess};
     use tokio_util::sync::CancellationToken;
 
-    use crate::services::{CommitListener, Runner};
+    use crate::{CommitListener, Runner};
 
     #[tokio::test]
     async fn listener_will_update_storage_if_event_is_emitted() {

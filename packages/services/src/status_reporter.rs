@@ -1,8 +1,7 @@
 use ports::storage::Storage;
 use serde::Serialize;
-use storage::Postgres;
 
-use crate::errors::Result;
+use crate::Result;
 
 #[derive(Debug, Serialize, Default, PartialEq, Eq)]
 pub struct StatusReport {
@@ -16,7 +15,7 @@ pub enum Status {
     Committing,
 }
 
-pub struct StatusReporter<Db = Postgres> {
+pub struct StatusReporter<Db> {
     storage: Db,
 }
 

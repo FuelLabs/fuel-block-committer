@@ -5,6 +5,7 @@ use fuel_rpc::client::Client;
 use metrics::{HealthChecker, RegistersMetrics};
 use ports::{storage::Storage, types::FuelBlock};
 use prometheus::Registry;
+use services::{BlockCommitter, BlockWatcher, CommitListener, Runner, WalletBalanceTracker};
 use storage::Postgres;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
@@ -13,7 +14,6 @@ use tracing::{error, info};
 use crate::{
     config::{Config, InternalConfig},
     errors::Result,
-    services::{BlockCommitter, BlockWatcher, CommitListener, Runner, WalletBalanceTracker},
 };
 
 pub fn spawn_block_watcher(
@@ -164,7 +164,7 @@ fn create_block_watcher(
     registry: &Registry,
     fuel_adapter: Client,
     storage: Postgres,
-) -> (BlockWatcher, Receiver<FuelBlock>) {
+) -> (BlockWatcher<Client, Postgres>, Receiver<FuelBlock>) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher = BlockWatcher::new(
         config.eth.commit_interval,
@@ -188,7 +188,10 @@ pub fn setup_logger() {
 }
 
 pub async fn setup_storage(config: &Config) -> Result<Postgres> {
-    Ok(Postgres::connect(&config.app.db).await?)
+    let postgres = Postgres::connect(&config.app.db).await?;
+    postgres.migrate().await?;
+
+    Ok(postgres)
 }
 
 pub async fn shut_down(

@@ -12,7 +12,6 @@ name = "fuel-block-committer"
 actix-web = { workspace = true, default-features = false, features = [
   "macros",
 ] }
-async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 config = { workspace = true, default-features = false, features = [
   "toml",
@@ -20,9 +19,9 @@ config = { workspace = true, default-features = false, features = [
 ] }
 eth_rpc = { workspace = true }
 fuel_rpc = { workspace = true }
-futures = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true }
+services = { workspace = true }
 prometheus = { workspace = true, default-features = false }
 
 serde = { workspace = true }
@@ -41,9 +40,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true, default-features = false }
-mockall = { workspace = true }
 ports = { workspace = true, features = ["test-helpers"] }
-rand = { workspace = true }
 storage = { workspace = true, features = ["test-helpers"] }
 #TODO: Once fuels-rs catches up tests will be reenabled
 #fuels-test-helpers = "0.57"
