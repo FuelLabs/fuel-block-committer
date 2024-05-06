@@ -26,7 +26,7 @@ abigen!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: Provider<Ws>,
-    pub(crate) contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
+    contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     commit_interval: NonZeroU32,
     address: H160,
 }
@@ -69,6 +69,7 @@ impl EthApi for WsConnection {
         EthEventStreamer::new(events)
     }
 
+    #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: FuelBlock) -> Result<bool> {
         Ok(self
             .contract
@@ -77,6 +78,7 @@ impl EthApi for WsConnection {
             .await?)
     }
 
+    #[cfg(feature = "test-helpers")]
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]> {
         Ok(self
             .contract

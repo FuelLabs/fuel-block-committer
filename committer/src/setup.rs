@@ -99,7 +99,7 @@ pub async fn create_l1_adapter(
     internal_config: &InternalConfig,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let ws_adapter = L1::connect(
+    let l1 = L1::connect(
         &config.eth.rpc,
         config.eth.chain_id,
         config.eth.state_contract_address,
@@ -109,11 +109,11 @@ pub async fn create_l1_adapter(
     )
     .await?;
 
-    ws_adapter.register_metrics(registry);
+    l1.register_metrics(registry);
 
-    let health_check = ws_adapter.connection_health_checker();
+    let health_check = l1.connection_health_checker();
 
-    Ok((ws_adapter, health_check))
+    Ok((l1, health_check))
 }
 
 fn schedule_polling(

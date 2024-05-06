@@ -11,12 +11,14 @@ use crate::{
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait EthApi {
+pub(crate) trait EthApi {
     async fn submit(&self, block: FuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
     fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
+    #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: FuelBlock) -> Result<bool>;
+    #[cfg(feature = "test-helpers")]
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]>;
 }
 
@@ -88,10 +90,12 @@ where
         response
     }
 
+    #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: FuelBlock) -> Result<bool> {
         self.adapter.finalized(block).await
     }
 
+    #[cfg(feature = "test-helpers")]
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]> {
         self.adapter
             .block_hash_at_commit_height(commit_height)

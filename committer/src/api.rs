@@ -9,11 +9,11 @@ use actix_web::{
 };
 use ports::storage::Storage;
 use services::{HealthReporter, StatusReporter};
-use storage::Postgres;
 
 use crate::{
     config::Config,
     errors::{Error, Result},
+    Database,
 };
 
 pub async fn launch_api_server(
@@ -56,7 +56,7 @@ async fn health(data: web::Data<Arc<HealthReporter>>) -> impl Responder {
 }
 
 #[get("/status")]
-async fn status(data: web::Data<Arc<StatusReporter<Postgres>>>) -> impl Responder {
+async fn status(data: web::Data<Arc<StatusReporter<Database>>>) -> impl Responder {
     let report = data.current_status().await?;
 
     Result::Ok(web::Json(report))

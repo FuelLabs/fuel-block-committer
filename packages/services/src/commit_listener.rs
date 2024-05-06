@@ -13,8 +13,8 @@ use tracing::{error, info};
 
 use super::Runner;
 
-pub struct CommitListener<E, Db> {
-    contract: E,
+pub struct CommitListener<C, Db> {
+    contract: C,
     storage: Db,
     metrics: Metrics,
     cancel_token: CancellationToken,
