@@ -1,0 +1,10 @@
+target
+deployment
+configurations
+eth_node
+fuel_node
+helm
+compose.yml
+.git
+*.rs.bk
+.dockerignore

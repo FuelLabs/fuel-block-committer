@@ -1,0 +1,26 @@
+[package]
+name = "services"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
+metrics = { workspace = true }
+ports = { workspace = true, features = ["full"] }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+rand = { workspace = true }
+storage = { workspace = true, features = ["test-helpers"] }

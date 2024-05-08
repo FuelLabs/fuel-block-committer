@@ -1,0 +1,40 @@
+[package]
+name = "storage"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true }
+hex = { workspace = true }
+ports = { workspace = true, features = ["storage"] }
+rand = { workspace = true, optional = true }
+serde = { workspace = true }
+sqlx = { workspace = true, features = [
+  "postgres",
+  "runtime-tokio",
+  "migrate",
+  "macros",
+] }
+testcontainers = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+ports = { workspace = true, features = ["storage"] }
+rand = { workspace = true }
+storage = { workspace = true, features = ["test-helpers"] }
+tokio = { workspace = true }
+
+[features]
+test-helpers = [
+  "dep:testcontainers",
+  "tokio/sync",
+  "dep:rand",
+  "ports/test-helpers",
+]

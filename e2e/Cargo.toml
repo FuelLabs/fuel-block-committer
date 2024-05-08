@@ -1,0 +1,17 @@
+[package]
+name = "e2e"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+eth = { workspace = true, features = ["test-helpers"] }
+fuel = { workspace = true, features = ["test-helpers"] }
+ports = { workspace = true, features = ["fuel", "l1"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

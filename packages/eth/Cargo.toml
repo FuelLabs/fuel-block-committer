@@ -1,0 +1,29 @@
+[package]
+name = "eth"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true }
+ethers = { workspace = true, features = ["ws"] }
+futures = { workspace = true }
+metrics = { workspace = true }
+ports = { workspace = true, features = ["l1"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+ports = { workspace = true, features = ["l1"] }
+tokio = { workspace = true, features = ["macros"] }
+
+[features]
+test-helpers = []

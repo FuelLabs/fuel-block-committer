@@ -1,0 +1,23 @@
+[package]
+name = "fuel"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true }
+fuel-core-client = { workspace = true }
+metrics = { workspace = true }
+ports = { workspace = true, features = ["fuel"] }
+url = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }
+
+[features]
+test-helpers = []
