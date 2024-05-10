@@ -7,7 +7,7 @@ use super::{HealthCheck, HealthChecker};
 
 #[derive(Debug, Clone)]
 pub struct ConnectionHealthTracker {
-    // how many failures are needed before the connection is deemed unhealhty
+    // how many failures are needed before the connection is deemed unhealthy
     max_consecutive_failures: usize,
     // how many consecutive failures there currently are
     consecutive_failures: Arc<AtomicUsize>,

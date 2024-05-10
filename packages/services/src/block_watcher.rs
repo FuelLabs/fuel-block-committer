@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn will_not_reattempt_commiting_missed_block() {
+    async fn will_not_reattempt_committing_missed_block() {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn will_not_reattempt_commiting_latest_block() {
+    async fn will_not_reattempt_committing_latest_block() {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 

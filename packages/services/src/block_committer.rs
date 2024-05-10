@@ -118,7 +118,7 @@ mod tests {
         // given
         let (tx, rx) = tokio::sync::mpsc::channel(10);
         let block: FuelBlock = rand::thread_rng().gen();
-        let expeted_height = block.height;
+        let expected_height = block.height;
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
 
@@ -130,7 +130,7 @@ mod tests {
 
         // then
         let last_submission = db.submission_w_latest_block().await.unwrap().unwrap();
-        assert_eq!(expeted_height, last_submission.block.height);
+        assert_eq!(expected_height, last_submission.block.height);
     }
 
     fn given_l1_that_expects_submission(block: FuelBlock) -> MockL1 {
