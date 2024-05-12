@@ -48,7 +48,7 @@ where
         &self,
         committed_on_l1: FuelBlockCommittedOnL1,
     ) -> crate::Result<()> {
-        info!("block comitted on l1 {committed_on_l1:?}");
+        info!("block committed on l1 {committed_on_l1:?}");
 
         let submission = self
             .storage

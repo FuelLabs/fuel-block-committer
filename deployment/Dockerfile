@@ -10,7 +10,7 @@ RUN cargo chef prepare --recipe-path recipe.json --bin fuel-block-committer
 
 FROM chef as builder
 COPY --from=planner /build/recipe.json recipe.json
-# Build our project dependecies, not our application!
+# Build our project dependencies, not our application!
 RUN cargo chef cook --release --recipe-path recipe.json --bin fuel-block-committer
 # Up to this point, if our dependency tree stays the same,
 # all layers should be cached.
