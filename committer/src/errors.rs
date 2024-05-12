@@ -48,6 +48,7 @@ impl From<ports::fuel::Error> for Error {
     fn from(value: ports::fuel::Error) -> Self {
         match value {
             ports::fuel::Error::Network(e) => Self::Network(e),
+            _ => Self::Other(value.to_string()),
         }
     }
 }

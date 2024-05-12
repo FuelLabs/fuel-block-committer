@@ -1,8 +1,8 @@
-use crate::types::{FuelBlock, L1Height};
+use crate::types::{L1Height, ValidatedFuelBlock};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {
-    pub block: FuelBlock,
+    pub block: ValidatedFuelBlock,
     pub completed: bool,
     // L1 block height moments before submitting the fuel block. Used to filter stale events in
     // the commit listener.

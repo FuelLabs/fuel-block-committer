@@ -1,7 +1,7 @@
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{FuelBlock, U256};
+use ports::types::{ValidatedFuelBlock, U256};
 
 use crate::{
     error::{Error, Result},
@@ -12,12 +12,12 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    async fn submit(&self, block: FuelBlock) -> Result<()>;
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
     fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
     #[cfg(feature = "test-helpers")]
-    async fn finalized(&self, block: FuelBlock) -> Result<bool>;
+    async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]>;
 }
@@ -68,7 +68,7 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
-    async fn submit(&self, block: FuelBlock) -> Result<()> {
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
         let response = self.adapter.submit(block).await;
         self.note_network_status(&response);
         response
@@ -91,7 +91,7 @@ where
     }
 
     #[cfg(feature = "test-helpers")]
-    async fn finalized(&self, block: FuelBlock) -> Result<bool> {
+    async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
         self.adapter.finalized(block).await
     }
 
@@ -211,10 +211,7 @@ mod tests {
         assert_eq!(eth_network_err_metric.get_value(), 2f64);
     }
 
-    fn given_a_block(block_height: u32) -> FuelBlock {
-        FuelBlock {
-            hash: [0; 32],
-            height: block_height,
-        }
+    fn given_a_block(block_height: u32) -> ValidatedFuelBlock {
+        ValidatedFuelBlock::new([0; 32], block_height)
     }
 }

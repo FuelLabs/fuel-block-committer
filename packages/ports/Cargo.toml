@@ -13,11 +13,17 @@ rust-version = { workspace = true }
 async-trait = { workspace = true, optional = true }
 ethers-core = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+fuel-core-client = { workspace = true }
+fuel-crypto = { workspace = true }
 impl-tools = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true, optional = true }
+
+[dev-dependencies]
+fuel-crypto = { workspace = true, features = ["random"] }
+tai64 = { workspace = true }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand"]

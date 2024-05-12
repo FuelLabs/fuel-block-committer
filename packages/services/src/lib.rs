@@ -1,4 +1,3 @@
-#![deny(unused_crate_dependencies)]
 mod block_committer;
 mod block_watcher;
 mod commit_listener;
@@ -36,6 +35,7 @@ impl From<ports::fuel::Error> for Error {
     fn from(value: ports::fuel::Error) -> Self {
         match value {
             ports::fuel::Error::Network(e) => Self::Network(e),
+            _ => Self::Other(value.to_string()),
         }
     }
 }

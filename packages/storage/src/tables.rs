@@ -1,4 +1,4 @@
-use ports::types::{BlockSubmission, FuelBlock};
+use ports::types::{BlockSubmission, ValidatedFuelBlock};
 
 #[derive(sqlx::FromRow)]
 pub struct L1FuelBlockSubmission {
@@ -35,7 +35,8 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
         };
 
         Ok(Self {
-            block: FuelBlock { hash, height },
+            // The block is taken from the DB so it should have been validated before storing
+            block: unsafe { ValidatedFuelBlock::new_unchecked(hash, height) },
             completed: value.completed,
             submittal_height,
         })
@@ -45,8 +46,8 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
 impl From<BlockSubmission> for L1FuelBlockSubmission {
     fn from(value: BlockSubmission) -> Self {
         Self {
-            fuel_block_hash: value.block.hash.to_vec(),
-            fuel_block_height: i64::from(value.block.height),
+            fuel_block_hash: value.block.hash().to_vec(),
+            fuel_block_height: i64::from(value.block.height()),
             completed: value.completed,
             submittal_height: value.submittal_height.into(),
         }

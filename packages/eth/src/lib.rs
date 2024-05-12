@@ -16,7 +16,7 @@ pub use websocket::WebsocketClient;
 
 #[async_trait]
 impl ports::l1::Contract for WebsocketClient {
-    async fn submit(&self, block: ports::types::FuelBlock) -> ports::l1::Result<()> {
+    async fn submit(&self, block: ports::types::ValidatedFuelBlock) -> ports::l1::Result<()> {
         self.submit(block).await
     }
 

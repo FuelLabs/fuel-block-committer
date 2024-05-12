@@ -1,6 +1,8 @@
 use std::pin::Pin;
 
-use crate::types::{FuelBlock, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, U256};
+use crate::types::{
+    FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, ValidatedFuelBlock, U256,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -21,7 +23,7 @@ impl From<InvalidL1Height> for Error {
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 #[async_trait::async_trait]
 pub trait Contract: Send + Sync {
-    async fn submit(&self, block: FuelBlock) -> Result<()>;
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
 }
 

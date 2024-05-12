@@ -1,9 +1,17 @@
-use crate::types::FuelBlock;
+pub use fuel_core_client::client::types::{
+    block::{
+        Block as FuelBlock, Consensus as FuelConsensus, Header as FuelHeader,
+        PoAConsensus as FuelPoAConsensus,
+    },
+    primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32, PublicKey as FuelPublicKey},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
     Network(String),
+    #[error("{0}")]
+    BlockValidation(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -5,7 +5,7 @@ use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
-use ports::{storage::Storage, types::FuelBlock};
+use ports::{fuel::FuelPublicKey, storage::Storage, types::ValidatedFuelBlock};
 use tokio::sync::mpsc::Sender;
 
 use super::Runner;
@@ -35,41 +35,47 @@ impl Default for Metrics {
 
 pub struct BlockWatcher<A, Db> {
     fuel_adapter: A,
-    tx_fuel_block: Sender<FuelBlock>,
+    tx_fuel_block: Sender<ValidatedFuelBlock>,
     storage: Db,
     commit_interval: NonZeroU32,
+    block_producer_pub_key: FuelPublicKey,
     metrics: Metrics,
 }
 
 impl<A, Db> BlockWatcher<A, Db> {
     pub fn new(
         commit_interval: NonZeroU32,
-        tx_fuel_block: Sender<FuelBlock>,
+        tx_fuel_block: Sender<ValidatedFuelBlock>,
         fuel_adapter: A,
         storage: Db,
+        block_producer_pub_key: FuelPublicKey,
     ) -> Self {
         Self {
             commit_interval,
             fuel_adapter,
             tx_fuel_block,
             storage,
+            block_producer_pub_key,
             metrics: Metrics::default(),
         }
     }
 }
+
 impl<A, Db> BlockWatcher<A, Db>
 where
     A: ports::fuel::Api,
     Db: Storage,
 {
-    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
-        let current_block = self.fuel_adapter.latest_block().await?;
+    async fn fetch_latest_block(&self) -> Result<ValidatedFuelBlock> {
+        let latest_block = self.fuel_adapter.latest_block().await?;
+        let validated_block =
+            ValidatedFuelBlock::from(&latest_block, &self.block_producer_pub_key)?;
 
         self.metrics
             .latest_fuel_block
-            .set(i64::from(current_block.height));
+            .set(i64::from(validated_block.height()));
 
-        Ok(current_block)
+        Ok(validated_block)
     }
 
     async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
@@ -89,18 +95,24 @@ where
             .storage
             .submission_w_latest_block()
             .await?
-            .map(|submission| submission.block.height))
+            .map(|submission| submission.block.height()))
     }
 
-    async fn fetch_block(&self, height: u32) -> Result<FuelBlock> {
-        self.fuel_adapter
+    async fn fetch_block(&self, height: u32) -> Result<ValidatedFuelBlock> {
+        let fuel_block = self
+            .fuel_adapter
             .block_at_height(height)
             .await?
             .ok_or_else(|| {
                 Error::Other(format!(
                     "Fuel node could not provide block at height: {height}"
                 ))
-            })
+            })?;
+
+        Ok(ValidatedFuelBlock::from(
+            &fuel_block,
+            &self.block_producer_pub_key,
+        )?)
     }
 }
 
@@ -112,13 +124,13 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let current_block = self.fetch_latest_block().await?;
-        let current_epoch_block_height = self.current_epoch_block_height(current_block.height);
+        let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
 
         if self.check_if_stale(current_epoch_block_height).await? {
             return Ok(());
         }
 
-        let block = if current_block.height == current_epoch_block_height {
+        let block = if current_block.height() == current_epoch_block_height {
             current_block
         } else {
             self.fetch_block(current_epoch_block_height).await?
@@ -137,10 +149,14 @@ where
 mod tests {
     use std::{sync::Arc, vec};
 
+    use fuel_crypto::{Message, SecretKey, Signature};
     use metrics::prometheus::{proto::Metric, Registry};
     use mockall::predicate::eq;
-    use ports::{fuel::MockApi, types::BlockSubmission};
-    use rand::Rng;
+    use ports::{
+        fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, MockApi},
+        types::BlockSubmission,
+    };
+    use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{Postgres, PostgresProcess};
 
     use super::*;
@@ -150,13 +166,20 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let missed_block = given_a_block(4);
-        let latest_block = given_a_block(5);
-        let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
+        let secret_key = given_secret_key();
+        let missed_block = given_a_block(4, &secret_key);
+        let latest_block = given_a_block(5, &secret_key);
+        let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
+        let mut block_watcher = BlockWatcher::new(
+            2.try_into().unwrap(),
+            tx,
+            fuel_adapter,
+            db,
+            secret_key.public_key(),
+        );
 
         // when
         block_watcher.run().await.unwrap();
@@ -166,7 +189,7 @@ mod tests {
             panic!("Didn't receive the block")
         };
 
-        assert_eq!(missed_block, announced_block);
+        assert_eq!(announced_block, missed_block.into());
     }
 
     #[tokio::test]
@@ -174,13 +197,20 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let missed_block = given_a_block(4);
-        let latest_block = given_a_block(5);
+        let secret_key = given_secret_key();
+        let missed_block = given_a_block(4, &secret_key);
+        let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2, 4]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
+        let mut block_watcher = BlockWatcher::new(
+            2.try_into().unwrap(),
+            tx,
+            fuel_adapter,
+            db,
+            secret_key.public_key(),
+        );
 
         // when
         block_watcher.run().await.unwrap();
@@ -196,12 +226,19 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let latest_block = given_a_block(6);
+        let secret_key = given_secret_key();
+        let latest_block = given_a_block(6, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block]);
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2, 4, 6]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
+        let mut block_watcher = BlockWatcher::new(
+            2.try_into().unwrap(),
+            tx,
+            fuel_adapter,
+            db,
+            secret_key.public_key(),
+        );
 
         // when
         block_watcher.run().await.unwrap();
@@ -217,12 +254,19 @@ mod tests {
         // given
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
 
-        let block = given_a_block(4);
-        let fuel_adapter = given_fetcher(vec![block]);
+        let secret_key = given_secret_key();
+        let block = given_a_block(4, &secret_key);
+        let fuel_adapter = given_fetcher(vec![block.clone()]);
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
+        let mut block_watcher = BlockWatcher::new(
+            2.try_into().unwrap(),
+            tx,
+            fuel_adapter,
+            db,
+            secret_key.public_key(),
+        );
 
         // when
         block_watcher.run().await.unwrap();
@@ -232,7 +276,7 @@ mod tests {
             panic!("Didn't receive the block")
         };
 
-        assert_eq!(block, announced_block);
+        assert_eq!(announced_block, block.into());
     }
 
     #[tokio::test]
@@ -240,11 +284,19 @@ mod tests {
         // given
         let (tx, _) = tokio::sync::mpsc::channel(10);
 
-        let fuel_adapter = given_fetcher(vec![given_a_block(5)]);
+        let secret_key = given_secret_key();
+        let block = given_a_block(5, &secret_key);
+        let fuel_adapter = given_fetcher(vec![block]);
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2, 4]).await;
-        let mut block_watcher = BlockWatcher::new(2.try_into().unwrap(), tx, fuel_adapter, db);
+        let mut block_watcher = BlockWatcher::new(
+            2.try_into().unwrap(),
+            tx,
+            fuel_adapter,
+            db,
+            secret_key.public_key(),
+        );
 
         let registry = Registry::default();
         block_watcher.register_metrics(&registry);
@@ -281,11 +333,16 @@ mod tests {
         for block in available_blocks.clone() {
             fetcher
                 .expect_block_at_height()
-                .with(eq(block.height))
-                .returning(move |_| Ok(Some(block)));
+                .with(eq(block.header.height))
+                .returning(move |_| Ok(Some(block.clone())));
         }
-        if let Some(block) = available_blocks.into_iter().max_by_key(|el| el.height) {
-            fetcher.expect_latest_block().returning(move || Ok(block));
+        if let Some(block) = available_blocks
+            .into_iter()
+            .max_by_key(|el| el.header.height)
+        {
+            fetcher
+                .expect_latest_block()
+                .returning(move || Ok(block.clone()));
         }
 
         fetcher
@@ -293,14 +350,58 @@ mod tests {
 
     fn given_a_pending_submission(block_height: u32) -> BlockSubmission {
         let mut submission: BlockSubmission = rand::thread_rng().gen();
-        submission.block.height = block_height;
+        submission.block.set_height(block_height);
+
         submission
     }
 
-    fn given_a_block(block_height: u32) -> FuelBlock {
+    fn given_a_block(height: u32, secret_key: &SecretKey) -> FuelBlock {
+        let header = given_header(height);
+
+        let mut hasher = fuel_crypto::Hasher::default();
+        hasher.input(header.prev_root.as_ref());
+        hasher.input(header.height.to_be_bytes());
+        hasher.input(header.time.0.to_be_bytes());
+        hasher.input(header.application_hash.as_ref());
+
+        let id = FuelBlockId::from(hasher.digest());
+        let id_message = Message::from_bytes(*id);
+        let signature = Signature::sign(secret_key, &id_message);
+
         FuelBlock {
-            hash: Default::default(),
-            height: block_height,
+            id,
+            header,
+            consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
+            transactions: vec![],
+            block_producer: Some(secret_key.public_key()),
         }
+    }
+
+    fn given_header(height: u32) -> FuelHeader {
+        let application_hash = "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
+            .parse()
+            .unwrap();
+
+        FuelHeader {
+            id: Default::default(),
+            da_height: Default::default(),
+            consensus_parameters_version: Default::default(),
+            state_transition_bytecode_version: Default::default(),
+            transactions_count: Default::default(),
+            message_receipt_count: Default::default(),
+            transactions_root: Default::default(),
+            message_outbox_root: Default::default(),
+            event_inbox_root: Default::default(),
+            height,
+            prev_root: Default::default(),
+            time: tai64::Tai64(0),
+            application_hash,
+        }
+    }
+
+    fn given_secret_key() -> SecretKey {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        SecretKey::random(&mut rng)
     }
 }

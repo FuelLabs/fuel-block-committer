@@ -2,10 +2,13 @@
 mod tests {
     use std::time::Duration;
 
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
     use eth::{Chain, WebsocketClient};
     use fuel::HttpClient;
-    use ports::fuel::Api;
+    use ports::{
+        fuel::{Api, FuelPublicKey},
+        types::ValidatedFuelBlock,
+    };
 
     const FUEL_NODE_PORT: u16 = 4000;
 
@@ -31,7 +34,12 @@ mod tests {
 
         let latest_block = provider.latest_block().await?;
 
-        assert!(fuel_contract.finalized(latest_block).await?);
+        let producer_public_key: FuelPublicKey = serde_json::from_str("\"0x73dc6cc8cc0041e4924954b35a71a22ccb520664c522198a6d31dc6c945347bb854a39382d296ec64c70d7cea1db75601595e29729f3fbdc7ee9dae66705beb4\"")
+                 .map_err(|e| anyhow!("could not parse producer pub key: {e:?}"))?;
+
+        let validated_block = ValidatedFuelBlock::from(&latest_block, &producer_public_key)?;
+
+        assert!(fuel_contract.finalized(validated_block).await?);
 
         Ok(())
     }
