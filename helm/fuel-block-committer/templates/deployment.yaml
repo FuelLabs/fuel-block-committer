@@ -5,6 +5,8 @@ metadata:
   labels:
     {{- include "fuel-block-committer.labels" . | nindent 4 }}
 spec:
+  strategy:
+    type: {{ .Values.updateStrategyType }}
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
