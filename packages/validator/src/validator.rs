@@ -1,42 +1,53 @@
-use crate::ports::fuel::{
-    Error, FuelBlockId, FuelBytes32, FuelConsensus, FuelHeader, FuelPoAConsensus, FuelPublicKey,
-    Result,
+use fuel_core_client::client::types::{
+    block::{
+        Block as FuelBlock, Consensus as FuelConsensus, Header as FuelHeader,
+        PoAConsensus as FuelPoAConsensus,
+    },
+    primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32, PublicKey as FuelPublicKey},
 };
-use fuel_core_client::client::types::Block as FuelBlock;
 use fuel_crypto::{Hasher, Message};
-use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-pub struct ValidatedFuelBlock {
-    hash: [u8; 32],
-    height: u32,
+use crate::{block::ValidatedFuelBlock, Error, Result, Validator};
+
+#[derive(Debug)]
+pub struct BlockValidator {
+    producer_pub_key: FuelPublicKey,
 }
 
-impl ValidatedFuelBlock {
-    /// Create `ValidatedFuelBlock` from `FuelBlock` validating
-    /// public key, block id and signature.
-    pub fn from(fuel_block: &FuelBlock, expected_pub_key: &FuelPublicKey) -> Result<Self> {
-        Self::validate_public_key(fuel_block, expected_pub_key)?;
-        Self::validate_block_id(fuel_block)?;
-        Self::validate_block_signature(fuel_block, expected_pub_key)?;
+impl Validator for BlockValidator {
+    fn validate(&self, fuel_block: &FuelBlock) -> Result<ValidatedFuelBlock> {
+        self._validate(fuel_block)
+    }
+}
 
-        Ok(Self {
+impl BlockValidator {
+    pub fn new(producer_pub_key: FuelPublicKey) -> Self {
+        Self { producer_pub_key }
+    }
+
+    fn _validate(&self, fuel_block: &FuelBlock) -> Result<ValidatedFuelBlock> {
+        self.validate_public_key(fuel_block)?;
+        Self::validate_block_id(fuel_block)?;
+        self.validate_block_signature(fuel_block)?;
+
+        Ok(ValidatedFuelBlock {
             hash: *fuel_block.id,
             height: fuel_block.header.height,
         })
     }
 
-    fn validate_public_key(fuel_block: &FuelBlock, expected_pub_key: &FuelPublicKey) -> Result<()> {
+    fn validate_public_key(&self, fuel_block: &FuelBlock) -> Result<()> {
         let Some(producer_pub_key) = fuel_block.block_producer() else {
             return Err(Error::BlockValidation(
                 "producer public key not found in fuel block".to_string(),
             ));
         };
 
-        if producer_pub_key != expected_pub_key {
+        if *producer_pub_key != self.producer_pub_key {
             return Err(Error::BlockValidation(format!(
                 "producer public key `{producer_pub_key:x}` does not match \
-                 expected public key `{expected_pub_key:x}`."
+                 expected public key `{:x}`.",
+                self.producer_pub_key
             )));
         }
 
@@ -56,10 +67,7 @@ impl ValidatedFuelBlock {
         Ok(())
     }
 
-    fn validate_block_signature(
-        fuel_block: &FuelBlock,
-        expected_pub_key: &FuelPublicKey,
-    ) -> Result<()> {
+    fn validate_block_signature(&self, fuel_block: &FuelBlock) -> Result<()> {
         let FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }) = fuel_block.consensus
         else {
             return Err(Error::BlockValidation(
@@ -70,11 +78,11 @@ impl ValidatedFuelBlock {
         let block_id_message = Message::from_bytes(*fuel_block.id);
 
         signature
-            .verify(expected_pub_key, &block_id_message)
+            .verify(&self.producer_pub_key, &block_id_message)
             .map_err(|_| {
                 Error::BlockValidation(format!(
-                    "signature validation failed for fuel block with id: `{:x}`",
-                    fuel_block.id
+                    "signature validation failed for fuel block with id: `{:x}` and pub key: `{:x}`",
+                    fuel_block.id, &self.producer_pub_key
                 ))
             })?;
 
@@ -101,7 +109,6 @@ impl ValidatedFuelBlock {
     }
 
     fn application_hash(header: &FuelHeader) -> FuelBytes32 {
-        // Order matters and is the same as the spec.
         let mut hasher = Hasher::default();
         let FuelHeader {
             da_height,
@@ -126,76 +133,22 @@ impl ValidatedFuelBlock {
 
         hasher.digest()
     }
-
-    /// # Safety
-    ///
-    /// This function should only be called when the caller can guarantee that
-    /// `hash` and `height` meet all the requirements normally enforced by `validate`.
-    pub unsafe fn new_unchecked(hash: [u8; 32], height: u32) -> Self {
-        Self { hash, height }
-    }
-
-    pub fn hash(&self) -> [u8; 32] {
-        self.hash
-    }
-
-    pub fn height(&self) -> u32 {
-        self.height
-    }
-
-    #[cfg(feature = "test-helpers")]
-    pub fn new(hash: [u8; 32], height: u32) -> Self {
-        Self { hash, height }
-    }
-
-    #[cfg(feature = "test-helpers")]
-    pub fn set_height(&mut self, height: u32) {
-        self.height = height;
-    }
-}
-
-#[cfg(feature = "test-helpers")]
-impl From<FuelBlock> for ValidatedFuelBlock {
-    fn from(block: FuelBlock) -> Self {
-        Self {
-            hash: *block.id,
-            height: block.header.height,
-        }
-    }
-}
-
-#[cfg(feature = "test-helpers")]
-impl rand::distributions::Distribution<ValidatedFuelBlock> for rand::distributions::Standard {
-    fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> ValidatedFuelBlock {
-        ValidatedFuelBlock {
-            hash: rng.gen(),
-            height: rng.gen(),
-        }
-    }
-}
-
-impl std::fmt::Debug for ValidatedFuelBlock {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let hash = self.hash.map(|byte| format!("{byte:02x?}")).join("");
-        f.debug_struct("FuelBlock")
-            .field("hash", &hash)
-            .field("height", &self.height)
-            .finish()
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use fuel_crypto::{SecretKey, Signature};
     use rand::{rngs::StdRng, SeedableRng};
+
+    use super::*;
 
     #[test]
     #[should_panic(expected = "producer public key not found in fuel block")]
     fn validate_public_key_missing() {
         let fuel_block = given_a_block(None);
+        let validator = BlockValidator::new(FuelPublicKey::default());
 
-        ValidatedFuelBlock::from(&fuel_block, &FuelPublicKey::default()).unwrap();
+        validator.validate(&fuel_block).unwrap();
     }
 
     #[test]
@@ -203,8 +156,9 @@ mod tests {
     fn validate_public_key_mistmach() {
         let secret_key = given_secret_key();
         let fuel_block = given_a_block(Some(secret_key));
+        let validator = BlockValidator::new(FuelPublicKey::default());
 
-        ValidatedFuelBlock::from(&fuel_block, &FuelPublicKey::default()).unwrap();
+        validator.validate(&fuel_block).unwrap();
     }
 
     #[test]
@@ -213,8 +167,9 @@ mod tests {
         let secret_key = given_secret_key();
         let mut fuel_block = given_a_block(Some(secret_key));
         fuel_block.header.height = 42; // Change a value to get a different block id
+        let validator = BlockValidator::new(secret_key.public_key());
 
-        ValidatedFuelBlock::from(&fuel_block, &secret_key.public_key()).unwrap();
+        validator.validate(&fuel_block).unwrap();
     }
 
     #[test]
@@ -223,8 +178,9 @@ mod tests {
         let secret_key = given_secret_key();
         let mut fuel_block = given_a_block(Some(secret_key));
         fuel_block.consensus = FuelConsensus::Unknown;
+        let validator = BlockValidator::new(secret_key.public_key());
 
-        ValidatedFuelBlock::from(&fuel_block, &secret_key.public_key()).unwrap();
+        validator.validate(&fuel_block).unwrap();
     }
 
     #[test]
@@ -235,16 +191,18 @@ mod tests {
         fuel_block.consensus = FuelConsensus::PoAConsensus(FuelPoAConsensus {
             signature: Signature::default(),
         });
+        let validator = BlockValidator::new(secret_key.public_key());
 
-        ValidatedFuelBlock::from(&fuel_block, &secret_key.public_key()).unwrap();
+        validator.validate(&fuel_block).unwrap();
     }
 
     #[test]
     fn validate_fuel_block() {
         let secret_key = given_secret_key();
         let fuel_block = given_a_block(Some(secret_key));
+        let validator = BlockValidator::new(secret_key.public_key());
 
-        ValidatedFuelBlock::from(&fuel_block, &secret_key.public_key()).unwrap();
+        validator.validate(&fuel_block).unwrap();
     }
 
     fn given_secret_key() -> SecretKey {

@@ -57,7 +57,7 @@ where
 
         self.metrics
             .latest_committed_block
-            .set(i64::from(submission.block.height()));
+            .set(i64::from(submission.block_height));
 
         Ok(())
     }
@@ -145,7 +145,7 @@ mod tests {
             completed: false,
             ..rng.gen()
         };
-        let block_hash = submission.block.hash();
+        let block_hash = submission.block_hash;
 
         let contract = given_contract_with_events(vec![block_hash], submission.submittal_height);
 
@@ -172,8 +172,8 @@ mod tests {
             completed: false,
             ..rng.gen()
         };
-        let block_hash = submission.block.hash();
-        let fuel_block_height = submission.block.height();
+        let block_hash = submission.block_hash;
+        let fuel_block_height = submission.block_height;
 
         let contract = given_contract_with_events(vec![block_hash], submission.submittal_height);
 
@@ -210,8 +210,8 @@ mod tests {
         let block_missing_from_db: BlockSubmission = rng.gen();
         let incoming_block: BlockSubmission = rng.gen();
 
-        let missing_hash = block_missing_from_db.block.hash();
-        let incoming_hash = incoming_block.block.hash();
+        let missing_hash = block_missing_from_db.block_hash;
+        let incoming_hash = incoming_block.block_hash;
 
         let contract = given_contract_with_events(
             vec![missing_hash, incoming_hash],

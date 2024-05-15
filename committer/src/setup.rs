@@ -6,11 +6,12 @@ use services::{BlockCommitter, BlockWatcher, CommitListener, Runner, WalletBalan
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use validator::BlockValidator;
 
 use crate::{
     config::{Config, InternalConfig},
     errors::Result,
-    Database, FuelApi, L1,
+    Database, FuelApi, Validator, L1,
 };
 
 pub fn spawn_block_watcher(
@@ -161,7 +162,7 @@ fn create_block_watcher(
     fuel_adapter: FuelApi,
     storage: Database,
 ) -> (
-    BlockWatcher<FuelApi, Database>,
+    BlockWatcher<FuelApi, Database, Validator>,
     Receiver<ValidatedFuelBlock>,
 ) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
@@ -170,7 +171,7 @@ fn create_block_watcher(
         tx_fuel_block,
         fuel_adapter,
         storage,
-        config.fuel.block_producer_public_key,
+        BlockValidator::new(config.fuel.block_producer_public_key),
     );
     block_watcher.register_metrics(registry);
 

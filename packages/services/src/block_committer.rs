@@ -38,7 +38,8 @@ where
         let submittal_height = self.l1.get_block_number().await?;
 
         let submission = BlockSubmission {
-            block: fuel_block,
+            block_hash: fuel_block.hash(),
+            block_height: fuel_block.height(),
             submittal_height,
             completed: false,
         };
@@ -130,7 +131,7 @@ mod tests {
 
         // then
         let last_submission = db.submission_w_latest_block().await.unwrap().unwrap();
-        assert_eq!(expected_height, last_submission.block.height());
+        assert_eq!(expected_height, last_submission.block_height);
     }
 
     fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> MockL1 {

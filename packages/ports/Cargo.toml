@@ -12,22 +12,18 @@ rust-version = { workspace = true }
 [dependencies]
 async-trait = { workspace = true, optional = true }
 ethers-core = { workspace = true, optional = true }
+fuel-core-client = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
-fuel-core-client = { workspace = true }
-fuel-crypto = { workspace = true }
 impl-tools = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true, optional = true }
-
-[dev-dependencies]
-fuel-crypto = { workspace = true, features = ["random"] }
-tai64 = { workspace = true }
+validator = { workspace = true, optional = true }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand"]
 l1 = ["dep:ethers-core", "dep:futures", "dep:thiserror", "dep:async-trait"]
-fuel = ["dep:thiserror", "dep:async-trait"]
+fuel = ["dep:thiserror", "dep:async-trait", "dep:fuel-core-client", "dep:validator"]
 storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]
 full = ["l1", "fuel", "storage"]

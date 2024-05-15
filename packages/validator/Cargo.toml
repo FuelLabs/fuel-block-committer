@@ -1,0 +1,25 @@
+[package]
+name = "validator"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+fuel-crypto = { workspace = true, optional = true }
+fuel-core-client = { workspace = true }
+mockall = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tai64 = { workspace = true }
+
+[features]
+validator = ["dep:fuel-crypto"]
+test-helpers = ["validator", "dep:mockall", "dep:rand"]

@@ -16,3 +16,4 @@ fuel = { workspace = true, features = ["test-helpers"] }
 ports = { workspace = true, features = ["fuel", "l1"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+validator = { workspace = true, features = ["validator"] }
