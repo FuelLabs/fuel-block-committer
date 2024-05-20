@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "does not match calculated block id")]
-    fn validate_block_id_mismach() {
+    fn validate_block_id_mismatch() {
         let secret_key = given_secret_key();
         let mut fuel_block = given_a_block(Some(secret_key));
         fuel_block.header.height = 42; // Change a value to get a different block id
