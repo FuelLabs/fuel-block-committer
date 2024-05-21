@@ -57,7 +57,8 @@ impl From<services::Error> for Error {
         match error {
             services::Error::Network(e) => Self::Network(e),
             services::Error::Storage(e) => Self::Storage(e),
-            _ => Self::Other(error.to_string()),
+            services::Error::BlockValidation(e) => Self::Other(e),
+            services::Error::Other(e) => Self::Other(e),
         }
     }
 }
