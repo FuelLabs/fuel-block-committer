@@ -17,25 +17,35 @@ pub use wallet_balance_tracker::WalletBalanceTracker;
 pub enum Error {
     #[error("{0}")]
     Other(String),
-    #[error("Network Error: {0}")]
+    #[error("Network error: {0}")]
     Network(String),
     #[error("Storage error: {0}")]
     Storage(String),
+    #[error("Block validation error: {0}")]
+    BlockValidation(String),
 }
 
 impl From<ports::l1::Error> for Error {
-    fn from(value: ports::l1::Error) -> Self {
-        match value {
+    fn from(error: ports::l1::Error) -> Self {
+        match error {
             ports::l1::Error::Network(e) => Self::Network(e),
-            _ => Self::Other(value.to_string()),
+            _ => Self::Other(error.to_string()),
         }
     }
 }
 
 impl From<ports::fuel::Error> for Error {
-    fn from(value: ports::fuel::Error) -> Self {
-        match value {
+    fn from(error: ports::fuel::Error) -> Self {
+        match error {
             ports::fuel::Error::Network(e) => Self::Network(e),
+        }
+    }
+}
+
+impl From<validator::Error> for Error {
+    fn from(error: validator::Error) -> Self {
+        match error {
+            validator::Error::BlockValidation(e) => Self::BlockValidation(e),
         }
     }
 }

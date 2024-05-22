@@ -18,6 +18,8 @@ pub struct FuelConfig {
     /// URL to a fuel-core graphql endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub graphql_endpoint: Url,
+    /// Block producer public key
+    pub block_producer_public_key: ports::fuel::FuelPublicKey,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -1,6 +1,5 @@
 #![deny(unused_crate_dependencies)]
-use fuel_core_client::client::types::Block;
-use ports::types::FuelBlock;
+use ports::fuel::FuelBlock;
 mod client;
 mod metrics;
 
@@ -9,22 +8,14 @@ pub use client::*;
 type Error = ports::fuel::Error;
 type Result<T> = ports::fuel::Result<T>;
 
-fn convert_block(block: Block) -> FuelBlock {
-    FuelBlock {
-        hash: *block.id,
-        height: block.header.height,
-    }
-}
-
 #[async_trait::async_trait]
 impl ports::fuel::Api for client::HttpClient {
     async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>> {
-        Ok(self._block_at_height(height).await?.map(convert_block))
+        self._block_at_height(height).await
     }
 
     async fn latest_block(&self) -> ports::fuel::Result<FuelBlock> {
-        let block = self._latest_block().await?;
-        Ok(convert_block(block))
+        self._latest_block().await
     }
 }
 

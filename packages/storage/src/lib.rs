@@ -72,7 +72,7 @@ mod tests {
 
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
-        let block_hash = submission.block.hash;
+        let block_hash = submission.block_hash;
         db.insert(submission).await.unwrap();
 
         // when
@@ -90,7 +90,7 @@ mod tests {
 
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
-        let block_hash = submission.block.hash;
+        let block_hash = submission.block_hash;
 
         // when
         let result = db.set_submission_completed(block_hash).await;
@@ -106,7 +106,7 @@ mod tests {
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {
         let mut submission = rand::thread_rng().gen::<BlockSubmission>();
-        submission.block.height = fuel_block_height;
+        submission.block_height = fuel_block_height;
 
         submission
     }

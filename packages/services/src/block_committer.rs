@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use ports::{
     storage::Storage,
-    types::{BlockSubmission, FuelBlock},
+    types::{BlockSubmission, ValidatedFuelBlock},
 };
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info};
@@ -10,13 +10,13 @@ use super::Runner;
 use crate::Result;
 
 pub struct BlockCommitter<C, Db> {
-    rx_block: Receiver<FuelBlock>,
+    rx_block: Receiver<ValidatedFuelBlock>,
     l1: C,
     storage: Db,
 }
 
 impl<L1, Db> BlockCommitter<L1, Db> {
-    pub fn new(rx_block: Receiver<FuelBlock>, l1: L1, storage: Db) -> Self {
+    pub fn new(rx_block: Receiver<ValidatedFuelBlock>, l1: L1, storage: Db) -> Self {
         Self {
             rx_block,
             l1,
@@ -24,7 +24,7 @@ impl<L1, Db> BlockCommitter<L1, Db> {
         }
     }
 
-    async fn next_fuel_block_for_committal(&mut self) -> Option<FuelBlock> {
+    async fn next_fuel_block_for_committal(&mut self) -> Option<ValidatedFuelBlock> {
         self.rx_block.recv().await
     }
 }
@@ -34,11 +34,12 @@ where
     A: ports::l1::Contract + ports::l1::Api,
     Db: Storage,
 {
-    async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
+    async fn submit_block(&self, fuel_block: ValidatedFuelBlock) -> Result<()> {
         let submittal_height = self.l1.get_block_number().await?;
 
         let submission = BlockSubmission {
-            block: fuel_block,
+            block_hash: fuel_block.hash(),
+            block_height: fuel_block.height(),
             submittal_height,
             completed: false,
         };
@@ -94,7 +95,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Contract for MockL1 {
-        async fn submit(&self, block: FuelBlock) -> ports::l1::Result<()> {
+        async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<()> {
             self.contract.submit(block).await
         }
         fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
@@ -117,8 +118,8 @@ mod tests {
     async fn block_committer_will_submit_and_write_block() {
         // given
         let (tx, rx) = tokio::sync::mpsc::channel(10);
-        let block: FuelBlock = rand::thread_rng().gen();
-        let expected_height = block.height;
+        let block: ValidatedFuelBlock = rand::thread_rng().gen();
+        let expected_height = block.height();
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
 
@@ -130,10 +131,10 @@ mod tests {
 
         // then
         let last_submission = db.submission_w_latest_block().await.unwrap().unwrap();
-        assert_eq!(expected_height, last_submission.block.height);
+        assert_eq!(expected_height, last_submission.block_height);
     }
 
-    fn given_l1_that_expects_submission(block: FuelBlock) -> MockL1 {
+    fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> MockL1 {
         let mut l1 = MockL1 {
             api: MockApi::new(),
             contract: MockContract::new(),
@@ -151,7 +152,7 @@ mod tests {
     }
 
     async fn spawn_committer_and_run_until_timeout<Db: Storage>(
-        rx: Receiver<FuelBlock>,
+        rx: Receiver<ValidatedFuelBlock>,
         mock_l1: MockL1,
         storage: Db,
     ) {

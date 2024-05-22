@@ -1,4 +1,4 @@
-use ports::types::{BlockSubmission, FuelBlock};
+use ports::types::BlockSubmission;
 
 #[derive(sqlx::FromRow)]
 pub struct L1FuelBlockSubmission {
@@ -18,11 +18,11 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
                 return Err(Self::Error::Conversion(format!($msg, $($args),*)));
             };
         }
-        let Ok(hash) = block_hash.try_into() else {
+        let Ok(block_hash) = block_hash.try_into() else {
             bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
         };
 
-        let Ok(height) = value.fuel_block_height.try_into() else {
+        let Ok(block_height) = value.fuel_block_height.try_into() else {
             bail!(
                 "`fuel_block_height` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
                 value.fuel_block_height
@@ -35,7 +35,8 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
         };
 
         Ok(Self {
-            block: FuelBlock { hash, height },
+            block_hash,
+            block_height,
             completed: value.completed,
             submittal_height,
         })
@@ -45,8 +46,8 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
 impl From<BlockSubmission> for L1FuelBlockSubmission {
     fn from(value: BlockSubmission) -> Self {
         Self {
-            fuel_block_hash: value.block.hash.to_vec(),
-            fuel_block_height: i64::from(value.block.height),
+            fuel_block_hash: value.block_hash.to_vec(),
+            fuel_block_height: i64::from(value.block_height),
             completed: value.completed,
             submittal_height: value.submittal_height.into(),
         }

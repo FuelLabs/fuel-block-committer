@@ -19,8 +19,12 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+validator = { workspace = true }
 
 [dev-dependencies]
+fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
 rand = { workspace = true }
 storage = { workspace = true, features = ["test-helpers"] }
+tai64 = { workspace = true }
+validator = { workspace = true, features = ["test-helpers"] }

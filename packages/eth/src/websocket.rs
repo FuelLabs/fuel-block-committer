@@ -4,7 +4,7 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use ethers::types::{Address, Chain};
 use ports::{
     l1::Result,
-    types::{FuelBlock, U256},
+    types::{ValidatedFuelBlock, U256},
 };
 use url::Url;
 
@@ -50,7 +50,7 @@ impl WebsocketClient {
         self.inner.event_streamer(eth_block_height)
     }
 
-    pub(crate) async fn submit(&self, block: FuelBlock) -> Result<()> {
+    pub(crate) async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
         Ok(self.inner.submit(block).await?)
     }
 
@@ -63,7 +63,7 @@ impl WebsocketClient {
     }
 
     #[cfg(feature = "test-helpers")]
-    pub async fn finalized(&self, block: FuelBlock) -> Result<bool> {
+    pub async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
         Ok(self.inner.finalized(block).await?)
     }
 

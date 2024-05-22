@@ -6,7 +6,7 @@ use ethers::{
     signers::{LocalWallet, Signer},
     types::{Address, Chain, H160, U256, U64},
 };
-use ports::types::FuelBlock;
+use ports::types::ValidatedFuelBlock;
 use serde_json::Value;
 use url::Url;
 
@@ -33,9 +33,9 @@ pub struct WsConnection {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    async fn submit(&self, block: FuelBlock) -> Result<()> {
-        let commit_height = Self::calculate_commit_height(block.height, self.commit_interval);
-        let contract_call = self.contract.commit(block.hash, commit_height);
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
+        let commit_height = Self::calculate_commit_height(block.height(), self.commit_interval);
+        let contract_call = self.contract.commit(block.hash(), commit_height);
         let tx = contract_call.send().await?;
 
         tracing::info!("tx: {} submitted", tx.tx_hash());
@@ -70,10 +70,10 @@ impl EthApi for WsConnection {
     }
 
     #[cfg(feature = "test-helpers")]
-    async fn finalized(&self, block: FuelBlock) -> Result<bool> {
+    async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
         Ok(self
             .contract
-            .finalized(block.hash, block.height.into())
+            .finalized(block.hash(), block.height().into())
             .call()
             .await?)
     }

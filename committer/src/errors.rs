@@ -5,15 +5,15 @@ use tokio::task::JoinError;
 pub enum Error {
     #[error("{0}")]
     Other(String),
-    #[error("Network Error: {0}")]
+    #[error("Network error: {0}")]
     Network(String),
     #[error("Storage error: {0}")]
     Storage(String),
 }
 
 impl From<serde_json::Error> for Error {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Other(value.to_string())
+    fn from(error: serde_json::Error) -> Self {
+        Self::Other(error.to_string())
     }
 }
 
@@ -36,17 +36,17 @@ impl From<ports::storage::Error> for Error {
 }
 
 impl From<ports::l1::Error> for Error {
-    fn from(value: ports::l1::Error) -> Self {
-        match value {
+    fn from(error: ports::l1::Error) -> Self {
+        match error {
             ports::l1::Error::Network(e) => Self::Network(e),
-            _ => Self::Other(value.to_string()),
+            _ => Self::Other(error.to_string()),
         }
     }
 }
 
 impl From<ports::fuel::Error> for Error {
-    fn from(value: ports::fuel::Error) -> Self {
-        match value {
+    fn from(error: ports::fuel::Error) -> Self {
+        match error {
             ports::fuel::Error::Network(e) => Self::Network(e),
         }
     }
@@ -57,6 +57,7 @@ impl From<services::Error> for Error {
         match error {
             services::Error::Network(e) => Self::Network(e),
             services::Error::Storage(e) => Self::Storage(e),
+            services::Error::BlockValidation(e) => Self::Other(e),
             services::Error::Other(e) => Self::Other(e),
         }
     }

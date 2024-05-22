@@ -1,16 +1,17 @@
 use std::time::Duration;
 
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
-use ports::{storage::Storage, types::FuelBlock};
+use ports::{storage::Storage, types::ValidatedFuelBlock};
 use services::{BlockCommitter, BlockWatcher, CommitListener, Runner, WalletBalanceTracker};
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use validator::BlockValidator;
 
 use crate::{
     config::{Config, InternalConfig},
     errors::Result,
-    Database, FuelApi, L1,
+    Database, FuelApi, Validator, L1,
 };
 
 pub fn spawn_block_watcher(
@@ -20,7 +21,7 @@ pub fn spawn_block_watcher(
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> (
-    Receiver<FuelBlock>,
+    Receiver<ValidatedFuelBlock>,
     tokio::task::JoinHandle<()>,
     HealthChecker,
 ) {
@@ -59,7 +60,7 @@ pub fn spawn_wallet_balance_tracker(
 
 pub fn spawn_l1_committer_and_listener(
     internal_config: &InternalConfig,
-    rx_fuel_block: Receiver<FuelBlock>,
+    rx_fuel_block: Receiver<ValidatedFuelBlock>,
     l1: L1,
     storage: Database,
     registry: &Registry,
@@ -81,7 +82,7 @@ pub fn spawn_l1_committer_and_listener(
 }
 
 fn create_block_committer(
-    rx_fuel_block: Receiver<FuelBlock>,
+    rx_fuel_block: Receiver<ValidatedFuelBlock>,
     l1: L1,
     storage: impl Storage + 'static,
 ) -> tokio::task::JoinHandle<()> {
@@ -160,13 +161,17 @@ fn create_block_watcher(
     registry: &Registry,
     fuel_adapter: FuelApi,
     storage: Database,
-) -> (BlockWatcher<FuelApi, Database>, Receiver<FuelBlock>) {
+) -> (
+    BlockWatcher<FuelApi, Database, Validator>,
+    Receiver<ValidatedFuelBlock>,
+) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher = BlockWatcher::new(
         config.eth.commit_interval,
         tx_fuel_block,
         fuel_adapter,
         storage,
+        BlockValidator::new(config.fuel.block_producer_public_key),
     );
     block_watcher.register_metrics(registry);
 

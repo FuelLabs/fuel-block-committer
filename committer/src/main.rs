@@ -19,6 +19,7 @@ use crate::setup::shut_down;
 pub type L1 = eth::WebsocketClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
+pub type Validator = validator::BlockValidator;
 
 #[tokio::main]
 async fn main() -> Result<()> {

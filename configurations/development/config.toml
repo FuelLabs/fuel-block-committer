@@ -7,6 +7,7 @@ rpc = "ws://localhost:8089"
 
 [fuel]
 graphql_endpoint = "http://localhost:4000"
+block_producer_public_key = "0x73dc6cc8cc0041e4924954b35a71a22ccb520664c522198a6d31dc6c945347bb854a39382d296ec64c70d7cea1db75601595e29729f3fbdc7ee9dae66705beb4"
 
 [app]
 port = 8080
