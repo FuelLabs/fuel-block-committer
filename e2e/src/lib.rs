@@ -20,7 +20,6 @@ mod tests {
             Chain::AnvilHardhat,
             "0xdAad669b06d79Cb48C8cfef789972436dBe6F24d".parse()?,
             "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36",
-            3.try_into()?,
             10,
         )
         .await?;

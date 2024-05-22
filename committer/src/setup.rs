@@ -105,7 +105,6 @@ pub async fn create_l1_adapter(
         config.eth.chain_id,
         config.eth.state_contract_address,
         &config.eth.wallet_key,
-        config.eth.commit_interval,
         internal_config.eth_errors_before_unhealthy,
     )
     .await?;

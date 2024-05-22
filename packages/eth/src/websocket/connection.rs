@@ -11,7 +11,7 @@ use serde_json::Value;
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 abigen!(
     FUEL_STATE_CONTRACT,
@@ -20,6 +20,7 @@ abigen!(
         event CommitSubmitted(uint256 indexed commitHeight, bytes32 blockHash)
         function finalized(bytes32 blockHash, uint256 blockHeight) external view whenNotPaused returns (bool)
         function blockHashAtCommit(uint256 commitHeight) external view returns (bytes32)
+        function BLOCKS_PER_COMMIT_INTERVAL() external view returns (uint256)
     ]"#,
 );
 
@@ -60,6 +61,10 @@ impl EthApi for WsConnection {
         Ok(self.provider.get_balance(address, None).await?)
     }
 
+    fn commit_interval(&self) -> Result<NonZeroU32> {
+        Ok(self.commit_interval)
+    }
+
     fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
         let events = self
             .contract
@@ -94,7 +99,6 @@ impl WsConnection {
         chain_id: Chain,
         contract_address: Address,
         wallet_key: &str,
-        commit_interval: NonZeroU32,
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(url.to_string()).await?;
 
@@ -105,6 +109,15 @@ impl WsConnection {
 
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FUEL_STATE_CONTRACT::new(contract_address, Arc::new(signer));
+
+        let interval_u256 = contract.blocks_per_commit_interval().call().await?;
+
+        let commit_interval = u32::try_from(interval_u256)
+            .map_err(|e| Error::Other(e.to_string()))
+            .and_then(|value| {
+                NonZeroU32::new(value)
+                    .ok_or_else(|| Error::Other("Value cannot be zero".to_string()))
+            })?;
 
         Ok(Self {
             provider,

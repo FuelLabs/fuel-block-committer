@@ -1,4 +1,5 @@
 #![deny(unused_crate_dependencies)]
+
 use std::pin::Pin;
 
 use async_trait::async_trait;
@@ -25,6 +26,10 @@ impl Contract for WebsocketClient {
 
     fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
         Box::new(self.event_streamer(height.into()))
+    }
+
+    fn commit_interval(&self) -> Result<std::num::NonZeroU32> {
+        Ok(self.commit_interval()?)
     }
 }
 
