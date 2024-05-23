@@ -22,8 +22,19 @@ thiserror = { workspace = true, optional = true }
 validator = { workspace = true, optional = true }
 
 [features]
-test-helpers = ["dep:mockall", "dep:rand"]
-l1 = ["dep:ethers-core", "dep:futures", "dep:thiserror", "dep:async-trait"]
-fuel = ["dep:thiserror", "dep:async-trait", "dep:fuel-core-client", "dep:validator"]
+test-helpers = ["dep:mockall", "dep:rand", "validator?/test-helpers"]
+l1 = [
+  "dep:ethers-core",
+  "dep:futures",
+  "dep:thiserror",
+  "dep:async-trait",
+  "dep:validator",
+]
+fuel = [
+  "dep:thiserror",
+  "dep:async-trait",
+  "dep:fuel-core-client",
+  "dep:validator",
+]
 storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]
 full = ["l1", "fuel", "storage"]

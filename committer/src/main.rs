@@ -8,10 +8,6 @@ use api::launch_api_server;
 use config::InternalConfig;
 use errors::Result;
 use metrics::prometheus::Registry;
-use setup::{
-    create_l1_adapter, setup_logger, setup_storage, spawn_block_watcher,
-    spawn_l1_committer_and_listener, spawn_wallet_balance_tracker,
-};
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
@@ -23,38 +19,42 @@ pub type Validator = validator::BlockValidator;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    setup_logger();
+    setup::logger();
 
     let config = config::parse()?;
 
-    let storage = setup_storage(&config).await?;
+    let storage = setup::storage(&config).await?;
 
     let internal_config = InternalConfig::default();
     let cancel_token = CancellationToken::new();
 
     let metrics_registry = Registry::default();
 
-    let (rx_fuel_block, block_watcher_handle, fuel_health_check) = spawn_block_watcher(
-        &config,
-        &internal_config,
-        storage.clone(),
-        &metrics_registry,
-        cancel_token.clone(),
-    );
+    let (fuel_adapter, fuel_health_check) =
+        setup::fuel_adapter(&config, &internal_config, &metrics_registry);
 
     let (ethereum_rpc, eth_health_check) =
-        create_l1_adapter(&config, &internal_config, &metrics_registry).await?;
+        setup::l1_adapter(&config, &internal_config, &metrics_registry).await?;
 
-    let wallet_balance_tracker_handle = spawn_wallet_balance_tracker(
+    let wallet_balance_tracker_handle = setup::wallet_balance_tracker(
         &internal_config,
         &metrics_registry,
         ethereum_rpc.clone(),
         cancel_token.clone(),
     );
 
-    let (committer_handle, listener_handle) = spawn_l1_committer_and_listener(
+    let committer_handle = setup::block_committer(
+        ethereum_rpc.clone(),
+        storage.clone(),
+        fuel_adapter,
+        &config,
         &internal_config,
-        rx_fuel_block,
+        &metrics_registry,
+        cancel_token.clone(),
+    );
+
+    let listener_handle = setup::l1_event_listener(
+        &internal_config,
         ethereum_rpc,
         storage.clone(),
         &metrics_registry,
@@ -72,7 +72,6 @@ async fn main() -> Result<()> {
 
     shut_down(
         cancel_token,
-        block_watcher_handle,
         wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,

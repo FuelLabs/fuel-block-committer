@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
-use ports::{storage::Storage, types::ValidatedFuelBlock};
-use services::{BlockCommitter, BlockWatcher, CommitListener, Runner, WalletBalanceTracker};
-use tokio::{sync::mpsc::Receiver, task::JoinHandle};
+use ports::storage::Storage;
+use services::{BlockCommitter, CommitListener, Runner, WalletBalanceTracker};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use validator::BlockValidator;
@@ -11,36 +11,10 @@ use validator::BlockValidator;
 use crate::{
     config::{Config, InternalConfig},
     errors::Result,
-    Database, FuelApi, Validator, L1,
+    Database, FuelApi, L1,
 };
 
-pub fn spawn_block_watcher(
-    config: &Config,
-    internal_config: &InternalConfig,
-    storage: Database,
-    registry: &Registry,
-    cancel_token: CancellationToken,
-) -> (
-    Receiver<ValidatedFuelBlock>,
-    tokio::task::JoinHandle<()>,
-    HealthChecker,
-) {
-    let (fuel_adapter, fuel_connection_health) =
-        create_fuel_adapter(config, internal_config, registry);
-
-    let (block_watcher, rx) = create_block_watcher(config, registry, fuel_adapter, storage);
-
-    let handle = schedule_polling(
-        internal_config.fuel_polling_interval,
-        block_watcher,
-        "Block Watcher",
-        cancel_token,
-    );
-
-    (rx, handle, fuel_connection_health)
-}
-
-pub fn spawn_wallet_balance_tracker(
+pub fn wallet_balance_tracker(
     internal_config: &InternalConfig,
     registry: &Registry,
     l1: L1,
@@ -58,44 +32,49 @@ pub fn spawn_wallet_balance_tracker(
     )
 }
 
-pub fn spawn_l1_committer_and_listener(
+pub fn l1_event_listener(
     internal_config: &InternalConfig,
-    rx_fuel_block: Receiver<ValidatedFuelBlock>,
     l1: L1,
     storage: Database,
     registry: &Registry,
     cancel_token: CancellationToken,
-) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
-    let committer_handler = create_block_committer(rx_fuel_block, l1.clone(), storage.clone());
+) -> tokio::task::JoinHandle<()> {
+    let commit_listener_service = CommitListener::new(l1, storage, cancel_token.clone());
+    commit_listener_service.register_metrics(registry);
 
-    let commit_listener = CommitListener::new(l1, storage, cancel_token.clone());
-    commit_listener.register_metrics(registry);
-
-    let listener_handle = schedule_polling(
+    schedule_polling(
         internal_config.between_eth_event_stream_restablishing_attempts,
-        commit_listener,
+        commit_listener_service,
         "Commit Listener",
         cancel_token,
-    );
-
-    (committer_handler, listener_handle)
+    )
 }
 
-fn create_block_committer(
-    rx_fuel_block: Receiver<ValidatedFuelBlock>,
+pub fn block_committer(
     l1: L1,
     storage: impl Storage + 'static,
+    fuel: FuelApi,
+    config: &Config,
+    internal_config: &InternalConfig,
+    registry: &Registry,
+    cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let mut block_committer = BlockCommitter::new(rx_fuel_block, l1, storage);
-    tokio::spawn(async move {
-        block_committer
-            .run()
-            .await
-            .expect("Errors are handled inside of run");
-    })
+    let validator = BlockValidator::new(config.fuel.block_producer_public_key);
+
+    let block_committer =
+        BlockCommitter::new(l1, storage, fuel, validator, config.eth.commit_interval);
+
+    block_committer.register_metrics(registry);
+
+    schedule_polling(
+        internal_config.fuel_polling_interval,
+        block_committer,
+        "Block Committer",
+        cancel_token,
+    )
 }
 
-pub async fn create_l1_adapter(
+pub async fn l1_adapter(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
@@ -140,7 +119,7 @@ fn schedule_polling(
     })
 }
 
-fn create_fuel_adapter(
+pub fn fuel_adapter(
     config: &Config,
     internal_config: &InternalConfig,
     registry: &Registry,
@@ -156,29 +135,7 @@ fn create_fuel_adapter(
     (fuel_adapter, fuel_connection_health)
 }
 
-fn create_block_watcher(
-    config: &Config,
-    registry: &Registry,
-    fuel_adapter: FuelApi,
-    storage: Database,
-) -> (
-    BlockWatcher<FuelApi, Database, Validator>,
-    Receiver<ValidatedFuelBlock>,
-) {
-    let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
-    let block_watcher = BlockWatcher::new(
-        config.eth.commit_interval,
-        tx_fuel_block,
-        fuel_adapter,
-        storage,
-        BlockValidator::new(config.fuel.block_producer_public_key),
-    );
-    block_watcher.register_metrics(registry);
-
-    (block_watcher, rx_fuel_block)
-}
-
-pub fn setup_logger() {
+pub fn logger() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_level(true)
@@ -187,7 +144,7 @@ pub fn setup_logger() {
         .init();
 }
 
-pub async fn setup_storage(config: &Config) -> Result<Database> {
+pub async fn storage(config: &Config) -> Result<Database> {
     let postgres = Database::connect(&config.app.db).await?;
     postgres.migrate().await?;
 
@@ -196,7 +153,6 @@ pub async fn setup_storage(config: &Config) -> Result<Database> {
 
 pub async fn shut_down(
     cancel_token: CancellationToken,
-    block_watcher_handle: JoinHandle<()>,
     wallet_balance_tracker_handle: JoinHandle<()>,
     committer_handle: JoinHandle<()>,
     listener_handle: JoinHandle<()>,
@@ -205,7 +161,6 @@ pub async fn shut_down(
     cancel_token.cancel();
 
     for handle in [
-        block_watcher_handle,
         wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,

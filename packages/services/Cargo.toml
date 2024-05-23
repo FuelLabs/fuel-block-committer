@@ -16,12 +16,13 @@ metrics = { workspace = true }
 ports = { workspace = true, features = ["full"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 validator = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }
+ports = { workspace = true, features = ["full", "test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
 rand = { workspace = true }
