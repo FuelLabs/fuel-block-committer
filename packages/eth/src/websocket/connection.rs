@@ -116,7 +116,7 @@ impl WsConnection {
             .map_err(|e| Error::Other(e.to_string()))
             .and_then(|value| {
                 NonZeroU32::new(value)
-                    .ok_or_else(|| Error::Other("Value cannot be zero".to_string()))
+                    .ok_or_else(|| Error::Other("l1 contract reported a commit interval of 0"))
             })?;
 
         Ok(Self {
