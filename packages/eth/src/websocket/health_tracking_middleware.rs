@@ -18,7 +18,7 @@ pub trait EthApi {
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
-    fn commit_interval(&self) -> Result<NonZeroU32>;
+    fn commit_interval(&self) -> NonZeroU32;
     fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool>;
@@ -94,7 +94,7 @@ where
         response
     }
 
-    fn commit_interval(&self) -> Result<NonZeroU32> {
+    fn commit_interval(&self) -> NonZeroU32 {
         self.adapter.commit_interval()
     }
 

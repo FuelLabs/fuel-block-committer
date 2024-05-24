@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
@@ -15,6 +16,7 @@ use crate::{
 };
 
 pub fn spawn_block_watcher(
+    commit_interval: NonZeroU32,
     config: &Config,
     internal_config: &InternalConfig,
     storage: Database,
@@ -28,7 +30,8 @@ pub fn spawn_block_watcher(
     let (fuel_adapter, fuel_connection_health) =
         create_fuel_adapter(config, internal_config, registry);
 
-    let (block_watcher, rx) = create_block_watcher(config, registry, fuel_adapter, storage);
+    let (block_watcher, rx) =
+        create_block_watcher(commit_interval, config, registry, fuel_adapter, storage);
 
     let handle = schedule_polling(
         internal_config.fuel_polling_interval,
@@ -156,6 +159,7 @@ fn create_fuel_adapter(
 }
 
 fn create_block_watcher(
+    commit_interval: NonZeroU32,
     config: &Config,
     registry: &Registry,
     fuel_adapter: FuelApi,
@@ -166,7 +170,7 @@ fn create_block_watcher(
 ) {
     let (tx_fuel_block, rx_fuel_block) = tokio::sync::mpsc::channel(100);
     let block_watcher = BlockWatcher::new(
-        config.eth.commit_interval,
+        commit_interval,
         tx_fuel_block,
         fuel_adapter,
         storage,

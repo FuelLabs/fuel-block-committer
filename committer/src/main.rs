@@ -26,7 +26,7 @@ pub type Validator = validator::BlockValidator;
 async fn main() -> Result<()> {
     setup_logger();
 
-    let mut config = config::parse()?;
+    let config = config::parse()?;
 
     let storage = setup_storage(&config).await?;
 
@@ -38,9 +38,10 @@ async fn main() -> Result<()> {
     let (ethereum_rpc, eth_health_check) =
         create_l1_adapter(&config, &internal_config, &metrics_registry).await?;
 
-    config.set_commit_interval(ethereum_rpc.commit_interval()?);
+    let commit_interval = ethereum_rpc.commit_interval();
 
     let (rx_fuel_block, block_watcher_handle, fuel_health_check) = spawn_block_watcher(
+        commit_interval,
         &config,
         &internal_config,
         storage.clone(),

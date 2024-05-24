@@ -61,8 +61,8 @@ impl EthApi for WsConnection {
         Ok(self.provider.get_balance(address, None).await?)
     }
 
-    fn commit_interval(&self) -> Result<NonZeroU32> {
-        Ok(self.commit_interval)
+    fn commit_interval(&self) -> NonZeroU32 {
+        self.commit_interval
     }
 
     fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
@@ -115,8 +115,9 @@ impl WsConnection {
         let commit_interval = u32::try_from(interval_u256)
             .map_err(|e| Error::Other(e.to_string()))
             .and_then(|value| {
-                NonZeroU32::new(value)
-                    .ok_or_else(|| Error::Other("l1 contract reported a commit interval of 0"))
+                NonZeroU32::new(value).ok_or_else(|| {
+                    Error::Other("l1 contract reported a commit interval of 0".to_string())
+                })
             })?;
 
         Ok(Self {

@@ -103,7 +103,7 @@ mod tests {
             self.contract.event_streamer(height)
         }
 
-        fn commit_interval(&self) -> ports::l1::Result<NonZeroU32> {
+        fn commit_interval(&self) -> NonZeroU32 {
             self.contract.commit_interval()
         }
     }

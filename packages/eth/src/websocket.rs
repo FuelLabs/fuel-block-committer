@@ -4,6 +4,7 @@ use ports::{
     l1::Result,
     types::{ValidatedFuelBlock, U256},
 };
+use std::num::NonZeroU32;
 use url::Url;
 
 pub use self::event_streamer::EthEventStreamer;
@@ -49,8 +50,8 @@ impl WebsocketClient {
         Ok(self.inner.submit(block).await?)
     }
 
-    pub(crate) fn commit_interval(&self) -> Result<std::num::NonZeroU32> {
-        Ok(self.inner.commit_interval()?)
+    pub(crate) fn commit_interval(&self) -> NonZeroU32 {
+        self.inner.commit_interval()
     }
 
     pub(crate) async fn get_block_number(&self) -> Result<u64> {
