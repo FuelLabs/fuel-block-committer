@@ -12,10 +12,10 @@ rust-version = { workspace = true }
 [dependencies]
 actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
-humantime = { workspace = true }
 config = { workspace = true, features = ["toml", "async"] }
 eth = { workspace = true }
 fuel = { workspace = true }
+humantime = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true }
 serde = { workspace = true }

@@ -21,11 +21,11 @@ tracing = { workspace = true }
 validator = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros"] }
-ports = { workspace = true, features = ["full", "test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
+ports = { workspace = true, features = ["full", "test-helpers"] }
 rand = { workspace = true }
 storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
 validator = { workspace = true, features = ["test-helpers"] }
