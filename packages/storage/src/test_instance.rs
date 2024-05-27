@@ -66,7 +66,8 @@ impl PostgresProcess {
             .with_env_var(("POSTGRES_PASSWORD", &password))
             .with_env_var(("POSTGRES_DB", &initial_db))
             .start()
-            .await;
+            .await
+            .map_err(|e| ports::storage::Error::Database(format!("{e}")))?;
 
         Ok(Self {
             username,
@@ -77,9 +78,15 @@ impl PostgresProcess {
     }
 
     pub async fn create_random_db(&self) -> ports::storage::Result<Postgres> {
+        let port = self
+            .container
+            .get_host_port_ipv4(5432)
+            .await
+            .map_err(|e| ports::storage::Error::Database(format!("{e}")))?;
+
         let mut config = DbConfig {
             host: "localhost".to_string(),
-            port: self.container.get_host_port_ipv4(5432).await,
+            port,
             username: self.username.clone(),
             password: self.password.clone(),
             database: self.initial_db.clone(),
