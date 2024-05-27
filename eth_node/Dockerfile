@@ -6,7 +6,6 @@ RUN git clone --no-checkout https://github.com/FuelLabs/fuel-bridge \
   && cd packages/solidity-contracts \
   && rm -rf deploy deployments exports test \
   && cd contracts \
-  && sed 's/\(BLOCKS_PER_COMMIT_INTERVAL\) = 10800/\1 = 3/g' -i ./fuelchain/FuelChainState.sol \
   && sed 's/\(TIME_TO_FINALIZE\) = 10800/\1 = 1/g' -i ./fuelchain/FuelChainState.sol
 
 FROM alpine:3.19.1

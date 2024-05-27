@@ -76,6 +76,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
     use std::time::Duration;
 
     use mockall::predicate;
@@ -100,6 +101,10 @@ mod tests {
         }
         fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
             self.contract.event_streamer(height)
+        }
+
+        fn commit_interval(&self) -> NonZeroU32 {
+            self.contract.commit_interval()
         }
     }
 

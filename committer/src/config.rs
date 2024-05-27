@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf, str::FromStr, time::Duration};
+use std::{net::Ipv4Addr, path::PathBuf, str::FromStr, time::Duration};
 
 use clap::{command, Parser};
 use eth::{Address, Chain};
@@ -34,8 +34,6 @@ pub struct EthConfig {
     pub chain_id: Chain,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
-    /// The number of fuel blocks between ethereum commits. If set to 1, then every block should be pushed to Ethereum.
-    pub commit_interval: NonZeroU32,
 }
 
 fn parse_chain_id<'de, D>(deserializer: D) -> Result<Chain, D::Error>

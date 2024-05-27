@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use anyhow::{anyhow, Result};
     use eth::{Chain, WebsocketClient};
     use fuel::HttpClient;
     use ports::fuel::{Api, FuelPublicKey};
+    use ports::l1::Contract;
+    use std::time::Duration;
     use validator::{BlockValidator, Validator};
 
     const FUEL_NODE_PORT: u16 = 4000;
@@ -20,12 +20,13 @@ mod tests {
             Chain::AnvilHardhat,
             "0xdAad669b06d79Cb48C8cfef789972436dBe6F24d".parse()?,
             "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36",
-            3.try_into()?,
             10,
         )
         .await?;
 
-        provider.produce_blocks(3).await?;
+        provider
+            .produce_blocks(fuel_contract.commit_interval().into())
+            .await?;
 
         // time enough to fwd the block to ethereum and for the TIME_TO_FINALIZE (1s) to elapse
         tokio::time::sleep(Duration::from_secs(5)).await;

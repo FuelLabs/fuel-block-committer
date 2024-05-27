@@ -15,6 +15,7 @@ use setup::{
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
+use ports::l1::Contract;
 
 pub type L1 = eth::WebsocketClient;
 pub type Database = storage::Postgres;
@@ -34,16 +35,19 @@ async fn main() -> Result<()> {
 
     let metrics_registry = Registry::default();
 
+    let (ethereum_rpc, eth_health_check) =
+        create_l1_adapter(&config, &internal_config, &metrics_registry).await?;
+
+    let commit_interval = ethereum_rpc.commit_interval();
+
     let (rx_fuel_block, block_watcher_handle, fuel_health_check) = spawn_block_watcher(
+        commit_interval,
         &config,
         &internal_config,
         storage.clone(),
         &metrics_registry,
         cancel_token.clone(),
     );
-
-    let (ethereum_rpc, eth_health_check) =
-        create_l1_adapter(&config, &internal_config, &metrics_registry).await?;
 
     let wallet_balance_tracker_handle = spawn_wallet_balance_tracker(
         &internal_config,
