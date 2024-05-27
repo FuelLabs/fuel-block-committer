@@ -8,14 +8,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use validator::BlockValidator;
 
-use crate::{
-    config::{Config, InternalConfig},
-    errors::Result,
-    Database, FuelApi, L1,
-};
+use crate::{config, errors::Result, Database, FuelApi, L1};
 
 pub fn wallet_balance_tracker(
-    internal_config: &InternalConfig,
+    internal_config: &config::Internal,
     registry: &Registry,
     l1: L1,
     cancel_token: CancellationToken,
@@ -33,7 +29,7 @@ pub fn wallet_balance_tracker(
 }
 
 pub fn l1_event_listener(
-    internal_config: &InternalConfig,
+    internal_config: &config::Internal,
     l1: L1,
     storage: Database,
     registry: &Registry,
@@ -54,8 +50,8 @@ pub fn block_committer(
     l1: L1,
     storage: impl Storage + 'static,
     fuel: FuelApi,
-    config: &Config,
-    internal_config: &InternalConfig,
+    config: &config::Config,
+    internal_config: &config::Internal,
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
@@ -75,8 +71,8 @@ pub fn block_committer(
 }
 
 pub async fn l1_adapter(
-    config: &Config,
-    internal_config: &InternalConfig,
+    config: &config::Config,
+    internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
     let l1 = L1::connect(
@@ -120,8 +116,8 @@ fn schedule_polling(
 }
 
 pub fn fuel_adapter(
-    config: &Config,
-    internal_config: &InternalConfig,
+    config: &config::Config,
+    internal_config: &config::Internal,
     registry: &Registry,
 ) -> (FuelApi, HealthChecker) {
     let fuel_adapter = FuelApi::new(
@@ -144,7 +140,7 @@ pub fn logger() {
         .init();
 }
 
-pub async fn storage(config: &Config) -> Result<Database> {
+pub async fn storage(config: &config::Config) -> Result<Database> {
     let postgres = Database::connect(&config.app.db).await?;
     postgres.migrate().await?;
 

@@ -39,7 +39,7 @@ impl From<ports::l1::Error> for Error {
     fn from(error: ports::l1::Error) -> Self {
         match error {
             ports::l1::Error::Network(e) => Self::Network(e),
-            _ => Self::Other(error.to_string()),
+            ports::l1::Error::Other(e) => Self::Other(e),
         }
     }
 }
@@ -57,8 +57,7 @@ impl From<services::Error> for Error {
         match error {
             services::Error::Network(e) => Self::Network(e),
             services::Error::Storage(e) => Self::Storage(e),
-            services::Error::BlockValidation(e) => Self::Other(e),
-            services::Error::Other(e) => Self::Other(e),
+            services::Error::BlockValidation(e) | services::Error::Other(e) => Self::Other(e),
         }
     }
 }

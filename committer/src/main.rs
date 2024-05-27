@@ -5,7 +5,6 @@ mod errors;
 mod setup;
 
 use api::launch_api_server;
-use config::InternalConfig;
 use errors::Result;
 use metrics::prometheus::Registry;
 use tokio_util::sync::CancellationToken;
@@ -25,7 +24,7 @@ async fn main() -> Result<()> {
 
     let storage = setup::storage(&config).await?;
 
-    let internal_config = InternalConfig::default();
+    let internal_config = config::Internal::default();
     let cancel_token = CancellationToken::new();
 
     let metrics_registry = Registry::default();
