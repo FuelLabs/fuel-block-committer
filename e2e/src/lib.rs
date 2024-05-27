@@ -39,7 +39,6 @@ mod tests {
 
         let validated_block = BlockValidator::new(producer_public_key).validate(&latest_block)?;
 
-        eprintln!("About to check validation");
         assert!(fuel_contract.finalized(validated_block).await?);
 
         Ok(())
