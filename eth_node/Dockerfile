@@ -2,11 +2,10 @@ FROM alpine:3.19.1 AS fetcher
 RUN apk add --no-cache git 
 RUN git clone --no-checkout https://github.com/FuelLabs/fuel-bridge \
   && cd fuel-bridge \
-  && git checkout c23b1f4 \
+  && git checkout 85a54c9 \
   && cd packages/solidity-contracts \
   && rm -rf deploy deployments exports test \
   && cd contracts \
-  && sed 's/\(BLOCKS_PER_COMMIT_INTERVAL\) = 10800/\1 = 3/g' -i ./fuelchain/FuelChainState.sol \
   && sed 's/\(TIME_TO_FINALIZE\) = 10800/\1 = 1/g' -i ./fuelchain/FuelChainState.sol
 
 FROM alpine:3.19.1

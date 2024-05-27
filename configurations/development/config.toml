@@ -2,7 +2,6 @@
 wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36"
 chain_id = "hardhat"
 state_contract_address = "0xdAad669b06d79Cb48C8cfef789972436dBe6F24d"
-commit_interval = 3
 rpc = "ws://localhost:8089"
 
 [fuel]
@@ -12,6 +11,7 @@ block_producer_public_key = "0x73dc6cc8cc0041e4924954b35a71a22ccb520664c522198a6
 [app]
 port = 8080
 host = "0.0.0.0"
+block_check_interval = "1s"
 
 [app.db]
 host = "localhost"

@@ -10,6 +10,7 @@ use metrics::prometheus::Registry;
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
+use ports::l1::Contract;
 
 pub type L1 = eth::WebsocketClient;
 pub type Database = storage::Postgres;
@@ -35,6 +36,8 @@ async fn main() -> Result<()> {
     let (ethereum_rpc, eth_health_check) =
         setup::l1_adapter(&config, &internal_config, &metrics_registry).await?;
 
+    let commit_interval = ethereum_rpc.commit_interval();
+
     let wallet_balance_tracker_handle = setup::wallet_balance_tracker(
         &internal_config,
         &metrics_registry,
@@ -43,11 +46,11 @@ async fn main() -> Result<()> {
     );
 
     let committer_handle = setup::block_committer(
+        commit_interval,
         ethereum_rpc.clone(),
         storage.clone(),
         fuel_adapter,
         &config,
-        &internal_config,
         &metrics_registry,
         cancel_token.clone(),
     );

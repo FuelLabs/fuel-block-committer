@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, num::NonZeroU32, path::PathBuf, str::FromStr, time::Duration};
+use std::{net::Ipv4Addr, path::PathBuf, str::FromStr, time::Duration};
 
 use clap::{command, Parser};
 use eth::{Address, Chain};
@@ -34,8 +34,6 @@ pub struct Eth {
     pub chain_id: Chain,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
-    /// The number of fuel blocks between ethereum commits. If set to 1, then every block should be pushed to Ethereum.
-    pub commit_interval: NonZeroU32,
 }
 
 fn parse_chain_id<'de, D>(deserializer: D) -> Result<Chain, D::Error>
@@ -68,11 +66,24 @@ pub struct App {
     pub host: Ipv4Addr,
     /// Postgres database configuration
     pub db: DbConfig,
+    /// How often to check the latest fuel block
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub block_check_interval: Duration,
+}
+
+fn human_readable_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration_str: String = Deserialize::deserialize(deserializer).unwrap();
+    humantime::parse_duration(&duration_str).map_err(|e| {
+        let msg = format!("Failed to parse duration '{duration_str}': {e};");
+        serde::de::Error::custom(msg)
+    })
 }
 
 #[derive(Debug, Clone)]
 pub struct Internal {
-    pub fuel_polling_interval: Duration,
     pub fuel_errors_before_unhealthy: usize,
     pub between_eth_event_stream_restablishing_attempts: Duration,
     pub eth_errors_before_unhealthy: usize,
@@ -82,7 +93,6 @@ pub struct Internal {
 impl Default for Internal {
     fn default() -> Self {
         Self {
-            fuel_polling_interval: Duration::from_secs(30),
             fuel_errors_before_unhealthy: 3,
             between_eth_event_stream_restablishing_attempts: Duration::from_secs(3),
             eth_errors_before_unhealthy: 3,

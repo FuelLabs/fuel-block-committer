@@ -1,7 +1,13 @@
 #!/bin/sh
 set -e
+
 PORT="9545"
 IP="0.0.0.0"
+
+# Deployment needs to be done every time the container starts
+if [[ -f /contracts_deployed ]]; then
+	rm /contracts_deployed
+fi
 
 # Functions
 

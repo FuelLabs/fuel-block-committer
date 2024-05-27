@@ -50,6 +50,7 @@ serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 sqlx = { version = "0.7.4", default-features = false }
 tai64 = { version = "4.0.0", default-features = false }
+humantime = { version = "2.1", default-features = false }
 testcontainers = { version = "0.17", default-features = false }
 thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.37", default-features = false }

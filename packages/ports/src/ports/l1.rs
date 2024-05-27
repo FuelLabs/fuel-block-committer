@@ -25,6 +25,7 @@ impl From<InvalidL1Height> for Error {
 pub trait Contract: Send + Sync {
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
+    fn commit_interval(&self) -> std::num::NonZeroU32;
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]

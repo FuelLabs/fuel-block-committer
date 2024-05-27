@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
@@ -47,23 +48,22 @@ pub fn l1_event_listener(
 }
 
 pub fn block_committer(
+    commit_interval: NonZeroU32,
     l1: L1,
     storage: impl Storage + 'static,
     fuel: FuelApi,
     config: &config::Config,
-    internal_config: &config::Internal,
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(config.fuel.block_producer_public_key);
 
-    let block_committer =
-        BlockCommitter::new(l1, storage, fuel, validator, config.eth.commit_interval);
+    let block_committer = BlockCommitter::new(l1, storage, fuel, validator, commit_interval);
 
     block_committer.register_metrics(registry);
 
     schedule_polling(
-        internal_config.fuel_polling_interval,
+        config.app.block_check_interval,
         block_committer,
         "Block Committer",
         cancel_token,
@@ -80,7 +80,6 @@ pub async fn l1_adapter(
         config.eth.chain_id,
         config.eth.state_contract_address,
         &config.eth.wallet_key,
-        config.eth.commit_interval,
         internal_config.eth_errors_before_unhealthy,
     )
     .await?;

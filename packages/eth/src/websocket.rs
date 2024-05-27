@@ -1,11 +1,10 @@
-use std::num::NonZeroU32;
-
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use ethers::types::{Address, Chain};
 use ports::{
     l1::Result,
     types::{ValidatedFuelBlock, U256},
 };
+use std::num::NonZeroU32;
 use url::Url;
 
 pub use self::event_streamer::EthEventStreamer;
@@ -29,12 +28,9 @@ impl WebsocketClient {
         chain_id: Chain,
         contract_address: Address,
         wallet_key: &str,
-        commit_interval: NonZeroU32,
         unhealthy_after_n_errors: usize,
     ) -> ports::l1::Result<Self> {
-        let provider =
-            WsConnection::connect(url, chain_id, contract_address, wallet_key, commit_interval)
-                .await?;
+        let provider = WsConnection::connect(url, chain_id, contract_address, wallet_key).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
@@ -52,6 +48,10 @@ impl WebsocketClient {
 
     pub(crate) async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
         Ok(self.inner.submit(block).await?)
+    }
+
+    pub(crate) fn commit_interval(&self) -> NonZeroU32 {
+        self.inner.commit_interval()
     }
 
     pub(crate) async fn get_block_number(&self) -> Result<u64> {
