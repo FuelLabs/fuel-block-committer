@@ -10,15 +10,18 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-fuel-crypto = { workspace = true, optional = true }
 fuel-core-client = { workspace = true }
+fuel-crypto = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+fuel-crypto = { workspace = true, features = ["random"] }
+rand = { workspace = true, features = ["std", "std_rng"] }
 tai64 = { workspace = true }
+validator = { workspace = true, features = ["validator", "test-helpers"] }
 
 [features]
 validator = ["dep:fuel-crypto"]

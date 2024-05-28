@@ -15,6 +15,7 @@ clap = { workspace = true, features = ["derive"] }
 config = { workspace = true, features = ["toml", "async"] }
 eth = { workspace = true }
 fuel = { workspace = true }
+humantime = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true }
 serde = { workspace = true }

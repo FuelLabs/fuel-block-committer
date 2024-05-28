@@ -22,7 +22,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-ports = { workspace = true, features = ["l1"] }
+ports = { workspace = true, features = ["l1", "test-helpers"] }
 tokio = { workspace = true, features = ["macros"] }
 
 [features]

@@ -12,5 +12,5 @@ pub use block_submission::*;
 #[cfg(feature = "l1")]
 pub use fuel_block_committed_on_l1::*;
 pub use l1_height::*;
-#[cfg(feature = "fuel")]
+#[cfg(any(feature = "fuel", feature = "l1"))]
 pub use validator::block::*;

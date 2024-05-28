@@ -1,4 +1,3 @@
-#![deny(unused_crate_dependencies)]
 pub mod block;
 #[cfg(feature = "validator")]
 mod validator;

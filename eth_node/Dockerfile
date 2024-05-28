@@ -2,7 +2,7 @@ FROM alpine:3.19.1 AS fetcher
 RUN apk add --no-cache git 
 RUN git clone --no-checkout https://github.com/FuelLabs/fuel-bridge \
   && cd fuel-bridge \
-  && git checkout c23b1f4 \
+  && git checkout 85a54c9 \
   && cd packages/solidity-contracts \
   && rm -rf deploy deployments exports test \
   && cd contracts \

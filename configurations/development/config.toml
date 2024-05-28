@@ -11,6 +11,7 @@ block_producer_public_key = "0x73dc6cc8cc0041e4924954b35a71a22ccb520664c522198a6
 [app]
 port = 8080
 host = "0.0.0.0"
+block_check_interval = "1s"
 
 [app.db]
 host = "localhost"

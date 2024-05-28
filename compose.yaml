@@ -38,6 +38,14 @@ services:
       interval: 2s
       timeout: 30s
 
+  postgres:
+    image: postgres:latest
+    container_name: committer-db
+    environment:
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: test
+
   block_committer:
     container_name: block-committer
     depends_on:
@@ -62,14 +70,6 @@ services:
       retries: 50
       interval: 2s
       timeout: 30s
-    
-
-  postgres:
-    image: postgres:latest
-    environment:
-      POSTGRES_USER: username
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: test
 
 networks:
   default:

@@ -8,13 +8,13 @@ use url::Url;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub eth: EthConfig,
-    pub fuel: FuelConfig,
-    pub app: AppConfig,
+    pub eth: Eth,
+    pub fuel: Fuel,
+    pub app: App,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct FuelConfig {
+pub struct Fuel {
     /// URL to a fuel-core graphql endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub graphql_endpoint: Url,
@@ -23,7 +23,7 @@ pub struct FuelConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct EthConfig {
+pub struct Eth {
     /// The secret key authorized by the L1 bridging contracts to post block commitments.
     pub wallet_key: String,
     /// URL to a Ethereum RPC endpoint.
@@ -59,28 +59,40 @@ where
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AppConfig {
+pub struct App {
     /// Port used by the started server
     pub port: u16,
     /// IPv4 address on which the server will listen for connections
     pub host: Ipv4Addr,
     /// Postgres database configuration
     pub db: DbConfig,
+    /// How often to check the latest fuel block
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub block_check_interval: Duration,
+}
+
+fn human_readable_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration_str: String = Deserialize::deserialize(deserializer).unwrap();
+    humantime::parse_duration(&duration_str).map_err(|e| {
+        let msg = format!("Failed to parse duration '{duration_str}': {e};");
+        serde::de::Error::custom(msg)
+    })
 }
 
 #[derive(Debug, Clone)]
-pub struct InternalConfig {
-    pub fuel_polling_interval: Duration,
+pub struct Internal {
     pub fuel_errors_before_unhealthy: usize,
     pub between_eth_event_stream_restablishing_attempts: Duration,
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
 }
 
-impl Default for InternalConfig {
+impl Default for Internal {
     fn default() -> Self {
         Self {
-            fuel_polling_interval: Duration::from_secs(3),
             fuel_errors_before_unhealthy: 3,
             between_eth_event_stream_restablishing_attempts: Duration::from_secs(3),
             eth_errors_before_unhealthy: 3,
