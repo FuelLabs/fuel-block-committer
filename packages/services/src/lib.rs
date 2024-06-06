@@ -3,12 +3,14 @@ mod block_committer;
 mod commit_listener;
 mod health_reporter;
 mod status_reporter;
+mod transaction_committer;
 mod wallet_balance_tracker;
 
 pub use block_committer::BlockCommitter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use status_reporter::StatusReporter;
+pub use transaction_committer::TransactionCommitter;
 pub use wallet_balance_tracker::WalletBalanceTracker;
 
 #[derive(thiserror::Error, Debug)]
