@@ -7,7 +7,7 @@ pub use test_instance::*;
 
 mod error;
 mod postgres;
-use ports::types::BlockSubmission;
+use ports::types::{BlockSubmission, StateFragment, StateSubmission};
 pub use postgres::*;
 
 #[async_trait::async_trait]
@@ -25,6 +25,14 @@ impl ports::storage::Storage for postgres::Postgres {
         fuel_block_hash: [u8; 32],
     ) -> ports::storage::Result<BlockSubmission> {
         Ok(self._set_submission_completed(fuel_block_hash).await?)
+    }
+
+    async fn insert_state(
+        &self,
+        state: StateSubmission,
+        fragments: StateFragment,
+    ) -> ports::storage::Result<()> {
+        Ok(self._insert_state(state, fragments).await?)
     }
 }
 

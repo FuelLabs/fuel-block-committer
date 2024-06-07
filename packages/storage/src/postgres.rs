@@ -1,4 +1,4 @@
-use ports::types::BlockSubmission;
+use ports::types::{BlockSubmission, StateFragment, StateSubmission};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
@@ -104,5 +104,29 @@ impl Postgres {
             let hash = hex::encode(fuel_block_hash);
             Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
         }
+    }
+
+    pub(crate) async fn _insert_state(
+        &self,
+        state: StateSubmission,
+        fragments: StateFragment,
+    ) -> Result<()> {
+        let state_row = tables::StateSubmission::from(state);
+        let fragment_row = tables::StateFragment::from(fragments);
+
+        sqlx::query!(
+            "INSERT INTO state_submission (state_root, submittal_height, completed) VALUES ($1, $2, $3)",
+            state_row.state_root,
+            state_row.submittal_height,
+            state_row.completed
+        ).execute(&self.connection_pool).await?;
+
+        sqlx::query!(
+            "INSERT INTO state_fragment (state_root, fragment) VALUES ($1, $2)",
+            fragment_row.state_root,
+            fragment_row.fragment
+        ).execute(&self.connection_pool).await?;
+
+        Ok(())
     }
 }

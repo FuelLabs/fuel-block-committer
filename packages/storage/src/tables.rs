@@ -1,4 +1,4 @@
-use ports::types::BlockSubmission;
+use ports::types::{BlockSubmission, StateFragment, StateSubmission};
 
 #[derive(sqlx::FromRow)]
 pub struct L1FuelBlockSubmission {
@@ -51,5 +51,45 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
             completed: value.completed,
             submittal_height: value.submittal_height.into(),
         }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct L1StateSubmission {
+}
+
+#[derive(sqlx::FromRow)]
+pub struct L1StateFragment {
+}
+
+impl From<L1StateSubmission> for StateSubmission {
+    fn from(value: L1StateSubmission) -> Self {
+        Self {
+        }
+    }
+}
+
+impl From<L1StateFragment> for StateFragment {
+    fn from(value: L1StateFragment) -> Self {
+        Self {
+        }
+    }
+}
+
+impl TryFrom<L1StateSubmission> for StateSubmission {
+    type Error = crate::error::Error;
+
+    fn try_from(value: L1StateSubmission) -> Result<Self, Self::Error> {
+        Ok(Self {
+        })
+    }
+}
+
+impl TryFrom<L1StateFragment> for StateFragment {
+    type Error = crate::error::Error;
+
+    fn try_from(value: L1StateFragment) -> Result<Self, Self::Error> {
+        Ok(Self {
+        })
     }
 }
