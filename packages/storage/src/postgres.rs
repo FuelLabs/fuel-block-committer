@@ -109,23 +109,50 @@ impl Postgres {
     pub(crate) async fn _insert_state(
         &self,
         state: StateSubmission,
-        fragments: StateFragment,
+        fragments: Vec<StateFragment>,
     ) -> Result<()> {
-        let state_row = tables::StateSubmission::from(state);
-        let fragment_row = tables::StateFragment::from(fragments);
+        let state_row = tables::L1StateSubmission::from(state);
+        let fragment_rows = fragments
+            .into_iter()
+            .map(tables::L1StateFragment::from)
+            .collect::<Vec<_>>();
 
+        let mut transaction = self.connection_pool.begin().await?;
+
+        // Insert the state submission
         sqlx::query!(
-            "INSERT INTO state_submission (state_root, submittal_height, completed) VALUES ($1, $2, $3)",
-            state_row.state_root,
+            "INSERT INTO l1_state_submission (state_hash, state_height, completed, submittal_height, num_fragments) VALUES ($1, $2, $3, $4, $5)",
+            state_row.state_hash,
+            state_row.state_height,
+            state_row.completed,
             state_row.submittal_height,
-            state_row.completed
-        ).execute(&self.connection_pool).await?;
+            state_row.num_fragments
+        )
+        .execute(&mut *transaction)
+        .await?;
 
-        sqlx::query!(
-            "INSERT INTO state_fragment (state_root, fragment) VALUES ($1, $2)",
-            fragment_row.state_root,
-            fragment_row.fragment
-        ).execute(&self.connection_pool).await?;
+        // Insert the state fragments
+        let values: Vec<String> = fragment_rows
+            .iter()
+            .map(|fragment_row| {
+                format!(
+                    "('{}', '{:?}', {}, {})",
+                    fragment_row.state_submission,
+                    fragment_row.raw_data,
+                    fragment_row.is_completed,
+                    fragment_row.fragment_index
+                )
+            })
+            .collect();
+
+        let query = format!(
+            "INSERT INTO l1_state_fragment (state_submission, raw_data, is_completed, fragment_index) VALUES {}",
+            values.join(",")
+        );
+
+        sqlx::query(&query).execute(&mut *transaction).await?;
+
+        transaction.commit().await?;
 
         Ok(())
     }

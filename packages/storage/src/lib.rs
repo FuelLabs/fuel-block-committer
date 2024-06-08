@@ -30,7 +30,7 @@ impl ports::storage::Storage for postgres::Postgres {
     async fn insert_state(
         &self,
         state: StateSubmission,
-        fragments: StateFragment,
+        fragments: Vec<StateFragment>,
     ) -> ports::storage::Result<()> {
         Ok(self._insert_state(state, fragments).await?)
     }

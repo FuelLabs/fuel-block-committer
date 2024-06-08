@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use ports::{fuel::FuelBlock, storage::Storage};
+use ports::{fuel::FuelBlock, storage::Storage, types::{StateFragment, StateSubmission}};
 
-use crate::{Runner, Error, Result};
+use crate::{Result, Runner};
 
 pub struct TransactionCommitter<L1, Db, A> {
     l1_adapter: L1,
@@ -33,14 +33,29 @@ where
         Ok(latest_block)
     }
 
-    async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
-        let submittal_height = self.l1_adapter.get_block_number().await?;
+    fn block_to_state_submission(&self, block: FuelBlock) -> Result<(StateSubmission, Vec<StateFragment>)> {
+        // placeholder data
+        let raw_data = vec![1u8; 50000];
 
-        // register submission in DB
+        let fragment = StateFragment {
+            raw_data,
+            fragment_index: 0,
+            state_submission: block.header.height,
+            is_completed: false,
+        };
+        
+        let submission = StateSubmission {
+            fuel_block_height: block.header.height,
+            is_completed: false,
+            num_fragments: 1,
+        };
+        
+        Ok((submission, vec![fragment]))
+    }
 
-        /// blob adapter submit
-        //self.l1_adapter
-
+    async fn submit_state(&self, block: FuelBlock) -> Result<()> {
+        let (submission, fragments) = self.block_to_state_submission(block)?;
+        self.storage.insert_state(submission, fragments).await?;
         Ok(())
     }
 }
@@ -54,7 +69,7 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let block = self.fetch_latest_block().await?;
-        self.submit_block(block).await?;
+        self.submit_state(block).await?;
 
         Ok(())
     }
