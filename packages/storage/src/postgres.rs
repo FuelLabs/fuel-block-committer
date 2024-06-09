@@ -121,12 +121,10 @@ impl Postgres {
 
         // Insert the state submission
         sqlx::query!(
-            "INSERT INTO l1_state_submission (state_hash, state_height, completed, submittal_height, num_fragments) VALUES ($1, $2, $3, $4, $5)",
-            state_row.state_hash,
-            state_row.state_height,
-            state_row.completed,
-            state_row.submittal_height,
-            state_row.num_fragments
+            "INSERT INTO l1_state_submission (fuel_block_hash, fuel_block_height, completed) VALUES ($1, $2, $3)",
+            state_row.fuel_block_hash,
+            state_row.fuel_block_height,
+            state_row.is_completed,
         )
         .execute(&mut *transaction)
         .await?;
@@ -136,8 +134,8 @@ impl Postgres {
             .iter()
             .map(|fragment_row| {
                 format!(
-                    "('{}', '{:?}', {}, {})",
-                    fragment_row.state_submission,
+                    "('{:?}', '{:?}', {}, {})",
+                    fragment_row.fuel_block_hash,
                     fragment_row.raw_data,
                     fragment_row.is_completed,
                     fragment_row.fragment_index
@@ -146,7 +144,7 @@ impl Postgres {
             .collect();
 
         let query = format!(
-            "INSERT INTO l1_state_fragment (state_submission, raw_data, is_completed, fragment_index) VALUES {}",
+            "INSERT INTO l1_state_fragment (block_hash, fragment_index, raw_data, is_completed) VALUES {}",
             values.join(",")
         );
 
