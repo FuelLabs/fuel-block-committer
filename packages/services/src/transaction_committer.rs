@@ -3,25 +3,22 @@ use ports::{fuel::FuelBlock, storage::Storage, types::{StateFragment, StateSubmi
 
 use crate::{Result, Runner};
 
-pub struct TransactionCommitter<L1, Db, A> {
-    l1_adapter: L1,
+pub struct TransactionCommitter<Db, A> {
     storage: Db,
     fuel_adapter: A,
 }
 
-impl<L1, Db, A> TransactionCommitter<L1, Db, A> {
-    pub fn new(l1: L1, storage: Db, fuel_adapter: A) -> Self {
+impl<Db, A> TransactionCommitter<Db, A> {
+    pub fn new(storage: Db, fuel_adapter: A) -> Self {
         Self {
-            l1_adapter: l1,
             storage,
             fuel_adapter,
         }
     }
 }
 
-impl<L1, Db, A> TransactionCommitter<L1, Db, A>
+impl<Db, A> TransactionCommitter<Db, A>
 where
-    L1: ports::l1::Api,
     Db: Storage,
     A: ports::fuel::Api,
 {
@@ -40,14 +37,14 @@ where
         let fragment = StateFragment {
             raw_data,
             fragment_index: 0,
-            state_submission: block.header.height,
-            is_completed: false,
+            completed: false,
+            block_hash: *block.id,
         };
         
         let submission = StateSubmission {
-            fuel_block_height: block.header.height,
-            is_completed: false,
-            num_fragments: 1,
+            block_hash: *block.header.id,
+            block_height: block.header.height,
+            completed: false,
         };
         
         Ok((submission, vec![fragment]))
@@ -61,15 +58,60 @@ where
 }
 
 #[async_trait]
-impl<L1, Db, Fuel> Runner for TransactionCommitter<L1, Db, Fuel>
+impl<Db, Fuel> Runner for TransactionCommitter<Db, Fuel>
 where
-    L1: ports::l1::Api + Send + Sync,
     Db: Storage,
     Fuel: ports::fuel::Api,
 {
     async fn run(&mut self) -> Result<()> {
         let block = self.fetch_latest_block().await?;
         self.submit_state(block).await?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ports::fuel::{FuelBytes32, MockApi as FuelMockApi};
+    use storage::PostgresProcess;
+    use tai64::Tai64;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_submit_state() -> Result<()> {
+        let fuel_mock = FuelMockApi::new();
+
+        let id = FuelBytes32::from([1u8; 32]);
+        let header = ports::fuel::FuelHeader {
+            id,
+            da_height: 0,
+            consensus_parameters_version: Default::default(),
+            state_transition_bytecode_version: Default::default(),
+            transactions_count: 1,
+            message_receipt_count: 0,
+            transactions_root: Default::default(),
+            message_outbox_root: Default::default(),
+            event_inbox_root: Default::default(),
+            height: 1,
+            prev_root: Default::default(),
+            time: Tai64::now(),
+            application_hash: Default::default(),
+        };
+        let block = FuelBlock {
+            id,
+            header,
+            transactions: vec![],
+            consensus: ports::fuel::FuelConsensus::Unknown,
+            block_producer: Default::default(),
+        };
+
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        let committer = TransactionCommitter::new(db, fuel_mock);
+        
+        committer.submit_state(block).await.unwrap();
 
         Ok(())
     }

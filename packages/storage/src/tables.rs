@@ -59,14 +59,14 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
 pub struct L1StateSubmission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
-    pub is_completed: bool,
+    pub completed: bool,
 }
 
 #[derive(sqlx::FromRow)]
 pub struct L1StateFragment {
     pub fuel_block_hash: Vec<u8>,
     pub raw_data: Vec<u8>,
-    pub is_completed: bool,
+    pub completed: bool,
     pub fragment_index: i64,
 }
 
@@ -90,7 +90,7 @@ impl TryFrom<L1StateSubmission> for StateSubmission {
         Ok(Self {
             block_height,
             block_hash,
-            completed: value.is_completed,
+            completed: value.completed,
         })
     }
 }
@@ -99,7 +99,7 @@ impl From<StateSubmission> for L1StateSubmission {
     fn from(value: StateSubmission) -> Self {
         Self {
             fuel_block_height: i64::from(value.block_height),
-            is_completed: value.completed,
+            completed: value.completed,
             fuel_block_hash: value.block_hash.to_vec(),
         }
     }
@@ -125,7 +125,7 @@ impl TryFrom<L1StateFragment> for StateFragment {
         Ok(Self {
             block_hash,
             raw_data: value.raw_data,
-            is_completed: value.is_completed,
+            completed: value.completed,
             fragment_index,
         })
     }
@@ -136,7 +136,7 @@ impl From<StateFragment> for L1StateFragment {
         Self {
             fuel_block_hash: value.block_hash.to_vec(),
             raw_data: value.raw_data,
-            is_completed: value.is_completed,
+            completed: value.completed,
             fragment_index: i64::from(value.fragment_index),
         }
     }

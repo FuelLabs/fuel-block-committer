@@ -124,7 +124,7 @@ impl Postgres {
             "INSERT INTO l1_state_submission (fuel_block_hash, fuel_block_height, completed) VALUES ($1, $2, $3)",
             state_row.fuel_block_hash,
             state_row.fuel_block_height,
-            state_row.is_completed,
+            state_row.completed,
         )
         .execute(&mut *transaction)
         .await?;
@@ -134,17 +134,17 @@ impl Postgres {
             .iter()
             .map(|fragment_row| {
                 format!(
-                    "('{:?}', '{:?}', {}, {})",
-                    fragment_row.fuel_block_hash,
-                    fragment_row.raw_data,
-                    fragment_row.is_completed,
-                    fragment_row.fragment_index
+                    "('{}', '{}', {}, {})",
+                    hex::encode(&fragment_row.fuel_block_hash),
+                    hex::encode(vec![0u8; 1]),
+                    fragment_row.fragment_index,
+                    fragment_row.completed,
                 )
             })
             .collect();
 
         let query = format!(
-            "INSERT INTO l1_state_fragment (block_hash, fragment_index, raw_data, is_completed) VALUES {}",
+            "INSERT INTO l1_state_fragment (fuel_block_hash, raw_data, fragment_index, completed) VALUES {}",
             values.join(",")
         );
 
