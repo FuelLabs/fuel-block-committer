@@ -22,5 +22,10 @@ pub trait Storage: Send + Sync {
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
 
     // state submission
-    async fn insert_state(&self, state: StateSubmission, fragments: Vec<StateFragment>) -> Result<()>;
+    async fn insert_state(
+        &self,
+        state: StateSubmission,
+        fragments: Vec<StateFragment>,
+    ) -> Result<()>;
+    async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>>;
 }

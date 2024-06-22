@@ -136,7 +136,7 @@ impl Postgres {
                 format!(
                     "('{}', '{}', {}, {})",
                     hex::encode(&fragment_row.fuel_block_hash),
-                    hex::encode(vec![0u8; 1]),
+                    hex::encode(&fragment_row.raw_data),
                     fragment_row.fragment_index,
                     fragment_row.completed,
                 )
@@ -153,5 +153,19 @@ impl Postgres {
         transaction.commit().await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
+        // TODO use blob limit
+        let rows = sqlx::query_as!(
+            tables::L1StateFragment,
+            "SELECT * FROM l1_state_fragment WHERE completed = false LIMIT 6"
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(StateFragment::try_from);
+
+        Ok(rows.collect::<Result<Vec<_>>>()?)
     }
 }

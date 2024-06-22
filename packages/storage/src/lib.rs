@@ -34,6 +34,10 @@ impl ports::storage::Storage for postgres::Postgres {
     ) -> ports::storage::Result<()> {
         Ok(self._insert_state(state, fragments).await?)
     }
+
+    async fn get_unsubmitted_fragments(&self) -> ports::storage::Result<Vec<StateFragment>> {
+        Ok(self._get_unsubmitted_fragments().await?)
+    }
 }
 
 #[cfg(test)]
