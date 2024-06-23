@@ -27,6 +27,7 @@ abigen!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: Provider<Ws>,
+    wallet: LocalWallet,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     commit_interval: NonZeroU32,
     address: H160,
@@ -74,6 +75,12 @@ impl EthApi for WsConnection {
         EthEventStreamer::new(events)
     }
 
+    async fn submit_raw_tx(&self, tx: Vec<u8>) -> Result<()> {
+        self.provider.send_raw_transaction(tx.into()).await?;
+
+        Ok(())
+    }
+
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
         Ok(self
@@ -105,7 +112,7 @@ impl WsConnection {
         let wallet = LocalWallet::from_str(wallet_key)?.with_chain_id(chain_id);
         let address = wallet.address();
 
-        let signer = SignerMiddleware::new(provider.clone(), wallet);
+        let signer = SignerMiddleware::new(provider.clone(), wallet.clone());
 
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FUEL_STATE_CONTRACT::new(contract_address, Arc::new(signer));
@@ -122,6 +129,7 @@ impl WsConnection {
 
         Ok(Self {
             provider,
+            wallet,
             contract,
             commit_interval,
             address,

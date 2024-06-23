@@ -20,6 +20,7 @@ pub trait EthApi {
     async fn balance(&self) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
     fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
+    async fn submit_raw_tx(&self, tx: Vec<u8>) -> Result<()>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -96,6 +97,10 @@ where
 
     fn commit_interval(&self) -> NonZeroU32 {
         self.adapter.commit_interval()
+    }
+
+    async fn submit_raw_tx(&self, tx: Vec<u8>) -> Result<()> {
+        self.adapter.submit_raw_tx(tx).await
     }
 
     #[cfg(feature = "test-helpers")]

@@ -62,6 +62,10 @@ impl WebsocketClient {
         Ok(self.inner.balance().await?)
     }
 
+    pub async fn submit_raw_tx(&self, tx: Vec<u8>) -> Result<()> {
+        Ok(self.inner.submit_raw_tx(tx).await?)
+    }
+
     #[cfg(feature = "test-helpers")]
     pub async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
         Ok(self.inner.finalized(block).await?)
