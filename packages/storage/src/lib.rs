@@ -38,6 +38,14 @@ impl ports::storage::Storage for postgres::Postgres {
     async fn get_unsubmitted_fragments(&self) -> ports::storage::Result<Vec<StateFragment>> {
         Ok(self._get_unsubmitted_fragments().await?)
     }
+
+    async fn insert_pending_tx(&self, tx_hash: [u8; 32]) -> ports::storage::Result<()> {
+        Ok(self._insert_pending_tx(tx_hash).await?)
+    }
+
+    async fn get_pending_txs(&self) -> ports::storage::Result<Vec<[u8; 32]>> {
+        Ok(self._get_pending_txs().await?)
+    }
 }
 
 #[cfg(test)]

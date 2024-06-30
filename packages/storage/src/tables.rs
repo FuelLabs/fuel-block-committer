@@ -141,3 +141,31 @@ impl From<StateFragment> for L1StateFragment {
         }
     }
 }
+
+#[derive(sqlx::FromRow)]
+pub struct L1PendingTransaction {
+    pub transaction_hash: Vec<u8>,
+}
+
+impl TryFrom<L1PendingTransaction> for [u8; 32] {
+    type Error = crate::error::Error;
+
+    fn try_from(value: L1PendingTransaction) -> Result<Self, Self::Error> {
+        let transaction_hash = value.transaction_hash.as_slice();
+        let Ok(transaction_hash) = transaction_hash.try_into() else {
+            bail!(
+                "Expected 32 bytes for `transaction_hash`, but got: {transaction_hash:?} from db",
+            );
+        };
+
+        Ok(transaction_hash)
+    }
+}
+
+impl From<[u8; 32]> for L1PendingTransaction {
+    fn from(value: [u8; 32]) -> Self {
+        Self {
+            transaction_hash: value.to_vec(),
+        }
+    }
+}

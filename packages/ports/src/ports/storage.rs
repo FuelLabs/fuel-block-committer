@@ -28,4 +28,6 @@ pub trait Storage: Send + Sync {
         fragments: Vec<StateFragment>,
     ) -> Result<()>;
     async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>>;
+    async fn insert_pending_tx(&self, tx_hash: [u8; 32]) -> Result<()>;
+    async fn get_pending_txs(&self) -> Result<Vec<[u8; 32]>>;
 }

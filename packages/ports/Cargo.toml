@@ -11,16 +11,13 @@ rust-version = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true, optional = true }
-c-kzg = { workspace = true }
 ethers = { workspace = true }
 ethers-core = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 impl-tools = { workspace = true, optional = true }
-lazy_static = { workspace = true }
 mockall = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-rlp = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true, optional = true }
 validator = { workspace = true, optional = true }

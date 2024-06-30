@@ -80,6 +80,7 @@ pub async fn l1_adapter(
         config.eth.chain_id,
         config.eth.state_contract_address,
         &config.eth.wallet_key,
+        &config.eth.wallet_key, // TODO use different key here
         internal_config.eth_errors_before_unhealthy,
     )
     .await?;

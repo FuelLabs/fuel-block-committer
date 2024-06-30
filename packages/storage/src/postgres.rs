@@ -166,6 +166,30 @@ impl Postgres {
         .into_iter()
         .map(StateFragment::try_from);
 
-        Ok(rows.collect::<Result<Vec<_>>>()?)
+        rows.collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _insert_pending_tx(&self, tx_hash: [u8; 32]) -> Result<()> {
+        sqlx::query!(
+            "INSERT INTO l1_pending_transaction (transaction_hash) VALUES ($1)",
+            tx_hash.as_slice()
+        )
+        .execute(&self.connection_pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<[u8; 32]>> {
+        let rows = sqlx::query_as!(
+            tables::L1PendingTransaction,
+            "SELECT * FROM l1_pending_transaction"
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(<[u8; 32]>::try_from);
+
+        rows.collect::<Result<Vec<_>>>()
     }
 }

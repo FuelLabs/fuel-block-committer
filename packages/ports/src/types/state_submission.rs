@@ -10,3 +10,7 @@ pub struct StateFragment {
     pub raw_data: Vec<u8>,
     pub completed: bool,
 }
+
+impl StateFragment {
+    pub const MAX_FRAGMENT_SIZE: usize = 128 * 1024;
+}

@@ -28,9 +28,17 @@ impl WebsocketClient {
         chain_id: Chain,
         contract_address: Address,
         wallet_key: &str,
+        blobl_pool_wallet_key: &str,
         unhealthy_after_n_errors: usize,
     ) -> ports::l1::Result<Self> {
-        let provider = WsConnection::connect(url, chain_id, contract_address, wallet_key).await?;
+        let provider = WsConnection::connect(
+            url,
+            chain_id,
+            contract_address,
+            wallet_key,
+            blobl_pool_wallet_key,
+        )
+        .await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
@@ -62,8 +70,8 @@ impl WebsocketClient {
         Ok(self.inner.balance().await?)
     }
 
-    pub async fn submit_raw_tx(&self, tx: Vec<u8>) -> Result<()> {
-        Ok(self.inner.submit_raw_tx(tx).await?)
+    pub async fn submit_l2_state(&self, tx: Vec<u8>) -> Result<[u8; 32]> {
+        Ok(self.inner.submit_l2_state(tx).await?)
     }
 
     #[cfg(feature = "test-helpers")]
