@@ -29,6 +29,8 @@ where
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
 
+        // TODO skip if block is already imported
+
         // validate if needed
 
         Ok(latest_block)
@@ -116,7 +118,7 @@ mod tests {
         let block = FuelBlock {
             id,
             header,
-            transactions: vec![[1u8; 32].into()],
+            transactions: vec![[2u8; 32].into()],
             consensus: ports::fuel::FuelConsensus::Unknown,
             block_producer: Default::default(),
         };
@@ -129,6 +131,7 @@ mod tests {
         let fuel_mock = FuelMockApi::new();
 
         let block = given_block();
+        let block_id = *block.id;
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
         let committer = StateImporter::new(db.clone(), fuel_mock);
@@ -137,6 +140,7 @@ mod tests {
 
         let fragments = db.get_unsubmitted_fragments().await?;
         assert_eq!(fragments.len(), 1);
+        assert_eq!(fragments[0].block_hash, block_id);
 
         Ok(())
     }

@@ -136,37 +136,21 @@ impl Postgres {
         .await?;
 
         // Insert the state fragments
-        let values: Vec<String> = fragment_rows
-            .iter()
-            .map(|fragment_row| {
-                format!(
-                    "('{}', '{}', {}, {})",
-                    Self::bytes_to_db_string(&fragment_row.fuel_block_hash),
-                    Self::bytes_to_db_string(&fragment_row.raw_data),
-                    fragment_row.fragment_index,
-                    fragment_row.completed,
-                )
-            })
-            .collect();
-
-        let query = format!(
-            "INSERT INTO l1_state_fragment (fuel_block_hash, raw_data, fragment_index, completed) VALUES {}",
-            values.join(",")
-        );
-
-        sqlx::query(&query).execute(&mut *transaction).await?;
+        for fragment_row in fragment_rows {
+            sqlx::query!(
+                "INSERT INTO l1_state_fragment (fuel_block_hash, raw_data, fragment_index, completed) VALUES ($1, $2, $3, $4)",
+                fragment_row.fuel_block_hash,
+                fragment_row.raw_data,
+                fragment_row.fragment_index,
+                fragment_row.completed,
+            )
+            .execute(&mut *transaction)
+            .await?;
+        }
 
         transaction.commit().await?;
 
         Ok(())
-    }
-
-    fn bytes_to_db_string(bytes: &[u8]) -> String {
-        use std::fmt::Write;
-        bytes.iter().fold(String::new(), |mut output, b| {
-            let _ = write!(output, "{b:x}");
-            output
-        })
     }
 
     pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {

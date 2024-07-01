@@ -84,8 +84,8 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ports::l1::Api for MockL1 {
-        async fn submit_l2_state(&self, _state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
-            Ok([0; 32])
+        async fn submit_l2_state(&self, state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
+            self.api.submit_l2_state(state_data).await
         }
 
         async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
@@ -139,7 +139,7 @@ mod tests {
 
         let tx = db.get_pending_txs().await?;
         assert!(tx.len() == 1);
-        //assert_eq!(tx[0], [1u8; 32]); // mock is not returning the correct value?
+        assert_eq!(tx[0], [1u8; 32]);
 
         Ok(())
     }

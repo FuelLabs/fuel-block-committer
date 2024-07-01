@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS l1_state_submission (
 
 CREATE TABLE IF NOT EXISTS l1_state_fragment (
     fuel_block_hash  BYTEA NOT NULL REFERENCES l1_state_submission(fuel_block_hash) ON DELETE CASCADE,
-    fragment_index   INTEGER NOT NULL,
+    fragment_index   BIGINT NOT NULL,
     raw_data         BYTEA NOT NULL,
     completed        BOOLEAN NOT NULL,
     transaction_hash BYTEA REFERENCES l1_pending_transaction(transaction_hash) ON DELETE SET NULL,

@@ -67,8 +67,8 @@ pub struct L1StateFragment {
     pub fuel_block_hash: Vec<u8>,
     pub transaction_hash: Option<Vec<u8>>,
     pub raw_data: Vec<u8>,
-    pub completed: bool,
     pub fragment_index: i64,
+    pub completed: bool,
 }
 
 impl TryFrom<L1StateSubmission> for StateSubmission {
