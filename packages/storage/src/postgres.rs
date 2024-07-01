@@ -111,6 +111,12 @@ impl Postgres {
         state: StateSubmission,
         fragments: Vec<StateFragment>,
     ) -> Result<()> {
+        if fragments.is_empty() {
+            return Err(Error::Database(
+                "Cannot insert state with no fragments".to_string(),
+            ));
+        }
+
         let state_row = tables::L1StateSubmission::from(state);
         let fragment_rows = fragments
             .into_iter()
@@ -135,8 +141,8 @@ impl Postgres {
             .map(|fragment_row| {
                 format!(
                     "('{}', '{}', {}, {})",
-                    hex::encode(&fragment_row.fuel_block_hash),
-                    hex::encode(&fragment_row.raw_data),
+                    Self::bytes_to_db_string(&fragment_row.fuel_block_hash),
+                    Self::bytes_to_db_string(&fragment_row.raw_data),
                     fragment_row.fragment_index,
                     fragment_row.completed,
                 )
@@ -153,6 +159,14 @@ impl Postgres {
         transaction.commit().await?;
 
         Ok(())
+    }
+
+    fn bytes_to_db_string(bytes: &[u8]) -> String {
+        use std::fmt::Write;
+        bytes.iter().fold(String::new(), |mut output, b| {
+            let _ = write!(output, "{b:x}");
+            output
+        })
     }
 
     pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {

@@ -49,15 +49,16 @@ where
             .chunks(StateFragment::MAX_FRAGMENT_SIZE)
             .enumerate()
             .map(|(index, chunk)| StateFragment {
-                raw_data: chunk.to_vec(),
-                fragment_index: index as u32,
-                completed: false,
                 block_hash: *block.id,
+                transaction_hash: None,
+                fragment_index: index as u32,
+                raw_data: chunk.to_vec(),
+                completed: false,
             })
             .collect::<Vec<StateFragment>>();
 
         let submission = StateSubmission {
-            block_hash: *block.header.id,
+            block_hash: *block.id,
             block_height: block.header.height,
             completed: false,
         };
@@ -65,7 +66,7 @@ where
         Ok((submission, fragments))
     }
 
-    async fn submit_state(&self, block: FuelBlock) -> Result<()> {
+    async fn import_state(&self, block: FuelBlock) -> Result<()> {
         let (submission, fragments) = self.block_to_state_submission(block)?;
         self.storage.insert_state(submission, fragments).await?;
 
@@ -81,7 +82,7 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let block = self.fetch_latest_block().await?;
-        self.submit_state(block).await?;
+        self.import_state(block).await?;
 
         Ok(())
     }
@@ -95,10 +96,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_submit_state() -> Result<()> {
-        let fuel_mock = FuelMockApi::new();
-
+    fn given_block() -> FuelBlock {
         let id = FuelBytes32::from([1u8; 32]);
         let header = ports::fuel::FuelHeader {
             id,
@@ -118,16 +116,27 @@ mod tests {
         let block = FuelBlock {
             id,
             header,
-            transactions: vec![],
+            transactions: vec![[1u8; 32].into()],
             consensus: ports::fuel::FuelConsensus::Unknown,
             block_producer: Default::default(),
         };
 
+        block
+    }
+
+    #[tokio::test]
+    async fn test_import_state() -> Result<()> {
+        let fuel_mock = FuelMockApi::new();
+
+        let block = given_block();
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
-        let committer = StateImporter::new(db, fuel_mock);
+        let committer = StateImporter::new(db.clone(), fuel_mock);
 
-        committer.submit_state(block).await.unwrap();
+        committer.import_state(block).await.unwrap();
+
+        let fragments = db.get_unsubmitted_fragments().await?;
+        assert_eq!(fragments.len(), 1);
 
         Ok(())
     }

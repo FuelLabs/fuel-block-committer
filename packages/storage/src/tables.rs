@@ -65,6 +65,7 @@ pub struct L1StateSubmission {
 #[derive(sqlx::FromRow)]
 pub struct L1StateFragment {
     pub fuel_block_hash: Vec<u8>,
+    pub transaction_hash: Option<Vec<u8>>,
     pub raw_data: Vec<u8>,
     pub completed: bool,
     pub fragment_index: i64,
@@ -114,6 +115,17 @@ impl TryFrom<L1StateFragment> for StateFragment {
             bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
         };
 
+        let transaction_hash = match value.transaction_hash {
+            Some(hash) => {
+                let Ok(hash) = hash.as_slice().try_into() else {
+                    bail!("Expected 32 bytes for `transaction_hash`, but got: {hash:?} from db",);
+                };
+
+                Some(hash)
+            }
+            None => None,
+        };
+
         let fragment_index = value.fragment_index.try_into();
         let Ok(fragment_index) = fragment_index else {
             bail!(
@@ -124,6 +136,7 @@ impl TryFrom<L1StateFragment> for StateFragment {
 
         Ok(Self {
             block_hash,
+            transaction_hash,
             raw_data: value.raw_data,
             completed: value.completed,
             fragment_index,
@@ -135,6 +148,7 @@ impl From<StateFragment> for L1StateFragment {
     fn from(value: StateFragment) -> Self {
         Self {
             fuel_block_hash: value.block_hash.to_vec(),
+            transaction_hash: value.transaction_hash.map(|hash| hash.to_vec()),
             raw_data: value.raw_data,
             completed: value.completed,
             fragment_index: i64::from(value.fragment_index),

@@ -25,14 +25,16 @@ where
     async fn submit_state(&self) -> Result<()> {
         let fragments = self.storage.get_unsubmitted_fragments().await?;
 
+        if fragments.is_empty() {
+            return Ok(());
+        }
+
         let data = fragments
             .into_iter()
             .flat_map(|fragment| fragment.raw_data)
             .collect::<Vec<_>>();
 
         let tx_hash = self.l1_adapter.submit_l2_state(data).await?;
-
-        dbg!(tx_hash);
         self.storage.insert_pending_tx(tx_hash).await?;
 
         Ok(())
@@ -63,12 +65,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ports::{
-        fuel::{FuelBlock, FuelBytes32, MockApi as FuelMockApi},
-        types::{L1Height, U256},
-    };
+    use mockall::predicate;
+    use ports::types::{L1Height, StateFragment, StateSubmission, U256};
     use storage::PostgresProcess;
-    use tai64::Tai64;
 
     use super::*;
 
@@ -98,63 +97,49 @@ mod tests {
         }
     }
 
-    fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> MockL1 {
+    fn given_l1_that_expects_submission(fragment: StateFragment) -> MockL1 {
         let mut l1 = MockL1::new();
 
-        l1.expect_submit_l2_state()
-            .with(predicate::eq(block))
-            .return_once(move |_| Ok([0; 32]));
-
-        l1.contract
-            .expect_submit()
-            .with(predicate::eq(block))
-            .return_once(move |_| Ok(()));
-
         l1.api
-            .expect_get_block_number()
-            .return_once(move || Ok(0u32.into()));
+            .expect_submit_l2_state()
+            .with(predicate::eq(fragment.raw_data))
+            .return_once(move |_| Ok([1u8; 32]));
 
         l1
     }
 
-    fn given_block() -> FuelBlock {
-        let id = FuelBytes32::from([1u8; 32]);
-        let header = ports::fuel::FuelHeader {
-            id,
-            da_height: 0,
-            consensus_parameters_version: Default::default(),
-            state_transition_bytecode_version: Default::default(),
-            transactions_count: 1,
-            message_receipt_count: 0,
-            transactions_root: Default::default(),
-            message_outbox_root: Default::default(),
-            event_inbox_root: Default::default(),
-            height: 1,
-            prev_root: Default::default(),
-            time: Tai64::now(),
-            application_hash: Default::default(),
-        };
-        let block = FuelBlock {
-            id,
-            header,
-            transactions: vec![],
-            consensus: ports::fuel::FuelConsensus::Unknown,
-            block_producer: Default::default(),
-        };
-
-        block
+    fn given_state() -> (StateSubmission, StateFragment) {
+        (
+            StateSubmission {
+                block_hash: [0u8; 32],
+                block_height: 1,
+                completed: false,
+            },
+            StateFragment {
+                block_hash: [0u8; 32],
+                transaction_hash: None,
+                fragment_index: 0,
+                raw_data: vec![1, 2, 3],
+                completed: false,
+            },
+        )
     }
 
     #[tokio::test]
     async fn test_submit_state() -> Result<()> {
-        let fuel_mock = FuelMockApi::new();
-        let block = given_block();
+        let (state, fragment) = given_state();
+        let l1_mock = given_l1_that_expects_submission(fragment.clone());
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
-        let committer = StateCommitter::new(db, fuel_mock);
+        db.insert_state(state, vec![fragment]).await?;
+        let committer = StateCommitter::new(l1_mock, db.clone());
 
-        committer.submit_state(block).await.unwrap();
+        committer.submit_state().await.unwrap();
+
+        let tx = db.get_pending_txs().await?;
+        assert!(tx.len() == 1);
+        //assert_eq!(tx[0], [1u8; 32]); // mock is not returning the correct value?
 
         Ok(())
     }

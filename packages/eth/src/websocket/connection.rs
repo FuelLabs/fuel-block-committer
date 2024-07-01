@@ -179,7 +179,7 @@ impl WsConnection {
             .await?;
 
         let blob_tx = BlobTransaction {
-            to: address.into(),
+            to: address,
             chain_id: self.blob_pool_wallet.chain_id().into(),
             gas_limit,
             nonce,

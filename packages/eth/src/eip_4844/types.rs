@@ -53,7 +53,7 @@ impl BlobSidecar {
         }
 
         let blobs = Self::partition_data(data);
-        let prepared_blobs = blobs.iter().map(|blob| Self::prepare_blob(blob)).collect();
+        let prepared_blobs = blobs.iter().map(Self::prepare_blob).collect();
 
         Ok(Self {
             blobs: prepared_blobs,
@@ -167,18 +167,16 @@ impl BlobTransactionEncoder {
     fn raw_signed(&self, signer: &impl BlobSigner) -> Vec<u8> {
         let tx_bytes = self.encode(None);
         let signature = self.compute_signature(tx_bytes, signer);
-        let signed_tx_bytes = self.encode(Some(signature));
 
-        signed_tx_bytes
+        self.encode(Some(signature))
     }
 
     fn compute_signature(&self, tx_bytes: Vec<u8>, signer: &impl BlobSigner) -> Signature {
-        let message_hash = H256::from(keccak256(&tx_bytes));
-        let signature = signer
-            .sign_hash(message_hash)
-            .expect("signing should not fail");
+        let message_hash = H256::from(keccak256(tx_bytes));
 
-        signature
+        signer
+            .sign_hash(message_hash)
+            .expect("signing should not fail")
     }
 
     fn encode(&self, signature: Option<Signature>) -> Vec<u8> {
