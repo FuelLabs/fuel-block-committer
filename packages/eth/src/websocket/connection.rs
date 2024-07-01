@@ -175,7 +175,7 @@ impl WsConnection {
         // let gas_limit = self.provider.estimate_gas(&estimate_tx, None).await?;
 
         let max_fee_per_blob_gas = self
-            .calculcate_blob_fee(blob_versioned_hashes.len())
+            .calculate_blob_fee(blob_versioned_hashes.len())
             .await?;
 
         let blob_tx = BlobTransaction {
@@ -192,7 +192,7 @@ impl WsConnection {
         Ok(blob_tx)
     }
 
-    async fn calculcate_blob_fee(&self, num_blobs: usize) -> Result<U256> {
+    async fn calculate_blob_fee(&self, num_blobs: usize) -> Result<U256> {
         let latest = self
             .provider
             .get_block(BlockNumber::Latest)
