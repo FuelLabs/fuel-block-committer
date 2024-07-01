@@ -70,6 +70,39 @@ pub fn block_committer(
     )
 }
 
+pub fn state_committer(
+    l1: L1,
+    storage: impl Storage + 'static,
+    _registry: &Registry,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+) -> tokio::task::JoinHandle<()> {
+    let state_committer = services::StateCommitter::new(l1, storage);
+
+    schedule_polling(
+        config.app.block_check_interval,
+        state_committer,
+        "State Committer",
+        cancel_token,
+    )
+}
+
+pub fn state_importer(
+    fuel: FuelApi,
+    storage: impl Storage + 'static,
+    _registry: &Registry,
+    cancel_token: CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    let state_importer = services::StateImporter::new(storage, fuel);
+
+    schedule_polling(
+        Duration::from_secs(10),
+        state_importer,
+        "State Importer",
+        cancel_token,
+    )
+}
+
 pub async fn l1_adapter(
     config: &config::Config,
     internal_config: &config::Internal,
@@ -152,6 +185,8 @@ pub async fn shut_down(
     wallet_balance_tracker_handle: JoinHandle<()>,
     committer_handle: JoinHandle<()>,
     listener_handle: JoinHandle<()>,
+    state_committer_handle: JoinHandle<()>,
+    state_importer_handle: JoinHandle<()>,
     storage: Database,
 ) -> Result<()> {
     cancel_token.cancel();
@@ -160,6 +195,8 @@ pub async fn shut_down(
         wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,
+        state_committer_handle,
+        state_importer_handle,
     ] {
         handle.await?;
     }

@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         commit_interval,
         ethereum_rpc.clone(),
         storage.clone(),
-        fuel_adapter,
+        fuel_adapter.clone(),
         &config,
         &metrics_registry,
         cancel_token.clone(),
@@ -57,7 +57,21 @@ async fn main() -> Result<()> {
 
     let listener_handle = setup::l1_event_listener(
         &internal_config,
+        ethereum_rpc.clone(),
+        storage.clone(),
+        &metrics_registry,
+        cancel_token.clone(),
+    );
+
+    let state_committer_handle = setup::state_committer(
         ethereum_rpc,
+        storage.clone(),
+        &metrics_registry,
+        cancel_token.clone(),
+        &config,
+    );
+    let state_importer_handle = setup::state_importer(
+        fuel_adapter,
         storage.clone(),
         &metrics_registry,
         cancel_token.clone(),
@@ -77,6 +91,8 @@ async fn main() -> Result<()> {
         wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,
+        state_committer_handle,
+        state_importer_handle,
         storage,
     )
     .await

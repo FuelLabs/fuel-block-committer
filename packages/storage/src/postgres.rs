@@ -136,6 +136,7 @@ impl Postgres {
         .await?;
 
         // Insert the state fragments
+        // TODO: optimize this
         for fragment_row in fragment_rows {
             sqlx::query!(
                 "INSERT INTO l1_state_fragment (fuel_block_hash, raw_data, fragment_index, completed) VALUES ($1, $2, $3, $4)",

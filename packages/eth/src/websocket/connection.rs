@@ -174,9 +174,7 @@ impl WsConnection {
         // });
         // let gas_limit = self.provider.estimate_gas(&estimate_tx, None).await?;
 
-        let max_fee_per_blob_gas = self
-            .calculate_blob_fee(blob_versioned_hashes.len())
-            .await?;
+        let max_fee_per_blob_gas = self.calculate_blob_fee(blob_versioned_hashes.len()).await?;
 
         let blob_tx = BlobTransaction {
             to: address,
