@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO l1_state_submission (fuel_block_hash, fuel_block_height, completed) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f68b2767c2f768badcc699e0a730e2721d9be64f5801da7f69925589da850266"
+}

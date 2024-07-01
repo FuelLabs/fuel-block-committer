@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM l1_pending_transaction",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1ef96af7a8e525a1e045fedd898a92bbdf388882f59ee9e309de8a2617ee8979"
+}

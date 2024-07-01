@@ -11,6 +11,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true, optional = true }
+ethers = { workspace = true }
 ethers-core = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }

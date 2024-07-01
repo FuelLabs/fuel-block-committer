@@ -6,6 +6,7 @@ use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
 
+#[derive(Clone)]
 pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
