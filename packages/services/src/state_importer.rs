@@ -115,15 +115,14 @@ mod tests {
             time: Tai64::now(),
             application_hash: Default::default(),
         };
-        let block = FuelBlock {
+
+        FuelBlock {
             id,
             header,
             transactions: vec![[2u8; 32].into()],
             consensus: ports::fuel::FuelConsensus::Unknown,
             block_producer: Default::default(),
-        };
-
-        block
+        }
     }
 
     #[tokio::test]
