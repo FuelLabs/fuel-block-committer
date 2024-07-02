@@ -19,7 +19,7 @@ edition = "2021"
 homepage = "https://fuel.network/"
 license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
-rust-version = "1.77"
+rust-version = "1.79"
 publish = false
 
 [workspace.dependencies]
@@ -51,7 +51,7 @@ serde_json = { version = "1.0", default-features = false }
 sqlx = { version = "0.7.4", default-features = false }
 tai64 = { version = "4.0.0", default-features = false }
 humantime = { version = "2.1", default-features = false }
-testcontainers = { version = "0.17", default-features = false }
+testcontainers = { version = "0.19", default-features = false }
 thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.37", default-features = false }
 tokio-util = { version = "0.7", default-features = false }

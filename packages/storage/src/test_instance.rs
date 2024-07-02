@@ -1,20 +1,29 @@
-use std::sync::{Arc, Weak};
+use std::{
+    borrow::Cow,
+    sync::{Arc, Weak},
+};
 
-use testcontainers::{core::WaitFor, runners::AsyncRunner, Image, RunnableImage};
+use testcontainers::{
+    core::{ContainerPort, WaitFor},
+    runners::AsyncRunner,
+    Image,
+};
 
 use super::postgres::{DbConfig, Postgres};
 
-struct PostgresImage;
+struct PostgresImage {
+    username: String,
+    password: String,
+    initial_db: String,
+}
 
 impl Image for PostgresImage {
-    type Args = ();
-
-    fn name(&self) -> String {
-        "postgres".to_owned()
+    fn name(&self) -> &str {
+        "postgres"
     }
 
-    fn tag(&self) -> String {
-        "latest".to_owned()
+    fn tag(&self) -> &str {
+        "latest"
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
@@ -23,8 +32,18 @@ impl Image for PostgresImage {
         )]
     }
 
-    fn expose_ports(&self) -> Vec<u16> {
-        vec![5432]
+    fn expose_ports(&self) -> &[ContainerPort] {
+        &const { [ContainerPort::Tcp(5432)] }
+    }
+
+    fn env_vars(
+        &self,
+    ) -> impl IntoIterator<Item = (impl Into<Cow<'_, str>>, impl Into<Cow<'_, str>>)> {
+        [
+            ("POSTGRES_USER", self.username.as_str()),
+            ("POSTGRES_PASSWORD", self.password.as_str()),
+            ("POSTGRES_DB", self.initial_db.as_str()),
+        ]
     }
 }
 
@@ -61,13 +80,14 @@ impl PostgresProcess {
         let password = "password".to_string();
         let initial_db = "test".to_string();
 
-        let container = RunnableImage::from(PostgresImage)
-            .with_env_var(("POSTGRES_USER", &username))
-            .with_env_var(("POSTGRES_PASSWORD", &password))
-            .with_env_var(("POSTGRES_DB", &initial_db))
-            .start()
-            .await
-            .map_err(|e| ports::storage::Error::Database(format!("{e}")))?;
+        let container = PostgresImage {
+            username: username.clone(),
+            password: password.clone(),
+            initial_db: initial_db.clone(),
+        }
+        .start()
+        .await
+        .map_err(|e| ports::storage::Error::Database(format!("{e}")))?;
 
         Ok(Self {
             username,
