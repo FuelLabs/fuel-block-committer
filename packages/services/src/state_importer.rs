@@ -82,12 +82,8 @@ where
     }
 
     async fn import_state(&self, block: FuelBlock) -> Result<()> {
-        println!("Importing state...");
-
         let (submission, fragments) = self.block_to_state_submission(block)?;
         self.storage.insert_state(submission, fragments).await?;
-
-        println!("State imported");
 
         Ok(())
     }
@@ -107,7 +103,6 @@ where
         }
 
         if block.transactions.is_empty() {
-            println!("No transactions in block");
             return Ok(());
         }
 

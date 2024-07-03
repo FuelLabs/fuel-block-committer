@@ -63,15 +63,11 @@ where
     Db: Storage,
 {
     async fn run(&mut self) -> Result<()> {
-        println!("Comitting state...");
-
         if self.is_tx_pending().await? {
             return Ok(());
         };
 
         self.submit_state().await?;
-
-        println!("State submitted");
 
         Ok(())
     }
