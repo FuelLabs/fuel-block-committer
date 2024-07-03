@@ -10,7 +10,7 @@ use rlp::RlpStream;
 
 lazy_static! {
     static ref KZG_SETTINGS: c_kzg::KzgSettings = c_kzg::KzgSettings::load_trusted_setup_file(
-        &CString::new("trusted_setup.txt").expect("C string"),
+        &CString::new("packages/eth/src/eip_4844/trusted_setup.txt").expect("C string"),
     )
     .unwrap();
 }
@@ -52,7 +52,8 @@ impl BlobSidecar {
             ));
         }
 
-        let blobs = Self::partition_data(data);
+        let field_elements = Self::partition_data(data);
+        let blobs = Self::field_elements_to_blobs(field_elements);
         let prepared_blobs = blobs.iter().map(Self::prepare_blob).collect();
 
         Ok(Self {
@@ -68,14 +69,37 @@ impl BlobSidecar {
         self.blobs.iter().map(|blob| blob.versioned_hash).collect()
     }
 
-    fn partition_data(data: Vec<u8>) -> Vec<c_kzg::Blob> {
-        data.chunks(c_kzg::BYTES_PER_BLOB)
-            .map(|chunk| {
-                let mut blob = [0u8; c_kzg::BYTES_PER_BLOB];
-                blob[..c_kzg::BYTES_PER_BLOB].copy_from_slice(chunk);
-                blob.into()
-            })
-            .collect()
+    fn partition_data(data: Vec<u8>) -> Vec<[u8; 32]> {
+        let capacity = data.len().div_ceil(31);
+        let mut field_elements = Vec::with_capacity(capacity);
+        for chunk in data.chunks(31) {
+            let mut fe = [0u8; 32];
+            fe[1..1 + chunk.len()].copy_from_slice(chunk);
+            field_elements.push(fe);
+        }
+        field_elements
+    }
+
+    fn field_elements_to_blobs(field_elements: Vec<[u8; 32]>) -> Vec<c_kzg::Blob> {
+        let mut blobs = Vec::new();
+        let mut current_blob = [0u8; c_kzg::BYTES_PER_BLOB];
+        let mut offset = 0;
+
+        for fe in field_elements {
+            if offset + 32 > c_kzg::BYTES_PER_BLOB {
+                blobs.push(current_blob.into());
+                current_blob = [0u8; c_kzg::BYTES_PER_BLOB];
+                offset = 0;
+            }
+            current_blob[offset..offset + 32].copy_from_slice(&fe);
+            offset += 32;
+        }
+
+        if offset > 0 {
+            blobs.push(current_blob.into());
+        }
+
+        blobs
     }
 
     fn prepare_blob(blob: &c_kzg::Blob) -> PreparedBlob {

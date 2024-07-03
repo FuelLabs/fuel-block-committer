@@ -26,6 +26,8 @@ pub struct Fuel {
 pub struct Eth {
     /// The secret key authorized by the L1 bridging contracts to post block commitments.
     pub wallet_key: String,
+    /// The secret key for posting L2 state to L1.
+    pub blob_pool_wallet_key: String,
     /// URL to a Ethereum RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,

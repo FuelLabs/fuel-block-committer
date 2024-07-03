@@ -1,4 +1,4 @@
-use ports::types::{BlockSubmission, StateFragment, StateSubmission};
+use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
@@ -168,13 +168,32 @@ impl Postgres {
         rows.collect::<Result<Vec<_>>>()
     }
 
-    pub(crate) async fn _insert_pending_tx(&self, tx_hash: [u8; 32]) -> Result<()> {
+    pub(crate) async fn _record_pending_tx(
+        &self,
+        tx_hash: [u8; 32],
+        fragment_ids: Vec<StateFragmentId>,
+    ) -> Result<()> {
+        let mut transaction = self.connection_pool.begin().await?;
+
         sqlx::query!(
             "INSERT INTO l1_pending_transaction (transaction_hash) VALUES ($1)",
             tx_hash.as_slice()
         )
-        .execute(&self.connection_pool)
+        .execute(&mut *transaction)
         .await?;
+
+        for (block_hash, fragment_idx) in fragment_ids {
+            sqlx::query!(
+                "UPDATE l1_state_fragment SET transaction_hash = $1 WHERE fuel_block_hash = $2 AND fragment_index = $3",
+                tx_hash.as_slice(),
+                block_hash.as_slice(),
+                fragment_idx as i64
+            )
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -190,5 +209,18 @@ impl Postgres {
         .map(<[u8; 32]>::try_from);
 
         rows.collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _state_submission_w_latest_block(
+        &self,
+    ) -> crate::error::Result<Option<StateSubmission>> {
+        sqlx::query_as!(
+            tables::L1StateSubmission,
+            "SELECT * FROM l1_state_submission ORDER BY fuel_block_height DESC LIMIT 1"
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .map(StateSubmission::try_from)
+        .transpose()
     }
 }

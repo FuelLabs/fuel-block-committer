@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use ports::storage::Storage;
+use ports::{storage::Storage, types::StateFragmentId};
 
 use crate::{Result, Runner};
 
@@ -22,27 +22,37 @@ where
     L1: ports::l1::Api,
     Db: Storage,
 {
-    async fn submit_state(&self) -> Result<()> {
+    async fn prepare_fragments(&self) -> Result<(Vec<StateFragmentId>, Vec<u8>)> {
         let fragments = self.storage.get_unsubmitted_fragments().await?;
 
-        if fragments.is_empty() {
+        let num_fragments = fragments.len();
+        let mut fragment_ids = Vec::with_capacity(num_fragments);
+        let mut data = Vec::with_capacity(num_fragments);
+        for fragment in fragments {
+            fragment_ids.push(fragment.id());
+            data.extend(fragment.raw_data);
+        }
+
+        Ok((fragment_ids, data))
+    }
+
+    async fn submit_state(&self) -> Result<()> {
+        let (fragment_ids, data) = self.prepare_fragments().await?;
+        if fragment_ids.is_empty() {
             return Ok(());
         }
 
-        let data = fragments
-            .into_iter()
-            .flat_map(|fragment| fragment.raw_data)
-            .collect::<Vec<_>>();
-
         let tx_hash = self.l1_adapter.submit_l2_state(data).await?;
-        self.storage.insert_pending_tx(tx_hash).await?;
+        self.storage
+            .record_pending_tx(tx_hash, fragment_ids)
+            .await?;
 
         Ok(())
     }
 
     async fn is_tx_pending(&self) -> Result<bool> {
         let pending_txs = self.storage.get_pending_txs().await?;
-        Ok(pending_txs.is_empty())
+        Ok(!pending_txs.is_empty())
     }
 }
 
@@ -53,11 +63,15 @@ where
     Db: Storage,
 {
     async fn run(&mut self) -> Result<()> {
+        println!("Comitting state...");
+
         if self.is_tx_pending().await? {
             return Ok(());
         };
 
         self.submit_state().await?;
+
+        println!("State submitted");
 
         Ok(())
     }
@@ -133,9 +147,9 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
         db.insert_state(state, vec![fragment]).await?;
-        let committer = StateCommitter::new(l1_mock, db.clone());
+        let mut committer = StateCommitter::new(l1_mock, db.clone());
 
-        committer.submit_state().await.unwrap();
+        committer.run().await.unwrap();
 
         let tx = db.get_pending_txs().await?;
         assert!(tx.len() == 1);
