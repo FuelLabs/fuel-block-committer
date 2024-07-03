@@ -1,5 +1,4 @@
-pub mod anvil;
-
+pub mod chain_state_contract;
 #[cfg(test)]
 mod tests {
     use anyhow::{anyhow, Result};
@@ -10,7 +9,14 @@ mod tests {
     use std::time::Duration;
     use validator::{BlockValidator, Validator};
 
+    use crate::chain_state_contract;
+
     const FUEL_NODE_PORT: u16 = 4000;
+
+    #[test]
+    fn smt() {
+        dbg!(chain_state_contract::compilation_artifacts());
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
