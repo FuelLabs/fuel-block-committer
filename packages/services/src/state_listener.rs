@@ -15,12 +15,12 @@ use super::Runner;
 pub struct StateListener<L1, Db> {
     l1_adapter: L1,
     storage: Db,
-    num_block_to_finalize: i64,
+    num_block_to_finalize: u64,
     metrics: Metrics,
 }
 
 impl<L1, Db> StateListener<L1, Db> {
-    pub fn new(l1_adapter: L1, storage: Db, num_block_to_finalize: i64) -> Self {
+    pub fn new(l1_adapter: L1, storage: Db, num_block_to_finalize: u64) -> Self {
         Self {
             l1_adapter,
             storage,
@@ -36,16 +36,26 @@ where
     Db: Storage,
 {
     async fn check_pending_txs(&mut self, pending_txs: Vec<[u8; 32]>) -> crate::Result<()> {
-        let current_block_height = self.l1_adapter.get_block_number().await?;
+        let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
         for tx in pending_txs {
-            let tx_status = todo!(); // TODO: @halre provider get tx status or receipts
+            let Some(tx_receipt) = self.l1_adapter.get_transaction_receipt(tx).await? else {
+                continue; // not committed
+            };
 
-            if (current_block_height - tx_status.block_height) < self.num_block_to_finalize {
+            let tx_block_number: u64 = tx_receipt
+                .block_number
+                .expect("block number must be there as the block is committed")
+                .try_into()
+                .map_err(|_| {
+                    crate::Error::Other("could not convert `block_number` to `u64`".to_string())
+                })?;
+
+            if current_block_number.saturating_sub(tx_block_number) < self.num_block_to_finalize {
                 continue; // not finalized
             }
 
-            self.finalize_fragments(tx).await?;
+            //self.finalize_fragments(tx).await?;
         }
 
         Ok(())

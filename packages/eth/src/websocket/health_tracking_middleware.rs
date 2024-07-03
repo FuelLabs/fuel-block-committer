@@ -4,7 +4,7 @@ use ::metrics::{
 
 use std::num::NonZeroU32;
 
-use ports::types::{ValidatedFuelBlock, U256};
+use ports::types::{TransactionReceipt, ValidatedFuelBlock, U256};
 
 use crate::{
     error::{Error, Result},
@@ -20,6 +20,10 @@ pub trait EthApi {
     async fn balance(&self) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
     fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
+    async fn get_transaction_receipt(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<TransactionReceipt>>;
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool>;
@@ -81,6 +85,15 @@ where
 
     async fn get_block_number(&self) -> Result<u64> {
         let response = self.adapter.get_block_number().await;
+        self.note_network_status(&response);
+        response
+    }
+
+    async fn get_transaction_receipt(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<TransactionReceipt>> {
+        let response = self.adapter.get_transaction_receipt(tx_hash).await;
         self.note_network_status(&response);
         response
     }

@@ -4,7 +4,7 @@ use ethers::{
     prelude::{abigen, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer as _},
-    types::{Address, BlockNumber, Chain, H160, H256, U256, U64},
+    types::{Address, BlockNumber, Chain, TransactionReceipt, H160, H256, U256, U64},
 };
 use ports::types::ValidatedFuelBlock;
 use serde_json::Value;
@@ -76,6 +76,13 @@ impl EthApi for WsConnection {
             .from_block(eth_block_height);
 
         EthEventStreamer::new(events)
+    }
+
+    async fn get_transaction_receipt(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<TransactionReceipt>> {
+        Ok(self.provider.get_transaction_receipt(tx_hash).await?)
     }
 
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {

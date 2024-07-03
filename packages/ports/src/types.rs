@@ -1,5 +1,5 @@
 #[cfg(feature = "l1")]
-pub use ethers_core::types::{H160, U256};
+pub use ethers_core::types::{TransactionReceipt, H160, U256};
 #[cfg(feature = "l1")]
 pub use futures::Stream;
 

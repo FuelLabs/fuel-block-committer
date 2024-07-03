@@ -66,7 +66,7 @@ where
 #[cfg(test)]
 mod tests {
     use mockall::predicate;
-    use ports::types::{L1Height, StateFragment, StateSubmission, U256};
+    use ports::types::{L1Height, StateFragment, StateSubmission, TransactionReceipt, U256};
     use storage::PostgresProcess;
 
     use super::*;
@@ -94,6 +94,13 @@ mod tests {
 
         async fn balance(&self) -> ports::l1::Result<U256> {
             Ok(U256::zero())
+        }
+
+        async fn get_transaction_receipt(
+            &self,
+            _tx_hash: [u8; 32],
+        ) -> ports::l1::Result<Option<TransactionReceipt>> {
+            Ok(None)
         }
     }
 
