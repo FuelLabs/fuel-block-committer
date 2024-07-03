@@ -1,3 +1,5 @@
+pub mod anvil;
+
 #[cfg(test)]
 mod tests {
     use anyhow::{anyhow, Result};

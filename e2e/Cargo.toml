@@ -9,8 +9,13 @@ version = { workspace = true }
 publish = { workspace = true }
 rust-version = { workspace = true }
 
-[dev-dependencies]
+[dependencies]
+reqwest = { workspace = true, default-features = true }
+zip = { workspace = true, default-features = true }
+itertools = { workspace = true, default-features = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
 eth = { workspace = true, features = ["test-helpers"] }
 fuel = { workspace = true, features = ["test-helpers"] }
 ports = { workspace = true, features = ["fuel", "l1"] }
