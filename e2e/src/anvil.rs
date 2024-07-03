@@ -135,18 +135,30 @@ async fn download_fuel_bridge_zip(revision: &str) -> Result<Zip, anyhow::Error> 
 
 #[cfg(test)]
 mod tests {
+    use std::fs::OpenOptions;
+
+    use io::Write;
+    use serde_json::Value;
+
     use super::*;
 
     #[tokio::test]
     async fn smt() {
-        let contracts_dir = Path::new("./contracts");
-        let contracts = Contracts::download("26cfeac", contracts_dir).await.unwrap();
-
         let project_dir = Path::new("./project");
-        create_foundry_project(contracts, project_dir).unwrap()
+        let _ = std::fs::remove_dir_all(project_dir);
+
+        init_foundry_project(project_dir).unwrap();
+
+        Contracts::download("26cfeac", &project_dir.join("src"))
+            .await
+            .unwrap();
+
+        install_deps(project_dir).unwrap();
+
+        dbg!(build(project_dir).unwrap());
     }
 
-    fn create_foundry_project(contracts: Contracts, dir: &Path) -> anyhow::Result<()> {
+    fn init_foundry_project(dir: &Path) -> anyhow::Result<()> {
         std::fs::create_dir_all(dir).unwrap();
 
         let status = std::process::Command::new("forge")
@@ -161,6 +173,79 @@ mod tests {
             bail!("Failed to initialize the project");
         }
 
+        for folder in ["src", "script", "test"] {
+            std::fs::remove_dir_all(dir.join(folder))?;
+        }
+
         Ok(())
+    }
+
+    fn install_deps(dir: &Path) -> anyhow::Result<()> {
+        let status = std::process::Command::new("forge")
+            .arg("install")
+            .arg("--no-commit")
+            .arg("--no-git")
+            .arg("OpenZeppelin/openzeppelin-contracts-upgradeable@v4.8.3")
+            .current_dir(dir)
+            .status()?;
+
+        if !status.success() {
+            bail!("Failed to install dependencies");
+        }
+
+        let mut file = OpenOptions::new()
+            .append(true) // Set the option to append
+            .open(dir.join("foundry.toml"))?;
+
+        let remapping = r#"remappings = ["@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"]"#;
+        write!(file, "{remapping}")?;
+
+        Ok(())
+    }
+
+    #[derive(Debug, Clone)]
+    struct CompilationArtifacts {
+        bytecode: ethers::core::types::Bytes,
+        abi: ethers::core::abi::Contract,
+    }
+
+    impl<'de> serde::Deserialize<'de> for CompilationArtifacts {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let value = serde_json::Value::deserialize(deserializer)?;
+            let bytecode = value["bytecode"]["object"]
+                .as_str()
+                .ok_or_else(|| serde::de::Error::custom("no bytecode"))?;
+
+            let abi = ethers::abi::Contract::load(std::io::Cursor::new(
+                serde_json::to_string(&value["abi"]).unwrap(),
+            ))
+            .unwrap();
+
+            Ok(CompilationArtifacts {
+                bytecode: ethers::core::types::Bytes::from(
+                    hex::decode(bytecode.strip_prefix("0x").unwrap()).unwrap(),
+                ),
+                abi,
+            })
+        }
+    }
+
+    fn build(dir: &Path) -> anyhow::Result<CompilationArtifacts> {
+        let status = std::process::Command::new("forge")
+            .arg("build")
+            .current_dir(dir)
+            .status()?;
+
+        if !status.success() {
+            bail!("Failed to build the project");
+        }
+
+        let generated_file = dir.join("out/FuelChainState.sol/FuelChainState.json");
+        let file = std::fs::File::open(generated_file)?;
+
+        Ok(serde_json::from_reader(file)?)
     }
 }

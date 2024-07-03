@@ -1261,10 +1261,13 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "eth",
+ "ethers",
  "fuel",
+ "hex",
  "itertools 0.13.0",
  "ports",
  "reqwest 0.12.5",
+ "serde",
  "serde_json",
  "tokio",
  "validator",
