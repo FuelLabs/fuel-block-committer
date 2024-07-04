@@ -28,12 +28,25 @@ where
 {
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
-
-        // TODO skip if block is already imported
-
         // validate if needed
 
         Ok(latest_block)
+    }
+
+    async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
+        let Some(submitted_height) = self.last_submitted_block_height().await? else {
+            return Ok(false);
+        };
+
+        Ok(submitted_height >= block_height)
+    }
+
+    async fn last_submitted_block_height(&self) -> Result<Option<u32>> {
+        Ok(self
+            .storage
+            .state_submission_w_latest_block()
+            .await?
+            .map(|submission| submission.block_height))
     }
 
     fn block_to_state_submission(
@@ -84,6 +97,15 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let block = self.fetch_latest_block().await?;
+
+        if self.check_if_stale(block.header.height).await? {
+            return Ok(());
+        }
+
+        if block.transactions.is_empty() {
+            return Ok(());
+        }
+
         self.import_state(block).await?;
 
         Ok(())
@@ -92,7 +114,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ports::fuel::{FuelBytes32, MockApi as FuelMockApi};
+    use ports::fuel::FuelBytes32;
     use storage::PostgresProcess;
     use tai64::Tai64;
 
@@ -125,17 +147,27 @@ mod tests {
         }
     }
 
+    fn given_fetcher(block: FuelBlock) -> ports::fuel::MockApi {
+        let mut fetcher = ports::fuel::MockApi::new();
+
+        fetcher
+            .expect_latest_block()
+            .returning(move || Ok(block.clone()));
+
+        fetcher
+    }
+
     #[tokio::test]
     async fn test_import_state() -> Result<()> {
-        let fuel_mock = FuelMockApi::new();
-
         let block = given_block();
         let block_id = *block.id;
+        let fuel_mock = given_fetcher(block);
+
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
-        let committer = StateImporter::new(db.clone(), fuel_mock);
+        let mut importer = StateImporter::new(db.clone(), fuel_mock);
 
-        committer.import_state(block).await.unwrap();
+        importer.run().await.unwrap();
 
         let fragments = db.get_unsubmitted_fragments().await?;
         assert_eq!(fragments.len(), 1);

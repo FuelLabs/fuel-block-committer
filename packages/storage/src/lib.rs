@@ -7,7 +7,7 @@ pub use test_instance::*;
 
 mod error;
 mod postgres;
-use ports::types::{BlockSubmission, StateFragment, StateSubmission};
+use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
 pub use postgres::*;
 
 #[async_trait::async_trait]
@@ -39,12 +39,22 @@ impl ports::storage::Storage for postgres::Postgres {
         Ok(self._get_unsubmitted_fragments().await?)
     }
 
-    async fn insert_pending_tx(&self, tx_hash: [u8; 32]) -> ports::storage::Result<()> {
-        Ok(self._insert_pending_tx(tx_hash).await?)
+    async fn record_pending_tx(
+        &self,
+        tx_hash: [u8; 32],
+        fragment_ids: Vec<StateFragmentId>,
+    ) -> ports::storage::Result<()> {
+        Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
     }
 
     async fn get_pending_txs(&self) -> ports::storage::Result<Vec<[u8; 32]>> {
         Ok(self._get_pending_txs().await?)
+    }
+
+    async fn state_submission_w_latest_block(
+        &self,
+    ) -> ports::storage::Result<Option<StateSubmission>> {
+        Ok(self._state_submission_w_latest_block().await?)
     }
 }
 
