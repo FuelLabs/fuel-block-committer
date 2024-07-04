@@ -6,7 +6,7 @@ use metrics::{
 };
 use ports::{
     storage::Storage,
-    types::{FuelBlockCommittedOnL1, L1Height},
+    types::{FuelBlockCommittedOnL1, L1Height, TransactionReceipt},
 };
 use tracing::{error, info};
 
@@ -43,25 +43,31 @@ where
                 continue; // not committed
             };
 
-            let tx_block_number: u64 = tx_receipt
-                .block_number
-                .expect("block number must be there as the block is committed")
-                .try_into()
-                .map_err(|_| {
-                    crate::Error::Other("could not convert `block_number` to `u64`".to_string())
-                })?;
-
+            let tx_block_number = Self::extract_block_number_from_receipt(tx_receipt)?;
             if current_block_number.saturating_sub(tx_block_number) < self.num_block_to_finalize {
                 continue; // not finalized
             }
 
-            //self.finalize_fragments(tx).await?;
+            self.finalize_fragments(tx).await?;
         }
 
         Ok(())
     }
 
-    async fn finalize_fragments(&mut self, tx: [u8; 32]) -> crate::Result<()> {
+    fn extract_block_number_from_receipt(receipt: TransactionReceipt) -> crate::Result<u64> {
+        receipt
+            .block_number
+            .ok_or_else(|| {
+                crate::Error::Other("transaction receipt does not contain block number".to_string())
+            })
+            .expect("block number must be there as the block is committed")
+            .try_into()
+            .map_err(|_| {
+                crate::Error::Other("could not convert `block_number` to `u64`".to_string())
+            })
+    }
+
+    async fn finalize_fragments(&mut self, tx_hash: [u8; 32]) -> crate::Result<()> {
         // find framents with tx_hash set to complteand save all fuel_block_hashes
 
         // find all fragments with `fuel_block_hash` if all complted find submission and set to
