@@ -57,7 +57,7 @@ mod bridge {
 
     use std::path::Path;
 
-    pub(crate) async fn download_contract(revision: &str, dir: &Path) -> anyhow::Result<()> {
+    pub async fn download_contract(revision: &str, dir: &Path) -> anyhow::Result<()> {
         tokio::fs::create_dir_all(dir).await?;
 
         let mut zip = download_fuel_bridge_zip(revision).await?;
@@ -199,10 +199,10 @@ mod foundry {
 
     use anyhow::{bail, Context};
 
-    pub(crate) async fn init(dir: &Path) -> anyhow::Result<()> {
+    pub async fn init(dir: &Path) -> anyhow::Result<()> {
         tokio::fs::create_dir_all(dir)
             .await
-            .with_context(|| format!("could not create the project directory: {:?}", dir))?;
+            .with_context(|| format!("could not create the project directory: {dir:?}"))?;
 
         let output = tokio::process::Command::new("forge")
             .arg("init")
@@ -230,7 +230,7 @@ mod foundry {
         Ok(())
     }
 
-    pub(crate) async fn install_deps(dir: &Path) -> anyhow::Result<()> {
+    pub async fn install_deps(dir: &Path) -> anyhow::Result<()> {
         let output = tokio::process::Command::new("forge")
             .arg("install")
             .arg("--no-commit")
@@ -258,7 +258,7 @@ mod foundry {
         Ok(())
     }
 
-    pub(crate) async fn compile(dir: &Path) -> anyhow::Result<String> {
+    pub async fn compile(dir: &Path) -> anyhow::Result<String> {
         let output = tokio::process::Command::new("forge")
             .arg("build")
             .stdin(std::process::Stdio::null())

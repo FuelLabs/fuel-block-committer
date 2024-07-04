@@ -1,5 +1,6 @@
-pub mod anvil;
-pub mod chain_state_contract;
+mod chain_state_contract;
+mod eth_node;
+mod fuel_node;
 
 #[cfg(test)]
 mod tests {
@@ -10,6 +11,9 @@ mod tests {
     use ports::l1::Contract;
     use std::time::Duration;
     use validator::{BlockValidator, Validator};
+
+    use crate::eth_node::EthNode;
+    use crate::fuel_node::FuelNode;
 
     const FUEL_NODE_PORT: u16 = 4000;
 
@@ -43,6 +47,42 @@ mod tests {
         let validated_block = BlockValidator::new(producer_public_key).validate(&latest_block)?;
 
         assert!(fuel_contract.finalized(validated_block).await?);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn smt() -> Result<()> {
+        let blocks_per_interval = 10u32;
+        let seconds_to_finalize = 1u64;
+        let commit_cooldown_seconds = 1u32;
+
+        let anvil = EthNode::start().await?;
+        let chain_state_contract = anvil
+            .deploy_chain_state_contract(
+                seconds_to_finalize,
+                blocks_per_interval,
+                commit_cooldown_seconds,
+            )
+            .await?;
+
+        let fuel = FuelNode::start().await?;
+        let fuel_client = fuel.client();
+
+        fuel_client.produce_blocks(blocks_per_interval).await?;
+
+        // time enough to fwd the block to ethereum and for the TIME_TO_FINALIZE (1s) to elapse
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        let latest_block = fuel_client.latest_block().await?;
+
+        // Had to use `serde_json` because `FromStr` did not work because of an validation error
+        let producer_public_key: FuelPublicKey = serde_json::from_str("\"0x73dc6cc8cc0041e4924954b35a71a22ccb520664c522198a6d31dc6c945347bb854a39382d296ec64c70d7cea1db75601595e29729f3fbdc7ee9dae66705beb4\"")
+                  .map_err(|e| anyhow!("could not parse producer pub key: {e:?}"))?;
+
+        let validated_block = BlockValidator::new(producer_public_key).validate(&latest_block)?;
+
+        assert!(chain_state_contract.finalized(validated_block).await?);
 
         Ok(())
     }

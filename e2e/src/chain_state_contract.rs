@@ -2,8 +2,8 @@ const FUEL_CHAIN_STATE_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/Fuel
 
 #[derive(Debug, Clone)]
 pub struct CompilationArtifacts {
-    pub bytecode: ethers_core::types::Bytes,
-    pub abi: ethers_core::abi::Contract,
+    pub bytecode: ethers::core::types::Bytes,
+    pub abi: ethers::core::abi::Contract,
 }
 
 impl<'de> serde::Deserialize<'de> for CompilationArtifacts {
@@ -19,7 +19,7 @@ impl<'de> serde::Deserialize<'de> for CompilationArtifacts {
             );
             // `ethers::abi::Contract` doesn't implement `serde::Deserialize` but it does have a
             // load method so we use that.
-            ethers_core::abi::Contract::load(json_reader)
+            ethers::core::abi::Contract::load(json_reader)
                 .map_err(|e| serde::de::Error::custom(format!("could not load the ABI: {e}")))?
         };
 
