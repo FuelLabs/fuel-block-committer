@@ -21,7 +21,11 @@ reqwest = { workspace = true, default-features = true }
 zip = { workspace = true, default-features = true }
 anyhow = { workspace = true, default-features = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "process",
+] }
 
 [dev-dependencies]
 anyhow = { workspace = true, default-features = true }
