@@ -54,4 +54,8 @@ impl FuelNodeProcess {
             }
         }
     }
+
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
 }

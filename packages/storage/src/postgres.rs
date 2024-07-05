@@ -43,6 +43,20 @@ impl Postgres {
         Ok(Self { connection_pool })
     }
 
+    #[cfg(feature = "test-helpers")]
+    pub fn db_name(&self) -> String {
+        self.connection_pool
+            .connect_options()
+            .get_database()
+            .expect("database name to be set")
+            .to_owned()
+    }
+
+    #[cfg(feature = "test-helpers")]
+    pub fn port(&self) -> u16 {
+        self.connection_pool.connect_options().get_port()
+    }
+
     /// Close only when shutting down the application. Will close the connection pool even if it is
     /// shared.
     pub async fn close(self) {

@@ -23,6 +23,7 @@ tempfile = { workspace = true }
 url = { workspace = true }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel = { workspace = true, features = ["test-helpers"] }
+storage = { workspace = true, features = ["test-helpers"] }
 
 [build-dependencies]
 reqwest = { workspace = true, default-features = true }

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use eth::WebsocketClient;
 use ethers::{
-    contract::ContractFactory,
+    abi::Address,
+    contract::{Contract, ContractFactory},
     middleware::SignerMiddleware,
     providers::{Provider, Ws},
     signers::{
@@ -63,11 +64,10 @@ impl EthNodeProcess {
         seconds_to_finalize: u64,
         blocks_per_commit_interval: u32,
         commit_cooldown_seconds: u32,
-    ) -> anyhow::Result<WebsocketClient> {
+    ) -> anyhow::Result<Address> {
         let artifacts = chain_state_contract::compilation_artifacts();
 
         let wallet = self.wallet();
-        let private_key = wallet.signer().to_bytes();
 
         let provider = Provider::<Ws>::connect(&self.url).await?;
 
@@ -85,19 +85,19 @@ impl EthNodeProcess {
             commit_cooldown_seconds,
         ))?;
 
-        let contract_instance = deploy_tx.send().await?;
+        let contract = deploy_tx.send().await?;
 
-        let contract_addr = contract_instance.address();
+        let initialize_tx = contract.method::<(), ()>("initialize", ())?;
+        eprintln!("initializing contract");
+        initialize_tx.send().await?.await?;
+        eprintln!("contract initialized");
 
-        let connection = WebsocketClient::connect(
-            self.ws_url(),
-            Chain::AnvilHardhat,
-            contract_addr,
-            &hex::encode(private_key),
-            5,
-        )
-        .await?;
-        Ok(connection)
+        Ok(contract.address())
+    }
+
+    pub fn wallet_key(&self) -> String {
+        let bytes = self.wallet().signer().to_bytes();
+        hex::encode(bytes)
     }
 
     pub fn wallet(&self) -> LocalWallet {
