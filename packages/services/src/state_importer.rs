@@ -4,31 +4,38 @@ use ports::{
     storage::Storage,
     types::{StateFragment, StateSubmission},
 };
+use validator::Validator;
 
 use crate::{Result, Runner};
 
-pub struct StateImporter<Db, A> {
+pub struct StateImporter<Db, A, BlockValidator> {
     storage: Db,
     fuel_adapter: A,
+    block_validator: BlockValidator,
 }
 
-impl<Db, A> StateImporter<Db, A> {
-    pub fn new(storage: Db, fuel_adapter: A) -> Self {
+impl<Db, A, BlockValidator> StateImporter<Db, A, BlockValidator> {
+    pub fn new(storage: Db, fuel_adapter: A, block_validator: BlockValidator) -> Self {
         Self {
             storage,
             fuel_adapter,
+            block_validator,
         }
     }
 }
 
-impl<Db, A> StateImporter<Db, A>
+impl<Db, A, BlockValidator> StateImporter<Db, A, BlockValidator>
 where
     Db: Storage,
     A: ports::fuel::Api,
+    BlockValidator: Validator,
 {
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
-        // validate if needed
+
+        // validate block but don't return the validated block
+        // so we can use the original block for state submission
+        self.block_validator.validate(&latest_block)?;
 
         Ok(latest_block)
     }
@@ -90,10 +97,11 @@ where
 }
 
 #[async_trait]
-impl<Db, Fuel> Runner for StateImporter<Db, Fuel>
+impl<Db, Fuel, BlockValidator> Runner for StateImporter<Db, Fuel, BlockValidator>
 where
     Db: Storage,
     Fuel: ports::fuel::Api,
+    BlockValidator: Validator,
 {
     async fn run(&mut self) -> Result<()> {
         let block = self.fetch_latest_block().await?;
@@ -114,13 +122,22 @@ where
 
 #[cfg(test)]
 mod tests {
+    use fuel_crypto::SecretKey;
     use ports::fuel::FuelBytes32;
+    use rand::{rngs::StdRng, SeedableRng};
     use storage::PostgresProcess;
     use tai64::Tai64;
+    use validator::BlockValidator;
 
     use super::*;
 
-    fn given_block() -> FuelBlock {
+    fn given_secret_key() -> SecretKey {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        SecretKey::random(&mut rng)
+    }
+
+    fn given_block(secret: SecretKey) -> FuelBlock {
         let id = FuelBytes32::from([1u8; 32]);
         let header = ports::fuel::FuelHeader {
             id,
@@ -142,7 +159,7 @@ mod tests {
             header,
             transactions: vec![[2u8; 32].into()],
             consensus: ports::fuel::FuelConsensus::Unknown,
-            block_producer: Default::default(),
+            block_producer: Some(secret.public_key()),
         };
 
         block
@@ -160,13 +177,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_import_state() -> Result<()> {
-        let block = given_block();
+        let secret_key = given_secret_key();
+        let block = given_block(secret_key);
         let block_id = *block.id;
         let fuel_mock = given_fetcher(block);
+        let block_validator = BlockValidator::new(secret_key.public_key());
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
-        let mut importer = StateImporter::new(db.clone(), fuel_mock);
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
 
         importer.run().await.unwrap();
 

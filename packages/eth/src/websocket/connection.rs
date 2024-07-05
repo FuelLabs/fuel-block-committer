@@ -16,6 +16,8 @@ use crate::{
     error::{Error, Result},
 };
 
+const STANDARD_GAS_LIMIT: u64 = 21000;
+
 abigen!(
     FUEL_STATE_CONTRACT,
     r#"[
@@ -163,16 +165,7 @@ impl WsConnection {
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             self.provider.estimate_eip1559_fees(None).await?;
 
-        // Gas limit should be 21000, otherwise we'll have to estimate it
-        let gas_limit = U256::from(21000);
-        // let estimate_tx = TypedTransaction::Eip1559(Eip1559TransactionRequest {
-        //     from: address.into(),
-        //     to: Some(address.into()),
-        //     max_priority_fee_per_gas: Some(max_priority_fee_per_gas),
-        //     max_fee_per_gas: Some(max_fee_per_gas),
-        //     ..Default::default()
-        // });
-        // let gas_limit = self.provider.estimate_gas(&estimate_tx, None).await?;
+        let gas_limit = U256::from(STANDARD_GAS_LIMIT);
 
         let max_fee_per_blob_gas = self.calculate_blob_fee(blob_versioned_hashes.len()).await?;
 

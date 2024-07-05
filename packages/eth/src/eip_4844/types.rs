@@ -69,6 +69,9 @@ impl BlobSidecar {
         self.blobs.iter().map(|blob| blob.versioned_hash).collect()
     }
 
+    // When preparing a blob transaction, we compute the KZG commitment and proof for the blob data.
+    // To be able to apply the KZG commitment scheme, the data is treated as a polynomial with the field elements as coefficients.
+    // We split it into 31-byte chunks (field elements) padded with a zero byte.
     fn partition_data(data: Vec<u8>) -> Vec<[u8; 32]> {
         let capacity = data.len().div_ceil(31);
         let mut field_elements = Vec::with_capacity(capacity);
@@ -80,11 +83,13 @@ impl BlobSidecar {
         field_elements
     }
 
+    // Generate the right amount of blobs to carry all the field elements.
     fn field_elements_to_blobs(field_elements: Vec<[u8; 32]>) -> Vec<c_kzg::Blob> {
         let mut blobs = Vec::new();
         let mut current_blob = [0u8; c_kzg::BYTES_PER_BLOB];
         let mut offset = 0;
 
+        // Each field element is 32 bytes long. A blob can hold 4096 field elements.
         for fe in field_elements {
             if offset + 32 > c_kzg::BYTES_PER_BLOB {
                 blobs.push(current_blob.into());
@@ -127,7 +132,7 @@ impl BlobSidecar {
 
     fn kzg_proof(blob: &c_kzg::Blob, commitment: &c_kzg::KzgCommitment) -> c_kzg::KzgProof {
         c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), &KZG_SETTINGS)
-            .unwrap()
+            .expect("KZG proof computation failed")
     }
 }
 
@@ -164,6 +169,7 @@ impl BlobTransactionEncoder {
         let blobs_count = self.sidecar.num_blobs();
 
         let mut stream = RlpStream::new();
+        // 4 fields: tx type, blobs, commitments, proofs
         stream.begin_list(4);
 
         // skip the tx type byte
@@ -215,6 +221,7 @@ impl BlobTransactionEncoder {
 
     fn rlp(&self) -> Vec<u8> {
         let mut stream = RlpStream::new();
+        // 11 fields: common tx fields, unused fields, blob tx fields
         stream.begin_list(11);
 
         self.append_common_tx_fields(&mut stream);
@@ -226,6 +233,7 @@ impl BlobTransactionEncoder {
 
     fn rlp_signed(&self, signature: Signature) -> Vec<u8> {
         let mut stream = RlpStream::new();
+        // 14 fields: common tx fields, unused fields, blob tx fields, signature
         stream.begin_list(14);
 
         self.append_common_tx_fields(&mut stream);

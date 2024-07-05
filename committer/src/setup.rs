@@ -92,11 +92,13 @@ pub fn state_importer(
     storage: impl Storage + 'static,
     _registry: &Registry,
     cancel_token: CancellationToken,
+    config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_importer = services::StateImporter::new(storage, fuel);
+    let validator = BlockValidator::new(config.fuel.block_producer_public_key);
+    let state_importer = services::StateImporter::new(storage, fuel, validator);
 
     schedule_polling(
-        Duration::from_secs(10),
+        config.app.block_check_interval,
         state_importer,
         "State Importer",
         cancel_token,

@@ -75,6 +75,7 @@ async fn main() -> Result<()> {
         storage.clone(),
         &metrics_registry,
         cancel_token.clone(),
+        &config,
     );
 
     launch_api_server(
