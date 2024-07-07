@@ -11,30 +11,28 @@ rust-version = { workspace = true }
 build = "build.rs"
 
 [build-dependencies]
-itertools = { workspace = true, default-features = true }
-walkdir = { workspace = true, default-features = true }
-reqwest = { workspace = true, default-features = true }
-zip = { workspace = true, default-features = true }
-anyhow = { workspace = true, default-features = true }
-tempfile = { workspace = true }
+itertools = { workspace = true, features = ["use_alloc"] }
+walkdir = { workspace = true }
+reqwest = { workspace = true, features = ["default-tls"] }
+zip = { workspace = true, features = ["deflate"] }
+anyhow = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = [
   "macros",
   "rt-multi-thread",
   "process",
   "fs",
+  "io-util",
 ] }
 
 [dev-dependencies]
-serde = { workspace = true }
 ethers = { workspace = true }
 rand = { workspace = true, features = ["std"] }
 hex = { workspace = true }
 portpicker = { workspace = true }
 url = { workspace = true }
-secp256k1 = { workspace = true, default-features = true, features = ["rand"] }
+secp256k1 = { workspace = true, features = ["rand-std"] }
 storage = { workspace = true, features = ["test-helpers"] }
-reqwest = { workspace = true, default-features = true }
-zip = { workspace = true, default-features = true }
+reqwest = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
   "macros",
@@ -42,7 +40,7 @@ tokio = { workspace = true, features = [
   "process",
   "fs",
 ] }
-anyhow = { workspace = true, default-features = true }
+anyhow = { workspace = true, features = ["std"] }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel = { workspace = true, features = ["test-helpers"] }
 ports = { workspace = true, features = ["fuel", "l1"] }

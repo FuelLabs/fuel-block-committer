@@ -32,7 +32,7 @@ async fn main() {
 
 use std::path::Path;
 
-pub async fn init_and_build(revision: &str, path: &Path) -> anyhow::Result<()> {
+async fn init_and_build(revision: &str, path: &Path) -> anyhow::Result<()> {
     foundry::init(path).await?;
 
     let source_files = path.join("src");
@@ -47,15 +47,12 @@ pub async fn init_and_build(revision: &str, path: &Path) -> anyhow::Result<()> {
 }
 
 mod bridge {
-    use std::io::Cursor;
-
     use anyhow::bail;
+    use std::io::Cursor;
+    use std::path::Path;
+    use std::path::PathBuf;
     use walkdir::WalkDir;
     use zip::{read::ZipFile, ZipArchive};
-
-    use std::path::PathBuf;
-
-    use std::path::Path;
 
     pub async fn download_contract(revision: &str, dir: &Path) -> anyhow::Result<()> {
         tokio::fs::create_dir_all(dir).await?;

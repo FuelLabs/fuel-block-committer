@@ -98,8 +98,6 @@ impl EthNodeProcess {
             ));
         }
 
-        eprintln!("Deployed chain state contract");
-
         let stdout = String::from_utf8(output.stdout)?;
         let proxy_address = stdout
             .lines()

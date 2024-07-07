@@ -18,10 +18,6 @@ pub struct Committer {
 
 impl Committer {
     pub async fn start(self) -> anyhow::Result<CommitterProcess> {
-        eprintln!(
-            "Block producer public key: {}",
-            self.fuel_block_producer_public_key.as_ref().unwrap()
-        );
         let config =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../configurations/development/config.toml");
 
