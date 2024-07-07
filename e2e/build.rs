@@ -47,10 +47,12 @@ async fn init_and_build(revision: &str, path: &Path) -> anyhow::Result<()> {
 }
 
 mod bridge {
+    use std::{
+        io::Cursor,
+        path::{Path, PathBuf},
+    };
+
     use anyhow::bail;
-    use std::io::Cursor;
-    use std::path::Path;
-    use std::path::PathBuf;
     use walkdir::WalkDir;
     use zip::{read::ZipFile, ZipArchive};
 
@@ -227,12 +229,11 @@ mod bridge {
 }
 
 mod foundry {
-    use itertools::Itertools;
-    use tokio::{fs::OpenOptions, io::AsyncWriteExt};
-
     use std::path::Path;
 
     use anyhow::{bail, Context};
+    use itertools::Itertools;
+    use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
     struct Dep {
         git: String,

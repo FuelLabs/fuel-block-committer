@@ -7,10 +7,11 @@ mod fuel_node;
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use anyhow::Result;
     use eth::{Chain, WebsocketClient};
     use ports::fuel::Api;
-    use std::time::Duration;
     use validator::{BlockValidator, Validator};
 
     use crate::{committer::Committer, eth_node::EthNode, fuel_node::FuelNode};
