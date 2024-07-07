@@ -1,20 +1,12 @@
 const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
 
-use eth::WebsocketClient;
 use ethers::{
     abi::Address,
-    contract::{Contract, ContractFactory},
-    middleware::SignerMiddleware,
-    providers::{Provider, Ws},
     signers::{
         coins_bip39::{English, Mnemonic},
         LocalWallet, MnemonicBuilder, Signer,
     },
-    types::{Chain, U256},
+    types::Chain,
 };
 use url::Url;
 

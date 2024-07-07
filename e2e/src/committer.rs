@@ -65,7 +65,7 @@ impl Committer {
         let child = cmd.spawn()?;
 
         Ok(CommitterProcess {
-            child,
+            _child: child,
             port: unused_port,
         })
     }
@@ -115,7 +115,7 @@ impl Committer {
 }
 
 pub struct CommitterProcess {
-    child: tokio::process::Child,
+    _child: tokio::process::Child,
     port: u16,
 }
 
