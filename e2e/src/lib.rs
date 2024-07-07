@@ -13,9 +13,7 @@ mod tests {
     use std::time::Duration;
     use validator::{BlockValidator, Validator};
 
-    use crate::committer::Committer;
-    use crate::eth_node::EthNode;
-    use crate::fuel_node::FuelNode;
+    use crate::{committer::Committer, eth_node::EthNode, fuel_node::FuelNode};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {

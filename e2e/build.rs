@@ -51,8 +51,7 @@ mod bridge {
 
     use anyhow::bail;
     use walkdir::WalkDir;
-    use zip::read::ZipFile;
-    use zip::ZipArchive;
+    use zip::{read::ZipFile, ZipArchive};
 
     use std::path::PathBuf;
 
