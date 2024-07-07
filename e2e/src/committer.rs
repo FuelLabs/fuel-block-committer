@@ -1,6 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use ethers::abi::Address;
+use ports::fuel::FuelPublicKey;
 use url::Url;
 
 #[derive(Default)]
@@ -17,6 +18,10 @@ pub struct Committer {
 
 impl Committer {
     pub async fn start(self) -> anyhow::Result<CommitterProcess> {
+        eprintln!(
+            "Block producer public key: {}",
+            self.fuel_block_producer_public_key.as_ref().unwrap()
+        );
         let config =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../configurations/development/config.toml");
 
@@ -92,9 +97,9 @@ impl Committer {
 
     pub fn with_fuel_block_producer_public_key(
         mut self,
-        fuel_block_producer_public_key: String,
+        fuel_block_producer_public_key: FuelPublicKey,
     ) -> Self {
-        self.fuel_block_producer_public_key = Some(fuel_block_producer_public_key);
+        self.fuel_block_producer_public_key = Some(fuel_block_producer_public_key.to_string());
         self
     }
 

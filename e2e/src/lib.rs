@@ -7,9 +7,9 @@ mod fuel_node;
 
 #[cfg(test)]
 mod tests {
-    use anyhow::{anyhow, Result};
+    use anyhow::Result;
     use eth::{Chain, WebsocketClient};
-    use ports::fuel::{Api, FuelPublicKey};
+    use ports::fuel::Api;
     use std::time::Duration;
     use validator::{BlockValidator, Validator};
 
@@ -50,7 +50,7 @@ mod tests {
         let db_name = random_db.db_name();
         let db_port = random_db.port();
 
-        let fuel_block_producer_public_key = "0x73dc6cc8cc0041e4924954b35a71a22ccb520664c522198a6d31dc6c945347bb854a39382d296ec64c70d7cea1db75601595e29729f3fbdc7ee9dae66705beb4";
+        let fuel_consensus_pub_key = fuel_node.consensus_pub_key();
 
         let committer = Committer::default()
             .with_show_logs(false)
@@ -59,7 +59,7 @@ mod tests {
             .with_db_port(db_port)
             .with_db_name(db_name)
             .with_state_contract_address(chain_state_contract_addr)
-            .with_fuel_block_producer_public_key(fuel_block_producer_public_key.to_owned())
+            .with_fuel_block_producer_public_key(fuel_consensus_pub_key)
             .with_wallet_key(eth_node.wallet_key())
             .start()
             .await?;
@@ -77,12 +77,8 @@ mod tests {
 
         let latest_block = fuel_client.latest_block().await?;
 
-        // Had to use `serde_json` because `FromStr` did not work because of an validation error
-        let producer_public_key: FuelPublicKey =
-            serde_json::from_str(&format!("\"{fuel_block_producer_public_key}\""))
-                .map_err(|e| anyhow!("could not parse producer pub key: {e:?}"))?;
-
-        let validated_block = BlockValidator::new(producer_public_key).validate(&latest_block)?;
+        let validated_block =
+            BlockValidator::new(fuel_consensus_pub_key).validate(&latest_block)?;
 
         assert!(chain_state_contract.finalized(validated_block).await?);
 

@@ -31,6 +31,7 @@ rand = { workspace = true, features = ["std"] }
 hex = { workspace = true }
 portpicker = { workspace = true }
 url = { workspace = true }
+secp256k1 = { workspace = true, default-features = true, features = ["rand"] }
 storage = { workspace = true, features = ["test-helpers"] }
 reqwest = { workspace = true, default-features = true }
 zip = { workspace = true, default-features = true }
