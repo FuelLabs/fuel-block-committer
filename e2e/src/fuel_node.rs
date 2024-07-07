@@ -23,7 +23,6 @@ impl FuelNode {
 
         let mut cmd = tokio::process::Command::new("fuel-core");
 
-        // let consensus_key =
         let secp = Secp256k1::new();
         let secret_key = SecretKey::new(&mut rand::thread_rng());
         let public_key = PublicKey::from_secret_key(&secp, &secret_key);
@@ -89,7 +88,7 @@ impl FuelNodeProcess {
 
     pub fn consensus_pub_key(&self) -> FuelPublicKey {
         // We get `FuelPublicKey` from `fuel-core-client` which reexports it from `fuel-core-types`.
-        // The below would normally be just a call to `.into()` had `fuel-core-client` enabled/forwarded the `std` flag on its `fuel-core-types` dependency.
+        // what follows would normally be just a call to `.into()` had `fuel-core-client` enabled/forwarded the `std` flag on its `fuel-core-types` dependency.
         let key_bytes = self.public_key.serialize_uncompressed();
         let mut raw = [0; 64];
         raw.copy_from_slice(&key_bytes[1..]);

@@ -79,11 +79,8 @@ mod bridge {
     }
 
     fn remove_first_component(path: &Path) -> PathBuf {
-        // Split the path into components
         let mut components = path.components();
-        // Skip the first component
         components.next();
-        // Collect the remaining components into a new PathBuf
         components.collect()
     }
 
@@ -208,10 +205,8 @@ mod bridge {
     }
 
     fn update_solidity_pragma(contents: &str) -> anyhow::Result<String> {
-        // Define the new pragma statement
         let new_pragma = "pragma solidity >=0.8.9;";
 
-        // Replace the old pragma statement with the new one
         let updated_contents = contents
             .lines()
             .map(|line| {
@@ -316,7 +311,7 @@ mod foundry {
         }
 
         let mut file = OpenOptions::new()
-            .append(true) // Set the option to append
+            .append(true)
             .open(dir.join("foundry.toml"))
             .await?;
 
@@ -385,7 +380,7 @@ contract MyScript is Script {
 
         if !output.status.success() {
             let err = String::from_utf8_lossy(&output.stderr);
-            bail!("failed to initialize the project. stderr: {err}");
+            bail!("failed to build the project. stderr: {err}");
         }
 
         Ok(())

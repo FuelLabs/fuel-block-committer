@@ -30,6 +30,8 @@ impl Committer {
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-block-committer"))?;
 
+        // It would be cleaner to require `fuel-block-committer` on the PATH, but that would hinder
+        // the dex a bit.
         let mut cmd = tokio::process::Command::new("cargo");
         cmd.arg("run")
             .arg("--bin")
