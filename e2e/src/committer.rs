@@ -1,10 +1,11 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use ethers::abi::Address;
 use url::Url;
 
 #[derive(Default)]
 pub struct Committer {
+    show_logs: bool,
     wallet_key: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
@@ -28,8 +29,8 @@ impl Committer {
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-block-committer"))?;
 
-        let child = tokio::process::Command::new("cargo")
-            .arg("run")
+        let mut cmd = tokio::process::Command::new("cargo");
+        cmd.arg("run")
             .arg("--bin")
             .arg("fuel-block-committer")
             .arg("--")
@@ -52,11 +53,16 @@ impl Committer {
             .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
             .env("COMMITTER__APP__PORT", unused_port.to_string())
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
-            .kill_on_drop(true)
-            .stdin(std::process::Stdio::null())
-            // .stdout(std::process::Stdio::piped())
-            // .stderr(std::process::Stdio::piped())
-            .spawn()?;
+            .kill_on_drop(true);
+
+        let sink = if self.show_logs {
+            std::process::Stdio::inherit
+        } else {
+            std::process::Stdio::null
+        };
+        cmd.stdout(sink()).stderr(sink());
+
+        let child = cmd.spawn()?;
 
         Ok(CommitterProcess {
             child,
@@ -101,9 +107,48 @@ impl Committer {
         self.db_name = Some(db_name);
         self
     }
+
+    pub fn with_show_logs(mut self, show_logs: bool) -> Self {
+        self.show_logs = show_logs;
+        self
+    }
 }
 
 pub struct CommitterProcess {
     child: tokio::process::Child,
     port: u16,
+}
+
+impl CommitterProcess {
+    pub async fn wait_for_committed_block(&self, height: u64) -> anyhow::Result<()> {
+        loop {
+            match self.fetch_latest_committed_block().await {
+                Ok(current_height) if current_height >= height => break,
+                _ => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn fetch_latest_committed_block(&self) -> anyhow::Result<u64> {
+        let response = reqwest::get(format!("http://localhost:{}/metrics", self.port))
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+
+        let height_line = response
+            .lines()
+            .find(|line| line.starts_with("latest_committed_block"))
+            .ok_or_else(|| anyhow::anyhow!("couldn't find latest_committed_block metric"))?;
+
+        Ok(height_line
+            .split_whitespace()
+            .last()
+            .expect("metric format to be in the format 'NAME VAL'")
+            .parse()?)
+    }
 }

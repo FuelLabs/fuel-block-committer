@@ -1,7 +1,10 @@
 use fuel::HttpClient;
 use url::Url;
 
-pub struct FuelNode {}
+#[derive(Default, Debug)]
+pub struct FuelNode {
+    show_logs: bool,
+}
 
 pub struct FuelNodeProcess {
     _db_dir: tempfile::TempDir,
@@ -10,23 +13,30 @@ pub struct FuelNodeProcess {
 }
 
 impl FuelNode {
-    pub async fn start() -> anyhow::Result<FuelNodeProcess> {
+    pub async fn start(&self) -> anyhow::Result<FuelNodeProcess> {
         let db_dir = tempfile::tempdir()?;
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-core"))?;
 
-        let child = tokio::process::Command::new("fuel-core")
-            .arg("run")
+        let mut cmd = tokio::process::Command::new("fuel-core");
+
+        cmd.arg("run")
             .arg("--port")
             .arg(unused_port.to_string())
             .arg("--db-path")
             .arg(db_dir.path())
             .arg("--debug")
             .kill_on_drop(true)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
+            .stdin(std::process::Stdio::null());
+
+        let sink = if self.show_logs {
+            std::process::Stdio::inherit
+        } else {
+            std::process::Stdio::null
+        };
+        cmd.stdout(sink()).stderr(sink());
+
+        let child = cmd.spawn()?;
 
         let url = format!("http://localhost:{}", unused_port).parse()?;
 
@@ -39,6 +49,11 @@ impl FuelNode {
         process.wait_until_healthy().await;
 
         Ok(process)
+    }
+
+    pub fn with_show_logs(mut self, show_logs: bool) -> Self {
+        self.show_logs = show_logs;
+        self
     }
 }
 

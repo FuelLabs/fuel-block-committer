@@ -16,40 +16,41 @@ async fn main() {
         }
     }
 
-    let compile_json_artifact = download_and_compile(BRIDGE_REVISION).await.unwrap();
-    if let Some(parent) = current_revision.parent() {
-        tokio::fs::create_dir_all(parent).await.unwrap();
+    let project_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("foundry");
+    if project_path.exists() {
+        tokio::fs::remove_dir_all(&project_path).await.unwrap();
     }
 
-    let save_location =
-        PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("FuelChainState.json");
-
-    tokio::fs::write(save_location, compile_json_artifact)
+    init_and_build(BRIDGE_REVISION, &project_path)
         .await
         .unwrap();
+
     tokio::fs::write(current_revision, BRIDGE_REVISION)
         .await
         .unwrap();
 }
 
-async fn download_and_compile(revision: &str) -> anyhow::Result<String> {
-    let tempdir = tempfile::tempdir()?;
+use std::path::Path;
 
-    let dir = tempdir.path();
+pub async fn init_and_build(revision: &str, path: &Path) -> anyhow::Result<()> {
+    foundry::init(path).await?;
 
-    foundry::init(dir).await?;
+    let source_files = path.join("src");
+    bridge::download_contract(revision, &source_files).await?;
+    bridge::make_solidity_version_more_flexible(&source_files).await?;
 
-    bridge::download_contract(revision, &dir.join("src")).await?;
+    foundry::install_deps(path).await?;
+    foundry::build(path).await?;
 
-    foundry::install_deps(dir).await?;
-
-    foundry::compile(dir).await
+    foundry::add_deploy_script(path).await?;
+    Ok(())
 }
 
 mod bridge {
     use std::io::Cursor;
 
     use anyhow::bail;
+    use walkdir::WalkDir;
     use zip::read::ZipFile;
     use zip::ZipArchive;
 
@@ -190,14 +191,58 @@ mod bridge {
 
         Ok(())
     }
+
+    pub async fn make_solidity_version_more_flexible(dir: &Path) -> anyhow::Result<()> {
+        let sol_files: Vec<PathBuf> = WalkDir::new(dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("sol"))
+            .map(|e| e.into_path())
+            .collect();
+
+        for sol_file in sol_files {
+            let contents = tokio::fs::read_to_string(&sol_file).await?;
+            let updated_contents = update_solidity_pragma(&contents)?;
+            tokio::fs::write(&sol_file, updated_contents).await?;
+        }
+
+        Ok(())
+    }
+
+    fn update_solidity_pragma(contents: &str) -> anyhow::Result<String> {
+        // Define the new pragma statement
+        let new_pragma = "pragma solidity >=0.8.9;";
+
+        // Replace the old pragma statement with the new one
+        let updated_contents = contents
+            .lines()
+            .map(|line| {
+                if line.starts_with("pragma solidity") {
+                    new_pragma.to_string()
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Ok(updated_contents)
+    }
 }
 
 mod foundry {
+    use itertools::Itertools;
     use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
     use std::path::Path;
 
     use anyhow::{bail, Context};
+
+    struct Dep {
+        git: String,
+        tag: String,
+        remap: Option<(String, String)>,
+    }
 
     pub async fn init(dir: &Path) -> anyhow::Result<()> {
         tokio::fs::create_dir_all(dir)
@@ -231,20 +276,46 @@ mod foundry {
     }
 
     pub async fn install_deps(dir: &Path) -> anyhow::Result<()> {
-        let output = tokio::process::Command::new("forge")
-            .arg("install")
-            .arg("--no-commit")
-            .arg("--no-git")
-            .arg("OpenZeppelin/openzeppelin-contracts-upgradeable@v4.8.3")
-            .current_dir(dir)
-            .stdin(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .output()
-            .await?;
+        let deps = [
+            Dep {
+                git: "OpenZeppelin/openzeppelin-foundry-upgrades".to_string(),
+                tag: "v0.3.1".to_string(),
+                remap: None,
+            },
+            Dep {
+                git: "OpenZeppelin/openzeppelin-contracts".to_string(),
+                tag: "v5.0.2".to_string(),
+                remap: Some((
+                    "openzeppelin/contracts".to_string(),
+                    "openzeppelin-contracts/contracts".to_string(),
+                )),
+            },
+            Dep {
+                git: "OpenZeppelin/openzeppelin-contracts-upgradeable".to_string(),
+                tag: "v4.8.3".to_string(),
+                remap: Some((
+                    "openzeppelin/contracts-upgradeable".to_string(),
+                    "openzeppelin-contracts-upgradeable/contracts".to_string(),
+                )),
+            },
+        ];
 
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to install dependencies: {err}")
+        for Dep { git, tag, .. } in &deps {
+            let output = tokio::process::Command::new("forge")
+                .arg("install")
+                .arg("--no-commit")
+                .arg("--no-git")
+                .arg(format!("{git}@{tag}"))
+                .current_dir(dir)
+                .stdin(std::process::Stdio::null())
+                .kill_on_drop(true)
+                .output()
+                .await?;
+
+            if !output.status.success() {
+                let err = String::from_utf8_lossy(&output.stderr);
+                bail!("Failed to install dependencies: {err}")
+            }
         }
 
         let mut file = OpenOptions::new()
@@ -252,29 +323,74 @@ mod foundry {
             .open(dir.join("foundry.toml"))
             .await?;
 
-        let remapping = r#"remappings = ["@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"]"#;
-        file.write_all(remapping.as_bytes()).await?;
+        let remappings = deps
+            .iter()
+            .filter_map(|dep| dep.remap.as_ref())
+            .map(|(from, to)| format!("\"@{from}/=lib/{to}\""))
+            .join(",");
+
+        file.write_all((format!("remappings = [{remappings}]")).as_bytes())
+            .await?;
 
         Ok(())
     }
 
-    pub async fn compile(dir: &Path) -> anyhow::Result<String> {
+    pub async fn add_deploy_script(path: &Path) -> anyhow::Result<()> {
+        let script_path = path.join("script/deploy.sol");
+        if let Some(parent) = script_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let script = r#"
+pragma solidity ^0.8.9;
+
+import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import "forge-std/Script.sol";
+import {FuelChainState} from "../src/fuelchain/FuelChainState.sol";
+
+contract MyScript is Script {
+    function run() external {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        vm.startBroadcast(deployerPrivateKey);
+
+        uint256 timeToFinalize = vm.envUint("TIME_TO_FINALIZE");
+        uint256 blocksPerCommitInterval = vm.envUint("BLOCKS_PER_COMMIT_INTERVAL");
+        uint32 commitCooldown = uint32(vm.envUint("COMMIT_COOLDOWN"));
+        FuelChainState implementation = new FuelChainState(timeToFinalize,blocksPerCommitInterval, commitCooldown);
+
+        address proxy = UnsafeUpgrades.deployUUPSProxy(
+            address(implementation),
+            abi.encodeCall(FuelChainState.initialize, ())
+        );
+
+        console.log("PROXY:", proxy);
+        console.log("IMPL:", address(implementation));
+
+        vm.stopBroadcast();
+    }
+}
+        "#;
+
+        tokio::fs::write(script_path, script.trim_start()).await?;
+
+        Ok(())
+    }
+
+    pub async fn build(path: &Path) -> anyhow::Result<()> {
         let output = tokio::process::Command::new("forge")
             .arg("build")
             .stdin(std::process::Stdio::null())
-            .current_dir(dir)
+            .current_dir(path)
             .kill_on_drop(true)
             .output()
-            .await?;
+            .await
+            .map_err(|e| anyhow::anyhow!("could not start `forge`, err: {e}"))?;
 
         if !output.status.success() {
             let err = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to build the project, stderr: {err}");
+            bail!("failed to initialize the project. stderr: {err}");
         }
 
-        Ok(
-            tokio::fs::read_to_string(dir.join("out/FuelChainState.sol/FuelChainState.json"))
-                .await?,
-        )
+        Ok(())
     }
 }
