@@ -1,5 +1,8 @@
 const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
 
+use std::time::Duration;
+
+use eth::WebsocketClient;
 use ethers::{
     abi::Address,
     signers::{
@@ -8,6 +11,7 @@ use ethers::{
     },
     types::Chain,
 };
+use ports::types::ValidatedFuelBlock;
 use url::Url;
 
 #[derive(Default, Debug)]
@@ -66,18 +70,18 @@ impl EthNodeProcess {
         }
     }
 
-    pub async fn deploy_chain_state_contract(
+    pub async fn deploy_contract(
         &self,
         seconds_to_finalize: u64,
         blocks_per_commit_interval: u32,
         commit_cooldown_seconds: u32,
-    ) -> anyhow::Result<Address> {
+    ) -> anyhow::Result<DeployedContract> {
         let output = tokio::process::Command::new("forge")
             .current_dir(FOUNDRY_PROJECT)
             .arg("script")
             .arg("script/deploy.sol:MyScript")
             .arg("--fork-url")
-            .arg(&format!("http://localhost:{}", self.port))
+            .arg(&format!("http://localhost:{}", self.port()))
             .arg("--broadcast")
             .stdin(std::process::Stdio::null())
             .env("PRIVATE_KEY", self.wallet_key())
@@ -107,7 +111,17 @@ impl EthNodeProcess {
             .trim()
             .parse()?;
 
-        Ok(proxy_address)
+        let deployed_contract = DeployedContract::connect(
+            &self.ws_url(),
+            proxy_address,
+            &self.wallet_key(),
+            seconds_to_finalize,
+            blocks_per_commit_interval,
+            commit_cooldown_seconds,
+        )
+        .await?;
+
+        Ok(deployed_contract)
     }
 
     pub fn wallet_key(&self) -> String {
@@ -127,5 +141,63 @@ impl EthNodeProcess {
         format!("ws://localhost:{}", self.port)
             .parse()
             .expect("URL to be well formed")
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+}
+
+pub struct DeployedContract {
+    address: Address,
+    chain_state_contract: WebsocketClient,
+    duration_to_finalize: Duration,
+    blocks_per_commit_interval: u32,
+    _commit_cooldown_seconds: u32,
+}
+
+impl DeployedContract {
+    async fn connect(
+        url: &Url,
+        address: Address,
+        wallet_priv_key: &str,
+        seconds_to_finalize: u64,
+        blocks_per_commit_interval: u32,
+        commit_cooldown_seconds: u32,
+    ) -> anyhow::Result<Self> {
+        let chain_state_contract =
+            WebsocketClient::connect(url, Chain::AnvilHardhat, address, wallet_priv_key, 5).await?;
+
+        Ok(Self {
+            address,
+            chain_state_contract,
+            duration_to_finalize: Duration::from_secs(seconds_to_finalize),
+            blocks_per_commit_interval,
+            _commit_cooldown_seconds: commit_cooldown_seconds,
+        })
+    }
+
+    pub async fn finalized(&self, block: ValidatedFuelBlock) -> anyhow::Result<bool> {
+        self.chain_state_contract
+            .finalized(block)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
+    pub fn duration_to_finalize(&self) -> Duration {
+        self.duration_to_finalize
+    }
+
+    pub fn blocks_per_commit_interval(&self) -> u32 {
+        self.blocks_per_commit_interval
+    }
+
+    #[allow(dead_code)]
+    pub fn commit_cooldown_seconds(&self) -> u32 {
+        self._commit_cooldown_seconds
     }
 }
