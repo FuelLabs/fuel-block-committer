@@ -10,31 +10,6 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 build = "build.rs"
 
-[dependencies]
-anyhow = { workspace = true, default-features = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-ethers = { workspace = true }
-rand = { workspace = true, features = ["std"] }
-hex = { workspace = true }
-# tokio = { workspace = true, features = ["process"] }
-portpicker = { workspace = true }
-# tempfile = { workspace = true }
-url = { workspace = true }
-eth = { workspace = true, features = ["test-helpers"] }
-fuel = { workspace = true, features = ["test-helpers"] }
-storage = { workspace = true, features = ["test-helpers"] }
-reqwest = { workspace = true, default-features = true }
-zip = { workspace = true, default-features = true }
-# anyhow = { workspace = true, default-features = true }
-tempfile = { workspace = true }
-tokio = { workspace = true, features = [
-  "macros",
-  "rt-multi-thread",
-  "process",
-  "fs",
-] }
-
 [build-dependencies]
 itertools = { workspace = true, default-features = true }
 walkdir = { workspace = true, default-features = true }
@@ -50,10 +25,25 @@ tokio = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+serde = { workspace = true }
+ethers = { workspace = true }
+rand = { workspace = true, features = ["std"] }
+hex = { workspace = true }
+portpicker = { workspace = true }
+url = { workspace = true }
+storage = { workspace = true, features = ["test-helpers"] }
+reqwest = { workspace = true, default-features = true }
+zip = { workspace = true, default-features = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "process",
+  "fs",
+] }
 anyhow = { workspace = true, default-features = true }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel = { workspace = true, features = ["test-helpers"] }
 ports = { workspace = true, features = ["fuel", "l1"] }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 validator = { workspace = true, features = ["validator"] }

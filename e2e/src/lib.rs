@@ -1,5 +1,8 @@
+#[cfg(test)]
 mod committer;
+#[cfg(test)]
 mod eth_node;
+#[cfg(test)]
 mod fuel_node;
 
 #[cfg(test)]
