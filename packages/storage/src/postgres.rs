@@ -1,4 +1,8 @@
-use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
+#[cfg(feature = "state-committer")]
+use crate::tables::state_submission::{L1PendingTransaction, L1StateFragment, L1StateSubmission};
+use ports::types::BlockSubmission;
+#[cfg(feature = "state-committer")]
+use ports::types::{StateFragment, StateFragmentId, StateSubmission};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
@@ -106,6 +110,7 @@ impl Postgres {
         }
     }
 
+    #[cfg(feature = "state-committer")]
     pub(crate) async fn _insert_state(
         &self,
         state: StateSubmission,
@@ -117,10 +122,10 @@ impl Postgres {
             ));
         }
 
-        let state_row = tables::L1StateSubmission::from(state);
+        let state_row = L1StateSubmission::from(state);
         let fragment_rows = fragments
             .into_iter()
-            .map(tables::L1StateFragment::from)
+            .map(L1StateFragment::from)
             .collect::<Vec<_>>();
 
         let mut transaction = self.connection_pool.begin().await?;
@@ -154,10 +159,11 @@ impl Postgres {
         Ok(())
     }
 
+    #[cfg(feature = "state-committer")]
     pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
         // TODO use blob limit
         let rows = sqlx::query_as!(
-            tables::L1StateFragment,
+            L1StateFragment,
             "SELECT * FROM l1_state_fragment WHERE completed = false LIMIT 6"
         )
         .fetch_all(&self.connection_pool)
@@ -167,6 +173,8 @@ impl Postgres {
 
         rows.collect::<Result<Vec<_>>>()
     }
+
+    #[cfg(feature = "state-committer")]
 
     pub(crate) async fn _record_pending_tx(
         &self,
@@ -198,24 +206,23 @@ impl Postgres {
         Ok(())
     }
 
+    #[cfg(feature = "state-committer")]
     pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<[u8; 32]>> {
-        let rows = sqlx::query_as!(
-            tables::L1PendingTransaction,
-            "SELECT * FROM l1_pending_transaction"
-        )
-        .fetch_all(&self.connection_pool)
-        .await?
-        .into_iter()
-        .map(<[u8; 32]>::try_from);
+        let rows = sqlx::query_as!(L1PendingTransaction, "SELECT * FROM l1_pending_transaction")
+            .fetch_all(&self.connection_pool)
+            .await?
+            .into_iter()
+            .map(<[u8; 32]>::try_from);
 
         rows.collect::<Result<Vec<_>>>()
     }
 
+    #[cfg(feature = "state-committer")]
     pub(crate) async fn _state_submission_w_latest_block(
         &self,
     ) -> crate::error::Result<Option<StateSubmission>> {
         sqlx::query_as!(
-            tables::L1StateSubmission,
+            L1StateSubmission,
             "SELECT * FROM l1_state_submission ORDER BY fuel_block_height DESC LIMIT 1"
         )
         .fetch_optional(&self.connection_pool)

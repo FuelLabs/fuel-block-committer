@@ -2,18 +2,24 @@
 mod block_committer;
 mod commit_listener;
 mod health_reporter;
-mod state_committer;
-mod state_importer;
 mod status_reporter;
 mod wallet_balance_tracker;
+
+#[cfg(feature = "state-committer")]
+mod state_committer;
+#[cfg(feature = "state-committer")]
+mod state_importer;
 
 pub use block_committer::BlockCommitter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
-pub use state_committer::StateCommitter;
-pub use state_importer::StateImporter;
 pub use status_reporter::StatusReporter;
 pub use wallet_balance_tracker::WalletBalanceTracker;
+
+#[cfg(feature = "state-committer")]
+pub use state_committer::StateCommitter;
+#[cfg(feature = "state-committer")]
+pub use state_importer::StateImporter;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

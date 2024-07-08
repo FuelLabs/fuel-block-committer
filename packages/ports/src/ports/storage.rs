@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
+use crate::types::BlockSubmission;
+
+#[cfg(feature = "state-committer")]
+use crate::types::{StateFragment, StateFragmentId, StateSubmission};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -21,18 +24,22 @@ pub trait Storage: Send + Sync {
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
 
-    // state submission
+    #[cfg(feature = "state-committer")]
     async fn insert_state(
         &self,
         state: StateSubmission,
         fragments: Vec<StateFragment>,
     ) -> Result<()>;
+    #[cfg(feature = "state-committer")]
     async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>>;
+    #[cfg(feature = "state-committer")]
     async fn record_pending_tx(
         &self,
         tx_hash: [u8; 32],
         fragment_ids: Vec<StateFragmentId>,
     ) -> Result<()>;
+    #[cfg(feature = "state-committer")]
     async fn get_pending_txs(&self) -> Result<Vec<[u8; 32]>>;
+    #[cfg(feature = "state-committer")]
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
 }

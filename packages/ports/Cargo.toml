@@ -39,3 +39,4 @@ fuel = [
 ]
 storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]
 full = ["l1", "fuel", "storage"]
+state-committer = []

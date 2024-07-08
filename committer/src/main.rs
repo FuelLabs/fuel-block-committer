@@ -63,20 +63,26 @@ async fn main() -> Result<()> {
         cancel_token.clone(),
     );
 
-    let state_committer_handle = setup::state_committer(
-        ethereum_rpc,
-        storage.clone(),
-        &metrics_registry,
-        cancel_token.clone(),
-        &config,
-    );
-    let state_importer_handle = setup::state_importer(
-        fuel_adapter,
-        storage.clone(),
-        &metrics_registry,
-        cancel_token.clone(),
-        &config,
-    );
+    #[cfg(feature = "state-committer")]
+    let (state_committer_handle, state_importer_handle) = {
+        let state_committer_handle = setup::state_committer(
+            ethereum_rpc,
+            storage.clone(),
+            &metrics_registry,
+            cancel_token.clone(),
+            &config,
+        );
+
+        let state_importer_handle = setup::state_importer(
+            fuel_adapter,
+            storage.clone(),
+            &metrics_registry,
+            cancel_token.clone(),
+            &config,
+        );
+
+        (state_committer_handle, state_importer_handle)
+    };
 
     launch_api_server(
         &config,
@@ -89,11 +95,15 @@ async fn main() -> Result<()> {
 
     shut_down(
         cancel_token,
-        wallet_balance_tracker_handle,
-        committer_handle,
-        listener_handle,
-        state_committer_handle,
-        state_importer_handle,
+        vec![
+            wallet_balance_tracker_handle,
+            committer_handle,
+            listener_handle,
+            #[cfg(feature = "state-committer")]
+            state_committer_handle,
+            #[cfg(feature = "state-committer")]
+            state_importer_handle,
+        ],
         storage,
     )
     .await

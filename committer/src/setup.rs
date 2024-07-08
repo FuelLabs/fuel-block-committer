@@ -70,6 +70,7 @@ pub fn block_committer(
     )
 }
 
+#[cfg(feature = "state-committer")]
 pub fn state_committer(
     l1: L1,
     storage: impl Storage + 'static,
@@ -87,6 +88,7 @@ pub fn state_committer(
     )
 }
 
+#[cfg(feature = "state-committer")]
 pub fn state_importer(
     fuel: FuelApi,
     storage: impl Storage + 'static,
@@ -184,22 +186,12 @@ pub async fn storage(config: &config::Config) -> Result<Database> {
 
 pub async fn shut_down(
     cancel_token: CancellationToken,
-    wallet_balance_tracker_handle: JoinHandle<()>,
-    committer_handle: JoinHandle<()>,
-    listener_handle: JoinHandle<()>,
-    state_committer_handle: JoinHandle<()>,
-    state_importer_handle: JoinHandle<()>,
+    handles: Vec<JoinHandle<()>>,
     storage: Database,
 ) -> Result<()> {
     cancel_token.cancel();
 
-    for handle in [
-        wallet_balance_tracker_handle,
-        committer_handle,
-        listener_handle,
-        state_committer_handle,
-        state_importer_handle,
-    ] {
+    for handle in handles {
         handle.await?;
     }
 

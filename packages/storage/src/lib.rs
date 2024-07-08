@@ -7,8 +7,11 @@ pub use test_instance::*;
 
 mod error;
 mod postgres;
-use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
+use ports::types::BlockSubmission;
 pub use postgres::*;
+
+#[cfg(feature = "state-committer")]
+use ports::types::{StateFragment, StateFragmentId, StateSubmission};
 
 #[async_trait::async_trait]
 impl ports::storage::Storage for postgres::Postgres {
@@ -27,6 +30,7 @@ impl ports::storage::Storage for postgres::Postgres {
         Ok(self._set_submission_completed(fuel_block_hash).await?)
     }
 
+    #[cfg(feature = "state-committer")]
     async fn insert_state(
         &self,
         state: StateSubmission,
@@ -35,10 +39,12 @@ impl ports::storage::Storage for postgres::Postgres {
         Ok(self._insert_state(state, fragments).await?)
     }
 
+    #[cfg(feature = "state-committer")]
     async fn get_unsubmitted_fragments(&self) -> ports::storage::Result<Vec<StateFragment>> {
         Ok(self._get_unsubmitted_fragments().await?)
     }
 
+    #[cfg(feature = "state-committer")]
     async fn record_pending_tx(
         &self,
         tx_hash: [u8; 32],
@@ -47,10 +53,12 @@ impl ports::storage::Storage for postgres::Postgres {
         Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
     }
 
+    #[cfg(feature = "state-committer")]
     async fn get_pending_txs(&self) -> ports::storage::Result<Vec<[u8; 32]>> {
         Ok(self._get_pending_txs().await?)
     }
 
+    #[cfg(feature = "state-committer")]
     async fn state_submission_w_latest_block(
         &self,
     ) -> ports::storage::Result<Option<StateSubmission>> {

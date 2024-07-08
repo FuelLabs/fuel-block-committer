@@ -38,3 +38,4 @@ test-helpers = [
   "dep:rand",
   "ports/test-helpers",
 ]
+state-committer = []
