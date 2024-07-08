@@ -1,5 +1,6 @@
 use std::{path::Path, time::Duration};
 
+use anyhow::Context;
 use ethers::abi::Address;
 use ports::fuel::FuelPublicKey;
 use url::Url;
@@ -30,14 +31,8 @@ impl Committer {
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-block-committer"))?;
 
-        // It would be cleaner to require `fuel-block-committer` on the PATH, but that would hinder
-        // the dex a bit.
-        let mut cmd = tokio::process::Command::new("cargo");
-        cmd.arg("run")
-            .arg("--bin")
-            .arg("fuel-block-committer")
-            .arg("--")
-            .arg(config)
+        let mut cmd = tokio::process::Command::new("fuel-block-committer");
+        cmd.arg(config)
             .env("COMMITTER__ETH__WALLET_KEY", get_field!(wallet_key))
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
             .env(
@@ -65,7 +60,7 @@ impl Committer {
         };
         cmd.stdout(sink()).stderr(sink());
 
-        let child = cmd.spawn()?;
+        let child = cmd.spawn().with_context(||"couldn't find `fuel-block-committer` on PATH. Either use `run_tests.sh` or place the binary on the PATH.")?;
 
         Ok(CommitterProcess {
             _child: child,

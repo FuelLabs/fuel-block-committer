@@ -1,4 +1,6 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
+
+use storage::PostgresProcess;
 
 use crate::{
     committer::{Committer, CommitterProcess},
@@ -11,6 +13,7 @@ pub struct WholeStack {
     pub eth_node: EthNodeProcess,
     pub fuel_node: FuelNodeProcess,
     pub committer: CommitterProcess,
+    pub db: Arc<PostgresProcess>,
     pub deployed_contract: DeployedContract,
 }
 
@@ -55,6 +58,7 @@ impl WholeStack {
             fuel_node,
             committer,
             deployed_contract,
+            db: db_process,
         })
     }
 }

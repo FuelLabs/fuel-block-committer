@@ -21,7 +21,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
-        let show_logs = false;
+        let show_logs = true;
         let stack = WholeStack::deploy_default(show_logs).await?;
 
         // when
