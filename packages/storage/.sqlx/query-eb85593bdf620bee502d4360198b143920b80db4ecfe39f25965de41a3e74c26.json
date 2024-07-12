@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM l1_state_fragment WHERE completed = false ORDER BY created_at ASC LIMIT 6",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fuel_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "fragment_index",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "raw_data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "completed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "transaction_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "eb85593bdf620bee502d4360198b143920b80db4ecfe39f25965de41a3e74c26"
+}
