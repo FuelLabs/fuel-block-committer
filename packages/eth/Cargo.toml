@@ -14,7 +14,7 @@ async-trait = { workspace = true }
 c-kzg = { workspace = true }
 ethers = { workspace = true, features = ["ws"] }
 futures = { workspace = true }
-lazy_static = { workspace = true }
+itertools = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
 rlp = { workspace = true }

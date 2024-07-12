@@ -60,24 +60,25 @@ where
         &self,
         block: FuelBlock,
     ) -> Result<(StateSubmission, Vec<StateFragment>)> {
+        use itertools::Itertools;
+
         // Serialize the block into bytes
-        let block_data = block
+        let fragments = block
             .transactions
             .iter()
-            .flat_map(|tx| tx.to_vec())
-            .collect::<Vec<_>>();
-
-        let fragments = block_data
+            .flat_map(|tx| tx.iter())
             .chunks(StateFragment::MAX_FRAGMENT_SIZE)
+            .into_iter()
             .enumerate()
             .map(|(index, chunk)| StateFragment {
                 block_hash: *block.id,
                 transaction_hash: None,
                 fragment_index: index as u32,
-                raw_data: chunk.to_vec(),
+                raw_data: chunk.copied().collect(),
+                created_at: ports::types::Utc::now(),
                 completed: false,
             })
-            .collect::<Vec<StateFragment>>();
+            .collect();
 
         let submission = StateSubmission {
             block_hash: *block.id,
@@ -122,12 +123,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use fuel_crypto::SecretKey;
-    use ports::fuel::FuelBytes32;
+    use fuel_crypto::{Message, SecretKey, Signature};
+    use ports::fuel::{FuelConsensus, FuelPoAConsensus};
     use rand::{rngs::StdRng, SeedableRng};
     use storage::PostgresProcess;
-    use tai64::Tai64;
     use validator::BlockValidator;
+
+    use ports::fuel::{FuelBlockId, FuelHeader, FuelBlock};
 
     use super::*;
 
@@ -137,32 +139,48 @@ mod tests {
         SecretKey::random(&mut rng)
     }
 
-    fn given_block(secret: SecretKey) -> FuelBlock {
-        let id = FuelBytes32::from([1u8; 32]);
-        let header = ports::fuel::FuelHeader {
+    fn given_a_block(height: u32, secret_key: &SecretKey) -> FuelBlock {
+        let header = given_header(height);
+
+        let mut hasher = fuel_crypto::Hasher::default();
+        hasher.input(header.prev_root.as_ref());
+        hasher.input(header.height.to_be_bytes());
+        hasher.input(header.time.0.to_be_bytes());
+        hasher.input(header.application_hash.as_ref());
+
+        let id = FuelBlockId::from(hasher.digest());
+        let id_message = Message::from_bytes(*id);
+        let signature = Signature::sign(secret_key, &id_message);
+
+        FuelBlock {
             id,
-            da_height: 0,
+            header,
+            consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
+            transactions:  vec![[2u8; 32].into()],
+            block_producer: Some(secret_key.public_key()),
+        }
+    }
+
+    fn given_header(height: u32) -> FuelHeader {
+        let application_hash = "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
+            .parse()
+            .unwrap();
+
+        ports::fuel::FuelHeader {
+            id: Default::default(),
+            da_height: Default::default(),
             consensus_parameters_version: Default::default(),
             state_transition_bytecode_version: Default::default(),
             transactions_count: 1,
-            message_receipt_count: 0,
+            message_receipt_count: Default::default(),
             transactions_root: Default::default(),
             message_outbox_root: Default::default(),
             event_inbox_root: Default::default(),
-            height: 1,
+            height,
             prev_root: Default::default(),
-            time: Tai64::now(),
-            application_hash: Default::default(),
-        };
-        let block = FuelBlock {
-            id,
-            header,
-            transactions: vec![[2u8; 32].into()],
-            consensus: ports::fuel::FuelConsensus::Unknown,
-            block_producer: Some(secret.public_key()),
-        };
-
-        block
+            time: tai64::Tai64(0),
+            application_hash,
+        }
     }
 
     fn given_fetcher(block: FuelBlock) -> ports::fuel::MockApi {
@@ -177,8 +195,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_import_state() -> Result<()> {
+        // given
         let secret_key = given_secret_key();
-        let block = given_block(secret_key);
+        let block = given_a_block(1, &secret_key);
         let block_id = *block.id;
         let fuel_mock = given_fetcher(block);
         let block_validator = BlockValidator::new(secret_key.public_key());
@@ -187,8 +206,10 @@ mod tests {
         let db = process.create_random_db().await?;
         let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
 
+        // when
         importer.run().await.unwrap();
 
+        // then
         let fragments = db.get_unsubmitted_fragments().await?;
         assert_eq!(fragments.len(), 1);
         assert_eq!(fragments[0].block_hash, block_id);

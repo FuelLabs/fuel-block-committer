@@ -1,32 +1,35 @@
-use std::{ffi::CString, ops::Deref};
+use std::{ffi::CString, ops::Deref, sync::OnceLock};
 
 use ethers::{
     core::k256::sha2::{Digest, Sha256},
     types::{Address, Signature, H256, U256},
     utils::keccak256,
 };
-use lazy_static::lazy_static;
 use rlp::RlpStream;
 
-lazy_static! {
-    static ref KZG_SETTINGS: c_kzg::KzgSettings = c_kzg::KzgSettings::load_trusted_setup_file(
-        &CString::new("packages/eth/src/eip_4844/trusted_setup.txt").expect("C string"),
-    )
-    .unwrap();
+use crate::error::Error;
+
+fn kzg_settings() -> &'static c_kzg::KzgSettings {
+    static KZG_SETTINGS: OnceLock<c_kzg::KzgSettings> = OnceLock::new();
+    KZG_SETTINGS.get_or_init(|| {
+        let trusted_setup = include_str!("trusted_setup.txt");
+        c_kzg::KzgSettings::load_trusted_setup_file(&CString::new(trusted_setup).expect("C string"))
+            .unwrap()
+    })
 }
 
 const BLOB_TX_TYPE: u8 = 0x03;
-const VERSIONED_HASH_VERSION_KZG: u8 = 1;
 const MAX_BLOBS_PER_BLOCK: usize = 6;
 pub const MAX_BYTES_PER_BLOB: usize = c_kzg::BYTES_PER_BLOB;
 
 pub trait BlobSigner {
-    fn sign_hash(&self, hash: H256) -> std::result::Result<Signature, String>;
+    fn sign_hash(&self, hash: H256) -> crate::error::Result<Signature>;
 }
 
 impl BlobSigner for ethers::signers::LocalWallet {
-    fn sign_hash(&self, hash: H256) -> std::result::Result<Signature, String> {
-        self.sign_hash(hash).map_err(|e| e.to_string())
+    fn sign_hash(&self, hash: H256) -> crate::error::Result<Signature> {
+        self.sign_hash(hash)
+            .map_err(|e| Error::Other(e.to_string()))
     }
 }
 
@@ -42,19 +45,19 @@ pub struct BlobSidecar {
 }
 
 impl BlobSidecar {
-    pub fn new(data: Vec<u8>) -> std::result::Result<Self, String> {
+    pub fn new(data: Vec<u8>) -> std::result::Result<Self, Error> {
         let num_blobs = data.len().div_ceil(MAX_BYTES_PER_BLOB);
 
         if num_blobs > MAX_BLOBS_PER_BLOCK {
-            return Err(format!(
+            return Err(Error::Other(format!(
                 "Data cannot fit into the maximum number of blobs per block: {}",
                 MAX_BLOBS_PER_BLOCK
-            ));
+            )));
         }
 
-        let field_elements = Self::partition_data(data);
+        let field_elements = Self::generate_field_elements(data);
         let blobs = Self::field_elements_to_blobs(field_elements);
-        let prepared_blobs = blobs.iter().map(Self::prepare_blob).collect();
+        let prepared_blobs = blobs.iter().map(|blob| Self::prepare_blob(blob)).collect::<Result<_, _>>()?;
 
         Ok(Self {
             blobs: prepared_blobs,
@@ -72,67 +75,65 @@ impl BlobSidecar {
     // When preparing a blob transaction, we compute the KZG commitment and proof for the blob data.
     // To be able to apply the KZG commitment scheme, the data is treated as a polynomial with the field elements as coefficients.
     // We split it into 31-byte chunks (field elements) padded with a zero byte.
-    fn partition_data(data: Vec<u8>) -> Vec<[u8; 32]> {
-        let capacity = data.len().div_ceil(31);
-        let mut field_elements = Vec::with_capacity(capacity);
-        for chunk in data.chunks(31) {
-            let mut fe = [0u8; 32];
-            fe[1..1 + chunk.len()].copy_from_slice(chunk);
-            field_elements.push(fe);
-        }
-        field_elements
+    fn generate_field_elements(data: Vec<u8>) -> Vec<[u8; 32]> {
+        data.chunks(31)
+            .map(|chunk| {
+                let mut fe = [0u8; 32];
+                fe[1..].copy_from_slice(chunk);
+                fe
+            })
+            .collect()
     }
 
     // Generate the right amount of blobs to carry all the field elements.
     fn field_elements_to_blobs(field_elements: Vec<[u8; 32]>) -> Vec<c_kzg::Blob> {
-        let mut blobs = Vec::new();
-        let mut current_blob = [0u8; c_kzg::BYTES_PER_BLOB];
-        let mut offset = 0;
+        use itertools::Itertools;
 
-        // Each field element is 32 bytes long. A blob can hold 4096 field elements.
-        for fe in field_elements {
-            if offset + 32 > c_kzg::BYTES_PER_BLOB {
-                blobs.push(current_blob.into());
-                current_blob = [0u8; c_kzg::BYTES_PER_BLOB];
-                offset = 0;
-            }
-            current_blob[offset..offset + 32].copy_from_slice(&fe);
-            offset += 32;
-        }
-
-        if offset > 0 {
-            blobs.push(current_blob.into());
-        }
-
-        blobs
+        const ELEMENTS_PER_BLOB: usize = c_kzg::BYTES_PER_BLOB / 32;
+        field_elements
+            .into_iter()
+            .chunks(ELEMENTS_PER_BLOB)
+            .into_iter()
+            .map(|elements| {
+                let mut blob = [0u8; c_kzg::BYTES_PER_BLOB];
+                let mut offset = 0;
+                for fe in elements {
+                    blob[offset..offset + 32].copy_from_slice(&fe);
+                    offset += 32;
+                }
+                blob.into()
+            })
+            .collect()
     }
 
-    fn prepare_blob(blob: &c_kzg::Blob) -> PreparedBlob {
-        let commitment = Self::kzg_commitment(blob);
+    fn prepare_blob(blob: &c_kzg::Blob) -> Result<PreparedBlob, Error> {
+        let commitment = Self::kzg_commitment(blob)?;
         let versioned_hash = Self::commitment_to_versioned_hash(&commitment);
-        let proof = Self::kzg_proof(blob, &commitment);
+        let proof = Self::kzg_proof(blob, &commitment)?;
 
-        PreparedBlob {
+        Ok(PreparedBlob {
             commitment: commitment.to_vec(),
             proof: proof.to_vec(),
             versioned_hash,
             data: blob.to_vec(),
-        }
+        })
     }
 
-    fn kzg_commitment(blob: &c_kzg::Blob) -> c_kzg::KzgCommitment {
-        c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, &KZG_SETTINGS).unwrap()
+    fn kzg_commitment(blob: &c_kzg::Blob) -> Result<c_kzg::KzgCommitment, Error> {
+        c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, &kzg_settings())
+        .map_err(|e| Error::Other(e.to_string()))
     }
 
     fn commitment_to_versioned_hash(commitment: &c_kzg::KzgCommitment) -> H256 {
+        const VERSION: u8 = 1;
         let mut res: [u8; 32] = Sha256::digest(commitment.deref()).into();
-        res[0] = VERSIONED_HASH_VERSION_KZG;
+        res[0] = VERSION;
         H256::from(res)
     }
 
-    fn kzg_proof(blob: &c_kzg::Blob, commitment: &c_kzg::KzgCommitment) -> c_kzg::KzgProof {
-        c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), &KZG_SETTINGS)
-            .expect("KZG proof computation failed")
+    fn kzg_proof(blob: &c_kzg::Blob, commitment: &c_kzg::KzgCommitment) -> Result<c_kzg::KzgProof, Error> {
+        c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), &kzg_settings())
+        .map_err(|e| Error::Other(e.to_string()))
     }
 }
 

@@ -44,7 +44,7 @@ fuel-crypto = { version = "0.49.0", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 impl-tools = { version = "0.10.0", default-features = false }
-lazy_static = "1.4.0"
+itertools = "0.13.0"
 mockall = { version = "0.12", default-features = false }
 prometheus = { version = "0.13", default-features = false }
 rand = { version = "0.8", default-features = false }

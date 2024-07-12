@@ -55,9 +55,9 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
     }
 }
 
-#[cfg(feature = "state-committer")]
 pub mod state_submission {
     use ports::types::{StateFragment, StateSubmission};
+    use sqlx::types::chrono;
 
     #[derive(sqlx::FromRow)]
     pub struct L1StateSubmission {
@@ -71,6 +71,7 @@ pub mod state_submission {
         pub fuel_block_hash: Vec<u8>,
         pub transaction_hash: Option<Vec<u8>>,
         pub raw_data: Vec<u8>,
+        pub created_at: chrono::DateTime<chrono::Utc>,
         pub fragment_index: i64,
         pub completed: bool,
     }
@@ -144,6 +145,7 @@ pub mod state_submission {
                 block_hash,
                 transaction_hash,
                 raw_data: value.raw_data,
+                created_at: value.created_at,
                 completed: value.completed,
                 fragment_index,
             })
@@ -156,6 +158,7 @@ pub mod state_submission {
                 fuel_block_hash: value.block_hash.to_vec(),
                 transaction_hash: value.transaction_hash.map(|hash| hash.to_vec()),
                 raw_data: value.raw_data,
+                created_at: value.created_at,
                 completed: value.completed,
                 fragment_index: i64::from(value.fragment_index),
             }

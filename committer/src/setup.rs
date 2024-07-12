@@ -70,7 +70,6 @@ pub fn block_committer(
     )
 }
 
-#[cfg(feature = "state-committer")]
 pub fn state_committer(
     l1: L1,
     storage: impl Storage + 'static,
@@ -88,7 +87,6 @@ pub fn state_committer(
     )
 }
 
-#[cfg(feature = "state-committer")]
 pub fn state_importer(
     fuel: FuelApi,
     storage: impl Storage + 'static,
@@ -117,7 +115,7 @@ pub async fn l1_adapter(
         config.eth.chain_id,
         config.eth.state_contract_address,
         &config.eth.wallet_key,
-        &config.eth.blob_pool_wallet_key,
+        config.eth.blob_pool_wallet_key.clone(),
         internal_config.eth_errors_before_unhealthy,
     )
     .await?;

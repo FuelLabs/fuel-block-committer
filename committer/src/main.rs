@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
     setup::logger();
 
     let config = config::parse()?;
+    config.validate()?;
 
     let storage = setup::storage(&config).await?;
 
@@ -63,8 +64,14 @@ async fn main() -> Result<()> {
         cancel_token.clone(),
     );
 
-    #[cfg(feature = "state-committer")]
-    let (state_committer_handle, state_importer_handle) = {
+    let mut handles =  vec![
+        wallet_balance_tracker_handle,
+        committer_handle,
+        listener_handle,
+    ];
+
+    // If the blob pool wallet key is set, we need to start the state committer and state importer
+    if config.eth.blob_pool_wallet_key.is_some() {
         let state_committer_handle = setup::state_committer(
             ethereum_rpc,
             storage.clone(),
@@ -81,8 +88,9 @@ async fn main() -> Result<()> {
             &config,
         );
 
-        (state_committer_handle, state_importer_handle)
-    };
+        handles.push(state_committer_handle);
+        handles.push(state_importer_handle);
+    }
 
     launch_api_server(
         &config,
@@ -95,15 +103,7 @@ async fn main() -> Result<()> {
 
     shut_down(
         cancel_token,
-        vec![
-            wallet_balance_tracker_handle,
-            committer_handle,
-            listener_handle,
-            #[cfg(feature = "state-committer")]
-            state_committer_handle,
-            #[cfg(feature = "state-committer")]
-            state_importer_handle,
-        ],
+        handles,
         storage,
     )
     .await

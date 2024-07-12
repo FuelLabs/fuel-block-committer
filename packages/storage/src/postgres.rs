@@ -1,8 +1,5 @@
-#[cfg(feature = "state-committer")]
-use crate::tables::state_submission::{L1PendingTransaction, L1StateFragment, L1StateSubmission};
-use ports::types::BlockSubmission;
-#[cfg(feature = "state-committer")]
-use ports::types::{StateFragment, StateFragmentId, StateSubmission};
+use crate::tables::state_submission::{L1StateFragment, L1StateSubmission};
+use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
@@ -110,7 +107,6 @@ impl Postgres {
         }
     }
 
-    #[cfg(feature = "state-committer")]
     pub(crate) async fn _insert_state(
         &self,
         state: StateSubmission,
@@ -159,12 +155,11 @@ impl Postgres {
         Ok(())
     }
 
-    #[cfg(feature = "state-committer")]
     pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
         // TODO use blob limit
         let rows = sqlx::query_as!(
             L1StateFragment,
-            "SELECT * FROM l1_state_fragment WHERE completed = false LIMIT 6"
+            "SELECT * FROM l1_state_fragment WHERE completed = false ORDER BY created_at ASC LIMIT 6"
         )
         .fetch_all(&self.connection_pool)
         .await?
@@ -173,8 +168,6 @@ impl Postgres {
 
         rows.collect::<Result<Vec<_>>>()
     }
-
-    #[cfg(feature = "state-committer")]
 
     pub(crate) async fn _record_pending_tx(
         &self,
@@ -206,18 +199,15 @@ impl Postgres {
         Ok(())
     }
 
-    #[cfg(feature = "state-committer")]
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<[u8; 32]>> {
-        let rows = sqlx::query_as!(L1PendingTransaction, "SELECT * FROM l1_pending_transaction")
-            .fetch_all(&self.connection_pool)
-            .await?
-            .into_iter()
-            .map(<[u8; 32]>::try_from);
+    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
+        let resp =
+            sqlx::query!("SELECT EXISTS (SELECT 1 FROM l1_pending_transaction LIMIT 1) as exists")
+                .fetch_one(&self.connection_pool)
+                .await?;
 
-        rows.collect::<Result<Vec<_>>>()
+        Ok(resp.exists.expect("query will always return a row"))
     }
 
-    #[cfg(feature = "state-committer")]
     pub(crate) async fn _state_submission_w_latest_block(
         &self,
     ) -> crate::error::Result<Option<StateSubmission>> {

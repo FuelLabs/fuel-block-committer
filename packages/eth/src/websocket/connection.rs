@@ -32,7 +32,7 @@ abigen!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: Provider<Ws>,
-    blob_pool_wallet: LocalWallet,
+    blob_pool_wallet: Option<LocalWallet>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     commit_interval: NonZeroU32,
     address: H160,
@@ -81,11 +81,17 @@ impl EthApi for WsConnection {
     }
 
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
+        let blob_pool_wallet = if let Some(blob_pool_wallet) = &self.blob_pool_wallet {
+            blob_pool_wallet
+        } else {
+            return Err(Error::Other("blob pool wallet not configured".to_string()));
+        };
+
         let sidecar = BlobSidecar::new(state_data).map_err(|e| Error::Other(e.to_string()))?;
-        let blob_tx = self.prepare_blob_tx(sidecar.versioned_hashes()).await?;
+        let blob_tx = self.prepare_blob_tx(sidecar.versioned_hashes(), blob_pool_wallet.address(), blob_pool_wallet.chain_id()).await?;
 
         let tx_encoder = BlobTransactionEncoder::new(blob_tx, sidecar);
-        let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(&self.blob_pool_wallet);
+        let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(blob_pool_wallet);
 
         self.provider.send_raw_transaction(raw_tx.into()).await?;
 
@@ -117,14 +123,17 @@ impl WsConnection {
         chain_id: Chain,
         contract_address: Address,
         wallet_key: &str,
-        blob_pool_wallet_key: &str,
+        blob_pool_wallet_key: Option<String>,
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(url.to_string()).await?;
 
         let wallet = LocalWallet::from_str(wallet_key)?.with_chain_id(chain_id);
         let address = wallet.address();
 
-        let blob_pool_wallet = LocalWallet::from_str(blob_pool_wallet_key)?.with_chain_id(chain_id);
+        let blob_pool_wallet = blob_pool_wallet_key
+            .map(|key| LocalWallet::from_str(&key))
+            .transpose()?
+            .map(|wallet| wallet.with_chain_id(chain_id));
 
         let signer = SignerMiddleware::new(provider.clone(), wallet.clone());
 
@@ -158,8 +167,7 @@ impl WsConnection {
         Ok(self.provider.get_balance(address, None).await?)
     }
 
-    async fn prepare_blob_tx(&self, blob_versioned_hashes: Vec<H256>) -> Result<BlobTransaction> {
-        let address = self.blob_pool_wallet.address();
+    async fn prepare_blob_tx(&self, blob_versioned_hashes: Vec<H256>, address: H160, chain_id: u64) -> Result<BlobTransaction> {
         let nonce = self.provider.get_transaction_count(address, None).await?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
@@ -171,7 +179,7 @@ impl WsConnection {
 
         let blob_tx = BlobTransaction {
             to: address,
-            chain_id: self.blob_pool_wallet.chain_id().into(),
+            chain_id: chain_id.into(),
             gas_limit,
             nonce,
             max_fee_per_gas,

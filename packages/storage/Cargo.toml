@@ -20,6 +20,8 @@ sqlx = { workspace = true, features = [
   "runtime-tokio",
   "migrate",
   "macros",
+  "time",
+  "chrono",
 ] }
 testcontainers = { workspace = true, optional = true }
 thiserror = { workspace = true }
@@ -38,4 +40,3 @@ test-helpers = [
   "dep:rand",
   "ports/test-helpers",
 ]
-state-committer = []

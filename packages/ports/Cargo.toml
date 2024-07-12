@@ -11,7 +11,6 @@ rust-version = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true, optional = true }
-ethers = { workspace = true }
 ethers-core = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
@@ -19,6 +18,7 @@ impl-tools = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
+sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
 validator = { workspace = true, optional = true }
 
@@ -39,4 +39,3 @@ fuel = [
 ]
 storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]
 full = ["l1", "fuel", "storage"]
-state-committer = []
