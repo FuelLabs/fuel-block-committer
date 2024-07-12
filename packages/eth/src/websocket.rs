@@ -28,7 +28,7 @@ impl WebsocketClient {
         chain_id: Chain,
         contract_address: Address,
         wallet_key: &str,
-        blobl_pool_wallet_key: Option<String>,
+        blob_pool_wallet_key: Option<String>,
         unhealthy_after_n_errors: usize,
     ) -> ports::l1::Result<Self> {
         let provider = WsConnection::connect(
@@ -36,7 +36,7 @@ impl WebsocketClient {
             chain_id,
             contract_address,
             wallet_key,
-            blobl_pool_wallet_key,
+            blob_pool_wallet_key,
         )
         .await?;
 
