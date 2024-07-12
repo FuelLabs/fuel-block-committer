@@ -57,7 +57,10 @@ impl BlobSidecar {
 
         let field_elements = Self::generate_field_elements(data);
         let blobs = Self::field_elements_to_blobs(field_elements);
-        let prepared_blobs = blobs.iter().map(|blob| Self::prepare_blob(blob)).collect::<Result<_, _>>()?;
+        let prepared_blobs = blobs
+            .iter()
+            .map(|blob| Self::prepare_blob(blob))
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             blobs: prepared_blobs,
@@ -121,7 +124,7 @@ impl BlobSidecar {
 
     fn kzg_commitment(blob: &c_kzg::Blob) -> Result<c_kzg::KzgCommitment, Error> {
         c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, &kzg_settings())
-        .map_err(|e| Error::Other(e.to_string()))
+            .map_err(|e| Error::Other(e.to_string()))
     }
 
     fn commitment_to_versioned_hash(commitment: &c_kzg::KzgCommitment) -> H256 {
@@ -131,9 +134,12 @@ impl BlobSidecar {
         H256::from(res)
     }
 
-    fn kzg_proof(blob: &c_kzg::Blob, commitment: &c_kzg::KzgCommitment) -> Result<c_kzg::KzgProof, Error> {
+    fn kzg_proof(
+        blob: &c_kzg::Blob,
+        commitment: &c_kzg::KzgCommitment,
+    ) -> Result<c_kzg::KzgProof, Error> {
         c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), &kzg_settings())
-        .map_err(|e| Error::Other(e.to_string()))
+            .map_err(|e| Error::Other(e.to_string()))
     }
 }
 

@@ -129,7 +129,7 @@ mod tests {
     use storage::PostgresProcess;
     use validator::BlockValidator;
 
-    use ports::fuel::{FuelBlockId, FuelHeader, FuelBlock};
+    use ports::fuel::{FuelBlock, FuelBlockId, FuelHeader};
 
     use super::*;
 
@@ -156,7 +156,7 @@ mod tests {
             id,
             header,
             consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
-            transactions:  vec![[2u8; 32].into()],
+            transactions: vec![[2u8; 32].into()],
             block_producer: Some(secret_key.public_key()),
         }
     }

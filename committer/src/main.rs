@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         cancel_token.clone(),
     );
 
-    let mut handles =  vec![
+    let mut handles = vec![
         wallet_balance_tracker_handle,
         committer_handle,
         listener_handle,
@@ -101,12 +101,7 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    shut_down(
-        cancel_token,
-        handles,
-        storage,
-    )
-    .await
+    shut_down(cancel_token, handles, storage).await
 }
 
 #[cfg(test)]

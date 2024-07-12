@@ -88,7 +88,13 @@ impl EthApi for WsConnection {
         };
 
         let sidecar = BlobSidecar::new(state_data).map_err(|e| Error::Other(e.to_string()))?;
-        let blob_tx = self.prepare_blob_tx(sidecar.versioned_hashes(), blob_pool_wallet.address(), blob_pool_wallet.chain_id()).await?;
+        let blob_tx = self
+            .prepare_blob_tx(
+                sidecar.versioned_hashes(),
+                blob_pool_wallet.address(),
+                blob_pool_wallet.chain_id(),
+            )
+            .await?;
 
         let tx_encoder = BlobTransactionEncoder::new(blob_tx, sidecar);
         let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(blob_pool_wallet);
@@ -167,7 +173,12 @@ impl WsConnection {
         Ok(self.provider.get_balance(address, None).await?)
     }
 
-    async fn prepare_blob_tx(&self, blob_versioned_hashes: Vec<H256>, address: H160, chain_id: u64) -> Result<BlobTransaction> {
+    async fn prepare_blob_tx(
+        &self,
+        blob_versioned_hashes: Vec<H256>,
+        address: H160,
+        chain_id: u64,
+    ) -> Result<BlobTransaction> {
         let nonce = self.provider.get_transaction_count(address, None).await?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
