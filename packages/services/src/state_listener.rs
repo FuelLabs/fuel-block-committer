@@ -1,14 +1,12 @@
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
 use ports::{
     storage::Storage,
-    types::{FuelBlockCommittedOnL1, L1Height, TransactionReceipt},
+    types::{StateSubmissionTx, TransactionReceipt},
 };
-use tracing::{error, info};
 
 use super::Runner;
 
@@ -35,11 +33,14 @@ where
     L1: ports::l1::Api,
     Db: Storage,
 {
-    async fn check_pending_txs(&mut self, pending_txs: Vec<[u8; 32]>) -> crate::Result<()> {
+    async fn check_pending_txs(
+        &mut self,
+        pending_txs: Vec<StateSubmissionTx>,
+    ) -> crate::Result<()> {
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
         for tx in pending_txs {
-            let Some(tx_receipt) = self.l1_adapter.get_transaction_receipt(tx).await? else {
+            let Some(tx_receipt) = self.l1_adapter.get_transaction_receipt(tx.hash).await? else {
                 continue; // not committed
             };
 
@@ -48,7 +49,7 @@ where
                 continue; // not finalized
             }
 
-            self.finalize_fragments(tx).await?;
+            self.storage.finalize_state_submission_tx(tx.hash).await?;
         }
 
         Ok(())
@@ -65,15 +66,6 @@ where
             .map_err(|_| {
                 crate::Error::Other("could not convert `block_number` to `u64`".to_string())
             })
-    }
-
-    async fn finalize_fragments(&mut self, tx_hash: [u8; 32]) -> crate::Result<()> {
-        // find framents with tx_hash set to complteand save all fuel_block_hashes
-
-        // find all fragments with `fuel_block_hash` if all complted find submission and set to
-        // completed
-
-        Ok(())
     }
 }
 

@@ -1,4 +1,6 @@
-use ports::types::{BlockSubmission, StateFragment, StateSubmission};
+use ports::types::{
+    BlockSubmission, StateFragment, StateSubmission, StateSubmissionTx, TransactionState,
+};
 
 macro_rules! bail {
     ($msg: literal, $($args: expr),*) => {
@@ -157,29 +159,36 @@ impl From<StateFragment> for L1StateFragment {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct L1PendingTransaction {
-    pub transaction_hash: Vec<u8>,
+pub struct L1StateSubmissionTx {
+    pub hash: Vec<u8>,
+    pub state: i16,
 }
 
-impl TryFrom<L1PendingTransaction> for [u8; 32] {
+impl TryFrom<L1StateSubmissionTx> for StateSubmissionTx {
     type Error = crate::error::Error;
 
-    fn try_from(value: L1PendingTransaction) -> Result<Self, Self::Error> {
-        let transaction_hash = value.transaction_hash.as_slice();
-        let Ok(transaction_hash) = transaction_hash.try_into() else {
+    fn try_from(value: L1StateSubmissionTx) -> Result<Self, Self::Error> {
+        let hash = value.hash.as_slice();
+        let Ok(hash) = hash.try_into() else {
+            bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
+        };
+
+        let Some(state) = TransactionState::from_i16(value.state) else {
             bail!(
-                "Expected 32 bytes for `transaction_hash`, but got: {transaction_hash:?} from db",
+                "state: {:?} is not a valid variant of `TransactionState`",
+                value.state
             );
         };
 
-        Ok(transaction_hash)
+        Ok(StateSubmissionTx { hash, state })
     }
 }
 
-impl From<[u8; 32]> for L1PendingTransaction {
-    fn from(value: [u8; 32]) -> Self {
+impl From<StateSubmissionTx> for L1StateSubmissionTx {
+    fn from(value: StateSubmissionTx) -> Self {
         Self {
-            transaction_hash: value.to_vec(),
+            hash: value.hash.to_vec(),
+            state: value.state.into_i16(),
         }
     }
 }

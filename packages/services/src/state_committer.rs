@@ -156,7 +156,7 @@ mod tests {
 
         let tx = db.get_pending_txs().await?;
         assert!(tx.len() == 1);
-        assert_eq!(tx[0], [1u8; 32]);
+        assert_eq!(tx[0].hash, [1u8; 32]);
 
         Ok(())
     }

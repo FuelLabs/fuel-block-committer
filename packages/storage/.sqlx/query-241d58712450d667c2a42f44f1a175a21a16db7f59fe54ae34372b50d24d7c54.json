@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH updated_rows AS (UPDATE l1_state_fragment SET completed = true WHERE transaction_hash = $1 RETURNING fuel_block_hash) SELECT DISTINCT fuel_block_hash FROM updated_rows",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fuel_block_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "241d58712450d667c2a42f44f1a175a21a16db7f59fe54ae34372b50d24d7c54"
+}

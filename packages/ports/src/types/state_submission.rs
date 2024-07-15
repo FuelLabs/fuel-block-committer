@@ -23,3 +23,33 @@ impl StateFragment {
         (self.block_hash, self.fragment_index)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateSubmissionTx {
+    pub hash: [u8; 32],
+    pub state: TransactionState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransactionState {
+    Pending,
+    Finalized,
+}
+
+// Used for DB storage
+impl TransactionState {
+    pub fn into_i16(&self) -> i16 {
+        match self {
+            TransactionState::Pending => 0,
+            TransactionState::Finalized => 1,
+        }
+    }
+
+    pub fn from_i16(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Pending),
+            1 => Some(Self::Finalized),
+            _ => None,
+        }
+    }
+}

@@ -1,6 +1,7 @@
-CREATE TABLE IF NOT EXISTS l1_pending_transaction (
-    transaction_hash BYTEA PRIMARY KEY NOT NULL,
-    CHECK (octet_length(transaction_hash) = 32)
+CREATE TABLE IF NOT EXISTS l1_state_transaction (
+    hash BYTEA PRIMARY KEY NOT NULL,
+    state SMALLINT NOT NULL,
+    CHECK (octet_length(hash) = 32)
 );
 
 CREATE TABLE IF NOT EXISTS l1_state_submission (
@@ -15,7 +16,7 @@ CREATE TABLE IF NOT EXISTS l1_state_fragment (
     fragment_index   BIGINT NOT NULL,
     raw_data         BYTEA NOT NULL,
     completed        BOOLEAN NOT NULL,
-    transaction_hash BYTEA REFERENCES l1_pending_transaction(transaction_hash) ON DELETE SET NULL,
+    transaction_hash BYTEA REFERENCES l1_state_transaction(hash) ON DELETE SET NULL,
     PRIMARY KEY (fuel_block_hash, fragment_index),
     CHECK (octet_length(fuel_block_hash) = 32)
 );

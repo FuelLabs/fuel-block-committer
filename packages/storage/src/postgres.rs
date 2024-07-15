@@ -1,4 +1,7 @@
-use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
+use ports::types::{
+    BlockSubmission, StateFragment, StateFragmentId, StateSubmission, StateSubmissionTx,
+    TransactionState,
+};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
@@ -176,8 +179,9 @@ impl Postgres {
         let mut transaction = self.connection_pool.begin().await?;
 
         sqlx::query!(
-            "INSERT INTO l1_pending_transaction (transaction_hash) VALUES ($1)",
-            tx_hash.as_slice()
+            "INSERT INTO l1_state_transaction (hash, state) VALUES ($1, $2)",
+            tx_hash.as_slice(),
+            TransactionState::Pending.into_i16(),
         )
         .execute(&mut *transaction)
         .await?;
@@ -198,17 +202,17 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<[u8; 32]>> {
-        let rows = sqlx::query_as!(
-            tables::L1PendingTransaction,
-            "SELECT * FROM l1_pending_transaction"
+    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<StateSubmissionTx>> {
+        sqlx::query_as!(
+            tables::L1StateSubmissionTx,
+            "SELECT * FROM l1_state_transaction WHERE state = $1",
+            TransactionState::Pending.into_i16()
         )
         .fetch_all(&self.connection_pool)
         .await?
         .into_iter()
-        .map(<[u8; 32]>::try_from);
-
-        rows.collect::<Result<Vec<_>>>()
+        .map(StateSubmissionTx::try_from)
+        .collect::<Result<Vec<_>>>()
     }
 
     pub(crate) async fn _state_submission_w_latest_block(
@@ -222,5 +226,75 @@ impl Postgres {
         .await?
         .map(StateSubmission::try_from)
         .transpose()
+    }
+
+    pub(crate) async fn _finalize_state_submission_tx(&self, hash: [u8; 32]) -> Result<()> {
+        let mut transaction = self.connection_pool.begin().await?;
+
+        //TODO: @hal3e count updated rows to return error if hash not there
+        sqlx::query!(
+            "UPDATE l1_state_transaction SET state = $1 WHERE hash = $2",
+            TransactionState::Finalized.into_i16(),
+            hash.to_vec(),
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        //if let Some(row) = updated_row {
+        //    Ok(row.try_into()?)
+        //} else {
+        //    let hash = hex::encode(fuel_block_hash);
+        //    Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
+        //}
+        //
+        //sqlx::query!(
+        //    "INSERT INTO l1_state_transaction (hash, state) VALUES ($1, 0)",
+        //    tx_hash.as_slice()
+        //)
+        //.execute(&mut *transaction)
+        //.await?;
+        //
+        //for (block_hash, fragment_idx) in fragment_ids {
+
+        #[derive(sqlx::FromRow)]
+        struct MyRow {
+            fuel_block_hash: Vec<u8>,
+        }
+
+        let fuel_block_hashes = sqlx::query_as!(
+MyRow,
+        "WITH updated_rows AS (UPDATE l1_state_fragment SET completed = true WHERE transaction_hash = $1 RETURNING fuel_block_hash) SELECT DISTINCT fuel_block_hash FROM updated_rows",
+            hash.as_slice(),
+        )
+
+            .fetch_all(&mut *transaction).await?;
+
+        transaction.commit().await?;
+
+        // boloow do atomic
+
+        //TODO: @hal3e this shold not be empty: fuel_block_hashes
+        //
+
+        for fb_hash in fuel_block_hashes {
+            let result = sqlx::query!(
+                "SELECT bool_and(completed) FROM l1_state_fragment WHERE fuel_block_hash = $1",
+                fb_hash.fuel_block_hash.as_slice()
+            )
+            .fetch_one(&mut *transaction)
+            .await?
+            .bool_and
+            .expect("hal3e add error");
+
+            if result {
+                //TODO: update submission
+            } else {
+                //TODO: error out
+            }
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
     }
 }
