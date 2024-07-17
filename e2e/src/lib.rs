@@ -22,8 +22,10 @@ mod tests {
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
         let show_logs = false;
+        // blob support disabled because this test doesn't generate blocks with transactions in it
+        // so there is no data to blobify
         let blob_support = false;
-        let stack = WholeStack::deploy_default(show_logs, false).await?;
+        let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
 
         // when
         stack

@@ -42,7 +42,7 @@ impl WholeStack {
         let db_name = random_db.db_name();
         let db_port = random_db.port();
         let committer_builder = Committer::default()
-            .with_show_logs(true)
+            .with_show_logs(logs)
             .with_eth_rpc(eth_node.ws_url().clone())
             .with_fuel_rpc(fuel_node.url().clone())
             .with_db_port(db_port)
