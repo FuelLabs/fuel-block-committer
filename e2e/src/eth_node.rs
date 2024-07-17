@@ -165,8 +165,16 @@ impl DeployedContract {
         blocks_per_commit_interval: u32,
         commit_cooldown_seconds: u32,
     ) -> anyhow::Result<Self> {
-        let chain_state_contract =
-            WebsocketClient::connect(url, Chain::AnvilHardhat, address, wallet_priv_key, 5).await?;
+        let blob_wallet = None;
+        let chain_state_contract = WebsocketClient::connect(
+            url,
+            Chain::AnvilHardhat,
+            address,
+            wallet_priv_key,
+            blob_wallet,
+            5,
+        )
+        .await?;
 
         Ok(Self {
             address,

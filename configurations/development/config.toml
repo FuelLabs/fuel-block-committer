@@ -1,8 +1,9 @@
 [eth]
-wallet_key = "0x9e56ccf010fa4073274b8177ccaad46fbaf286645310d03ac9bb6afa922a7c36"
-chain_id = "hardhat"
-state_contract_address = "0xdAad669b06d79Cb48C8cfef789972436dBe6F24d"
-rpc = "ws://localhost:8089"
+wallet_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+blob_pool_wallet_key = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+chain_id = "anvil"
+state_contract_address = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+rpc = "ws://localhost:8545"
 
 [fuel]
 graphql_endpoint = "http://localhost:4000"

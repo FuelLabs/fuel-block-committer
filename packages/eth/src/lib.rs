@@ -12,6 +12,7 @@ use ports::{
 };
 use websocket::EthEventStreamer;
 
+mod eip_4844;
 mod error;
 mod metrics;
 mod websocket;
@@ -36,6 +37,10 @@ impl Contract for WebsocketClient {
 
 #[async_trait]
 impl Api for WebsocketClient {
+    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
+        Ok(self.submit_l2_state(state_data).await?)
+    }
+
     async fn balance(&self) -> Result<U256> {
         Ok(self.balance().await?)
     }

@@ -1,4 +1,5 @@
-use ports::types::BlockSubmission;
+use crate::tables::state_submission::{L1StateFragment, L1StateSubmission};
+use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
@@ -118,5 +119,119 @@ impl Postgres {
             let hash = hex::encode(fuel_block_hash);
             Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
         }
+    }
+
+    pub(crate) async fn _insert_state(
+        &self,
+        state: StateSubmission,
+        fragments: Vec<StateFragment>,
+    ) -> Result<()> {
+        if fragments.is_empty() {
+            return Err(Error::Database(
+                "Cannot insert state with no fragments".to_string(),
+            ));
+        }
+
+        let state_row = L1StateSubmission::from(state);
+        let fragment_rows = fragments
+            .into_iter()
+            .map(L1StateFragment::from)
+            .collect::<Vec<_>>();
+
+        let mut transaction = self.connection_pool.begin().await?;
+
+        // Insert the state submission
+        sqlx::query!(
+            "INSERT INTO l1_state_submission (fuel_block_hash, fuel_block_height, completed) VALUES ($1, $2, $3)",
+            state_row.fuel_block_hash,
+            state_row.fuel_block_height,
+            state_row.completed,
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        // Insert the state fragments
+        // TODO: optimize this
+        for fragment_row in fragment_rows {
+            sqlx::query!(
+                "INSERT INTO l1_state_fragment (fuel_block_hash, raw_data, fragment_index, completed) VALUES ($1, $2, $3, $4)",
+                fragment_row.fuel_block_hash,
+                fragment_row.raw_data,
+                fragment_row.fragment_index,
+                fragment_row.completed,
+            )
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
+        // TODO use blob limit
+        let rows = sqlx::query_as!(
+            L1StateFragment,
+            "SELECT * FROM l1_state_fragment WHERE completed = false ORDER BY created_at ASC LIMIT 6"
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(StateFragment::try_from);
+
+        rows.collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _record_pending_tx(
+        &self,
+        tx_hash: [u8; 32],
+        fragment_ids: Vec<StateFragmentId>,
+    ) -> Result<()> {
+        let mut transaction = self.connection_pool.begin().await?;
+
+        sqlx::query!(
+            "INSERT INTO l1_pending_transaction (transaction_hash) VALUES ($1)",
+            tx_hash.as_slice()
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        for (block_hash, fragment_idx) in fragment_ids {
+            sqlx::query!(
+                "UPDATE l1_state_fragment SET transaction_hash = $1 WHERE fuel_block_hash = $2 AND fragment_index = $3",
+                tx_hash.as_slice(),
+                block_hash.as_slice(),
+                fragment_idx as i64
+            )
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
+        let resp =
+            sqlx::query!("SELECT EXISTS (SELECT 1 FROM l1_pending_transaction LIMIT 1) as exists")
+                .fetch_one(&self.connection_pool)
+                .await?;
+
+        Ok(resp.exists.expect("query will always return a row"))
+    }
+
+    pub(crate) async fn _state_submission_w_latest_block(
+        &self,
+    ) -> crate::error::Result<Option<StateSubmission>> {
+        sqlx::query_as!(
+            L1StateSubmission,
+            "SELECT * FROM l1_state_submission ORDER BY fuel_block_height DESC LIMIT 1"
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .map(StateSubmission::try_from)
+        .transpose()
     }
 }
