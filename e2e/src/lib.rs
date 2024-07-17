@@ -22,7 +22,8 @@ mod tests {
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
         let show_logs = false;
-        let stack = WholeStack::deploy_default(show_logs).await?;
+        let blob_support = false;
+        let stack = WholeStack::deploy_default(show_logs, false).await?;
 
         // when
         stack

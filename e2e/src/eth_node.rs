@@ -84,7 +84,7 @@ impl EthNodeProcess {
             .arg(&format!("http://localhost:{}", self.port()))
             .arg("--broadcast")
             .stdin(std::process::Stdio::null())
-            .env("PRIVATE_KEY", self.wallet_key())
+            .env("PRIVATE_KEY", self.main_wallet_key())
             .env("TIME_TO_FINALIZE", seconds_to_finalize.to_string())
             .env(
                 "BLOCKS_PER_COMMIT_INTERVAL",
@@ -114,7 +114,7 @@ impl EthNodeProcess {
         let deployed_contract = DeployedContract::connect(
             &self.ws_url(),
             proxy_address,
-            &self.wallet_key(),
+            &self.main_wallet_key(),
             seconds_to_finalize,
             blocks_per_commit_interval,
             commit_cooldown_seconds,
@@ -124,14 +124,32 @@ impl EthNodeProcess {
         Ok(deployed_contract)
     }
 
-    pub fn wallet_key(&self) -> String {
-        let bytes = self.wallet().signer().to_bytes();
+    pub fn main_wallet_key(&self) -> String {
+        Self::private_key_as_hex(&self.main_wallet())
+    }
+
+    pub fn secondary_wallet_key(&self) -> String {
+        Self::private_key_as_hex(&self.secondary_wallet())
+    }
+
+    fn private_key_as_hex(wallet: &LocalWallet) -> String {
+        let bytes = wallet.signer().to_bytes();
         format!("0x{}", hex::encode(bytes))
     }
 
-    pub fn wallet(&self) -> LocalWallet {
+    fn main_wallet(&self) -> LocalWallet {
         MnemonicBuilder::<English>::default()
             .phrase(self.mnemonic.as_str())
+            .build()
+            .expect("phrase to be correct")
+            .with_chain_id(Chain::AnvilHardhat)
+    }
+
+    fn secondary_wallet(&self) -> LocalWallet {
+        MnemonicBuilder::<English>::default()
+            .phrase(self.mnemonic.as_str())
+            .index(1u32)
+            .expect("Should generate a valid derivation path")
             .build()
             .expect("phrase to be correct")
             .with_chain_id(Chain::AnvilHardhat)

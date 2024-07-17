@@ -18,7 +18,7 @@ pub struct WholeStack {
 }
 
 impl WholeStack {
-    pub async fn deploy_default(logs: bool) -> anyhow::Result<Self> {
+    pub async fn deploy_default(logs: bool, blob_support: bool) -> anyhow::Result<Self> {
         let finalize_duration = Duration::from_secs(1);
         let blocks_per_interval = 10u32;
         let commit_cooldown_seconds = 1u32;
@@ -41,17 +41,23 @@ impl WholeStack {
 
         let db_name = random_db.db_name();
         let db_port = random_db.port();
-        let committer = Committer::default()
-            .with_show_logs(logs)
+        let committer_builder = Committer::default()
+            .with_show_logs(true)
             .with_eth_rpc(eth_node.ws_url().clone())
             .with_fuel_rpc(fuel_node.url().clone())
             .with_db_port(db_port)
             .with_db_name(db_name)
             .with_state_contract_address(deployed_contract.address())
             .with_fuel_block_producer_public_key(fuel_consensus_pub_key)
-            .with_wallet_key(eth_node.wallet_key())
-            .start()
-            .await?;
+            .with_wallet_key(eth_node.main_wallet_key());
+
+        let committer = if blob_support {
+            committer_builder.with_blob_wallet_key(eth_node.secondary_wallet_key())
+        } else {
+            committer_builder
+        };
+
+        let committer = committer.start().await?;
 
         Ok(Self {
             eth_node,

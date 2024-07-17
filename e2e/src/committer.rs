@@ -9,6 +9,7 @@ use url::Url;
 pub struct Committer {
     show_logs: bool,
     wallet_key: Option<String>,
+    blob_wallet_key: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
@@ -53,6 +54,10 @@ impl Committer {
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
+        if let Some(blob_wallet_key) = self.blob_wallet_key {
+            cmd.env("COMMITTER__ETH__BLOB_POOL_WALLET_KEY", blob_wallet_key);
+        }
+
         let sink = if self.show_logs {
             std::process::Stdio::inherit
         } else {
@@ -70,6 +75,11 @@ impl Committer {
 
     pub fn with_wallet_key(mut self, wallet_key: String) -> Self {
         self.wallet_key = Some(wallet_key);
+        self
+    }
+
+    pub fn with_blob_wallet_key(mut self, blob_wallet_key: String) -> Self {
+        self.blob_wallet_key = Some(blob_wallet_key);
         self
     }
 
