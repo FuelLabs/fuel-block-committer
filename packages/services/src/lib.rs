@@ -5,11 +5,17 @@ mod health_reporter;
 mod status_reporter;
 mod wallet_balance_tracker;
 
+mod state_committer;
+mod state_importer;
+
 pub use block_committer::BlockCommitter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use status_reporter::StatusReporter;
 pub use wallet_balance_tracker::WalletBalanceTracker;
+
+pub use state_committer::StateCommitter;
+pub use state_importer::StateImporter;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

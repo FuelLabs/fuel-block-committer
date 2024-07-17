@@ -3,15 +3,20 @@ use std::{num::NonZeroU32, str::FromStr, sync::Arc};
 use ethers::{
     prelude::{abigen, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
-    signers::{LocalWallet, Signer},
-    types::{Address, Chain, H160, U256, U64},
+    signers::{LocalWallet, Signer as _},
+    types::{Address, BlockNumber, Chain, H160, H256, U256, U64},
 };
 use ports::types::ValidatedFuelBlock;
 use serde_json::Value;
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
-use crate::error::{Error, Result};
+use crate::{
+    eip_4844::{calculate_blob_fee, BlobSidecar, BlobTransaction, BlobTransactionEncoder},
+    error::{Error, Result},
+};
+
+const STANDARD_GAS_LIMIT: u64 = 21000;
 
 abigen!(
     FUEL_STATE_CONTRACT,
@@ -27,6 +32,7 @@ abigen!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: Provider<Ws>,
+    blob_pool_wallet: Option<LocalWallet>,
     contract: FUEL_STATE_CONTRACT<SignerMiddleware<Provider<Ws>, LocalWallet>>,
     commit_interval: NonZeroU32,
     address: H160,
@@ -74,6 +80,30 @@ impl EthApi for WsConnection {
         EthEventStreamer::new(events)
     }
 
+    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
+        let blob_pool_wallet = if let Some(blob_pool_wallet) = &self.blob_pool_wallet {
+            blob_pool_wallet
+        } else {
+            return Err(Error::Other("blob pool wallet not configured".to_string()));
+        };
+
+        let sidecar = BlobSidecar::new(state_data).map_err(|e| Error::Other(e.to_string()))?;
+        let blob_tx = self
+            .prepare_blob_tx(
+                sidecar.versioned_hashes(),
+                blob_pool_wallet.address(),
+                blob_pool_wallet.chain_id(),
+            )
+            .await?;
+
+        let tx_encoder = BlobTransactionEncoder::new(blob_tx, sidecar);
+        let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(blob_pool_wallet);
+
+        self.provider.send_raw_transaction(raw_tx.into()).await?;
+
+        Ok(tx_hash.to_fixed_bytes())
+    }
+
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
         Ok(self
@@ -99,13 +129,19 @@ impl WsConnection {
         chain_id: Chain,
         contract_address: Address,
         wallet_key: &str,
+        blob_pool_wallet_key: Option<String>,
     ) -> Result<Self> {
         let provider = Provider::<Ws>::connect(url.to_string()).await?;
 
         let wallet = LocalWallet::from_str(wallet_key)?.with_chain_id(chain_id);
         let address = wallet.address();
 
-        let signer = SignerMiddleware::new(provider.clone(), wallet);
+        let blob_pool_wallet = blob_pool_wallet_key
+            .map(|key| LocalWallet::from_str(&key))
+            .transpose()?
+            .map(|wallet| wallet.with_chain_id(chain_id));
+
+        let signer = SignerMiddleware::new(provider.clone(), wallet.clone());
 
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FUEL_STATE_CONTRACT::new(contract_address, Arc::new(signer));
@@ -125,6 +161,7 @@ impl WsConnection {
             contract,
             commit_interval,
             address,
+            blob_pool_wallet,
         })
     }
 
@@ -134,6 +171,48 @@ impl WsConnection {
 
     async fn _balance(&self, address: H160) -> Result<U256> {
         Ok(self.provider.get_balance(address, None).await?)
+    }
+
+    async fn prepare_blob_tx(
+        &self,
+        blob_versioned_hashes: Vec<H256>,
+        address: H160,
+        chain_id: u64,
+    ) -> Result<BlobTransaction> {
+        let nonce = self.provider.get_transaction_count(address, None).await?;
+
+        let (max_fee_per_gas, max_priority_fee_per_gas) =
+            self.provider.estimate_eip1559_fees(None).await?;
+
+        let gas_limit = U256::from(STANDARD_GAS_LIMIT);
+
+        let max_fee_per_blob_gas = self.calculate_blob_fee(blob_versioned_hashes.len()).await?;
+
+        let blob_tx = BlobTransaction {
+            to: address,
+            chain_id: chain_id.into(),
+            gas_limit,
+            nonce,
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+            max_fee_per_blob_gas,
+            blob_versioned_hashes,
+        };
+
+        Ok(blob_tx)
+    }
+
+    async fn calculate_blob_fee(&self, num_blobs: usize) -> Result<U256> {
+        let latest = self
+            .provider
+            .get_block(BlockNumber::Latest)
+            .await?
+            .expect("block not found");
+
+        let excess_blob_gas = latest.excess_blob_gas.expect("excess blob gas not found");
+        let max_fee_per_blob_gas = calculate_blob_fee(excess_blob_gas, num_blobs as u64);
+
+        Ok(max_fee_per_blob_gas)
     }
 }
 

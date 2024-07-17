@@ -18,6 +18,7 @@ impl-tools = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
+sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
 validator = { workspace = true, optional = true }
 

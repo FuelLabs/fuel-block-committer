@@ -3,6 +3,7 @@ use metrics::{
     RegistersMetrics,
 };
 
+#[derive(Clone)]
 pub struct Metrics {
     pub fuel_network_errors: IntCounter,
 }
