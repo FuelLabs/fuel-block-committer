@@ -1,5 +1,6 @@
 use ports::types::{
-    BlockSubmission, StateFragment, StateFragmentId, StateSubmission, TransactionState,
+    BlockSubmission, StateFragment, StateFragmentId, StateSubmission, StateSubmissionTx,
+    TransactionState,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -202,14 +203,29 @@ impl Postgres {
     }
 
     pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
-        !sqlx::query_as!(
+        Ok(!sqlx::query_as!(
+            // TODO: @hal3e add query to just ask if there are pending tx with
+            // sql
             tables::L1StateSubmissionTx,
             "SELECT * FROM l1_state_transaction WHERE state = $1",
             TransactionState::Pending.into_i16()
         )
         .fetch_all(&self.connection_pool)
         .await?
-        .is_empty()
+        .is_empty())
+    }
+
+    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<StateSubmissionTx>> {
+        sqlx::query_as!(
+            tables::L1StateSubmissionTx,
+            "SELECT * FROM l1_state_transaction WHERE state = $1",
+            TransactionState::Pending.into_i16()
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(StateSubmissionTx::try_from)
+        .collect::<Result<Vec<_>>>()
     }
 
     pub(crate) async fn _state_submission_w_latest_block(
@@ -266,11 +282,9 @@ MyRow,
 
             .fetch_all(&mut *transaction).await?;
 
-        transaction.commit().await?;
-
         // boloow do atomic
 
-        //TODO: @hal3e this shold not be empty: fuel_block_hashes
+        //TODO: @hal3e this should not be empty: fuel_block_hashes
         //
 
         for fb_hash in fuel_block_hashes {

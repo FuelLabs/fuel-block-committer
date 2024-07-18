@@ -59,7 +59,7 @@ impl BlobSidecar {
         let blobs = Self::field_elements_to_blobs(field_elements);
         let prepared_blobs = blobs
             .iter()
-            .map(|blob| Self::prepare_blob(blob))
+            .map(Self::prepare_blob)
             .collect::<Result<_, _>>()?;
 
         Ok(Self {
@@ -123,7 +123,7 @@ impl BlobSidecar {
     }
 
     fn kzg_commitment(blob: &c_kzg::Blob) -> Result<c_kzg::KzgCommitment, Error> {
-        c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, &kzg_settings())
+        c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, kzg_settings())
             .map_err(|e| Error::Other(e.to_string()))
     }
 
@@ -138,7 +138,7 @@ impl BlobSidecar {
         blob: &c_kzg::Blob,
         commitment: &c_kzg::KzgCommitment,
     ) -> Result<c_kzg::KzgProof, Error> {
-        c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), &kzg_settings())
+        c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), kzg_settings())
             .map_err(|e| Error::Other(e.to_string()))
     }
 }
