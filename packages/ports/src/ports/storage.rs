@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use crate::types::{
-    BlockSubmission, StateFragment, StateFragmentId, StateSubmission, StateSubmissionTx,
-};
+use crate::types::{BlockSubmission, Fragment, Submission, SubmissionTx, TransactionState};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -22,19 +20,19 @@ pub trait Storage: Send + Sync {
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
 
-    async fn insert_state(
+    async fn insert_state_submission(
         &self,
-        state: StateSubmission,
-        fragments: Vec<StateFragment>,
+        submission: Submission,
+        fragments: Vec<Fragment>,
     ) -> Result<()>;
-    async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>>;
-    async fn record_pending_tx(
-        &self,
-        tx_hash: [u8; 32],
-        fragment_ids: Vec<StateFragmentId>,
-    ) -> Result<()>;
-    async fn get_pending_txs(&self) -> Result<Vec<StateSubmissionTx>>;
+    async fn get_unsubmitted_fragments(&self) -> Result<Vec<Fragment>>;
+    async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()>;
+    async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
-    async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
-    async fn finalize_state_submission_tx(&self, hash: [u8; 32]) -> Result<()>;
+    async fn state_submission_w_latest_block(&self) -> Result<Option<Submission>>;
+    async fn update_submission_tx_state(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> Result<()>;
 }

@@ -59,26 +59,36 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct L1StateSubmission {
+pub struct L1Submission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
-    pub completed: bool,
 }
 
-#[derive(sqlx::FromRow)]
-pub struct L1StateFragment {
-    pub fuel_block_hash: Vec<u8>,
-    pub transaction_hash: Option<Vec<u8>>,
-    pub raw_data: Vec<u8>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub fragment_index: i64,
-    pub completed: bool,
-}
+//CREATE TABLE IF NOT EXISTS l1_fragments (
+//    id            SERIAL PRIMARY KEY,
+//    position      BIGINT NOT NULL CHECK (position >= 0),
+//    submission_id INTEGER NOT NULL REFERENCES l1_submissions(id),
+//    data          BYTEA NOT NULL,
+//    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+//);
+//
+//CREATE TABLE IF NOT EXISTS l1_transactions (
+//    id    SERIAL PRIMARY KEY,
+//    hash  BYTEA NOT NULL UNIQUE,
+//    state SMALLINT NOT NULL,
+//    CHECK (octet_length(hash) = 32)
+//);
+//
+//CREATE TABLE IF NOT EXISTS l1_transaction_fragments (
+//    transaction_id INTEGER NOT NULL REFERENCES l1_transactions(id),
+//    fragment_id    INTEGER NOT NULL REFERENCES l1_fragments(id),
+//    PRIMARY KEY (transaction_id, fragment_id)
+//);
 
-impl TryFrom<L1StateSubmission> for StateSubmission {
+impl TryFrom<L1Submission> for StateSubmission {
     type Error = crate::error::Error;
 
-    fn try_from(value: L1StateSubmission) -> Result<Self, Self::Error> {
+    fn try_from(value: L1Submission) -> Result<Self, Self::Error> {
         let block_hash = value.fuel_block_hash.as_slice();
         let Ok(block_hash) = block_hash.try_into() else {
             bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
@@ -100,7 +110,7 @@ impl TryFrom<L1StateSubmission> for StateSubmission {
     }
 }
 
-impl From<StateSubmission> for L1StateSubmission {
+impl From<StateSubmission> for L1Submission {
     fn from(value: StateSubmission) -> Self {
         Self {
             fuel_block_height: i64::from(value.block_height),
@@ -108,6 +118,16 @@ impl From<StateSubmission> for L1StateSubmission {
             fuel_block_hash: value.block_hash.to_vec(),
         }
     }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct L1StateFragment {
+    pub fuel_block_hash: Vec<u8>,
+    pub transaction_hash: Option<Vec<u8>>,
+    pub raw_data: Vec<u8>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub fragment_index: i64,
+    pub completed: bool,
 }
 
 impl TryFrom<L1StateFragment> for StateFragment {

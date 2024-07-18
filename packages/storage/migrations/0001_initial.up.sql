@@ -16,11 +16,11 @@ CREATE TABLE IF NOT EXISTS l1_submissions (
 );
 
 CREATE TABLE IF NOT EXISTS l1_fragments (
-    id            SERIAL PRIMARY KEY NOT NULL,
-    position      BIGINT NOT NULL CHECK (position >= 0),
+    id            SERIAL PRIMARY KEY,
+    fragment_idx  BIGINT NOT NULL CHECK (fragment_idx >= 0),
     submission_id INTEGER NOT NULL REFERENCES l1_submissions(id),
     data          BYTEA NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS l1_transactions (
@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS l1_transactions (
 );
 
 CREATE TABLE IF NOT EXISTS l1_transaction_fragments (
-    transaction_id INTEGER NOT NULL REFERENCES transactions(id),
-    fragment_id INTEGER NOT NULL REFERENCES fragments(id),
+    transaction_id INTEGER NOT NULL REFERENCES l1_transactions(id),
+    fragment_id    INTEGER NOT NULL REFERENCES l1_fragments(id),
     PRIMARY KEY (transaction_id, fragment_id)
 );
 

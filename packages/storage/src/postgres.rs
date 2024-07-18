@@ -120,7 +120,7 @@ impl Postgres {
             ));
         }
 
-        let state_row = tables::L1StateSubmission::from(state);
+        let state_row = tables::L1Submission::from(state);
         let fragment_rows = fragments
             .into_iter()
             .map(tables::L1StateFragment::from)
