@@ -12,15 +12,9 @@ cargo build
 
 ## Testing
 
-Testing the committer requires the use of docker-compose to stand-up an e2e environment containing both a fuel-core and 
-ganache container. Setting up the docker environment is automated via the `run_tests.sh` script.
-The script will also handle any initial setup and contract deployments required for e2e testing.
+To run the e2e tests you need to have the following installed and available in your PATH:
+* [foundry](https://github.com/foundry-rs/foundry)
+* fuel-core (can be installed via [fuelup](https://github.com/FuelLabs/fuelup))
+* fuel-block-committer
 
-Unit tests also require having the correct version of fuel-core installed. To avoid this requirement, enable the
-`fuel-core-lib` feature on the `fuels-test-helpers` dev-dependency to ensure the correct version of fuel-core 
-is selected.
-
-```shell
-./run_tests.sh
-```
-
+You can also use `run_tests.sh` which takes care of building the `fuel-block-committer` binary and making it available on PATH prior to running the e2e tests.

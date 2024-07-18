@@ -12,7 +12,7 @@ rust-version = { workspace = true }
 [dependencies]
 async-trait = { workspace = true }
 futures = { workspace = true }
-itertools = { workspace = true }
+itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["full"] }
 serde = { workspace = true }

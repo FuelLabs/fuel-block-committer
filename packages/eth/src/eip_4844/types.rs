@@ -12,9 +12,22 @@ use crate::error::Error;
 fn kzg_settings() -> &'static c_kzg::KzgSettings {
     static KZG_SETTINGS: OnceLock<c_kzg::KzgSettings> = OnceLock::new();
     KZG_SETTINGS.get_or_init(|| {
+        // TODO: Load the trusted setup from static bytes.
+        let temp_file = tempfile::NamedTempFile::new().expect("can create a temporary file");
         let trusted_setup = include_str!("trusted_setup.txt");
-        c_kzg::KzgSettings::load_trusted_setup_file(&CString::new(trusted_setup).expect("C string"))
-            .unwrap()
+        std::fs::write(temp_file.path(), trusted_setup)
+            .expect("can write trusted setup to temporary file");
+
+        let stringified_path = temp_file
+            .path()
+            .as_os_str()
+            .to_str()
+            .expect("path is valid utf8");
+
+        c_kzg::KzgSettings::load_trusted_setup_file(
+            &CString::new(stringified_path).expect("C string"),
+        )
+        .unwrap()
     })
 }
 
@@ -59,7 +72,7 @@ impl BlobSidecar {
         let blobs = Self::field_elements_to_blobs(field_elements);
         let prepared_blobs = blobs
             .iter()
-            .map(|blob| Self::prepare_blob(blob))
+            .map(Self::prepare_blob)
             .collect::<Result<_, _>>()?;
 
         Ok(Self {
@@ -82,7 +95,7 @@ impl BlobSidecar {
         data.chunks(31)
             .map(|chunk| {
                 let mut fe = [0u8; 32];
-                fe[1..].copy_from_slice(chunk);
+                fe[1..1 + chunk.len()].copy_from_slice(chunk);
                 fe
             })
             .collect()
@@ -123,7 +136,7 @@ impl BlobSidecar {
     }
 
     fn kzg_commitment(blob: &c_kzg::Blob) -> Result<c_kzg::KzgCommitment, Error> {
-        c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, &kzg_settings())
+        c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, kzg_settings())
             .map_err(|e| Error::Other(e.to_string()))
     }
 
@@ -138,7 +151,7 @@ impl BlobSidecar {
         blob: &c_kzg::Blob,
         commitment: &c_kzg::KzgCommitment,
     ) -> Result<c_kzg::KzgProof, Error> {
-        c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), &kzg_settings())
+        c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), kzg_settings())
             .map_err(|e| Error::Other(e.to_string()))
     }
 }

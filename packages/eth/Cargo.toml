@@ -14,7 +14,8 @@ async-trait = { workspace = true }
 c-kzg = { workspace = true }
 ethers = { workspace = true, features = ["ws"] }
 futures = { workspace = true }
-itertools = { workspace = true }
+itertools = { workspace = true, features = ["use_alloc"] }
+tempfile = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
 rlp = { workspace = true }

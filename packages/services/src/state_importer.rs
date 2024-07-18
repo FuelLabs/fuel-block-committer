@@ -162,7 +162,7 @@ mod tests {
     }
 
     fn given_header(height: u32) -> FuelHeader {
-        let application_hash = "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
+        let application_hash = "0x8b96f712e293e801d53da77113fec3676c01669c6ea05c6c92a5889fce5f649d"
             .parse()
             .unwrap();
 

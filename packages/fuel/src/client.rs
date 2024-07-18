@@ -34,14 +34,31 @@ impl HttpClient {
         Ok(())
     }
 
-    pub(crate) async fn _block_at_height(&self, height: u32) -> Result<Option<Block>> {
-        let maybe_block = self
-            .client
-            .block_by_height(height.into())
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
+    #[cfg(feature = "test-helpers")]
+    pub async fn health(&self) -> Result<bool> {
+        match self.client.health().await {
+            Ok(healthy) => {
+                self.handle_network_success();
+                Ok(healthy)
+            }
+            Err(err) => {
+                self.handle_network_error();
+                Err(Error::Network(err.to_string()))
+            }
+        }
+    }
 
-        Ok(maybe_block.map(Into::into))
+    pub(crate) async fn _block_at_height(&self, height: u32) -> Result<Option<Block>> {
+        match self.client.block_by_height(height.into()).await {
+            Ok(maybe_block) => {
+                self.handle_network_success();
+                Ok(maybe_block.map(Into::into))
+            }
+            Err(err) => {
+                self.handle_network_error();
+                Err(Error::Network(err.to_string()))
+            }
+        }
     }
 
     pub(crate) async fn _latest_block(&self) -> Result<Block> {
