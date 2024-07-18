@@ -1,28 +1,11 @@
 #!/usr/bin/env bash
 
-while true; do
-	case "$1" in
-	--logs)
-		show_logs="true"
-		shift 1
-		;;
-	-- | "")
-		break
-		;;
-	*)
-		printf "Unknown option %s\n" "$1"
-		exit 1
-		;;
-	esac
-done
+set -e
+script_location="$(readlink -f "$(dirname "$0")")"
 
-cargo test --workspace --exclude e2e
+workspace_cargo_manifest="$script_location/Cargo.toml"
 
-docker compose up -d
-trap 'docker compose down > /dev/null 2>&1' EXIT
+# So that we may have a binary in `target/debug`
+cargo build --manifest-path "$workspace_cargo_manifest" --bin fuel-block-committer
 
-cargo test --package e2e -- --nocapture
-
-if [[ $show_logs = "true" ]]; then
-	docker compose logs -f block_committer &
-fi
+PATH="$script_location/target/debug:$PATH" cargo test --manifest-path "$workspace_cargo_manifest" --workspace
