@@ -92,11 +92,13 @@ pub fn state_importer(
     storage: impl Storage + 'static,
     _registry: &Registry,
     cancel_token: CancellationToken,
+    config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_importer = services::StateImporter::new(storage, fuel);
+    let validator = BlockValidator::new(config.fuel.block_producer_public_key);
+    let state_importer = services::StateImporter::new(storage, fuel, validator);
 
     schedule_polling(
-        Duration::from_secs(10),
+        config.app.block_check_interval,
         state_importer,
         "State Importer",
         cancel_token,
@@ -113,7 +115,7 @@ pub async fn l1_adapter(
         config.eth.chain_id,
         config.eth.state_contract_address,
         &config.eth.wallet_key,
-        &config.eth.blob_pool_wallet_key,
+        config.eth.blob_pool_wallet_key.clone(),
         internal_config.eth_errors_before_unhealthy,
     )
     .await?;
@@ -182,22 +184,12 @@ pub async fn storage(config: &config::Config) -> Result<Database> {
 
 pub async fn shut_down(
     cancel_token: CancellationToken,
-    wallet_balance_tracker_handle: JoinHandle<()>,
-    committer_handle: JoinHandle<()>,
-    listener_handle: JoinHandle<()>,
-    state_committer_handle: JoinHandle<()>,
-    state_importer_handle: JoinHandle<()>,
+    handles: Vec<JoinHandle<()>>,
     storage: Database,
 ) -> Result<()> {
     cancel_token.cancel();
 
-    for handle in [
-        wallet_balance_tracker_handle,
-        committer_handle,
-        listener_handle,
-        state_committer_handle,
-        state_importer_handle,
-    ] {
+    for handle in handles {
         handle.await?;
     }
 

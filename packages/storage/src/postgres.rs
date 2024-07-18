@@ -1,6 +1,5 @@
 use ports::types::{
-    BlockSubmission, StateFragment, StateFragmentId, StateSubmission, StateSubmissionTx,
-    TransactionState,
+    BlockSubmission, StateFragment, StateFragmentId, StateSubmission, TransactionState,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -161,7 +160,7 @@ impl Postgres {
         // TODO use blob limit
         let rows = sqlx::query_as!(
             tables::L1StateFragment,
-            "SELECT * FROM l1_state_fragment WHERE completed = false LIMIT 6"
+            "SELECT * FROM l1_state_fragment WHERE completed = false ORDER BY created_at ASC LIMIT 6"
         )
         .fetch_all(&self.connection_pool)
         .await?
@@ -202,17 +201,15 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<StateSubmissionTx>> {
-        sqlx::query_as!(
+    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
+        !sqlx::query_as!(
             tables::L1StateSubmissionTx,
             "SELECT * FROM l1_state_transaction WHERE state = $1",
             TransactionState::Pending.into_i16()
         )
         .fetch_all(&self.connection_pool)
         .await?
-        .into_iter()
-        .map(StateSubmissionTx::try_from)
-        .collect::<Result<Vec<_>>>()
+        .is_empty()
     }
 
     pub(crate) async fn _state_submission_w_latest_block(

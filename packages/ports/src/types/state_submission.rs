@@ -1,3 +1,5 @@
+pub use sqlx::types::chrono::{DateTime, Utc};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateSubmission {
     pub block_hash: [u8; 32],
@@ -13,6 +15,7 @@ pub struct StateFragment {
     pub transaction_hash: Option<[u8; 32]>,
     pub fragment_index: u32,
     pub raw_data: Vec<u8>,
+    pub created_at: DateTime<Utc>,
     pub completed: bool,
 }
 

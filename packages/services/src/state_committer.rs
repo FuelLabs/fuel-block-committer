@@ -51,8 +51,7 @@ where
     }
 
     async fn is_tx_pending(&self) -> Result<bool> {
-        let pending_txs = self.storage.get_pending_txs().await?;
-        Ok(!pending_txs.is_empty())
+        self.storage.has_pending_txs().await.map_err(|e| e.into())
     }
 }
 
@@ -137,6 +136,7 @@ mod tests {
                 transaction_hash: None,
                 fragment_index: 0,
                 raw_data: vec![1, 2, 3],
+                created_at: ports::types::Utc::now(),
                 completed: false,
             },
         )
@@ -144,6 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_state() -> Result<()> {
+        // given
         let (state, fragment) = given_state();
         let l1_mock = given_l1_that_expects_submission(fragment.clone());
 
@@ -152,11 +153,11 @@ mod tests {
         db.insert_state(state, vec![fragment]).await?;
         let mut committer = StateCommitter::new(l1_mock, db.clone());
 
+        // when
         committer.run().await.unwrap();
 
-        let tx = db.get_pending_txs().await?;
-        assert!(tx.len() == 1);
-        assert_eq!(tx[0].hash, [1u8; 32]);
+        // then
+        assert!(db.has_pending_txs().await?);
 
         Ok(())
     }

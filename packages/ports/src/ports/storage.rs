@@ -18,12 +18,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[impl_tools::autoimpl(for<T: trait> &T, &mut T, Arc<T>, Box<T>)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Storage: Send + Sync {
-    // block submission
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
 
-    // state submission
     async fn insert_state(
         &self,
         state: StateSubmission,
@@ -36,9 +34,7 @@ pub trait Storage: Send + Sync {
         fragment_ids: Vec<StateFragmentId>,
     ) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<StateSubmissionTx>>;
+    async fn has_pending_txs(&self) -> Result<bool>;
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
-    async fn finalize_state_submission_tx(
-        &self,
-        hash: [u8; 32],
-    ) -> Result<()>;
+    async fn finalize_state_submission_tx(&self, hash: [u8; 32]) -> Result<()>;
 }

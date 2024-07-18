@@ -1,6 +1,7 @@
 use ports::types::{
     BlockSubmission, StateFragment, StateSubmission, StateSubmissionTx, TransactionState,
 };
+use sqlx::types::chrono;
 
 macro_rules! bail {
     ($msg: literal, $($args: expr),*) => {
@@ -69,6 +70,7 @@ pub struct L1StateFragment {
     pub fuel_block_hash: Vec<u8>,
     pub transaction_hash: Option<Vec<u8>>,
     pub raw_data: Vec<u8>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
     pub fragment_index: i64,
     pub completed: bool,
 }
@@ -140,6 +142,7 @@ impl TryFrom<L1StateFragment> for StateFragment {
             block_hash,
             transaction_hash,
             raw_data: value.raw_data,
+            created_at: value.created_at,
             completed: value.completed,
             fragment_index,
         })
@@ -154,6 +157,7 @@ impl From<StateFragment> for L1StateFragment {
             raw_data: value.raw_data,
             completed: value.completed,
             fragment_index: i64::from(value.fragment_index),
+            created_at: value.created_at,
         }
     }
 }

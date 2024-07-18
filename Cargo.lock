@@ -1340,7 +1340,7 @@ dependencies = [
  "c-kzg",
  "ethers",
  "futures",
- "lazy_static",
+ "itertools 0.13.0",
  "metrics",
  "mockall",
  "ports",
@@ -2641,6 +2641,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3233,7 +3242,6 @@ name = "ports"
 version = "0.4.0"
 dependencies = [
  "async-trait",
- "ethers",
  "ethers-core",
  "fuel-core-client",
  "futures",
@@ -3241,6 +3249,7 @@ dependencies = [
  "mockall",
  "rand",
  "serde",
+ "sqlx",
  "thiserror",
  "validator",
 ]
@@ -4070,6 +4079,7 @@ dependencies = [
  "async-trait",
  "fuel-crypto",
  "futures",
+ "itertools 0.13.0",
  "metrics",
  "mockall",
  "ports",
@@ -4239,6 +4249,7 @@ dependencies = [
  "atoi",
  "byteorder",
  "bytes",
+ "chrono",
  "crc",
  "crossbeam-queue",
  "either",
@@ -4262,6 +4273,7 @@ dependencies = [
  "smallvec",
  "sqlformat",
  "thiserror",
+ "time",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -4298,7 +4310,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx-core",
+ "sqlx-mysql",
  "sqlx-postgres",
+ "sqlx-sqlite",
  "syn 1.0.109",
  "tempfile",
  "tokio",
@@ -4316,6 +4330,7 @@ dependencies = [
  "bitflags 2.5.0",
  "byteorder",
  "bytes",
+ "chrono",
  "crc",
  "digest",
  "dotenvy",
@@ -4336,12 +4351,14 @@ dependencies = [
  "percent-encoding",
  "rand",
  "rsa",
+ "serde",
  "sha1",
  "sha2",
  "smallvec",
  "sqlx-core",
  "stringprep",
  "thiserror",
+ "time",
  "tracing",
  "whoami",
 ]
@@ -4356,6 +4373,7 @@ dependencies = [
  "base64 0.21.7",
  "bitflags 2.5.0",
  "byteorder",
+ "chrono",
  "crc",
  "dotenvy",
  "etcetera",
@@ -4380,6 +4398,7 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror",
+ "time",
  "tracing",
  "whoami",
 ]
@@ -4391,6 +4410,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b244ef0a8414da0bed4bb1910426e890b19e5e9bccc27ada6b797d05c55ae0aa"
 dependencies = [
  "atoi",
+ "chrono",
  "flume",
  "futures-channel",
  "futures-core",
@@ -4400,7 +4420,9 @@ dependencies = [
  "libsqlite3-sys",
  "log",
  "percent-encoding",
+ "serde",
  "sqlx-core",
+ "time",
  "tracing",
  "url",
  "urlencoding",

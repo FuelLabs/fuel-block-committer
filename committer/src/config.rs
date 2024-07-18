@@ -13,6 +13,20 @@ pub struct Config {
     pub app: App,
 }
 
+impl Config {
+    pub fn validate(&self) -> crate::errors::Result<()> {
+        if let Some(blob_pool_wallet_key) = &self.eth.blob_pool_wallet_key {
+            if blob_pool_wallet_key == &self.eth.wallet_key {
+                return Err(crate::errors::Error::Other(
+                    "Wallet key and blob pool wallet key must be different".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Fuel {
     /// URL to a fuel-core graphql endpoint.
@@ -27,7 +41,7 @@ pub struct Eth {
     /// The secret key authorized by the L1 bridging contracts to post block commitments.
     pub wallet_key: String,
     /// The secret key for posting L2 state to L1.
-    pub blob_pool_wallet_key: String,
+    pub blob_pool_wallet_key: Option<String>,
     /// URL to a Ethereum RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,

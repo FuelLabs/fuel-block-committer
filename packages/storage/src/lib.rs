@@ -12,6 +12,8 @@ use ports::types::{
 };
 pub use postgres::*;
 
+use ports::types::{StateFragment, StateFragmentId, StateSubmission};
+
 #[async_trait::async_trait]
 impl ports::storage::Storage for postgres::Postgres {
     async fn insert(&self, submission: BlockSubmission) -> ports::storage::Result<()> {
@@ -49,8 +51,12 @@ impl ports::storage::Storage for postgres::Postgres {
         Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
     }
 
-    async fn get_pending_txs(&self) -> ports::storage::Result<Vec<StateSubmissionTx>> {
+    async fn get_pending_txs(&self) -> ports::storage::Result<Vec<[u8; 32]>> {
         Ok(self._get_pending_txs().await?)
+    }
+
+    async fn has_pending_txs(&self) -> ports::storage::Result<bool> {
+        Ok(self._has_pending_txs().await?)
     }
 
     async fn state_submission_w_latest_block(

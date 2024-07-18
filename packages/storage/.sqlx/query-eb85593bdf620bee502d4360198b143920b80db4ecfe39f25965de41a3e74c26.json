@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM l1_state_fragment WHERE completed = false LIMIT 6",
+  "query": "SELECT * FROM l1_state_fragment WHERE completed = false ORDER BY created_at ASC LIMIT 6",
   "describe": {
     "columns": [
       {
@@ -25,6 +25,11 @@
       },
       {
         "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
         "name": "transaction_hash",
         "type_info": "Bytea"
       }
@@ -37,8 +42,9 @@
       false,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "ca854d38f6ebd416cae5699f46c11900b3b709fbad2e932cf8b188e48463a413"
+  "hash": "eb85593bdf620bee502d4360198b143920b80db4ecfe39f25965de41a3e74c26"
 }
