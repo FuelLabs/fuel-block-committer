@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.*\n             FROM l1_fragments f\n             LEFT JOIN l1_transaction_fragments tf ON f.id = tf.fragment_id\n             WHERE tf.fragment_id IS NULL\n             ORDER BY f.created_at\n             LIMIT 6;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "fragment_idx",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "submission_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b5f7d40088bf00d9b2b0a98e9cad934e4b6db72a2da6f01da2d16f1547c2b2e2"
+}

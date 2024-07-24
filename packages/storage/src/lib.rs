@@ -7,9 +7,7 @@ pub use test_instance::*;
 
 mod error;
 mod postgres;
-use ports::types::{
-    BlockSubmission, StateFragment, StateFragmentId, StateSubmission, StateSubmissionTx,
-};
+use ports::types::{BlockSubmission, Fragment, Submission, SubmissionTx, TransactionState};
 pub use postgres::*;
 
 #[async_trait::async_trait]
@@ -29,27 +27,27 @@ impl ports::storage::Storage for postgres::Postgres {
         Ok(self._set_submission_completed(fuel_block_hash).await?)
     }
 
-    async fn insert_state(
+    async fn insert_state_submission(
         &self,
-        state: StateSubmission,
-        fragments: Vec<StateFragment>,
+        submission: Submission,
+        fragments: Vec<Fragment>,
     ) -> ports::storage::Result<()> {
-        Ok(self._insert_state(state, fragments).await?)
+        Ok(self._insert_state_submission(submission, fragments).await?)
     }
 
-    async fn get_unsubmitted_fragments(&self) -> ports::storage::Result<Vec<StateFragment>> {
+    async fn get_unsubmitted_fragments(&self) -> ports::storage::Result<Vec<Fragment>> {
         Ok(self._get_unsubmitted_fragments().await?)
     }
 
     async fn record_pending_tx(
         &self,
         tx_hash: [u8; 32],
-        fragment_ids: Vec<StateFragmentId>,
+        fragment_ids: Vec<u32>,
     ) -> ports::storage::Result<()> {
         Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
     }
 
-    async fn get_pending_txs(&self) -> ports::storage::Result<Vec<StateSubmissionTx>> {
+    async fn get_pending_txs(&self) -> ports::storage::Result<Vec<SubmissionTx>> {
         Ok(self._get_pending_txs().await?)
     }
 
@@ -57,14 +55,16 @@ impl ports::storage::Storage for postgres::Postgres {
         Ok(self._has_pending_txs().await?)
     }
 
-    async fn state_submission_w_latest_block(
-        &self,
-    ) -> ports::storage::Result<Option<StateSubmission>> {
+    async fn state_submission_w_latest_block(&self) -> ports::storage::Result<Option<Submission>> {
         Ok(self._state_submission_w_latest_block().await?)
     }
 
-    async fn finalize_state_submission_tx(&self, hash: [u8; 32]) -> ports::storage::Result<()> {
-        Ok(self._finalize_state_submission_tx(hash).await?)
+    async fn update_submission_tx_state(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> ports::storage::Result<()> {
+        Ok(self._update_submission_tx_state(hash, state).await?)
     }
 }
 

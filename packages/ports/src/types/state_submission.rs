@@ -2,14 +2,16 @@ pub use sqlx::types::chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Submission {
+    pub id: Option<u32>,
     pub block_hash: [u8; 32],
     pub block_height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fragment {
-    pub submission_id: u32,
-    pub fragment_index: u32,
+    pub id: Option<u32>,
+    pub submission_id: Option<u32>,
+    pub fragment_idx: u32,
     pub data: Vec<u8>,
     pub created_at: DateTime<Utc>,
 }
@@ -20,6 +22,7 @@ impl Fragment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubmissionTx {
+    pub id: Option<u32>,
     pub hash: [u8; 32],
     pub state: TransactionState,
 }
