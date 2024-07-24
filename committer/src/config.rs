@@ -85,6 +85,8 @@ pub struct App {
     /// How often to check the latest fuel block
     #[serde(deserialize_with = "human_readable_duration")]
     pub block_check_interval: Duration,
+    /// Number of blocks that need to pass to accept the tx as finalized
+    pub num_blocks_to_finalize_tx: u64,
 }
 
 fn human_readable_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
