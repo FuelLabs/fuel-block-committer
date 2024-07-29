@@ -55,8 +55,6 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 10
           volumeMounts:
-            - name: {{ include "fuel-block-committer.fullname" . }}-vol
-              mountPath: "/mnt/db"
             - name: config-volume
               mountPath: /mnt/config
               subPath: config.yaml
