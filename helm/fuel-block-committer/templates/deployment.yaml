@@ -37,12 +37,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "./fuel-block-committer" ]
           args:
-            - "--host"
-            - "0.0.0.0"
-            - "--port"
-            - "8080"
-            - "--db-path"
-            - "/mnt/db/db.db3"
+            - "/mnt/config/config.yaml"
           envFrom:
             - configMapRef:
                 name: fuel-block-committer
@@ -62,12 +57,18 @@ spec:
           volumeMounts:
             - name: {{ include "fuel-block-committer.fullname" . }}-vol
               mountPath: "/mnt/db"
+            - name: config-volume
+              mountPath: /mnt/config
+              subPath: config.yaml
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: fuel-block-committer-vol
           persistentVolumeClaim:
             claimName: {{ include "fuel-block-committer.fullname" . }}
+        - name: config-volume
+          configMap:
+            name: {{ include "fuel-block-committer.fullname" . }}-config
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
