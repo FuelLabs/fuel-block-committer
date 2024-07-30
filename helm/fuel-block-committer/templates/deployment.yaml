@@ -37,7 +37,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "./fuel-block-committer" ]
           args:
-            - "/mnt/config/config.yaml"
+            - "/mnt/config/config.toml"
           envFrom:
             - configMapRef:
                 name: fuel-block-committer
@@ -56,8 +56,7 @@ spec:
             timeoutSeconds: 10
           volumeMounts:
             - name: config-volume
-              mountPath: /mnt/config
-              subPath: config.yaml
+              mountPath: /mnt/config/config.toml
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
