@@ -57,6 +57,7 @@ spec:
           volumeMounts:
             - name: config-volume
               mountPath: /mnt/config/config.toml
+              subPath: config.toml
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -66,6 +67,9 @@ spec:
         - name: config-volume
           configMap:
             name: {{ include "fuel-block-committer.fullname" . }}-config
+            items: 
+              - key: "committer-config"
+                path: "config.toml"
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
