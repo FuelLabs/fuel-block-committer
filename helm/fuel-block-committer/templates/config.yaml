@@ -3,5 +3,4 @@ kind: ConfigMap
 metadata:
   name: name: {{ include "fuel-block-committer.fullname" . }}-config
 data:
-  data:
-    config.toml: ""
+    committer-config: ""
