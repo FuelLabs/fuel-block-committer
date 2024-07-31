@@ -24,11 +24,20 @@ pub struct DbConfig {
     pub database: String,
     /// The maximum number of connections allowed in the connection pool.
     pub max_connections: u32,
+    /// Whether to use SSL when connecting to the `PostgreSQL` server.
+    pub use_ssl: bool,
 }
 
 impl Postgres {
     pub async fn connect(opt: &DbConfig) -> ports::storage::Result<Self> {
+        let ssl_mode = if opt.use_ssl {
+            sqlx::postgres::PgSslMode::Require
+        } else {
+            sqlx::postgres::PgSslMode::Disable
+        };
+
         let options = PgConnectOptions::new()
+            .ssl_mode(ssl_mode)
             .username(&opt.username)
             .password(&opt.password)
             .database(&opt.database)
