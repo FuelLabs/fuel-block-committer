@@ -19,3 +19,4 @@ username = "username"
 password = "password"
 database = "test"
 max_connections = 5
+use_ssl = false
