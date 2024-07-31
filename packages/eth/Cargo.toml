@@ -10,16 +10,20 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+hyper = { workspace = true }
+hyper-rustls = { workspace = true }
 async-trait = { workspace = true }
 c-kzg = { workspace = true }
-ethers = { workspace = true, features = ["ws"] }
+ethers = { workspace = true, features = ["ws", "aws"] }
 futures = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
-tempfile = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
 rlp = { workspace = true }
+rusoto_core = { workspace = true, features = ["rustls"] }
+rusoto_kms = { workspace = true, features = ["rustls"] }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }

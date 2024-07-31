@@ -342,8 +342,8 @@ import {FuelChainState} from "../src/fuelchain/FuelChainState.sol";
 
 contract MyScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerPrivateKey);
+        address deployer_addr = vm.envAddress("ADDRESS");
+        vm.startBroadcast(deployer_addr);
 
         uint256 timeToFinalize = vm.envUint("TIME_TO_FINALIZE");
         uint256 blocksPerCommitInterval = vm.envUint("BLOCKS_PER_COMMIT_INTERVAL");
@@ -354,9 +354,6 @@ contract MyScript is Script {
             address(implementation),
             abi.encodeCall(FuelChainState.initialize, ())
         );
-
-        console.log("PROXY:", proxy);
-        console.log("IMPL:", address(implementation));
 
         vm.stopBroadcast();
     }

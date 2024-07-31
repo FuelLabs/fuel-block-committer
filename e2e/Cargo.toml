@@ -25,7 +25,16 @@ tokio = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
-ethers = { workspace = true }
+# aws-sdk-kms = { workspace = true, features = ["rt-tokio"] }
+# rustls must be used because ethers/signers enables it and it isn't compatible with 'native-tls'. Since we cannot configure it in `ethers` we must also use rustls
+rusoto_kms = { workspace = true, features = ["rustls"] }
+rusoto_core = { workspace = true, features = ["rustls"] }
+# TODO: segfault features
+hyper = { workspace = true, features = ["default"] }
+hyper-rustls = { workspace = true, features = ["default"] }
+
+testcontainers = { workspace = true, features = ["watchdog"] }
+ethers = { workspace = true, features = ["aws"] }
 rand = { workspace = true, features = ["std"] }
 hex = { workspace = true }
 portpicker = { workspace = true }
@@ -45,4 +54,6 @@ eth = { workspace = true, features = ["test-helpers"] }
 fuel = { workspace = true, features = ["test-helpers"] }
 ports = { workspace = true, features = ["fuel", "l1"] }
 serde_json = { workspace = true }
+# TODO: segfault see about these features
+serde = { workspace = true, features = ["default"] }
 validator = { workspace = true, features = ["validator"] }

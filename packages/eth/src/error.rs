@@ -1,7 +1,7 @@
 use ethers::{
     prelude::{ContractError, SignerMiddleware},
     providers::{Provider, Ws},
-    signers::LocalWallet,
+    signers::{AwsSigner, LocalWallet},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -21,7 +21,7 @@ impl From<ethers::providers::ProviderError> for Error {
 }
 
 pub type ContractErrorType =
-    ethers::contract::ContractError<SignerMiddleware<Provider<Ws>, LocalWallet>>;
+    ethers::contract::ContractError<SignerMiddleware<Provider<Ws>, AwsSigner>>;
 
 impl From<ContractErrorType> for Error {
     fn from(value: ContractErrorType) -> Self {

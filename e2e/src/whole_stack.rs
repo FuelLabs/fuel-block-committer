@@ -1,11 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
+use eth::Chain;
 use storage::PostgresProcess;
 
 use crate::{
     committer::{Committer, CommitterProcess},
     eth_node::{DeployedContract, EthNode, EthNodeProcess},
     fuel_node::{FuelNode, FuelNodeProcess},
+    kms::{Kms, KmsProcess},
 };
 
 #[allow(dead_code)]
@@ -15,6 +17,7 @@ pub struct WholeStack {
     pub committer: CommitterProcess,
     pub db: Arc<PostgresProcess>,
     pub deployed_contract: DeployedContract,
+    pub kms: KmsProcess,
 }
 
 impl WholeStack {
@@ -23,14 +26,36 @@ impl WholeStack {
         let blocks_per_interval = 10u32;
         let commit_cooldown_seconds = 1u32;
 
+        let kms = Kms::default().with_show_logs(logs).start().await?;
+        eprintln!("KMS started");
         let eth_node = EthNode::default().with_show_logs(logs).start().await?;
+        eprintln!("ETH node started");
+
+        let amount = ethers::utils::parse_ether("400")?;
+
+        eprintln!("creating main wallet key");
+
+        let main_wallet_key = kms.create_key(eth_node.chain_id()).await?;
+        eprintln!("KMS created main key");
+        eth_node.fund(main_wallet_key.address(), amount).await?;
+        eprintln!("ETH node funded main");
+
         let deployed_contract = eth_node
             .deploy_contract(
+                main_wallet_key.clone(),
                 finalize_duration.as_secs(),
                 blocks_per_interval,
                 commit_cooldown_seconds,
             )
             .await?;
+        eprintln!("ETH node deployed contract");
+
+        let secondary_wallet_key = kms.create_key(eth_node.chain_id()).await?;
+        eprintln!("KMS created secondary key");
+        eth_node
+            .fund(secondary_wallet_key.address(), amount)
+            .await?;
+        eprintln!("ETH node funded secondary");
 
         let fuel_node = FuelNode::default().with_show_logs(logs).start().await?;
 
@@ -49,10 +74,11 @@ impl WholeStack {
             .with_db_name(db_name)
             .with_state_contract_address(deployed_contract.address())
             .with_fuel_block_producer_public_key(fuel_consensus_pub_key)
-            .with_wallet_key(eth_node.main_wallet_key());
+            .with_main_key_id(main_wallet_key.id)
+            .with_aws_region(kms.region().clone());
 
         let committer = if blob_support {
-            committer_builder.with_blob_wallet_key(eth_node.secondary_wallet_key())
+            committer_builder.with_blob_key_id(secondary_wallet_key.id)
         } else {
             committer_builder
         };
@@ -65,6 +91,7 @@ impl WholeStack {
             committer,
             deployed_contract,
             db: db_process,
+            kms,
         })
     }
 }

@@ -1,9 +1,14 @@
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
-use ethers::types::{Address, Chain};
+use ethers::{
+    signers::AwsSigner,
+    types::{Address, Chain},
+};
 use ports::{
     l1::Result,
     types::{ValidatedFuelBlock, U256},
 };
+use rusoto_core::{credential::StaticProvider, Client, HttpClient, Region};
+use rusoto_kms::KmsClient;
 use std::num::NonZeroU32;
 use url::Url;
 
@@ -27,18 +32,50 @@ impl WebsocketClient {
         url: &Url,
         chain_id: Chain,
         contract_address: Address,
-        wallet_key: &str,
-        blob_pool_wallet_key: Option<String>,
+        main_key_id: String,
+        blob_pool_key_id: Option<String>,
         unhealthy_after_n_errors: usize,
+        aws_region: String,
+        aws_access_key_id: String,
+        aws_secret_access_key: String,
+        aws_allow_http: bool,
     ) -> ports::l1::Result<Self> {
-        let provider = WsConnection::connect(
-            url,
-            chain_id,
-            contract_address,
-            wallet_key,
-            blob_pool_wallet_key,
-        )
-        .await?;
+        let credentials = StaticProvider::new_minimal(aws_access_key_id, aws_secret_access_key);
+        // TODO: segfault error here instead of unwrap
+        // TODO: segfault is json desirable here ?
+        let region: Region = serde_json::from_str(&aws_region).unwrap();
+
+        let dispatcher = if aws_allow_http {
+            let hyper_builder = hyper::client::Client::builder();
+            let http_connector = hyper_rustls::HttpsConnectorBuilder::new()
+                .with_native_roots()
+                .https_or_http()
+                .enable_http1()
+                .build();
+            HttpClient::from_builder(hyper_builder, http_connector)
+        } else {
+            HttpClient::new().expect("failed to create request dispatcher")
+        };
+
+        let client = KmsClient::new_with(dispatcher, credentials, region);
+
+        let main_signer = AwsSigner::new(client.clone(), main_key_id.clone(), chain_id.into())
+            .await
+            .unwrap();
+
+        let blob_signer = if let Some(key_id) = blob_pool_key_id {
+            Some(
+                AwsSigner::new(client.clone(), key_id.clone(), chain_id.into())
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+
+        let provider =
+            WsConnection::connect(url, chain_id, contract_address, main_signer, blob_signer)
+                .await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),

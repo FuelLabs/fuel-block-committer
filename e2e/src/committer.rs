@@ -3,19 +3,21 @@ use std::{path::Path, time::Duration};
 use anyhow::Context;
 use ethers::abi::Address;
 use ports::fuel::FuelPublicKey;
+use rusoto_core::Region;
 use url::Url;
 
 #[derive(Default)]
 pub struct Committer {
     show_logs: bool,
-    wallet_key: Option<String>,
-    blob_wallet_key: Option<String>,
+    main_key_id: Option<String>,
+    blob_key_id: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
     fuel_block_producer_public_key: Option<String>,
     db_port: Option<u16>,
     db_name: Option<String>,
+    aws_region: Option<Region>,
 }
 
 impl Committer {
@@ -33,8 +35,9 @@ impl Committer {
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-block-committer"))?;
 
         let mut cmd = tokio::process::Command::new("fuel-block-committer");
+        let region_serialized = serde_json::to_string(&get_field!(aws_region))?;
         cmd.arg(config)
-            .env("COMMITTER__ETH__WALLET_KEY", get_field!(wallet_key))
+            .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_id))
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
             .env(
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
@@ -51,11 +54,15 @@ impl Committer {
             .env("COMMITTER__APP__DB__PORT", get_field!(db_port).to_string())
             .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
             .env("COMMITTER__APP__PORT", unused_port.to_string())
+            .env("COMMITTER__AWS__REGION", region_serialized)
+            .env("COMMITTER__AWS__ACCESS_KEY_ID", "test")
+            .env("COMMITTER__AWS__SECRET_ACCESS_KEY", "test")
+            .env("COMMITTER__AWS__ALLOW_HTTP", "true")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
-        if let Some(blob_wallet_key) = self.blob_wallet_key {
-            cmd.env("COMMITTER__ETH__BLOB_POOL_WALLET_KEY", blob_wallet_key);
+        if let Some(blob_wallet_key_id) = self.blob_key_id {
+            cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ID", blob_wallet_key_id);
         }
 
         let sink = if self.show_logs {
@@ -73,13 +80,18 @@ impl Committer {
         })
     }
 
-    pub fn with_wallet_key(mut self, wallet_key: String) -> Self {
-        self.wallet_key = Some(wallet_key);
+    pub fn with_aws_region(mut self, region: Region) -> Self {
+        self.aws_region = Some(region);
         self
     }
 
-    pub fn with_blob_wallet_key(mut self, blob_wallet_key: String) -> Self {
-        self.blob_wallet_key = Some(blob_wallet_key);
+    pub fn with_main_key_id(mut self, wallet_id: String) -> Self {
+        self.main_key_id = Some(wallet_id);
+        self
+    }
+
+    pub fn with_blob_key_id(mut self, blob_wallet_id: String) -> Self {
+        self.blob_key_id = Some(blob_wallet_id);
         self
     }
 

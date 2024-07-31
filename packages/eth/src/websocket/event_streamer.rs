@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ethers::{
     prelude::{k256::ecdsa::SigningKey, Event, SignerMiddleware},
     providers::{Provider, Ws},
-    signers::Wallet,
+    signers::{AwsSigner, Wallet},
 };
 use futures::{Stream, TryStreamExt};
 use ports::types::FuelBlockCommittedOnL1;
@@ -12,8 +12,8 @@ use super::connection::CommitSubmittedFilter;
 use crate::error::Result;
 
 type EthStreamInitializer = Event<
-    Arc<SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>>,
-    SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>,
+    Arc<SignerMiddleware<Provider<Ws>, AwsSigner>>,
+    SignerMiddleware<Provider<Ws>, AwsSigner>,
     CommitSubmittedFilter,
 >;
 
