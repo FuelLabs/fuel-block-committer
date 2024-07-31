@@ -29,6 +29,7 @@ pub struct DbConfig {
 impl Postgres {
     pub async fn connect(opt: &DbConfig) -> ports::storage::Result<Self> {
         let options = PgConnectOptions::new()
+            .ssl_mode(sqlx::postgres::PgSslMode::Require)
             .username(&opt.username)
             .password(&opt.password)
             .database(&opt.database)
