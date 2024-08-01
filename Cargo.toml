@@ -55,7 +55,7 @@ rand = { version = "0.8", default-features = false }
 rlp = { version = "0.5.2" }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
-sqlx = { version = "0.7.4", features = [ "tls-native-tls" ] }
+sqlx = { version = "0.7.4", default-features = false }
 tai64 = { version = "4.0.0", default-features = false }
 humantime = { version = "2.1", default-features = false }
 secp256k1 = { version = "0.29", default-features = false }
