@@ -17,7 +17,7 @@ rand = { workspace = true, optional = true }
 serde = { workspace = true }
 sqlx = { workspace = true, features = [
   "postgres",
-  "runtime-tokio-rustls",
+  "runtime-tokio",
   "migrate",
   "macros",
   "tls-rustls",
