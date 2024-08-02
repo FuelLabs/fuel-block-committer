@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT l1_fragments.*\n             FROM l1_fragments\n             LEFT JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id\n             LEFT JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id\n             WHERE l1_transaction_fragments.fragment_id IS NULL OR l1_transactions.state = $1\n             ORDER BY l1_fragments.created_at\n             LIMIT 6;",
+  "query": "SELECT l1_fragments.*\n             FROM l1_fragments\n             LEFT JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id\n             LEFT JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id\n             WHERE l1_transaction_fragments.fragment_id IS NULL OR l1_transactions.state = $1\n             ORDER BY l1_fragments.created_at\n             LIMIT $2;",
   "describe": {
     "columns": [
       {
@@ -31,7 +31,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int2"
+        "Int2",
+        "Int8"
       ]
     },
     "nullable": [
@@ -42,5 +43,5 @@
       false
     ]
   },
-  "hash": "e4f0559a85faca78baa89765e2ce3a9ed0bd25ba6ae136d1197f5ab7f53f388e"
+  "hash": "e57ece2117ccb521f2c3f033349aefdc7302027c1d50e8f11fa52708ed40fcd0"
 }
