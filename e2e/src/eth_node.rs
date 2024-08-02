@@ -139,10 +139,11 @@ impl EthNodeProcess {
             .find_map(|tx| (tx.name == "ERC1967Proxy").then_some(tx.address))
             .ok_or_else(|| anyhow::anyhow!("No ERC1967Proxy contract created"))?;
 
+        let provider = Provider::<Ws>::connect(self.ws_url()).await?;
+        let signer = kms_key.signer.clone();
+        let signer_middleware = SignerMiddleware::new(provider, signer);
+
         for create_tx in broadcasts.transactions {
-            let provider = Provider::<Ws>::connect(self.ws_url()).await?;
-            let signer = kms_key.signer.clone();
-            let signer_middleware = SignerMiddleware::new(provider, signer);
             let mut typed_transaction = Eip1559TransactionRequest::default();
             typed_transaction.from = Some(create_tx.raw_tx.from);
             typed_transaction.gas = Some(create_tx.raw_tx.gas);
@@ -153,6 +154,7 @@ impl EthNodeProcess {
                 .send_transaction(typed_transaction, None)
                 .await?
                 .confirmations(1)
+                .interval(Duration::from_millis(100))
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("No receipts"))?
                 .status
@@ -224,9 +226,11 @@ impl EthNodeProcess {
 
         let tx = TransactionRequest::pay(address, amount);
 
-        let status = Middleware::send_transaction(&signer_middleware, tx, None)
+        let status = signer_middleware
+            .send_transaction(tx, None)
             .await?
             .confirmations(1)
+            .interval(Duration::from_millis(100))
             .await?
             .unwrap()
             .status

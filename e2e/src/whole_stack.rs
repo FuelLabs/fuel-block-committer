@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use eth::Chain;
 use storage::PostgresProcess;
@@ -26,19 +29,14 @@ impl WholeStack {
         let blocks_per_interval = 10u32;
         let commit_cooldown_seconds = 1u32;
 
+        let now = Instant::now();
         let kms = Kms::default().with_show_logs(logs).start().await?;
-        eprintln!("KMS started");
         let eth_node = EthNode::default().with_show_logs(logs).start().await?;
-        eprintln!("ETH node started");
 
         let amount = ethers::utils::parse_ether("400")?;
 
-        eprintln!("creating main wallet key");
-
         let main_wallet_key = kms.create_key(eth_node.chain_id()).await?;
-        eprintln!("KMS created main key");
         eth_node.fund(main_wallet_key.address(), amount).await?;
-        eprintln!("ETH node funded main");
 
         let deployed_contract = eth_node
             .deploy_contract(
@@ -48,14 +46,11 @@ impl WholeStack {
                 commit_cooldown_seconds,
             )
             .await?;
-        eprintln!("ETH node deployed contract");
 
         let secondary_wallet_key = kms.create_key(eth_node.chain_id()).await?;
-        eprintln!("KMS created secondary key");
         eth_node
             .fund(secondary_wallet_key.address(), amount)
             .await?;
-        eprintln!("ETH node funded secondary");
 
         let fuel_node = FuelNode::default().with_show_logs(logs).start().await?;
 
