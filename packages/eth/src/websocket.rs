@@ -7,7 +7,7 @@ use ports::{
     l1::Result,
     types::{ValidatedFuelBlock, U256},
 };
-use rusoto_core::{credential::StaticProvider, Client, HttpClient, Region};
+use rusoto_core::{credential::StaticProvider, HttpClient, Region};
 use rusoto_kms::KmsClient;
 use std::num::NonZeroU32;
 use url::Url;
@@ -74,8 +74,7 @@ impl WebsocketClient {
         };
 
         let provider =
-            WsConnection::connect(url, chain_id, contract_address, main_signer, blob_signer)
-                .await?;
+            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),

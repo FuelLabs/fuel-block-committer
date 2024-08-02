@@ -1,7 +1,5 @@
 use anyhow::Context;
-use eth::Chain;
 use ethers::signers::{AwsSigner, Signer};
-use ethers::{abi::Address, middleware::Middleware};
 use ports::types::H160;
 use rusoto_core::{HttpClient, Region};
 use rusoto_kms::{CreateKeyRequest, Kms as RusotoKms, KmsClient};
@@ -88,7 +86,7 @@ impl Kms {
         let client = KmsClient::new_with(dispatcher, credentials, region.clone());
 
         Ok(KmsProcess {
-            container,
+            _container: container,
             client,
             region,
         })
@@ -96,7 +94,7 @@ impl Kms {
 }
 
 pub struct KmsProcess {
-    container: testcontainers::ContainerAsync<KmsImage>,
+    _container: testcontainers::ContainerAsync<KmsImage>,
     client: KmsClient,
     region: Region,
 }
@@ -116,7 +114,6 @@ impl KmsKey {
 
 impl KmsProcess {
     pub async fn create_key(&self, chain: u64) -> anyhow::Result<KmsKey> {
-        eprintln!("sending the request");
         let response = self
             .client
             .create_key(CreateKeyRequest {
@@ -131,7 +128,6 @@ impl KmsProcess {
             .ok_or_else(|| anyhow::anyhow!("key id missing from response"))?
             .key_id;
 
-        eprintln!("creating the signer");
         let signer =
             ethers::signers::AwsSigner::new(self.client.clone(), id.clone(), chain).await?;
 

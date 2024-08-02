@@ -1,7 +1,7 @@
 use ethers::{
     prelude::{ContractError, SignerMiddleware},
     providers::{Provider, Ws},
-    signers::{AwsSigner, LocalWallet},
+    signers::AwsSigner,
 };
 
 #[derive(Debug, thiserror::Error)]

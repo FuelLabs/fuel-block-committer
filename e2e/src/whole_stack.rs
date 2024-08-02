@@ -1,9 +1,5 @@
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
-use eth::Chain;
 use storage::PostgresProcess;
 
 use crate::{
@@ -29,7 +25,6 @@ impl WholeStack {
         let blocks_per_interval = 10u32;
         let commit_cooldown_seconds = 1u32;
 
-        let now = Instant::now();
         let kms = Kms::default().with_show_logs(logs).start().await?;
         let eth_node = EthNode::default().with_show_logs(logs).start().await?;
 

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use ethers::{
-    prelude::{k256::ecdsa::SigningKey, Event, SignerMiddleware},
+    prelude::{Event, SignerMiddleware},
     providers::{Provider, Ws},
-    signers::{AwsSigner, Wallet},
+    signers::AwsSigner,
 };
 use futures::{Stream, TryStreamExt};
 use ports::types::FuelBlockCommittedOnL1;

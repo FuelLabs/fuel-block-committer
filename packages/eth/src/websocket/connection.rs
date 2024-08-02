@@ -1,10 +1,10 @@
-use std::{num::NonZeroU32, str::FromStr, sync::Arc};
+use std::{num::NonZeroU32, sync::Arc};
 
 use ethers::{
     prelude::{abigen, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
-    signers::{AwsSigner, LocalWallet, Signer as _},
-    types::{Address, BlockNumber, Chain, H160, H256, U256, U64},
+    signers::{AwsSigner, Signer as _},
+    types::{Address, BlockNumber, H160, H256, U256, U64},
 };
 use ports::types::ValidatedFuelBlock;
 use serde_json::Value;
@@ -126,7 +126,6 @@ impl EthApi for WsConnection {
 impl WsConnection {
     pub async fn connect(
         url: &Url,
-        chain_id: Chain,
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
