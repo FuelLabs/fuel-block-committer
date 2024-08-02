@@ -75,7 +75,7 @@ where
 #[cfg(test)]
 mod tests {
     use mockall::predicate;
-    use ports::types::{Fragment, L1Height, Submission, TransactionResponse, U256};
+    use ports::types::{L1Height, StateFragment, StateSubmission, TransactionResponse, U256};
     use storage::PostgresProcess;
 
     use super::*;
@@ -113,7 +113,7 @@ mod tests {
         }
     }
 
-    fn given_l1_that_expects_submission(fragment: Fragment) -> MockL1 {
+    fn given_l1_that_expects_submission(fragment: StateFragment) -> MockL1 {
         let mut l1 = MockL1::new();
 
         l1.api
@@ -124,14 +124,14 @@ mod tests {
         l1
     }
 
-    fn given_state() -> (Submission, Fragment) {
+    fn given_state() -> (StateSubmission, StateFragment) {
         (
-            Submission {
+            StateSubmission {
                 id: None,
                 block_hash: [0u8; 32],
                 block_height: 1,
             },
-            Fragment {
+            StateFragment {
                 id: None,
                 submission_id: None,
                 fragment_idx: 0,

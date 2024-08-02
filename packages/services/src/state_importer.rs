@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use ports::{
     fuel::FuelBlock,
     storage::Storage,
-    types::{Fragment, Submission},
+    types::{StateFragment, StateSubmission},
 };
 use validator::Validator;
 
@@ -56,7 +56,10 @@ where
             .map(|submission| submission.block_height))
     }
 
-    fn block_to_state_submission(&self, block: FuelBlock) -> Result<(Submission, Vec<Fragment>)> {
+    fn block_to_state_submission(
+        &self,
+        block: FuelBlock,
+    ) -> Result<(StateSubmission, Vec<StateFragment>)> {
         use itertools::Itertools;
 
         // Serialize the block into bytes
@@ -64,10 +67,10 @@ where
             .transactions
             .iter()
             .flat_map(|tx| tx.iter())
-            .chunks(Fragment::MAX_FRAGMENT_SIZE)
+            .chunks(StateFragment::MAX_FRAGMENT_SIZE)
             .into_iter()
             .enumerate()
-            .map(|(index, chunk)| Fragment {
+            .map(|(index, chunk)| StateFragment {
                 id: None,
                 submission_id: None,
                 fragment_idx: index as u32,
@@ -76,7 +79,7 @@ where
             })
             .collect();
 
-        let submission = Submission {
+        let submission = StateSubmission {
             id: None,
             block_hash: *block.id,
             block_height: block.header.height,

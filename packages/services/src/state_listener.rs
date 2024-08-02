@@ -80,7 +80,7 @@ where
 #[cfg(test)]
 mod tests {
     use mockall::predicate;
-    use ports::types::{Fragment, L1Height, Submission, TransactionResponse, U256};
+    use ports::types::{L1Height, StateFragment, StateSubmission, TransactionResponse, U256};
     use storage::PostgresProcess;
 
     use super::*;
@@ -155,14 +155,14 @@ mod tests {
         l1
     }
 
-    fn given_state() -> (Submission, Fragment, Vec<u32>) {
-        let submission = Submission {
+    fn given_state() -> (StateSubmission, StateFragment, Vec<u32>) {
+        let submission = StateSubmission {
             id: None,
             block_hash: [0u8; 32],
             block_height: 1,
         };
         let fragment_id = 1;
-        let fragment = Fragment {
+        let fragment = StateFragment {
             id: Some(fragment_id),
             submission_id: None,
             fragment_idx: 0,

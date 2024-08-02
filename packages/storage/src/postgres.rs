@@ -1,4 +1,6 @@
-use ports::types::{BlockSubmission, Fragment, Submission, SubmissionTx, TransactionState};
+use ports::types::{
+    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
@@ -131,8 +133,8 @@ impl Postgres {
 
     pub(crate) async fn _insert_state_submission(
         &self,
-        state: Submission,
-        fragments: Vec<Fragment>,
+        state: StateSubmission,
+        fragments: Vec<StateFragment>,
     ) -> Result<()> {
         if fragments.is_empty() {
             return Err(Error::Database(
@@ -140,10 +142,10 @@ impl Postgres {
             ));
         }
 
-        let state_row = tables::L1Submission::from(state);
+        let state_row = tables::L1StateSubmission::from(state);
         let fragment_rows = fragments
             .into_iter()
-            .map(tables::L1Fragment::from)
+            .map(tables::L1StateFragment::from)
             .collect::<Vec<_>>();
 
         let mut transaction = self.connection_pool.begin().await?;
@@ -176,11 +178,11 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<Fragment>> {
+    pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
         const BLOB_LIMIT: i64 = 6;
         let rows = sqlx::query_as!(
             // all fragments that are not in a transaction or are in a transaction that failed
-            tables::L1Fragment,
+            tables::L1StateFragment,
             "SELECT l1_fragments.*
              FROM l1_fragments
              LEFT JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id
@@ -194,7 +196,7 @@ impl Postgres {
         .fetch_all(&self.connection_pool)
         .await?
         .into_iter()
-        .map(Fragment::try_from);
+        .map(StateFragment::try_from);
 
         rows.collect::<Result<Vec<_>>>()
     }
@@ -255,14 +257,14 @@ impl Postgres {
 
     pub(crate) async fn _state_submission_w_latest_block(
         &self,
-    ) -> crate::error::Result<Option<Submission>> {
+    ) -> crate::error::Result<Option<StateSubmission>> {
         sqlx::query_as!(
-            tables::L1Submission,
+            tables::L1StateSubmission,
             "SELECT * FROM l1_submissions ORDER BY fuel_block_height DESC LIMIT 1"
         )
         .fetch_optional(&self.connection_pool)
         .await?
-        .map(Submission::try_from)
+        .map(StateSubmission::try_from)
         .transpose()
     }
 

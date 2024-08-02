@@ -1,4 +1,6 @@
-use ports::types::{BlockSubmission, Fragment, Submission, SubmissionTx, TransactionState};
+use ports::types::{
+    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+};
 use sqlx::types::chrono;
 
 macro_rules! bail {
@@ -57,16 +59,16 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct L1Submission {
+pub struct L1StateSubmission {
     pub id: i64,
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
 }
 
-impl TryFrom<L1Submission> for Submission {
+impl TryFrom<L1StateSubmission> for StateSubmission {
     type Error = crate::error::Error;
 
-    fn try_from(value: L1Submission) -> Result<Self, Self::Error> {
+    fn try_from(value: L1StateSubmission) -> Result<Self, Self::Error> {
         let block_hash = value.fuel_block_hash.as_slice();
         let Ok(block_hash) = block_hash.try_into() else {
             bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
@@ -88,8 +90,8 @@ impl TryFrom<L1Submission> for Submission {
     }
 }
 
-impl From<Submission> for L1Submission {
-    fn from(value: Submission) -> Self {
+impl From<StateSubmission> for L1StateSubmission {
+    fn from(value: StateSubmission) -> Self {
         Self {
             // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
@@ -100,7 +102,7 @@ impl From<Submission> for L1Submission {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct L1Fragment {
+pub struct L1StateFragment {
     pub id: i64,
     pub submission_id: i64,
     pub fragment_idx: i64,
@@ -108,10 +110,10 @@ pub struct L1Fragment {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-impl TryFrom<L1Fragment> for Fragment {
+impl TryFrom<L1StateFragment> for StateFragment {
     type Error = crate::error::Error;
 
-    fn try_from(value: L1Fragment) -> Result<Self, Self::Error> {
+    fn try_from(value: L1StateFragment) -> Result<Self, Self::Error> {
         Ok(Self {
             id: Some(value.id as u32),
             submission_id: Some(value.submission_id as u32),
@@ -122,8 +124,8 @@ impl TryFrom<L1Fragment> for Fragment {
     }
 }
 
-impl From<Fragment> for L1Fragment {
-    fn from(value: Fragment) -> Self {
+impl From<StateFragment> for L1StateFragment {
+    fn from(value: StateFragment) -> Self {
         Self {
             // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
