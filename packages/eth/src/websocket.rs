@@ -2,7 +2,7 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use ethers::types::{Address, Chain};
 use ports::{
     l1::Result,
-    types::{TransactionReceipt, ValidatedFuelBlock, U256},
+    types::{TransactionResponse, ValidatedFuelBlock, U256},
 };
 use std::num::NonZeroU32;
 use url::Url;
@@ -66,11 +66,11 @@ impl WebsocketClient {
         Ok(self.inner.get_block_number().await?)
     }
 
-    pub(crate) async fn get_transaction_receipt(
+    pub(crate) async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
-    ) -> Result<Option<TransactionReceipt>> {
-        Ok(self.inner.get_transaction_receipt(tx_hash).await?)
+    ) -> Result<Option<TransactionResponse>> {
+        Ok(self.inner.get_transaction_response(tx_hash).await?)
     }
 
     pub(crate) async fn balance(&self) -> Result<U256> {

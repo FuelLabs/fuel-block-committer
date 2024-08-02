@@ -53,3 +53,25 @@ impl TransactionState {
         }
     }
 }
+
+pub struct TransactionResponse {
+    block_number: u64,
+    succeeded: bool,
+}
+
+impl TransactionResponse {
+    pub fn new(block_number: u64, succeeded: bool) -> Self {
+        Self {
+            block_number,
+            succeeded,
+        }
+    }
+
+    pub fn block_number(&self) -> u64 {
+        self.block_number
+    }
+
+    pub fn succeeded(&self) -> bool {
+        self.succeeded
+    }
+}

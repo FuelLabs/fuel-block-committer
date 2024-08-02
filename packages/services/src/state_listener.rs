@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use ports::{
     storage::Storage,
-    types::{SubmissionTx, TransactionReceipt, TransactionState},
+    types::{SubmissionTx, TransactionState},
 };
 
 use super::Runner;
@@ -31,30 +31,21 @@ where
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
         for tx in pending_txs {
-            let Some(tx_receipt) = self.l1_adapter.get_transaction_receipt(tx.hash).await? else {
+            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx.hash).await? else {
                 continue; // not committed
             };
 
-            // Status: either 1 (success) or 0 (failure).
-            // Only present after activation of [EIP-658](https://eips.ethereum.org/EIPS/eip-658)
-            if let Some(status) = tx_receipt.status {
-                let status: u64 = status.try_into().map_err(|_| {
-                    crate::Error::Other(
-                        "could not convert tx receipt `status` to `u64`".to_string(),
-                    )
-                })?;
-
-                if status == 0 {
-                    self.storage
-                        .update_submission_tx_state(tx.hash, TransactionState::Failed)
-                        .await?;
-                }
+            if !tx_response.succeeded() {
+                self.storage
+                    .update_submission_tx_state(tx.hash, TransactionState::Failed)
+                    .await?;
 
                 continue;
             }
 
-            let tx_block_number = Self::extract_block_number_from_receipt(tx_receipt)?;
-            if current_block_number.saturating_sub(tx_block_number) < self.num_blocks_to_finalize {
+            if current_block_number.saturating_sub(tx_response.block_number())
+                < self.num_blocks_to_finalize
+            {
                 continue; // not finalized
             }
 
@@ -64,18 +55,6 @@ where
         }
 
         Ok(())
-    }
-
-    fn extract_block_number_from_receipt(receipt: TransactionReceipt) -> crate::Result<u64> {
-        receipt
-            .block_number
-            .ok_or_else(|| {
-                crate::Error::Other("transaction receipt does not contain block number".to_string())
-            })?
-            .try_into()
-            .map_err(|_| {
-                crate::Error::Other("could not convert `block_number` to `u64`".to_string())
-            })
     }
 }
 
@@ -101,7 +80,7 @@ where
 #[cfg(test)]
 mod tests {
     use mockall::predicate;
-    use ports::types::{Fragment, L1Height, Submission, TransactionReceipt, U256};
+    use ports::types::{Fragment, L1Height, Submission, TransactionResponse, U256};
     use storage::PostgresProcess;
 
     use super::*;
@@ -131,18 +110,18 @@ mod tests {
             Ok(U256::zero())
         }
 
-        async fn get_transaction_receipt(
+        async fn get_transaction_response(
             &self,
             tx_hash: [u8; 32],
-        ) -> ports::l1::Result<Option<TransactionReceipt>> {
-            self.api.get_transaction_receipt(tx_hash).await
+        ) -> ports::l1::Result<Option<TransactionResponse>> {
+            self.api.get_transaction_response(tx_hash).await
         }
     }
 
     fn given_l1_that_expects_get_transaction_receipt(
         tx_hash: [u8; 32],
         current_block_number: u32,
-        tx_block_number: u64,
+        block_number: u64,
     ) -> MockL1 {
         let mut l1 = MockL1::new();
 
@@ -150,15 +129,11 @@ mod tests {
             .expect_get_block_number()
             .return_once(move || Ok(current_block_number.into()));
 
-        let transaction_receipt = TransactionReceipt {
-            block_number: Some(tx_block_number.into()),
-            ..Default::default()
-        };
-
+        let transaction_response = TransactionResponse::new(block_number, true);
         l1.api
-            .expect_get_transaction_receipt()
+            .expect_get_transaction_response()
             .with(predicate::eq(tx_hash))
-            .return_once(move |_| Ok(Some(transaction_receipt)));
+            .return_once(move |_| Ok(Some(transaction_response)));
 
         l1
     }
@@ -170,15 +145,12 @@ mod tests {
             .expect_get_block_number()
             .return_once(move || Ok(0u32.into()));
 
-        let transaction_receipt = TransactionReceipt {
-            status: Some(0u64.into()),
-            ..Default::default()
-        };
+        let transaction_response = TransactionResponse::new(0, false);
 
         l1.api
-            .expect_get_transaction_receipt()
+            .expect_get_transaction_response()
             .with(predicate::eq(tx_hash))
-            .return_once(move |_| Ok(Some(transaction_receipt)));
+            .return_once(move |_| Ok(Some(transaction_response)));
 
         l1
     }
