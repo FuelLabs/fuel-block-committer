@@ -10,17 +10,12 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-hyper = { workspace = true, features = ["client", "http1", "http2", "tcp"] }
-hyper-rustls = { workspace = true, features = [
-  "http1",
-  "http2",
-  "tls12",
-  "logging",
-] }
 async-trait = { workspace = true }
 c-kzg = { workspace = true }
 ethers = { workspace = true, features = ["ws", "aws"] }
 futures = { workspace = true }
+hyper = { workspace = true }
+hyper-rustls = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }

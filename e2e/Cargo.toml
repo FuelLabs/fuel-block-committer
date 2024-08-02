@@ -11,11 +11,9 @@ rust-version = { workspace = true }
 build = "build.rs"
 
 [build-dependencies]
-itertools = { workspace = true, features = ["use_alloc"] }
-walkdir = { workspace = true }
-reqwest = { workspace = true, features = ["default-tls"] }
-zip = { workspace = true, features = ["deflate"] }
 anyhow = { workspace = true, features = ["std"] }
+itertools = { workspace = true, features = ["use_alloc"] }
+reqwest = { workspace = true, features = ["default-tls"] }
 tokio = { workspace = true, features = [
   "macros",
   "rt-multi-thread",
@@ -23,37 +21,37 @@ tokio = { workspace = true, features = [
   "fs",
   "io-util",
 ] }
+walkdir = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
 
 [dev-dependencies]
-# aws-sdk-kms = { workspace = true, features = ["rt-tokio"] }
-# rustls must be used because ethers/signers enables it and it isn't compatible with 'native-tls'. Since we cannot configure it in `ethers` we must also use rustls
-rusoto_kms = { workspace = true, features = ["rustls"] }
-rusoto_core = { workspace = true, features = ["rustls"] }
-# TODO: segfault features
-hyper = { workspace = true, features = ["default"] }
-hyper-rustls = { workspace = true, features = ["default"] }
-
-testcontainers = { workspace = true, features = ["watchdog"] }
+anyhow = { workspace = true, features = ["std"] }
+eth = { workspace = true, features = ["test-helpers"] }
 ethers = { workspace = true, features = ["aws"] }
-rand = { workspace = true, features = ["std"] }
+fuel = { workspace = true, features = ["test-helpers"] }
 hex = { workspace = true }
+hyper = { workspace = true }
+hyper-rustls = { workspace = true }
 portpicker = { workspace = true }
-url = { workspace = true }
-secp256k1 = { workspace = true, features = ["rand-std"] }
-storage = { workspace = true, features = ["test-helpers"] }
+ports = { workspace = true, features = ["fuel", "l1"] }
+rand = { workspace = true, features = ["std"] }
 reqwest = { workspace = true }
+# `rustls` must be used because `ethers` enables it, and it cannot be enabled 
+# simultaneously with `native-tls`. Since we cannot configure this within 
+# `ethers`, we must also use `rustls`.
+rusoto_core = { workspace = true, features = ["rustls"] }
+rusoto_kms = { workspace = true, features = ["rustls"] }
+secp256k1 = { workspace = true, features = ["rand-std"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+storage = { workspace = true, features = ["test-helpers"] }
 tempfile = { workspace = true }
+testcontainers = { workspace = true, features = ["watchdog"] }
 tokio = { workspace = true, features = [
   "macros",
   "rt-multi-thread",
   "process",
   "fs",
 ] }
-anyhow = { workspace = true, features = ["std"] }
-eth = { workspace = true, features = ["test-helpers"] }
-fuel = { workspace = true, features = ["test-helpers"] }
-ports = { workspace = true, features = ["fuel", "l1"] }
-serde_json = { workspace = true }
-# TODO: segfault see about these features
-serde = { workspace = true, features = ["default"] }
+url = { workspace = true }
 validator = { workspace = true, features = ["validator"] }

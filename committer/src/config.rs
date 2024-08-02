@@ -85,7 +85,10 @@ pub struct Aws {
 
 impl std::fmt::Debug for Aws {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Aws").field("region", &self.region).finish()
+        f.debug_struct("Aws")
+            .field("region", &self.region)
+            .field("allow_http", &self.allow_http)
+            .finish()
     }
 }
 
