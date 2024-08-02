@@ -124,9 +124,8 @@ impl TryFrom<L1Fragment> for Fragment {
 impl From<Fragment> for L1Fragment {
     fn from(value: Fragment) -> Self {
         Self {
-            id: value.id.unwrap_or_default() as i64, // TODO: check if there is a better way than
-            // unwrap_or_default
-            submission_id: value.submission_id.unwrap_or_default() as i64, // TODO: check if there is a better way
+            id: value.id.unwrap_or_default() as i64,
+            submission_id: value.submission_id.unwrap_or_default() as i64,
             fragment_idx: value.fragment_idx as i64,
             data: value.data,
             created_at: value.created_at,

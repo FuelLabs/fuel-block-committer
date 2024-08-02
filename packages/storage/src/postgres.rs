@@ -177,6 +177,7 @@ impl Postgres {
     }
 
     pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<Fragment>> {
+        const BLOB_LIMIT: i64 = 6;
         let rows = sqlx::query_as!(
             // all fragments that are not in a transaction or are in a transaction that failed
             tables::L1Fragment,
@@ -186,8 +187,9 @@ impl Postgres {
              LEFT JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id
              WHERE l1_transaction_fragments.fragment_id IS NULL OR l1_transactions.state = $1
              ORDER BY l1_fragments.created_at
-             LIMIT 6;", // TODO: use blob limit
-             TransactionState::Failed.into_i16()
+             LIMIT $2;",
+             TransactionState::Failed.into_i16(),
+             BLOB_LIMIT
         )
         .fetch_all(&self.connection_pool)
         .await?
