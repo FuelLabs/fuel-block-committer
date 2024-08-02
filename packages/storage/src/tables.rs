@@ -91,6 +91,7 @@ impl TryFrom<L1Submission> for Submission {
 impl From<Submission> for L1Submission {
     fn from(value: Submission) -> Self {
         Self {
+            // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
             fuel_block_height: i64::from(value.block_height),
             fuel_block_hash: value.block_hash.to_vec(),
@@ -124,7 +125,9 @@ impl TryFrom<L1Fragment> for Fragment {
 impl From<Fragment> for L1Fragment {
     fn from(value: Fragment) -> Self {
         Self {
+            // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
+            // if not present use placeholder as id is given by db
             submission_id: value.submission_id.unwrap_or_default() as i64,
             fragment_idx: value.fragment_idx as i64,
             data: value.data,
@@ -167,6 +170,7 @@ impl TryFrom<L1SubmissionTx> for SubmissionTx {
 impl From<SubmissionTx> for L1SubmissionTx {
     fn from(value: SubmissionTx) -> Self {
         Self {
+            // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
             hash: value.hash.to_vec(),
             state: value.state.into_i16(),
