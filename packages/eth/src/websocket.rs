@@ -28,25 +28,24 @@ pub struct WebsocketClient {
     inner: HealthTrackingMiddleware<WsConnection>,
 }
 
-impl WebsocketClient {
-    pub async fn connect(
-        url: &Url,
-        chain_id: Chain,
-        contract_address: Address,
-        main_key_id: String,
-        blob_pool_key_id: Option<String>,
-        unhealthy_after_n_errors: usize,
-        aws_region: String,
-        aws_access_key_id: String,
-        aws_secret_access_key: String,
-        aws_allow_http: bool,
+#[derive(Clone)]
+pub struct AwsClient {
+    client: KmsClient,
+}
+
+impl AwsClient {
+    pub fn try_new(
+        region: String,
+        access_key_id: String,
+        secret_access_key: String,
+        allow_http: bool,
     ) -> ports::l1::Result<Self> {
-        let credentials = StaticProvider::new_minimal(aws_access_key_id, aws_secret_access_key);
+        let credentials = StaticProvider::new_minimal(access_key_id, secret_access_key);
         // TODO: segfault error here instead of unwrap
         // TODO: segfault is json desirable here ?
-        let region: Region = serde_json::from_str(&aws_region).unwrap();
+        let region: Region = serde_json::from_str(&region).unwrap();
 
-        let dispatcher = if aws_allow_http {
+        let dispatcher = if allow_http {
             let hyper_builder = hyper::client::Client::builder();
             let http_connector = hyper_rustls::HttpsConnectorBuilder::new()
                 .with_native_roots()
@@ -59,16 +58,38 @@ impl WebsocketClient {
         };
 
         let client = KmsClient::new_with(dispatcher, credentials, region);
+        Ok(Self { client })
+    }
 
-        let main_signer = AwsSigner::new(client.clone(), main_key_id.clone(), chain_id.into())
+    pub fn inner(&self) -> &KmsClient {
+        &self.client
+    }
+
+    pub async fn make_signer(&self, key_id: String, chain_id: u64) -> ports::l1::Result<AwsSigner> {
+        // TODO: segfault unwrap
+        Ok(AwsSigner::new(self.client.clone(), key_id, chain_id)
             .await
-            .unwrap();
+            .unwrap())
+    }
+}
+
+impl WebsocketClient {
+    pub async fn connect(
+        url: &Url,
+        chain_id: Chain,
+        contract_address: Address,
+        main_key_id: String,
+        blob_pool_key_id: Option<String>,
+        unhealthy_after_n_errors: usize,
+        aws_client: AwsClient,
+    ) -> ports::l1::Result<Self> {
+        let main_signer = aws_client.make_signer(main_key_id, chain_id.into()).await?;
 
         let blob_signer = if let Some(key_id) = blob_pool_key_id {
             Some(
-                AwsSigner::new(client.clone(), key_id.clone(), chain_id.into())
-                    .await
-                    .unwrap(),
+                aws_client
+                    .make_signer(key_id.clone(), chain_id.into())
+                    .await?,
             )
         } else {
             None

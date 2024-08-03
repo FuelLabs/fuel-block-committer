@@ -17,7 +17,7 @@ mod metrics;
 mod websocket;
 
 pub use ethers::types::{Address, Chain};
-pub use websocket::WebsocketClient;
+pub use websocket::{AwsClient, WebsocketClient};
 
 #[async_trait]
 impl Contract for WebsocketClient {

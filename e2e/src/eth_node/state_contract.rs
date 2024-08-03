@@ -1,7 +1,7 @@
 const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
 use std::time::Duration;
 
-use eth::WebsocketClient;
+use eth::{AwsClient, WebsocketClient};
 use ethers::{
     abi::Address,
     middleware::SignerMiddleware,
@@ -23,6 +23,7 @@ impl DeployedContract {
     pub async fn connect(url: &Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
         let blob_wallet = None;
         let region: String = serde_json::to_string(&key.region)?;
+        let aws_client = AwsClient::try_new(region, "test".to_string(), "test".to_string(), true)?;
         let chain_state_contract = WebsocketClient::connect(
             url,
             Chain::AnvilHardhat,
@@ -30,10 +31,7 @@ impl DeployedContract {
             key.id,
             blob_wallet,
             5,
-            region,
-            "test".to_string(),
-            "test".to_string(),
-            true,
+            aws_client,
         )
         .await?;
 
