@@ -1,8 +1,10 @@
 const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
 
+mod deployed_contract;
+pub use deployed_contract::*;
+
 use std::time::Duration;
 
-use eth::WebsocketClient;
 use ethers::middleware::Middleware;
 use ethers::providers::{Provider, Ws};
 use ethers::types::{Bytes, Eip1559TransactionRequest, U256, U64};
@@ -15,11 +17,17 @@ use ethers::{
     },
     types::{Chain, TransactionRequest},
 };
-use ports::types::ValidatedFuelBlock;
 use serde::Deserialize;
 use url::Url;
 
 use crate::kms::KmsKey;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContractArgs {
+    pub finalize_duration: Duration,
+    pub blocks_per_interval: u32,
+    pub cooldown_between_commits: Duration,
+}
 
 #[derive(Default, Debug)]
 pub struct EthNode {
@@ -74,6 +82,57 @@ pub struct EthNodeProcess {
     mnemonic: String,
 }
 
+struct CreateTransactions {
+    txs: Vec<CreateTransaction>,
+}
+
+impl CreateTransactions {
+    async fn deploy(self, middleware: impl Middleware + 'static) -> anyhow::Result<()> {
+        for tx in self.txs {
+            let status = middleware
+                .send_transaction(tx.tx, None)
+                .await?
+                .confirmations(1)
+                .interval(Duration::from_millis(100))
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("No receipts"))?
+                .status
+                .ok_or_else(|| anyhow::anyhow!("No status"))?;
+
+            if status != 1.into() {
+                anyhow::bail!("Failed to deploy contract {}", tx.name);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn proxy_contract_address(&self) -> anyhow::Result<Address> {
+        self.txs
+            .iter()
+            .find_map(|tx| {
+                if tx.name == "ERC1967Proxy" {
+                    Some(tx.address)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!("No proxy contract address found in prepared transactions")
+            })
+    }
+
+    fn new(transactions: Vec<CreateTransaction>) -> Self {
+        Self { txs: transactions }
+    }
+}
+
+struct CreateTransaction {
+    name: String,
+    address: Address,
+    tx: Eip1559TransactionRequest,
+}
+
 impl EthNodeProcess {
     fn new(child: tokio::process::Child, port: u16, chain_id: u64, mnemonic: String) -> Self {
         Self {
@@ -84,13 +143,86 @@ impl EthNodeProcess {
         }
     }
 
-    pub async fn deploy_contract(
+    pub async fn deploy_state_contract(
         &self,
         kms_key: KmsKey,
+        contract_args: ContractArgs,
+    ) -> anyhow::Result<DeployedContract> {
+        let prepared_transactions = self
+            .prepare_transactions(
+                &kms_key,
+                contract_args.finalize_duration.as_secs(),
+                contract_args.blocks_per_interval,
+                contract_args.cooldown_between_commits.as_secs() as u32,
+            )
+            .await?;
+
+        let proxy_contract_address = prepared_transactions.proxy_contract_address()?;
+
+        let provider = self.provider(&kms_key).await?;
+        prepared_transactions.deploy(provider).await?;
+
+        DeployedContract::connect(&self.ws_url(), proxy_contract_address, kms_key).await
+    }
+
+    async fn provider(
+        &self,
+        kms_key: &KmsKey,
+    ) -> Result<SignerMiddleware<Provider<Ws>, ethers::signers::AwsSigner>, anyhow::Error> {
+        let provider = Provider::<Ws>::connect(self.ws_url()).await?;
+        let signer = kms_key.signer.clone();
+        let signer_middleware = SignerMiddleware::new(provider, signer);
+        Ok(signer_middleware)
+    }
+
+    async fn prepare_transactions(
+        &self,
+        kms_key: &KmsKey,
         seconds_to_finalize: u64,
         blocks_per_commit_interval: u32,
         commit_cooldown_seconds: u32,
-    ) -> anyhow::Result<DeployedContract> {
+    ) -> Result<CreateTransactions, anyhow::Error> {
+        let stdout = self
+            .run_deploy_script(
+                kms_key,
+                seconds_to_finalize,
+                blocks_per_commit_interval,
+                commit_cooldown_seconds,
+            )
+            .await?;
+
+        let transactions_file = extract_transactions_file_path(stdout)?;
+
+        let contents = tokio::fs::read_to_string(&transactions_file).await?;
+        let broadcasts: Broadcasts = serde_json::from_str(&contents)?;
+
+        let transactions = broadcasts
+            .transactions
+            .into_iter()
+            .map(|tx| CreateTransaction {
+                name: tx.name,
+                address: tx.address,
+                tx: Eip1559TransactionRequest {
+                    from: Some(tx.raw_tx.from),
+                    gas: Some(tx.raw_tx.gas),
+                    value: Some(tx.raw_tx.value),
+                    data: Some(tx.raw_tx.input),
+                    chain_id: Some(tx.raw_tx.chain_id),
+                    ..Default::default()
+                },
+            })
+            .collect::<Vec<_>>();
+
+        Ok(CreateTransactions::new(transactions))
+    }
+
+    async fn run_deploy_script(
+        &self,
+        kms_key: &KmsKey,
+        seconds_to_finalize: u64,
+        blocks_per_commit_interval: u32,
+        commit_cooldown_seconds: u32,
+    ) -> Result<String, anyhow::Error> {
         let output = tokio::process::Command::new("forge")
             .current_dir(FOUNDRY_PROJECT)
             .arg("script")
@@ -116,65 +248,7 @@ impl EthNodeProcess {
             ));
         }
 
-        let stdout = String::from_utf8(output.stdout)?;
-        let match_txt = "Transactions saved to: ";
-        let transactions_file = stdout
-            .lines()
-            .find(|line| line.contains(match_txt))
-            .ok_or_else(|| anyhow::anyhow!("no line in output contains text {match_txt}"))?
-            .replace(match_txt, "")
-            .trim()
-            .to_string();
-
-        let contents = tokio::fs::read_to_string(&transactions_file).await?;
-        let broadcasts: Broadcasts = serde_json::from_str(&contents)?;
-
-        let proxy_contract_address = broadcasts
-            .transactions
-            .iter()
-            .find_map(|tx| (tx.name == "ERC1967Proxy").then_some(tx.address))
-            .ok_or_else(|| anyhow::anyhow!("No ERC1967Proxy contract created"))?;
-
-        let provider = Provider::<Ws>::connect(self.ws_url()).await?;
-        let signer = kms_key.signer.clone();
-        let signer_middleware = SignerMiddleware::new(provider, signer);
-
-        for create_tx in broadcasts.transactions {
-            let tx = Eip1559TransactionRequest {
-                from: Some(create_tx.raw_tx.from),
-                gas: Some(create_tx.raw_tx.gas),
-                value: Some(create_tx.raw_tx.value),
-                data: Some(create_tx.raw_tx.input),
-                chain_id: Some(create_tx.raw_tx.chain_id),
-                ..Default::default()
-            };
-
-            let status = signer_middleware
-                .send_transaction(tx, None)
-                .await?
-                .confirmations(1)
-                .interval(Duration::from_millis(100))
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("No receipts"))?
-                .status
-                .ok_or_else(|| anyhow::anyhow!("No status"))?;
-
-            if status != 1.into() {
-                anyhow::bail!("Failed to deploy contract {}", create_tx.name);
-            }
-        }
-
-        let deployed_contract = DeployedContract::connect(
-            &self.ws_url(),
-            proxy_contract_address,
-            kms_key,
-            seconds_to_finalize,
-            blocks_per_commit_interval,
-            commit_cooldown_seconds,
-        )
-        .await?;
-
-        Ok(deployed_contract)
+        Ok(String::from_utf8(output.stdout)?)
     }
 
     fn wallet(&self, index: u32) -> LocalWallet {
@@ -229,6 +303,18 @@ impl EthNodeProcess {
     }
 }
 
+fn extract_transactions_file_path(stdout: String) -> Result<String, anyhow::Error> {
+    let match_txt = "Transactions saved to: ";
+    let transactions_file = stdout
+        .lines()
+        .find(|line| line.contains(match_txt))
+        .ok_or_else(|| anyhow::anyhow!("no line in output contains text {match_txt}"))?
+        .replace(match_txt, "")
+        .trim()
+        .to_string();
+    Ok(transactions_file)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct RawTx {
     from: Address,
@@ -251,71 +337,4 @@ struct CreateContractTx {
 #[derive(Debug, Clone, Deserialize)]
 struct Broadcasts {
     transactions: Vec<CreateContractTx>,
-}
-
-pub struct DeployedContract {
-    address: Address,
-    chain_state_contract: WebsocketClient,
-    duration_to_finalize: Duration,
-    blocks_per_commit_interval: u32,
-    _commit_cooldown_seconds: u32,
-}
-
-impl DeployedContract {
-    async fn connect(
-        url: &Url,
-        address: Address,
-        key: KmsKey,
-        seconds_to_finalize: u64,
-        blocks_per_commit_interval: u32,
-        commit_cooldown_seconds: u32,
-    ) -> anyhow::Result<Self> {
-        let blob_wallet = None;
-        let region: String = serde_json::to_string(&key.region)?;
-        let chain_state_contract = WebsocketClient::connect(
-            url,
-            Chain::AnvilHardhat,
-            address,
-            key.id,
-            blob_wallet,
-            5,
-            region,
-            "test".to_string(),
-            "test".to_string(),
-            true,
-        )
-        .await?;
-
-        Ok(Self {
-            address,
-            chain_state_contract,
-            duration_to_finalize: Duration::from_secs(seconds_to_finalize),
-            blocks_per_commit_interval,
-            _commit_cooldown_seconds: commit_cooldown_seconds,
-        })
-    }
-
-    pub async fn finalized(&self, block: ValidatedFuelBlock) -> anyhow::Result<bool> {
-        self.chain_state_contract
-            .finalized(block)
-            .await
-            .map_err(Into::into)
-    }
-
-    pub fn address(&self) -> Address {
-        self.address
-    }
-
-    pub fn duration_to_finalize(&self) -> Duration {
-        self.duration_to_finalize
-    }
-
-    pub fn blocks_per_commit_interval(&self) -> u32 {
-        self.blocks_per_commit_interval
-    }
-
-    #[allow(dead_code)]
-    pub fn commit_cooldown_seconds(&self) -> u32 {
-        self._commit_cooldown_seconds
-    }
 }

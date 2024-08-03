@@ -4,7 +4,7 @@ use storage::PostgresProcess;
 
 use crate::{
     committer::{Committer, CommitterProcess},
-    eth_node::{DeployedContract, EthNode, EthNodeProcess},
+    eth_node::{ContractArgs, DeployedContract, EthNode, EthNodeProcess},
     fuel_node::{FuelNode, FuelNodeProcess},
     kms::{Kms, KmsProcess},
 };
@@ -16,15 +16,12 @@ pub struct WholeStack {
     pub committer: CommitterProcess,
     pub db: Arc<PostgresProcess>,
     pub deployed_contract: DeployedContract,
+    pub contract_args: ContractArgs,
     pub kms: KmsProcess,
 }
 
 impl WholeStack {
     pub async fn deploy_default(logs: bool, blob_support: bool) -> anyhow::Result<Self> {
-        let finalize_duration = Duration::from_secs(1);
-        let blocks_per_interval = 10u32;
-        let commit_cooldown_seconds = 1u32;
-
         let kms = Kms::default().with_show_logs(logs).start().await?;
         let eth_node = EthNode::default().with_show_logs(logs).start().await?;
 
@@ -33,13 +30,14 @@ impl WholeStack {
         let main_wallet_key = kms.create_key(eth_node.chain_id()).await?;
         eth_node.fund(main_wallet_key.address(), amount).await?;
 
+        let contract_args = ContractArgs {
+            finalize_duration: Duration::from_secs(1),
+            blocks_per_interval: 10u32,
+            cooldown_between_commits: Duration::from_secs(1),
+        };
+
         let deployed_contract = eth_node
-            .deploy_contract(
-                main_wallet_key.clone(),
-                finalize_duration.as_secs(),
-                blocks_per_interval,
-                commit_cooldown_seconds,
-            )
+            .deploy_state_contract(main_wallet_key.clone(), contract_args)
             .await?;
 
         let secondary_wallet_key = kms.create_key(eth_node.chain_id()).await?;
@@ -82,6 +80,7 @@ impl WholeStack {
             deployed_contract,
             db: db_process,
             kms,
+            contract_args,
         })
     }
 }

@@ -33,17 +33,17 @@ mod tests {
         stack
             .fuel_node
             .client()
-            .produce_blocks(stack.deployed_contract.blocks_per_commit_interval())
+            .produce_blocks(stack.contract_args.blocks_per_interval)
             .await?;
 
         // then
         stack
             .committer
-            .wait_for_committed_block(stack.deployed_contract.blocks_per_commit_interval() as u64)
+            .wait_for_committed_block(stack.contract_args.blocks_per_interval as u64)
             .await?;
         let committed_at = tokio::time::Instant::now();
 
-        sleep_until(committed_at + stack.deployed_contract.duration_to_finalize()).await;
+        sleep_until(committed_at + stack.contract_args.finalize_duration).await;
 
         let latest_block = stack.fuel_node.client().latest_block().await?;
 
