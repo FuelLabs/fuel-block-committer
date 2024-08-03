@@ -56,7 +56,9 @@ impl AwsClient {
                 .build();
             HttpClient::from_builder(hyper_builder, http_connector)
         } else {
-            HttpClient::new().expect("failed to create request dispatcher")
+            HttpClient::new().map_err(|e| {
+                ports::l1::Error::Network(format!("Could not create http client: {e}"))
+            })?
         };
 
         let client = KmsClient::new_with(dispatcher, credentials, region);
