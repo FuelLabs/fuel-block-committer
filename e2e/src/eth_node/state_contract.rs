@@ -68,11 +68,11 @@ pub struct CreateTransactions {
 
 impl CreateTransactions {
     pub async fn prepare(
-        port: u16,
+        url: Url,
         kms_key: &KmsKey,
         contract_args: ContractArgs,
     ) -> Result<Self, anyhow::Error> {
-        let stdout = run_tx_building_script(port, kms_key, contract_args).await?;
+        let stdout = run_tx_building_script(url, kms_key, contract_args).await?;
 
         let transactions_file = extract_transactions_file_path(stdout)?;
 
@@ -186,7 +186,7 @@ struct Broadcasts {
 
 // TODO: segfault try the ws url here
 async fn run_tx_building_script(
-    port: u16,
+    url: Url,
     kms_key: &KmsKey,
     contract_args: ContractArgs,
 ) -> Result<String, anyhow::Error> {
@@ -195,7 +195,7 @@ async fn run_tx_building_script(
         .arg("script")
         .arg("script/build_tx.sol:MyScript")
         .arg("--fork-url")
-        .arg(&format!("http://localhost:{port}"))
+        .arg(url.to_string())
         .stdin(std::process::Stdio::null())
         .env("ADDRESS", format!("{:?}", kms_key.address()))
         .env(

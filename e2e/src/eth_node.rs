@@ -86,7 +86,7 @@ impl EthNodeProcess {
         contract_args: ContractArgs,
     ) -> anyhow::Result<DeployedContract> {
         let prepared_transactions =
-            CreateTransactions::prepare(self.port(), &kms_key, contract_args).await?;
+            CreateTransactions::prepare(self.ws_url(), &kms_key, contract_args).await?;
 
         let proxy_contract_address = prepared_transactions.proxy_contract_address()?;
 
@@ -111,10 +111,6 @@ impl EthNodeProcess {
         format!("ws://localhost:{}", self.port)
             .parse()
             .expect("URL to be well formed")
-    }
-
-    pub fn port(&self) -> u16 {
-        self.port
     }
 
     pub fn chain_id(&self) -> u64 {
