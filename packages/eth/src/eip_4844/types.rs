@@ -2,6 +2,7 @@ use std::{ffi::CString, ops::Deref, sync::OnceLock};
 
 use ethers::{
     core::k256::sha2::{Digest, Sha256},
+    signers::{AwsSigner, Signer},
     types::{Address, Signature, H256, U256},
     utils::keccak256,
 };
@@ -35,14 +36,78 @@ const BLOB_TX_TYPE: u8 = 0x03;
 const MAX_BLOBS_PER_BLOCK: usize = 6;
 pub const MAX_BYTES_PER_BLOB: usize = c_kzg::BYTES_PER_BLOB;
 
+#[async_trait::async_trait]
 pub trait BlobSigner {
-    fn sign_hash(&self, hash: H256) -> crate::error::Result<Signature>;
+    async fn sign_hash(&self, hash: H256) -> crate::error::Result<Signature>;
 }
 
-impl BlobSigner for ethers::signers::LocalWallet {
-    fn sign_hash(&self, hash: H256) -> crate::error::Result<Signature> {
-        self.sign_hash(hash)
-            .map_err(|e| Error::Other(e.to_string()))
+#[async_trait::async_trait]
+impl BlobSigner for AwsSigner {
+    async fn sign_hash(&self, hash: H256) -> crate::error::Result<Signature> {
+        let sig = self
+            .sign_digest(hash.into())
+            .await
+            .map_err(|err| crate::error::Error::Other(format!("Error signing digest: {err}")))?;
+
+        let pub_key = &self.get_pubkey().await.map_err(|err| {
+            crate::error::Error::Other(format!("Error getting pubkey to sign digest: {err}"))
+        })?;
+
+        let mut sig =
+            copied_from_ethers::sig_from_digest_bytes_trial_recovery(&sig, hash.into(), pub_key);
+
+        copied_from_ethers::apply_eip155(&mut sig, self.chain_id());
+        Ok(sig)
+    }
+}
+
+mod copied_from_ethers {
+    use ethers::{
+        core::k256::{
+            ecdsa::{RecoveryId, VerifyingKey},
+            FieldBytes,
+        },
+        types::Signature,
+    };
+    use ports::types::U256;
+
+    /// Recover an rsig from a signature under a known key by trial/error
+    pub(super) fn sig_from_digest_bytes_trial_recovery(
+        sig: &ethers::core::k256::ecdsa::Signature,
+        digest: [u8; 32],
+        vk: &VerifyingKey,
+    ) -> ethers::types::Signature {
+        let r_bytes: FieldBytes = sig.r().into();
+        let s_bytes: FieldBytes = sig.s().into();
+        let r = U256::from_big_endian(r_bytes.as_slice());
+        let s = U256::from_big_endian(s_bytes.as_slice());
+
+        if check_candidate(sig, RecoveryId::from_byte(0).unwrap(), digest, vk) {
+            Signature { r, s, v: 0 }
+        } else if check_candidate(sig, RecoveryId::from_byte(1).unwrap(), digest, vk) {
+            Signature { r, s, v: 1 }
+        } else {
+            panic!("bad sig");
+        }
+    }
+
+    /// Makes a trial recovery to check whether an RSig corresponds to a known
+    /// `VerifyingKey`
+    fn check_candidate(
+        sig: &ethers::core::k256::ecdsa::Signature,
+        recovery_id: RecoveryId,
+        digest: [u8; 32],
+        vk: &VerifyingKey,
+    ) -> bool {
+        VerifyingKey::recover_from_prehash(digest.as_slice(), sig, recovery_id)
+            .map(|key| key == *vk)
+            .unwrap_or(false)
+    }
+
+    /// Modify the v value of a signature to conform to eip155
+    pub(super) fn apply_eip155(sig: &mut Signature, chain_id: u64) {
+        let v = (chain_id * 2 + 35) + sig.v;
+        sig.v = v;
     }
 }
 
@@ -177,12 +242,15 @@ impl BlobTransactionEncoder {
         Self { tx, sidecar }
     }
 
-    pub fn raw_signed_w_sidecar(self, signer: &impl BlobSigner) -> (H256, Vec<u8>) {
-        let signed_tx_bytes = self.raw_signed(signer);
+    pub async fn raw_signed_w_sidecar(
+        self,
+        signer: &impl BlobSigner,
+    ) -> crate::error::Result<(H256, Vec<u8>)> {
+        let signed_tx_bytes = self.raw_signed(signer).await?;
         let tx_hash = H256(keccak256(&signed_tx_bytes));
         let final_bytes = self.encode_sidecar(signed_tx_bytes);
 
-        (tx_hash, final_bytes)
+        Ok((tx_hash, final_bytes))
     }
 
     fn encode_sidecar(self, payload: Vec<u8>) -> Vec<u8> {
@@ -214,19 +282,21 @@ impl BlobTransactionEncoder {
         tx
     }
 
-    fn raw_signed(&self, signer: &impl BlobSigner) -> Vec<u8> {
+    async fn raw_signed(&self, signer: &impl BlobSigner) -> crate::error::Result<Vec<u8>> {
         let tx_bytes = self.encode(None);
-        let signature = self.compute_signature(tx_bytes, signer);
+        let signature = self.compute_signature(tx_bytes, signer).await?;
 
-        self.encode(Some(signature))
+        Ok(self.encode(Some(signature)))
     }
 
-    fn compute_signature(&self, tx_bytes: Vec<u8>, signer: &impl BlobSigner) -> Signature {
+    async fn compute_signature(
+        &self,
+        tx_bytes: Vec<u8>,
+        signer: &impl BlobSigner,
+    ) -> crate::error::Result<Signature> {
         let message_hash = H256::from(keccak256(tx_bytes));
 
-        signer
-            .sign_hash(message_hash)
-            .expect("signing should not fail")
+        signer.sign_hash(message_hash).await
     }
 
     fn encode(&self, signature: Option<Signature>) -> Vec<u8> {

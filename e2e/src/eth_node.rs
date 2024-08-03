@@ -1,18 +1,21 @@
-const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
-
+mod state_contract;
 use std::time::Duration;
 
-use eth::WebsocketClient;
 use ethers::{
     abi::Address,
+    middleware::{Middleware, SignerMiddleware},
+    providers::{Provider, Ws},
     signers::{
         coins_bip39::{English, Mnemonic},
         LocalWallet, MnemonicBuilder, Signer,
     },
-    types::Chain,
+    types::{Chain, TransactionRequest, U256},
 };
-use ports::types::ValidatedFuelBlock;
+use state_contract::CreateTransactions;
+pub use state_contract::{ContractArgs, DeployedContract};
 use url::Url;
+
+use crate::kms::KmsKey;
 
 #[derive(Default, Debug)]
 pub struct EthNode {
@@ -46,7 +49,12 @@ impl EthNode {
 
         let child = cmd.spawn()?;
 
-        Ok(EthNodeProcess::new(child, unused_port, mnemonic))
+        Ok(EthNodeProcess::new(
+            child,
+            unused_port,
+            Chain::AnvilHardhat.into(),
+            mnemonic,
+        ))
     }
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
@@ -57,102 +65,46 @@ impl EthNode {
 
 pub struct EthNodeProcess {
     _child: tokio::process::Child,
+    chain_id: u64,
     port: u16,
     mnemonic: String,
 }
 
 impl EthNodeProcess {
-    fn new(child: tokio::process::Child, port: u16, mnemonic: String) -> Self {
+    fn new(child: tokio::process::Child, port: u16, chain_id: u64, mnemonic: String) -> Self {
         Self {
             _child: child,
             mnemonic,
             port,
+            chain_id,
         }
     }
 
-    pub async fn deploy_contract(
+    pub async fn deploy_state_contract(
         &self,
-        seconds_to_finalize: u64,
-        blocks_per_commit_interval: u32,
-        commit_cooldown_seconds: u32,
+        kms_key: KmsKey,
+        contract_args: ContractArgs,
     ) -> anyhow::Result<DeployedContract> {
-        let output = tokio::process::Command::new("forge")
-            .current_dir(FOUNDRY_PROJECT)
-            .arg("script")
-            .arg("script/deploy.sol:MyScript")
-            .arg("--fork-url")
-            .arg(&format!("http://localhost:{}", self.port()))
-            .arg("--broadcast")
-            .stdin(std::process::Stdio::null())
-            .env("PRIVATE_KEY", self.main_wallet_key())
-            .env("TIME_TO_FINALIZE", seconds_to_finalize.to_string())
-            .env(
-                "BLOCKS_PER_COMMIT_INTERVAL",
-                blocks_per_commit_interval.to_string(),
-            )
-            .env("COMMIT_COOLDOWN", commit_cooldown_seconds.to_string())
-            .kill_on_drop(true)
-            .output()
+        let prepared_transactions =
+            CreateTransactions::prepare(self.ws_url(), &kms_key, contract_args).await?;
+
+        let proxy_contract_address = prepared_transactions.proxy_contract_address()?;
+
+        prepared_transactions
+            .deploy(self.ws_url(), &kms_key)
             .await?;
 
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "Failed to deploy chain state contract: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        let stdout = String::from_utf8(output.stdout)?;
-        let proxy_address = stdout
-            .lines()
-            .find(|line| line.contains("PROXY:"))
-            .ok_or_else(|| anyhow::anyhow!("No proxy address found"))?
-            .replace("PROXY:", "")
-            .trim()
-            .parse()?;
-
-        let deployed_contract = DeployedContract::connect(
-            &self.ws_url(),
-            proxy_address,
-            &self.main_wallet_key(),
-            seconds_to_finalize,
-            blocks_per_commit_interval,
-            commit_cooldown_seconds,
-        )
-        .await?;
-
-        Ok(deployed_contract)
+        DeployedContract::connect(&self.ws_url(), proxy_contract_address, kms_key).await
     }
 
-    pub fn main_wallet_key(&self) -> String {
-        Self::private_key_as_hex(&self.main_wallet())
-    }
-
-    pub fn secondary_wallet_key(&self) -> String {
-        Self::private_key_as_hex(&self.secondary_wallet())
-    }
-
-    fn private_key_as_hex(wallet: &LocalWallet) -> String {
-        let bytes = wallet.signer().to_bytes();
-        format!("0x{}", hex::encode(bytes))
-    }
-
-    fn main_wallet(&self) -> LocalWallet {
+    fn wallet(&self, index: u32) -> LocalWallet {
         MnemonicBuilder::<English>::default()
             .phrase(self.mnemonic.as_str())
-            .build()
-            .expect("phrase to be correct")
-            .with_chain_id(Chain::AnvilHardhat)
-    }
-
-    fn secondary_wallet(&self) -> LocalWallet {
-        MnemonicBuilder::<English>::default()
-            .phrase(self.mnemonic.as_str())
-            .index(1u32)
+            .index(index)
             .expect("Should generate a valid derivation path")
             .build()
             .expect("phrase to be correct")
-            .with_chain_id(Chain::AnvilHardhat)
+            .with_chain_id(self.chain_id)
     }
 
     pub fn ws_url(&self) -> Url {
@@ -161,69 +113,34 @@ impl EthNodeProcess {
             .expect("URL to be well formed")
     }
 
-    pub fn port(&self) -> u16 {
-        self.port
-    }
-}
-
-pub struct DeployedContract {
-    address: Address,
-    chain_state_contract: WebsocketClient,
-    duration_to_finalize: Duration,
-    blocks_per_commit_interval: u32,
-    _commit_cooldown_seconds: u32,
-}
-
-impl DeployedContract {
-    async fn connect(
-        url: &Url,
-        address: Address,
-        wallet_priv_key: &str,
-        seconds_to_finalize: u64,
-        blocks_per_commit_interval: u32,
-        commit_cooldown_seconds: u32,
-    ) -> anyhow::Result<Self> {
-        let blob_wallet = None;
-        let chain_state_contract = WebsocketClient::connect(
-            url,
-            Chain::AnvilHardhat,
-            address,
-            wallet_priv_key,
-            blob_wallet,
-            5,
-        )
-        .await?;
-
-        Ok(Self {
-            address,
-            chain_state_contract,
-            duration_to_finalize: Duration::from_secs(seconds_to_finalize),
-            blocks_per_commit_interval,
-            _commit_cooldown_seconds: commit_cooldown_seconds,
-        })
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
     }
 
-    pub async fn finalized(&self, block: ValidatedFuelBlock) -> anyhow::Result<bool> {
-        self.chain_state_contract
-            .finalized(block)
+    pub async fn fund(&self, address: Address, amount: U256) -> anyhow::Result<()> {
+        let wallet = self.wallet(0);
+        let provider = Provider::<Ws>::connect(self.ws_url())
             .await
-            .map_err(Into::into)
-    }
+            .expect("to connect to the provider");
 
-    pub fn address(&self) -> Address {
-        self.address
-    }
+        let signer_middleware = SignerMiddleware::new(provider, wallet);
 
-    pub fn duration_to_finalize(&self) -> Duration {
-        self.duration_to_finalize
-    }
+        let tx = TransactionRequest::pay(address, amount);
 
-    pub fn blocks_per_commit_interval(&self) -> u32 {
-        self.blocks_per_commit_interval
-    }
+        let status = signer_middleware
+            .send_transaction(tx, None)
+            .await?
+            .confirmations(1)
+            .interval(Duration::from_millis(100))
+            .await?
+            .unwrap()
+            .status
+            .unwrap();
 
-    #[allow(dead_code)]
-    pub fn commit_cooldown_seconds(&self) -> u32 {
-        self._commit_cooldown_seconds
+        if status == 1.into() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Failed to fund address {address}"))
+        }
     }
 }

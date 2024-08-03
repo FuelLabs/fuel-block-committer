@@ -1,7 +1,6 @@
 #![deny(unused_crate_dependencies)]
 
-use std::num::NonZeroU32;
-use std::pin::Pin;
+use std::{num::NonZeroU32, pin::Pin};
 
 use async_trait::async_trait;
 use ethers::types::U256;
@@ -18,7 +17,7 @@ mod metrics;
 mod websocket;
 
 pub use ethers::types::{Address, Chain};
-pub use websocket::WebsocketClient;
+pub use websocket::{AwsClient, WebsocketClient};
 
 #[async_trait]
 impl Contract for WebsocketClient {

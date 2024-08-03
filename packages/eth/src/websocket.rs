@@ -1,10 +1,16 @@
+use std::num::NonZeroU32;
+
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
-use ethers::types::{Address, Chain};
+use ethers::{
+    signers::AwsSigner,
+    types::{Address, Chain},
+};
 use ports::{
     l1::Result,
     types::{ValidatedFuelBlock, U256},
 };
-use std::num::NonZeroU32;
+use rusoto_core::{credential::StaticProvider, HttpClient, Region};
+use rusoto_kms::KmsClient;
 use url::Url;
 
 pub use self::event_streamer::EthEventStreamer;
@@ -22,23 +28,78 @@ pub struct WebsocketClient {
     inner: HealthTrackingMiddleware<WsConnection>,
 }
 
+#[derive(Clone)]
+pub struct AwsClient {
+    client: KmsClient,
+}
+
+impl AwsClient {
+    pub fn try_new(
+        region: String,
+        access_key_id: String,
+        secret_access_key: String,
+        allow_http: bool,
+    ) -> ports::l1::Result<Self> {
+        let credentials = StaticProvider::new_minimal(access_key_id, secret_access_key);
+        let region: Region = serde_json::from_str(&region).map_err(|err| {
+            ports::l1::Error::Other(format!(
+                "Could not parse {region} into a aws Region. Reason: {err}"
+            ))
+        })?;
+
+        let dispatcher = if allow_http {
+            let hyper_builder = hyper::client::Client::builder();
+            let http_connector = hyper_rustls::HttpsConnectorBuilder::new()
+                .with_native_roots()
+                .https_or_http()
+                .enable_http1()
+                .build();
+            HttpClient::from_builder(hyper_builder, http_connector)
+        } else {
+            HttpClient::new().map_err(|e| {
+                ports::l1::Error::Network(format!("Could not create http client: {e}"))
+            })?
+        };
+
+        let client = KmsClient::new_with(dispatcher, credentials, region);
+        Ok(Self { client })
+    }
+
+    pub fn inner(&self) -> &KmsClient {
+        &self.client
+    }
+
+    pub async fn make_signer(&self, key_id: String, chain_id: u64) -> ports::l1::Result<AwsSigner> {
+        AwsSigner::new(self.client.clone(), key_id, chain_id)
+            .await
+            .map_err(|err| ports::l1::Error::Other(format!("Error making aws signer: {err}")))
+    }
+}
+
 impl WebsocketClient {
     pub async fn connect(
         url: &Url,
         chain_id: Chain,
         contract_address: Address,
-        wallet_key: &str,
-        blob_pool_wallet_key: Option<String>,
+        main_key_id: String,
+        blob_pool_key_id: Option<String>,
         unhealthy_after_n_errors: usize,
+        aws_client: AwsClient,
     ) -> ports::l1::Result<Self> {
-        let provider = WsConnection::connect(
-            url,
-            chain_id,
-            contract_address,
-            wallet_key,
-            blob_pool_wallet_key,
-        )
-        .await?;
+        let main_signer = aws_client.make_signer(main_key_id, chain_id.into()).await?;
+
+        let blob_signer = if let Some(key_id) = blob_pool_key_id {
+            Some(
+                aws_client
+                    .make_signer(key_id.clone(), chain_id.into())
+                    .await?,
+            )
+        } else {
+            None
+        };
+
+        let provider =
+            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),

@@ -1,9 +1,11 @@
-use crate::tables::state_submission::{L1StateFragment, L1StateSubmission};
 use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
-use crate::tables;
+use crate::{
+    tables,
+    tables::state_submission::{L1StateFragment, L1StateSubmission},
+};
 
 #[derive(Clone)]
 pub struct Postgres {
