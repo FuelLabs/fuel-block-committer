@@ -42,7 +42,7 @@ async fn init_and_build(revision: &str, path: &Path) -> anyhow::Result<()> {
     foundry::install_deps(path).await?;
     foundry::build(path).await?;
 
-    foundry::add_deploy_script(path).await?;
+    foundry::add_tx_building_script(path).await?;
     Ok(())
 }
 
@@ -327,8 +327,8 @@ mod foundry {
         Ok(())
     }
 
-    pub async fn add_deploy_script(path: &Path) -> anyhow::Result<()> {
-        let script_path = path.join("script/deploy.sol");
+    pub async fn add_tx_building_script(path: &Path) -> anyhow::Result<()> {
+        let script_path = path.join("script/build_tx.sol");
         if let Some(parent) = script_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
