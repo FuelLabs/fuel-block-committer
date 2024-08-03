@@ -111,6 +111,7 @@ impl PostgresProcess {
             password: self.password.clone(),
             database: self.initial_db.clone(),
             max_connections: 5,
+            use_ssl: false,
         };
         let db = Postgres::connect(&config).await?;
 
