@@ -7,10 +7,8 @@ pub use test_instance::*;
 
 mod error;
 mod postgres;
-use ports::types::BlockSubmission;
+use ports::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
 pub use postgres::*;
-
-use ports::types::{StateFragment, StateFragmentId, StateSubmission};
 
 #[async_trait::async_trait]
 impl ports::storage::Storage for postgres::Postgres {

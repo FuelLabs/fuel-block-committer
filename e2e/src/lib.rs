@@ -13,7 +13,6 @@ mod whole_stack;
 mod tests {
 
     use anyhow::Result;
-
     use ports::fuel::Api;
     use tokio::time::sleep_until;
     use validator::{BlockValidator, Validator};

@@ -7,10 +7,10 @@ mod setup;
 use api::launch_api_server;
 use errors::Result;
 use metrics::prometheus::Registry;
+use ports::l1::Contract;
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
-use ports::l1::Contract;
 
 pub type L1 = eth::WebsocketClient;
 pub type Database = storage::Postgres;

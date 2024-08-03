@@ -1,5 +1,4 @@
-use std::num::NonZeroU32;
-use std::time::Duration;
+use std::{num::NonZeroU32, time::Duration};
 
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;

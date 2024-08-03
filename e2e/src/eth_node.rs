@@ -1,21 +1,21 @@
 mod state_contract;
-use crate::kms::KmsKey;
-use ethers::middleware::Middleware;
-use ethers::providers::{Provider, Ws};
-use ethers::types::U256;
+use std::time::Duration;
+
 use ethers::{
     abi::Address,
-    middleware::SignerMiddleware,
+    middleware::{Middleware, SignerMiddleware},
+    providers::{Provider, Ws},
     signers::{
         coins_bip39::{English, Mnemonic},
         LocalWallet, MnemonicBuilder, Signer,
     },
-    types::{Chain, TransactionRequest},
+    types::{Chain, TransactionRequest, U256},
 };
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
-use std::time::Duration;
 use url::Url;
+
+use crate::kms::KmsKey;
 
 #[derive(Default, Debug)]
 pub struct EthNode {

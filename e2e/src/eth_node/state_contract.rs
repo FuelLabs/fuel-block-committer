@@ -1,5 +1,6 @@
 const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
-use crate::kms::KmsKey;
+use std::time::Duration;
+
 use eth::WebsocketClient;
 use ethers::{
     abi::Address,
@@ -9,8 +10,9 @@ use ethers::{
 };
 use ports::types::{ValidatedFuelBlock, U256};
 use serde::Deserialize;
-use std::time::Duration;
 use url::Url;
+
+use crate::kms::KmsKey;
 
 pub struct DeployedContract {
     address: Address,
