@@ -41,9 +41,11 @@ impl AwsClient {
         allow_http: bool,
     ) -> ports::l1::Result<Self> {
         let credentials = StaticProvider::new_minimal(access_key_id, secret_access_key);
-        // TODO: segfault error here instead of unwrap
-        // TODO: segfault is json desirable here ?
-        let region: Region = serde_json::from_str(&region).unwrap();
+        let region: Region = serde_json::from_str(&region).map_err(|err| {
+            ports::l1::Error::Other(format!(
+                "Could not parse {region} into a aws Region. Reason: {err}"
+            ))
+        })?;
 
         let dispatcher = if allow_http {
             let hyper_builder = hyper::client::Client::builder();
@@ -66,10 +68,9 @@ impl AwsClient {
     }
 
     pub async fn make_signer(&self, key_id: String, chain_id: u64) -> ports::l1::Result<AwsSigner> {
-        // TODO: segfault unwrap
-        Ok(AwsSigner::new(self.client.clone(), key_id, chain_id)
+        AwsSigner::new(self.client.clone(), key_id, chain_id)
             .await
-            .unwrap())
+            .map_err(|err| ports::l1::Error::Other(format!("Error making aws signer: {err}")))
     }
 }
 

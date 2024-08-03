@@ -182,7 +182,6 @@ struct Broadcasts {
     transactions: Vec<CreateContractTx>,
 }
 
-// TODO: segfault try the ws url here
 async fn run_tx_building_script(
     url: Url,
     kms_key: &KmsKey,

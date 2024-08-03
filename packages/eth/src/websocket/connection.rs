@@ -97,7 +97,7 @@ impl EthApi for WsConnection {
             .await?;
 
         let tx_encoder = BlobTransactionEncoder::new(blob_tx, sidecar);
-        let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(blob_pool_wallet).await;
+        let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(blob_pool_wallet).await?;
 
         self.provider.send_raw_transaction(raw_tx.into()).await?;
 

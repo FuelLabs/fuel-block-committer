@@ -44,13 +44,18 @@ pub trait BlobSigner {
 #[async_trait::async_trait]
 impl BlobSigner for AwsSigner {
     async fn sign_hash(&self, hash: H256) -> crate::error::Result<Signature> {
-        // TODO: segfault map into errors
-        let sig = self.sign_digest(hash.into()).await.unwrap();
-        let mut sig = copied_from_ethers::sig_from_digest_bytes_trial_recovery(
-            &sig,
-            hash.into(),
-            &self.get_pubkey().await.unwrap(),
-        );
+        let sig = self
+            .sign_digest(hash.into())
+            .await
+            .map_err(|err| crate::error::Error::Other(format!("Error signing digest: {err}")))?;
+
+        let pub_key = &self.get_pubkey().await.map_err(|err| {
+            crate::error::Error::Other(format!("Error getting pubkey to sign digest: {err}"))
+        })?;
+
+        let mut sig =
+            copied_from_ethers::sig_from_digest_bytes_trial_recovery(&sig, hash.into(), pub_key);
+
         copied_from_ethers::apply_eip155(&mut sig, self.chain_id());
         Ok(sig)
     }
@@ -237,12 +242,15 @@ impl BlobTransactionEncoder {
         Self { tx, sidecar }
     }
 
-    pub async fn raw_signed_w_sidecar(self, signer: &impl BlobSigner) -> (H256, Vec<u8>) {
-        let signed_tx_bytes = self.raw_signed(signer).await;
+    pub async fn raw_signed_w_sidecar(
+        self,
+        signer: &impl BlobSigner,
+    ) -> crate::error::Result<(H256, Vec<u8>)> {
+        let signed_tx_bytes = self.raw_signed(signer).await?;
         let tx_hash = H256(keccak256(&signed_tx_bytes));
         let final_bytes = self.encode_sidecar(signed_tx_bytes);
 
-        (tx_hash, final_bytes)
+        Ok((tx_hash, final_bytes))
     }
 
     fn encode_sidecar(self, payload: Vec<u8>) -> Vec<u8> {
@@ -274,21 +282,21 @@ impl BlobTransactionEncoder {
         tx
     }
 
-    async fn raw_signed(&self, signer: &impl BlobSigner) -> Vec<u8> {
+    async fn raw_signed(&self, signer: &impl BlobSigner) -> crate::error::Result<Vec<u8>> {
         let tx_bytes = self.encode(None);
-        let signature = self.compute_signature(tx_bytes, signer).await;
+        let signature = self.compute_signature(tx_bytes, signer).await?;
 
-        self.encode(Some(signature))
+        Ok(self.encode(Some(signature)))
     }
 
-    async fn compute_signature(&self, tx_bytes: Vec<u8>, signer: &impl BlobSigner) -> Signature {
+    async fn compute_signature(
+        &self,
+        tx_bytes: Vec<u8>,
+        signer: &impl BlobSigner,
+    ) -> crate::error::Result<Signature> {
         let message_hash = H256::from(keccak256(tx_bytes));
 
-        // TODO: segfault Signing can now fail
-        signer
-            .sign_hash(message_hash)
-            .await
-            .expect("signing should not fail")
+        signer.sign_hash(message_hash).await
     }
 
     fn encode(&self, signature: Option<Signature>) -> Vec<u8> {
