@@ -20,6 +20,7 @@ sqlx = { workspace = true, features = [
   "runtime-tokio",
   "migrate",
   "macros",
+  "tls-rustls",
   "time",
   "chrono",
 ] }
