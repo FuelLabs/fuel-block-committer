@@ -181,17 +181,22 @@ impl Postgres {
     pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
         const BLOB_LIMIT: i64 = 6;
         let rows = sqlx::query_as!(
-            // all fragments that are not in a transaction or are in a transaction that failed
+            // all fragments that are not associated to any pending or finalized tx
             tables::L1StateFragment,
             "SELECT l1_fragments.*
-             FROM l1_fragments
-             LEFT JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id
-             LEFT JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id
-             WHERE l1_transaction_fragments.fragment_id IS NULL OR l1_transactions.state = $1
-             ORDER BY l1_fragments.created_at
-             LIMIT $2;",
-             TransactionState::Failed.into_i16(),
-             BLOB_LIMIT
+            FROM l1_fragments
+            WHERE l1_fragments.id NOT IN (
+                SELECT l1_fragments.id
+                FROM l1_fragments
+                JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id
+                JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id
+                WHERE l1_transactions.state IN ($1, $2)
+            )
+            ORDER BY l1_fragments.created_at
+            LIMIT $3;",
+            TransactionState::Finalized.into_i16(),
+            TransactionState::Pending.into_i16(),
+            BLOB_LIMIT
         )
         .fetch_all(&self.connection_pool)
         .await?
