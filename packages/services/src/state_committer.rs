@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use ports::{storage::Storage, types::StateFragmentId};
+use ports::storage::Storage;
 
 use crate::{Result, Runner};
 
@@ -22,15 +22,15 @@ where
     L1: ports::l1::Api,
     Db: Storage,
 {
-    async fn prepare_fragments(&self) -> Result<(Vec<StateFragmentId>, Vec<u8>)> {
+    async fn prepare_fragments(&self) -> Result<(Vec<u32>, Vec<u8>)> {
         let fragments = self.storage.get_unsubmitted_fragments().await?;
 
         let num_fragments = fragments.len();
         let mut fragment_ids = Vec::with_capacity(num_fragments);
         let mut data = Vec::with_capacity(num_fragments);
         for fragment in fragments {
-            fragment_ids.push(fragment.id());
-            data.extend(fragment.raw_data);
+            fragment_ids.push(fragment.id.expect("fragments from DB must have `id`"));
+            data.extend(fragment.data);
         }
 
         Ok((fragment_ids, data))
@@ -75,7 +75,7 @@ where
 #[cfg(test)]
 mod tests {
     use mockall::predicate;
-    use ports::types::{L1Height, StateFragment, StateSubmission, U256};
+    use ports::types::{L1Height, StateFragment, StateSubmission, TransactionResponse, U256};
     use storage::PostgresProcess;
 
     use super::*;
@@ -104,6 +104,13 @@ mod tests {
         async fn balance(&self) -> ports::l1::Result<U256> {
             Ok(U256::zero())
         }
+
+        async fn get_transaction_response(
+            &self,
+            _tx_hash: [u8; 32],
+        ) -> ports::l1::Result<Option<TransactionResponse>> {
+            Ok(None)
+        }
     }
 
     fn given_l1_that_expects_submission(fragment: StateFragment) -> MockL1 {
@@ -111,7 +118,7 @@ mod tests {
 
         l1.api
             .expect_submit_l2_state()
-            .with(predicate::eq(fragment.raw_data))
+            .with(predicate::eq(fragment.data))
             .return_once(move |_| Ok([1u8; 32]));
 
         l1
@@ -120,17 +127,16 @@ mod tests {
     fn given_state() -> (StateSubmission, StateFragment) {
         (
             StateSubmission {
+                id: None,
                 block_hash: [0u8; 32],
                 block_height: 1,
-                completed: false,
             },
             StateFragment {
-                block_hash: [0u8; 32],
-                transaction_hash: None,
-                fragment_index: 0,
-                raw_data: vec![1, 2, 3],
+                id: None,
+                submission_id: None,
+                fragment_idx: 0,
+                data: vec![1, 2, 3],
                 created_at: ports::types::Utc::now(),
-                completed: false,
             },
         )
     }
@@ -143,7 +149,7 @@ mod tests {
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
-        db.insert_state(state, vec![fragment]).await?;
+        db.insert_state_submission(state, vec![fragment]).await?;
         let mut committer = StateCommitter::new(l1_mock, db.clone());
 
         // when

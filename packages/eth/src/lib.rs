@@ -8,7 +8,7 @@ use ethers::types::U256;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, Result},
-    types::{FuelBlockCommittedOnL1, L1Height, ValidatedFuelBlock},
+    types::{FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock},
 };
 use websocket::EthEventStreamer;
 
@@ -50,6 +50,13 @@ impl Api for WebsocketClient {
         let height = L1Height::try_from(block_num)?;
 
         Ok(height)
+    }
+
+    async fn get_transaction_response(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<TransactionResponse>> {
+        Ok(self.get_transaction_response(tx_hash).await?)
     }
 }
 

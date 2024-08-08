@@ -1,4 +1,7 @@
-use ports::types::BlockSubmission;
+use ports::types::{
+    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+};
+use sqlx::types::chrono;
 
 macro_rules! bail {
     ($msg: literal, $($args: expr),*) => {
@@ -55,141 +58,124 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
     }
 }
 
-pub mod state_submission {
-    use ports::types::{StateFragment, StateSubmission};
-    use sqlx::types::chrono;
+#[derive(sqlx::FromRow)]
+pub struct L1StateSubmission {
+    pub id: i64,
+    pub fuel_block_hash: Vec<u8>,
+    pub fuel_block_height: i64,
+}
 
-    #[derive(sqlx::FromRow)]
-    pub struct L1StateSubmission {
-        pub fuel_block_hash: Vec<u8>,
-        pub fuel_block_height: i64,
-        pub completed: bool,
-    }
+impl TryFrom<L1StateSubmission> for StateSubmission {
+    type Error = crate::error::Error;
 
-    #[derive(sqlx::FromRow)]
-    pub struct L1StateFragment {
-        pub fuel_block_hash: Vec<u8>,
-        pub transaction_hash: Option<Vec<u8>>,
-        pub raw_data: Vec<u8>,
-        pub created_at: chrono::DateTime<chrono::Utc>,
-        pub fragment_index: i64,
-        pub completed: bool,
-    }
+    fn try_from(value: L1StateSubmission) -> Result<Self, Self::Error> {
+        let block_hash = value.fuel_block_hash.as_slice();
+        let Ok(block_hash) = block_hash.try_into() else {
+            bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
+        };
 
-    impl TryFrom<L1StateSubmission> for StateSubmission {
-        type Error = crate::error::Error;
-
-        fn try_from(value: L1StateSubmission) -> Result<Self, Self::Error> {
-            let block_hash = value.fuel_block_hash.as_slice();
-            let Ok(block_hash) = block_hash.try_into() else {
-                bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
-            };
-
-            let Ok(block_height) = value.fuel_block_height.try_into() else {
-                bail!(
+        let Ok(block_height) = value.fuel_block_height.try_into() else {
+            bail!(
                 "`fuel_block_height` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
                 value.fuel_block_height
 
             );
-            };
+        };
 
-            Ok(Self {
-                block_height,
-                block_hash,
-                completed: value.completed,
-            })
+        Ok(Self {
+            id: Some(value.id as u32),
+            block_height,
+            block_hash,
+        })
+    }
+}
+
+impl From<StateSubmission> for L1StateSubmission {
+    fn from(value: StateSubmission) -> Self {
+        Self {
+            // if not present use placeholder as id is given by db
+            id: value.id.unwrap_or_default() as i64,
+            fuel_block_height: i64::from(value.block_height),
+            fuel_block_hash: value.block_hash.to_vec(),
         }
     }
+}
 
-    impl From<StateSubmission> for L1StateSubmission {
-        fn from(value: StateSubmission) -> Self {
-            Self {
-                fuel_block_height: i64::from(value.block_height),
-                completed: value.completed,
-                fuel_block_hash: value.block_hash.to_vec(),
-            }
+#[derive(sqlx::FromRow)]
+pub struct L1StateFragment {
+    pub id: i64,
+    pub submission_id: i64,
+    pub fragment_idx: i64,
+    pub data: Vec<u8>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl TryFrom<L1StateFragment> for StateFragment {
+    type Error = crate::error::Error;
+
+    fn try_from(value: L1StateFragment) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: Some(value.id as u32),
+            submission_id: Some(value.submission_id as u32),
+            fragment_idx: value.fragment_idx as u32,
+            data: value.data,
+            created_at: value.created_at,
+        })
+    }
+}
+
+impl From<StateFragment> for L1StateFragment {
+    fn from(value: StateFragment) -> Self {
+        Self {
+            // if not present use placeholder as id is given by db
+            id: value.id.unwrap_or_default() as i64,
+            // if not present use placeholder as id is given by db
+            submission_id: value.submission_id.unwrap_or_default() as i64,
+            fragment_idx: value.fragment_idx as i64,
+            data: value.data,
+            created_at: value.created_at,
         }
     }
+}
 
-    impl TryFrom<L1StateFragment> for StateFragment {
-        type Error = crate::error::Error;
+#[derive(sqlx::FromRow)]
+pub struct L1SubmissionTx {
+    pub id: i64,
+    pub hash: Vec<u8>,
+    pub state: i16,
+}
 
-        fn try_from(value: L1StateFragment) -> Result<Self, Self::Error> {
-            let block_hash = value.fuel_block_hash.as_slice();
-            let Ok(block_hash) = block_hash.try_into() else {
-                bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
-            };
+impl TryFrom<L1SubmissionTx> for SubmissionTx {
+    type Error = crate::error::Error;
 
-            let transaction_hash = match value.transaction_hash {
-                Some(hash) => {
-                    let Ok(hash) = hash.as_slice().try_into() else {
-                        bail!(
-                            "Expected 32 bytes for `transaction_hash`, but got: {hash:?} from db",
-                        );
-                    };
+    fn try_from(value: L1SubmissionTx) -> Result<Self, Self::Error> {
+        let hash = value.hash.as_slice();
+        let Ok(hash) = hash.try_into() else {
+            bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
+        };
 
-                    Some(hash)
-                }
-                None => None,
-            };
-
-            let fragment_index = value.fragment_index.try_into();
-            let Ok(fragment_index) = fragment_index else {
-                bail!(
-                "`fragment_index` as read from the db cannot fit in a `u32` as expected. Got: {} from db",
-                value.fragment_index
+        let Some(state) = TransactionState::from_i16(value.state) else {
+            bail!(
+                "state: {:?} is not a valid variant of `TransactionState`",
+                value.state
             );
-            };
+        };
 
-            Ok(Self {
-                block_hash,
-                transaction_hash,
-                raw_data: value.raw_data,
-                created_at: value.created_at,
-                completed: value.completed,
-                fragment_index,
-            })
-        }
+        Ok(SubmissionTx {
+            id: Some(value.id as u32),
+            hash,
+            state,
+        })
     }
+}
 
-    impl From<StateFragment> for L1StateFragment {
-        fn from(value: StateFragment) -> Self {
-            Self {
-                fuel_block_hash: value.block_hash.to_vec(),
-                transaction_hash: value.transaction_hash.map(|hash| hash.to_vec()),
-                raw_data: value.raw_data,
-                created_at: value.created_at,
-                completed: value.completed,
-                fragment_index: i64::from(value.fragment_index),
-            }
-        }
-    }
-
-    #[derive(sqlx::FromRow)]
-    pub struct L1PendingTransaction {
-        pub transaction_hash: Vec<u8>,
-    }
-
-    impl TryFrom<L1PendingTransaction> for [u8; 32] {
-        type Error = crate::error::Error;
-
-        fn try_from(value: L1PendingTransaction) -> Result<Self, Self::Error> {
-            let transaction_hash = value.transaction_hash.as_slice();
-            let Ok(transaction_hash) = transaction_hash.try_into() else {
-                bail!(
-                "Expected 32 bytes for `transaction_hash`, but got: {transaction_hash:?} from db",
-            );
-            };
-
-            Ok(transaction_hash)
-        }
-    }
-
-    impl From<[u8; 32]> for L1PendingTransaction {
-        fn from(value: [u8; 32]) -> Self {
-            Self {
-                transaction_hash: value.to_vec(),
-            }
+impl From<SubmissionTx> for L1SubmissionTx {
+    fn from(value: SubmissionTx) -> Self {
+        Self {
+            // if not present use placeholder as id is given by db
+            id: value.id.unwrap_or_default() as i64,
+            hash: value.hash.to_vec(),
+            state: value.state.into_i16(),
         }
     }
 }

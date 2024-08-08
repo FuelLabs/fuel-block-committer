@@ -1,7 +1,8 @@
 use std::pin::Pin;
 
 use crate::types::{
-    FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, ValidatedFuelBlock, U256,
+    FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, TransactionResponse,
+    ValidatedFuelBlock, U256,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -34,6 +35,10 @@ pub trait Api {
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;
+    async fn get_transaction_response(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<TransactionResponse>>;
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]

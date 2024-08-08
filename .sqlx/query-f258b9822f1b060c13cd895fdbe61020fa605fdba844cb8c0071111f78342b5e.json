@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT l1_fragments.*\n            FROM l1_fragments\n            WHERE l1_fragments.id NOT IN (\n                SELECT l1_fragments.id\n                FROM l1_fragments\n                JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id\n                JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id\n                WHERE l1_transactions.state IN ($1, $2)\n            )\n            ORDER BY l1_fragments.created_at\n            LIMIT $3;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "fragment_idx",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "submission_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f258b9822f1b060c13cd895fdbe61020fa605fdba844cb8c0071111f78342b5e"
+}
