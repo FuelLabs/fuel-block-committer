@@ -4,9 +4,9 @@ use ethers::{
     prelude::{abigen, SignerMiddleware},
     providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer as _},
-    types::{Address, BlockNumber, Chain, H160, H256, U256, U64},
+    types::{Address, BlockNumber, Chain, TransactionReceipt, H160, H256, U256, U64},
 };
-use ports::types::ValidatedFuelBlock;
+use ports::types::{TransactionResponse, ValidatedFuelBlock};
 use serde_json::Value;
 use url::Url;
 
@@ -78,6 +78,15 @@ impl EthApi for WsConnection {
             .from_block(eth_block_height);
 
         EthEventStreamer::new(events)
+    }
+
+    async fn get_transaction_response(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<TransactionResponse>> {
+        let tx_receipt = self.provider.get_transaction_receipt(tx_hash).await?;
+
+        Self::convert_to_tx_response(tx_receipt)
     }
 
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
@@ -213,6 +222,43 @@ impl WsConnection {
         let max_fee_per_blob_gas = calculate_blob_fee(excess_blob_gas, num_blobs as u64);
 
         Ok(max_fee_per_blob_gas)
+    }
+
+    fn convert_to_tx_response(
+        tx_receipt: Option<TransactionReceipt>,
+    ) -> Result<Option<TransactionResponse>> {
+        let Some(tx_receipt) = tx_receipt else {
+            return Ok(None);
+        };
+
+        let block_number = Self::extract_block_number_from_receipt(&tx_receipt)?;
+
+        const SUCCESS_STATUS: u64 = 1;
+        // Only present after activation of [EIP-658](https://eips.ethereum.org/EIPS/eip-658)
+        let Some(status) = tx_receipt.status else {
+            return Err(Error::Other(
+                "`status` not present in tx receipt".to_string(),
+            ));
+        };
+
+        let status: u64 = status.try_into().map_err(|_| {
+            Error::Other("could not convert tx receipt `status` to `u64`".to_string())
+        })?;
+
+        Ok(Some(TransactionResponse::new(
+            block_number,
+            status == SUCCESS_STATUS,
+        )))
+    }
+
+    fn extract_block_number_from_receipt(receipt: &TransactionReceipt) -> Result<u64> {
+        receipt
+            .block_number
+            .ok_or_else(|| {
+                Error::Other("transaction receipt does not contain block number".to_string())
+            })?
+            .try_into()
+            .map_err(|_| Error::Other("could not convert `block_number` to `u64`".to_string()))
     }
 }
 

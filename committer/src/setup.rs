@@ -105,6 +105,23 @@ pub fn state_importer(
     )
 }
 
+pub fn state_listener(
+    l1: L1,
+    storage: impl Storage + 'static,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+) -> tokio::task::JoinHandle<()> {
+    let state_listener =
+        services::StateListener::new(l1, storage, config.app.num_blocks_to_finalize_tx);
+
+    schedule_polling(
+        config.app.block_check_interval,
+        state_listener,
+        "State Listener",
+        cancel_token,
+    )
+}
+
 pub async fn l1_adapter(
     config: &config::Config,
     internal_config: &config::Internal,

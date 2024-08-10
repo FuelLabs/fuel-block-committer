@@ -71,19 +71,18 @@ where
             .into_iter()
             .enumerate()
             .map(|(index, chunk)| StateFragment {
-                block_hash: *block.id,
-                transaction_hash: None,
-                fragment_index: index as u32,
-                raw_data: chunk.copied().collect(),
+                id: None,
+                submission_id: None,
+                fragment_idx: index as u32,
+                data: chunk.copied().collect(),
                 created_at: ports::types::Utc::now(),
-                completed: false,
             })
             .collect();
 
         let submission = StateSubmission {
+            id: None,
             block_hash: *block.id,
             block_height: block.header.height,
-            completed: false,
         };
 
         Ok((submission, fragments))
@@ -91,7 +90,9 @@ where
 
     async fn import_state(&self, block: FuelBlock) -> Result<()> {
         let (submission, fragments) = self.block_to_state_submission(block)?;
-        self.storage.insert_state(submission, fragments).await?;
+        self.storage
+            .insert_state_submission(submission, fragments)
+            .await?;
 
         Ok(())
     }
@@ -198,7 +199,6 @@ mod tests {
         // given
         let secret_key = given_secret_key();
         let block = given_a_block(1, &secret_key);
-        let block_id = *block.id;
         let fuel_mock = given_fetcher(block);
         let block_validator = BlockValidator::new(secret_key.public_key());
 
@@ -211,8 +211,9 @@ mod tests {
 
         // then
         let fragments = db.get_unsubmitted_fragments().await?;
+        let latest_submission = db.state_submission_w_latest_block().await?.unwrap();
         assert_eq!(fragments.len(), 1);
-        assert_eq!(fragments[0].block_hash, block_id);
+        assert_eq!(fragments[0].submission_id, latest_submission.id);
 
         Ok(())
     }
