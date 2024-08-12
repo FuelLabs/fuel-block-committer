@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::types::{BlockSubmission, StateFragment, StateFragmentId, StateSubmission};
+use crate::types::{
+    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -20,17 +22,19 @@ pub trait Storage: Send + Sync {
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
 
-    async fn insert_state(
+    async fn insert_state_submission(
         &self,
-        state: StateSubmission,
+        submission: StateSubmission,
         fragments: Vec<StateFragment>,
     ) -> Result<()>;
     async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>>;
-    async fn record_pending_tx(
-        &self,
-        tx_hash: [u8; 32],
-        fragment_ids: Vec<StateFragmentId>,
-    ) -> Result<()>;
+    async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()>;
+    async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
+    async fn update_submission_tx_state(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> Result<()>;
 }

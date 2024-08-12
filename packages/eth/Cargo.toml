@@ -12,7 +12,7 @@ rust-version = { workspace = true }
 [dependencies]
 async-trait = { workspace = true }
 c-kzg = { workspace = true }
-ethers = { workspace = true, features = ["ws", "aws"] }
+ethers = { workspace = true, features = ["ws", "aws", "rustls"] }
 futures = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }

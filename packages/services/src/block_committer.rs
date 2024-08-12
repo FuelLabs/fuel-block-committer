@@ -179,7 +179,7 @@ mod tests {
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
         l1::{Contract, EventStreamer, MockContract},
-        types::{L1Height, U256},
+        types::{L1Height, TransactionResponse, U256},
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{Postgres, PostgresProcess};
@@ -226,6 +226,13 @@ mod tests {
 
         async fn balance(&self) -> ports::l1::Result<U256> {
             self.api.balance().await
+        }
+
+        async fn get_transaction_response(
+            &self,
+            _tx_hash: [u8; 32],
+        ) -> ports::l1::Result<Option<TransactionResponse>> {
+            Ok(None)
         }
     }
 

@@ -7,7 +7,7 @@ use ethers::{
 };
 use ports::{
     l1::Result,
-    types::{ValidatedFuelBlock, U256},
+    types::{TransactionResponse, ValidatedFuelBlock, U256},
 };
 use rusoto_core::{credential::StaticProvider, HttpClient, Region};
 use rusoto_kms::KmsClient;
@@ -125,6 +125,13 @@ impl WebsocketClient {
 
     pub(crate) async fn get_block_number(&self) -> Result<u64> {
         Ok(self.inner.get_block_number().await?)
+    }
+
+    pub(crate) async fn get_transaction_response(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<TransactionResponse>> {
+        Ok(self.inner.get_transaction_response(tx_hash).await?)
     }
 
     pub(crate) async fn balance(&self) -> Result<U256> {
