@@ -1,9 +1,11 @@
 use ethers::signers::AwsSigner;
+#[cfg(feature = "test-helpers")]
+use rusoto_core::credential::StaticProvider;
 use rusoto_core::Region;
 use rusoto_core::{
     credential::{
         AwsCredentials, ContainerProvider, CredentialsError, EnvironmentProvider,
-        InstanceMetadataProvider, ProfileProvider, ProvideAwsCredentials, StaticProvider,
+        InstanceMetadataProvider, ProfileProvider, ProvideAwsCredentials,
     },
     HttpClient,
 };
@@ -64,7 +66,6 @@ impl AwsClient {
         region: AwsRegion,
         credentials: AwsCredentialsProvider,
     ) -> ports::l1::Result<Self> {
-        eprintln!("Creating aws client with region: {:?}", region);
         let dispatcher = if allow_http {
             let hyper_builder = hyper::client::Client::builder();
             let http_connector = hyper_rustls::HttpsConnectorBuilder::new()
@@ -95,73 +96,15 @@ impl AwsClient {
 }
 
 #[derive(Debug, Clone)]
-struct EksIrsaAwareChainCredentials {
-    environment_provider: EnvironmentProvider,
-    instance_metadata_provider: InstanceMetadataProvider,
-    container_provider: ContainerProvider,
-    profile_provider: Option<ProfileProvider>,
-    web_identity_provider: WebIdentityProvider,
-}
-
-impl Default for EksIrsaAwareChainCredentials {
-    fn default() -> Self {
-        Self {
-            environment_provider: EnvironmentProvider::default(),
-            profile_provider: ProfileProvider::new().ok(),
-            instance_metadata_provider: InstanceMetadataProvider::new(),
-            container_provider: ContainerProvider::new(),
-            web_identity_provider: WebIdentityProvider::from_k8s_env(),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl ProvideAwsCredentials for EksIrsaAwareChainCredentials {
-    async fn credentials(&self) -> std::result::Result<AwsCredentials, CredentialsError> {
-        // Copied from rusoto_core::credential::ChainProvider
-        if let Ok(creds) = self.environment_provider.credentials().await {
-            return Ok(creds);
-        }
-        if let Some(ref profile_provider) = self.profile_provider {
-            if let Ok(creds) = profile_provider.credentials().await {
-                return Ok(creds);
-            }
-        }
-        if let Ok(creds) = self.container_provider.credentials().await {
-            return Ok(creds);
-        }
-        if let Ok(creds) = self.instance_metadata_provider.credentials().await {
-            return Ok(creds);
-        }
-
-        // Added by us
-        if let Ok(creds) = self.web_identity_provider.credentials().await {
-            return Ok(creds);
-        }
-
-        Err(CredentialsError::new(
-            "Couldn't find AWS credentials in environment, credentials file, or IAM role.",
-        ))
-    }
-}
-
-#[derive(Clone, Debug)]
-enum Something {
-    #[cfg(feature = "test-helpers")]
-    Static(StaticProvider),
-    Chain(EksIrsaAwareChainCredentials),
-}
-
-#[derive(Debug, Clone)]
 pub struct AwsCredentialsProvider {
-    credentials: Something,
+    credentials: CredentialsProvider,
 }
 
 impl AwsCredentialsProvider {
     #[cfg(feature = "test-helpers")]
     pub fn new_static(access_key: impl Into<String>, secret_access_key: impl Into<String>) -> Self {
         Self {
-            credentials: Something::Static(StaticProvider::new(
+            credentials: CredentialsProvider::Static(StaticProvider::new(
                 access_key.into(),
                 secret_access_key.into(),
                 None,
@@ -172,9 +115,28 @@ impl AwsCredentialsProvider {
 
     pub fn new_chain() -> Self {
         Self {
-            credentials: Something::Chain(EksIrsaAwareChainCredentials::default()),
+            credentials: CredentialsProvider::Chain {
+                environment_provider: EnvironmentProvider::default(),
+                profile_provider: ProfileProvider::new().ok(),
+                instance_metadata_provider: InstanceMetadataProvider::new(),
+                container_provider: ContainerProvider::new(),
+                web_identity_provider: WebIdentityProvider::from_k8s_env(),
+            },
         }
     }
+}
+
+#[derive(Clone, Debug)]
+enum CredentialsProvider {
+    #[cfg(feature = "test-helpers")]
+    Static(StaticProvider),
+    Chain {
+        environment_provider: EnvironmentProvider,
+        instance_metadata_provider: InstanceMetadataProvider,
+        container_provider: ContainerProvider,
+        profile_provider: Option<ProfileProvider>,
+        web_identity_provider: WebIdentityProvider,
+    },
 }
 
 #[async_trait::async_trait]
@@ -182,8 +144,39 @@ impl ProvideAwsCredentials for AwsCredentialsProvider {
     async fn credentials(&self) -> std::result::Result<AwsCredentials, CredentialsError> {
         match &self.credentials {
             #[cfg(feature = "test-helpers")]
-            Something::Static(provider) => provider.credentials().await,
-            Something::Chain(provider) => provider.credentials().await,
+            CredentialsProvider::Static(provider) => provider.credentials().await,
+            CredentialsProvider::Chain {
+                environment_provider,
+                instance_metadata_provider,
+                container_provider,
+                profile_provider,
+                web_identity_provider,
+            } => {
+                // Copied from rusoto_core::credential::ChainProvider
+                if let Ok(creds) = environment_provider.credentials().await {
+                    return Ok(creds);
+                }
+                if let Some(ref profile_provider) = profile_provider {
+                    if let Ok(creds) = profile_provider.credentials().await {
+                        return Ok(creds);
+                    }
+                }
+                if let Ok(creds) = container_provider.credentials().await {
+                    return Ok(creds);
+                }
+                if let Ok(creds) = instance_metadata_provider.credentials().await {
+                    return Ok(creds);
+                }
+
+                // Added by us
+                if let Ok(creds) = web_identity_provider.credentials().await {
+                    return Ok(creds);
+                }
+
+                Err(CredentialsError::new(
+                    "Couldn't find AWS credentials in environment, credentials file, or IAM role.",
+                ))
+            }
         }
     }
 }
