@@ -90,23 +90,23 @@ impl EthApi for WsConnection {
     }
 
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
-        let blob_pool_wallet = if let Some(blob_pool_wallet) = &self.blob_signer {
-            blob_pool_wallet
+        let blob_pool_signer = if let Some(blob_pool_signer) = &self.blob_signer {
+            blob_pool_signer
         } else {
-            return Err(Error::Other("blob pool wallet not configured".to_string()));
+            return Err(Error::Other("blob pool signer not configured".to_string()));
         };
 
         let sidecar = BlobSidecar::new(state_data).map_err(|e| Error::Other(e.to_string()))?;
         let blob_tx = self
             .prepare_blob_tx(
                 sidecar.versioned_hashes(),
-                blob_pool_wallet.address(),
-                blob_pool_wallet.chain_id(),
+                blob_pool_signer.address(),
+                blob_pool_signer.chain_id(),
             )
             .await?;
 
         let tx_encoder = BlobTransactionEncoder::new(blob_tx, sidecar);
-        let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(blob_pool_wallet).await?;
+        let (tx_hash, raw_tx) = tx_encoder.raw_signed_w_sidecar(blob_pool_signer).await?;
 
         self.provider.send_raw_transaction(raw_tx.into()).await?;
 
