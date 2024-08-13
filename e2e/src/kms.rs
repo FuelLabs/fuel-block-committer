@@ -1,5 +1,5 @@
 use anyhow::Context;
-use eth::AwsClient;
+use eth::{AwsClient, AwsCredentialsProvider, AwsRegion};
 use ethers::signers::{AwsSigner, Signer};
 use ports::types::H160;
 use rusoto_core::Region;
@@ -50,17 +50,12 @@ impl Kms {
 
         let port = container.get_host_port_ipv4(4566).await?;
 
-        let region = Region::Custom {
+        let region = AwsRegion::from(Region::Custom {
             name: "us-east-2".to_string(),
             endpoint: format!("http://localhost:{}", port),
-        };
-        let region_serialized = serde_json::to_string_pretty(&region).expect("can be serialized");
-        let client = AwsClient::try_new(
-            region_serialized,
-            "test".to_string(),
-            "test".to_string(),
-            true,
-        )?;
+        });
+        let credentials = AwsCredentialsProvider::new_static("test", "test");
+        let client = AwsClient::try_new(true, region.clone(), credentials)?;
 
         Ok(KmsProcess {
             _container: container,
@@ -97,14 +92,14 @@ fn spawn_log_printer(container: &testcontainers::ContainerAsync<KmsImage>) {
 pub struct KmsProcess {
     _container: testcontainers::ContainerAsync<KmsImage>,
     client: AwsClient,
-    region: Region,
+    region: AwsRegion,
 }
 
 #[derive(Debug, Clone)]
 pub struct KmsKey {
     pub id: String,
     pub signer: AwsSigner,
-    pub region: Region,
+    pub region: AwsRegion,
 }
 
 impl KmsKey {
@@ -139,7 +134,7 @@ impl KmsProcess {
         })
     }
 
-    pub fn region(&self) -> &Region {
+    pub fn region(&self) -> &AwsRegion {
         &self.region
     }
 }

@@ -75,21 +75,9 @@ where
     })
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Aws {
     pub allow_http: bool,
-    pub region: String,
-    pub access_key_id: String,
-    pub secret_access_key: String,
-}
-
-impl std::fmt::Debug for Aws {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Aws")
-            .field("region", &self.region)
-            .field("allow_http", &self.allow_http)
-            .finish()
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

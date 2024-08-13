@@ -1,5 +1,6 @@
 use std::{num::NonZeroU32, time::Duration};
 
+use eth::{AwsCredentialsProvider, AwsRegion};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{BlockCommitter, CommitListener, Runner, WalletBalanceTracker};
@@ -127,10 +128,9 @@ pub async fn l1_adapter(
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
     let aws_client = AwsClient::try_new(
-        config.aws.region.clone(),
-        config.aws.access_key_id.clone(),
-        config.aws.secret_access_key.clone(),
         config.aws.allow_http,
+        AwsRegion::default(),
+        AwsCredentialsProvider::new_chain(),
     )?;
 
     let l1 = L1::connect(

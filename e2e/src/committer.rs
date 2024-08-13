@@ -1,9 +1,9 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
+use eth::AwsRegion;
 use ethers::abi::Address;
 use ports::fuel::FuelPublicKey;
-use rusoto_core::Region;
 use url::Url;
 
 #[derive(Default)]
@@ -17,7 +17,7 @@ pub struct Committer {
     fuel_block_producer_public_key: Option<String>,
     db_port: Option<u16>,
     db_name: Option<String>,
-    aws_region: Option<Region>,
+    aws_region: Option<AwsRegion>,
 }
 
 impl Committer {
@@ -37,6 +37,9 @@ impl Committer {
         let mut cmd = tokio::process::Command::new("fuel-block-committer");
         let region_serialized = serde_json::to_string(&get_field!(aws_region))?;
         cmd.arg(config)
+            .env("AWS_REGION", region_serialized)
+            .env("AWS_ACCESS_KEY_ID", "test")
+            .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_id))
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
             .env(
@@ -54,9 +57,6 @@ impl Committer {
             .env("COMMITTER__APP__DB__PORT", get_field!(db_port).to_string())
             .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
             .env("COMMITTER__APP__PORT", unused_port.to_string())
-            .env("COMMITTER__AWS__REGION", region_serialized)
-            .env("COMMITTER__AWS__ACCESS_KEY_ID", "test")
-            .env("COMMITTER__AWS__SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__AWS__ALLOW_HTTP", "true")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
@@ -80,7 +80,7 @@ impl Committer {
         })
     }
 
-    pub fn with_aws_region(mut self, region: Region) -> Self {
+    pub fn with_aws_region(mut self, region: AwsRegion) -> Self {
         self.aws_region = Some(region);
         self
     }

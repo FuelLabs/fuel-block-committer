@@ -22,6 +22,8 @@ ports = { workspace = true, features = ["l1"] }
 rlp = { workspace = true }
 rusoto_core = { workspace = true, features = ["rustls"] }
 rusoto_kms = { workspace = true, features = ["rustls"] }
+rusoto_sts = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

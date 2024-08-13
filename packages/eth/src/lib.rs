@@ -11,13 +11,15 @@ use ports::{
 };
 use websocket::EthEventStreamer;
 
+mod aws;
 mod eip_4844;
 mod error;
 mod metrics;
 mod websocket;
 
+pub use aws::*;
 pub use ethers::types::{Address, Chain};
-pub use websocket::{AwsClient, WebsocketClient};
+pub use websocket::WebsocketClient;
 
 #[async_trait]
 impl Contract for WebsocketClient {
