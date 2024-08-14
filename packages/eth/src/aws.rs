@@ -156,6 +156,12 @@ impl ProvideAwsCredentials for AwsCredentialsProvider {
                 if let Ok(creds) = environment_provider.credentials().await {
                     return Ok(creds);
                 }
+
+                // Added by us
+                if let Ok(creds) = web_identity_provider.credentials().await {
+                    return Ok(creds);
+                }
+
                 if let Some(ref profile_provider) = profile_provider {
                     if let Ok(creds) = profile_provider.credentials().await {
                         return Ok(creds);
@@ -165,11 +171,6 @@ impl ProvideAwsCredentials for AwsCredentialsProvider {
                     return Ok(creds);
                 }
                 if let Ok(creds) = instance_metadata_provider.credentials().await {
-                    return Ok(creds);
-                }
-
-                // Added by us
-                if let Ok(creds) = web_identity_provider.credentials().await {
                     return Ok(creds);
                 }
 
