@@ -72,20 +72,35 @@ fn spawn_log_printer(container: &testcontainers::ContainerAsync<KmsImage>) {
         let mut stderr_lines = stderr.lines();
         let mut stdout_lines = stdout.lines();
 
-        tokio::select! {
-            _ = async {
-                while let Ok(Some(line)) = stderr_lines.next_line().await {
-                    eprintln!("KMS: {}", line);
+        let mut other_stream_closed = false;
+        loop {
+            tokio::select! {
+                stderr_result = stderr_lines.next_line() => {
+                    match stderr_result {
+                        Ok(Some(line)) => eprintln!("KMS (stderr): {}", line),
+                        Ok(None) if other_stream_closed => break,
+                        Ok(None) => other_stream_closed=true,
+                        Err(e) => {
+                            eprintln!("KMS: Error reading from stderr: {:?}", e);
+                            break;
+                        }
+                    }
                 }
-            } => {}
-            _ = async {
-                while let Ok(Some(line)) = stdout_lines.next_line().await {
-                    eprintln!("KMS: {}", line);
+                stdout_result = stdout_lines.next_line() => {
+                    match stdout_result {
+                        Ok(Some(line)) => eprintln!("KMS (stdout): {}", line),
+                        Ok(None) if other_stream_closed => break,
+                        Ok(None) => other_stream_closed=true,
+                        Err(e) => {
+                            eprintln!("KMS: Error reading from stdout: {:?}", e);
+                            break;
+                        }
+                    }
                 }
-            } => {}
+            }
         }
 
-        Ok::<_, anyhow::Error>(())
+        Ok::<(), std::io::Error>(())
     });
 }
 

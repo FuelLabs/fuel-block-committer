@@ -20,6 +20,13 @@ RUN cargo build --release --bin fuel-block-committer
 # Stage 2: Run
 FROM ubuntu:22.04 as run
 
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  # Clean up
+  && apt-get autoremove -y \
+  && apt-get clean -y \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /root/
 
 COPY --from=builder /build/target/release/fuel-block-committer .
