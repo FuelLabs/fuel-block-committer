@@ -29,7 +29,7 @@ where
         let balance_gwei = balance / U256::from(1_000_000_000);
         self.metrics
             .eth_wallet_balance
-            .set(balance_gwei.as_u64() as i64);
+            .set(balance_gwei.to::<i64>());
 
         Ok(())
     }
@@ -77,6 +77,8 @@ where
 #[cfg(test)]
 mod tests {
 
+    use std::str::FromStr;
+
     use metrics::prometheus::{proto::Metric, Registry};
     use ports::l1;
 
@@ -107,7 +109,7 @@ mod tests {
     }
 
     fn given_l1_api(wei_balance: &str) -> l1::MockApi {
-        let balance = U256::from_dec_str(wei_balance).unwrap();
+        let balance = U256::from_str(wei_balance).unwrap();
 
         let mut eth_adapter = l1::MockApi::new();
         eth_adapter

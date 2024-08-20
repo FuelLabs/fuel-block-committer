@@ -1,9 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use eth::AwsRegion;
-use ethers::abi::Address;
-use ports::fuel::FuelPublicKey;
+use ports::{fuel::FuelPublicKey, types::Address};
 use url::Url;
 
 #[derive(Default)]
@@ -17,7 +15,6 @@ pub struct Committer {
     fuel_block_producer_public_key: Option<String>,
     db_port: Option<u16>,
     db_name: Option<String>,
-    aws_region: Option<AwsRegion>,
 }
 
 impl Committer {
@@ -35,9 +32,7 @@ impl Committer {
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-block-committer"))?;
 
         let mut cmd = tokio::process::Command::new("fuel-block-committer");
-        let region_serialized = serde_json::to_string(&get_field!(aws_region))?;
         cmd.arg(config)
-            .env("AWS_REGION", region_serialized)
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_id))
@@ -78,11 +73,6 @@ impl Committer {
             _child: child,
             port: unused_port,
         })
-    }
-
-    pub fn with_aws_region(mut self, region: AwsRegion) -> Self {
-        self.aws_region = Some(region);
-        self
     }
 
     pub fn with_main_key_id(mut self, wallet_id: String) -> Self {

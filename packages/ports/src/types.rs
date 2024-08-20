@@ -1,5 +1,6 @@
 #[cfg(feature = "l1")]
-pub use ethers_core::types::{H160, U256};
+#[cfg(feature = "l1")]
+pub use alloy::primitives::{Address, U256};
 #[cfg(feature = "l1")]
 pub use futures::Stream;
 

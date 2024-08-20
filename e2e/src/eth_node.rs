@@ -1,16 +1,18 @@
 mod state_contract;
 use std::time::Duration;
 
-use ethers::{
-    abi::Address,
-    middleware::{Middleware, SignerMiddleware},
-    providers::{Provider, Ws},
+use alloy::{
+    network::{EthereumWallet, TransactionBuilder},
+    providers::{Provider, ProviderBuilder, WsConnect},
+    rpc::types::TransactionRequest,
     signers::{
-        coins_bip39::{English, Mnemonic},
-        LocalWallet, MnemonicBuilder, Signer,
+        local::{coins_bip39::English, MnemonicBuilder, PrivateKeySigner},
+        Signer,
     },
-    types::{Chain, TransactionRequest, U256},
 };
+use alloy_chains::NamedChain;
+use eth::Address;
+use ports::types::U256;
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
 use url::Url;
@@ -27,7 +29,9 @@ impl EthNode {
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start anvil"))?;
 
-        let mnemonic = Mnemonic::<English>::new(&mut rand::thread_rng()).to_phrase();
+        let mnemonic =
+            alloy::signers::local::coins_bip39::Mnemonic::<English>::new(&mut rand::thread_rng())
+                .to_phrase();
 
         let mut cmd = tokio::process::Command::new("anvil");
 
@@ -52,7 +56,7 @@ impl EthNode {
         Ok(EthNodeProcess::new(
             child,
             unused_port,
-            Chain::AnvilHardhat.into(),
+            NamedChain::AnvilHardhat.into(),
             mnemonic,
         ))
     }
@@ -97,14 +101,14 @@ impl EthNodeProcess {
         DeployedContract::connect(&self.ws_url(), proxy_contract_address, kms_key).await
     }
 
-    fn wallet(&self, index: u32) -> LocalWallet {
+    fn wallet(&self, index: u32) -> PrivateKeySigner {
         MnemonicBuilder::<English>::default()
             .phrase(self.mnemonic.as_str())
             .index(index)
             .expect("Should generate a valid derivation path")
             .build()
             .expect("phrase to be correct")
-            .with_chain_id(self.chain_id)
+            .with_chain_id(Some(self.chain_id))
     }
 
     pub fn ws_url(&self) -> Url {
@@ -118,26 +122,29 @@ impl EthNodeProcess {
     }
 
     pub async fn fund(&self, address: Address, amount: U256) -> anyhow::Result<()> {
-        let wallet = self.wallet(0);
-        let provider = Provider::<Ws>::connect(self.ws_url())
+        let wallet = EthereumWallet::from(self.wallet(0));
+        let ws = WsConnect::new(self.ws_url());
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet)
+            .on_ws(ws)
+            .await?;
+
+        let tx = TransactionRequest::default()
+            .with_to(address)
+            .with_value(amount);
+
+        let succeeded = provider
+            .send_transaction(tx)
+            .await?
+            .with_required_confirmations(1)
+            .with_timeout(Some(Duration::from_millis(100)))
+            .get_receipt()
             .await
-            .expect("to connect to the provider");
-
-        let signer_middleware = SignerMiddleware::new(provider, wallet);
-
-        let tx = TransactionRequest::pay(address, amount);
-
-        let status = signer_middleware
-            .send_transaction(tx, None)
-            .await?
-            .confirmations(1)
-            .interval(Duration::from_millis(100))
-            .await?
             .unwrap()
-            .status
-            .unwrap();
+            .status();
 
-        if status == 1.into() {
+        if succeeded {
             Ok(())
         } else {
             Err(anyhow::anyhow!("Failed to fund address {address}"))
