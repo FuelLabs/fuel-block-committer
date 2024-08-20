@@ -39,7 +39,6 @@ impl WholeStack {
             db,
             &eth_node,
             &fuel_node,
-            &kms,
             &deployed_contract,
             &main_key,
             &secondary_key,
@@ -70,7 +69,7 @@ async fn create_and_fund_kms_keys(
     kms: &KmsProcess,
     eth_node: &EthNodeProcess,
 ) -> anyhow::Result<(KmsKey, KmsKey)> {
-    let amount = ethers::utils::parse_ether("10")?;
+    let amount = alloy::primitives::utils::parse_ether("10")?;
 
     let create_and_fund = || async {
         let key = kms.create_key(eth_node.chain_id()).await?;
@@ -116,7 +115,6 @@ async fn start_committer(
     random_db: Postgres,
     eth_node: &EthNodeProcess,
     fuel_node: &FuelNodeProcess,
-    kms: &KmsProcess,
     deployed_contract: &DeployedContract,
     main_key: &KmsKey,
     secondary_key: &KmsKey,
@@ -129,8 +127,7 @@ async fn start_committer(
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
         .with_fuel_block_producer_public_key(fuel_node.consensus_pub_key())
-        .with_main_key_id(main_key.id.clone())
-        .with_aws_region(kms.region().clone());
+        .with_main_key_id(main_key.id.clone());
 
     let committer = if blob_support {
         committer_builder.with_blob_key_id(secondary_key.id.clone())

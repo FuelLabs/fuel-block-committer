@@ -107,7 +107,7 @@ mod tests {
         }
 
         async fn balance(&self) -> ports::l1::Result<U256> {
-            Ok(U256::zero())
+            Ok(U256::ZERO)
         }
 
         async fn get_transaction_response(

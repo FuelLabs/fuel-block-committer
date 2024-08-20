@@ -1,14 +1,15 @@
 const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
 use std::time::Duration;
 
-use eth::{AwsClient, AwsCredentialsProvider, WebsocketClient};
-use ethers::{
-    abi::Address,
-    middleware::SignerMiddleware,
-    providers::{Middleware, Provider, Ws},
-    types::{Bytes, Chain, Eip1559TransactionRequest, U64},
+use alloy::{
+    network::EthereumWallet,
+    primitives::Bytes,
+    providers::{Provider, ProviderBuilder, WsConnect},
+    rpc::types::TransactionRequest,
 };
-use ports::types::{ValidatedFuelBlock, U256};
+use alloy_chains::NamedChain;
+use eth::{AwsClient, WebsocketClient};
+use ports::types::{Address, ValidatedFuelBlock, U256};
 use serde::Deserialize;
 use url::Url;
 
@@ -22,13 +23,11 @@ pub struct DeployedContract {
 impl DeployedContract {
     pub async fn connect(url: &Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
         let blob_wallet = None;
-        let region = key.region;
-        let credentials =
-            AwsCredentialsProvider::new_static("test".to_string(), "test".to_string());
-        let aws_client = AwsClient::try_new(true, region, credentials)?;
+        let aws_client = AwsClient::new().await;
+
         let chain_state_contract = WebsocketClient::connect(
             url,
-            Chain::AnvilHardhat,
+            NamedChain::AnvilHardhat.into(),
             address,
             key.id,
             blob_wallet,
@@ -85,11 +84,11 @@ impl CreateTransactions {
             .map(|tx| CreateTransaction {
                 name: tx.name,
                 address: tx.address,
-                tx: Eip1559TransactionRequest {
+                tx: TransactionRequest {
                     from: Some(tx.raw_tx.from),
                     gas: Some(tx.raw_tx.gas),
                     value: Some(tx.raw_tx.value),
-                    data: Some(tx.raw_tx.input),
+                    input: tx.raw_tx.input.into(),
                     chain_id: Some(tx.raw_tx.chain_id),
                     ..Default::default()
                 },
@@ -100,21 +99,25 @@ impl CreateTransactions {
     }
 
     pub async fn deploy(self, url: Url, kms_key: &KmsKey) -> anyhow::Result<()> {
-        let provider = Provider::<Ws>::connect(url).await?;
-        let middleware = SignerMiddleware::new(provider, kms_key.signer.clone());
+        let wallet = EthereumWallet::from(kms_key.signer.clone());
+        let ws = WsConnect::new(url);
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet)
+            .on_ws(ws)
+            .await?;
 
         for tx in self.txs {
-            let status = middleware
-                .send_transaction(tx.tx, None)
+            let succeeded = provider
+                .send_transaction(tx.tx)
                 .await?
-                .confirmations(1)
-                .interval(Duration::from_millis(100))
+                .with_required_confirmations(1)
+                .with_timeout(Some(Duration::from_millis(100)))
+                .get_receipt()
                 .await?
-                .ok_or_else(|| anyhow::anyhow!("No receipts"))?
-                .status
-                .ok_or_else(|| anyhow::anyhow!("No status"))?;
+                .status();
 
-            if status != 1.into() {
+            if !succeeded {
                 anyhow::bail!("Failed to deploy contract {}", tx.name);
             }
         }
@@ -145,7 +148,7 @@ impl CreateTransactions {
 struct CreateTransaction {
     name: String,
     address: Address,
-    tx: Eip1559TransactionRequest,
+    tx: TransactionRequest,
 }
 
 fn extract_transactions_file_path(stdout: String) -> Result<String, anyhow::Error> {
@@ -163,11 +166,11 @@ fn extract_transactions_file_path(stdout: String) -> Result<String, anyhow::Erro
 #[derive(Debug, Clone, Deserialize)]
 struct RawTx {
     from: Address,
-    gas: U256,
+    gas: u128,
     value: U256,
     input: Bytes,
     #[serde(rename = "chainId")]
-    chain_id: U64,
+    chain_id: u64,
 }
 #[derive(Debug, Clone, Deserialize)]
 struct CreateContractTx {

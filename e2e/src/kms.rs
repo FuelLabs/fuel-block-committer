@@ -1,9 +1,6 @@
+use alloy::signers::{aws::AwsSigner, Signer};
 use anyhow::Context;
-use eth::{AwsClient, AwsCredentialsProvider, AwsRegion};
-use ethers::signers::{AwsSigner, Signer};
-use ports::types::H160;
-use rusoto_core::Region;
-use rusoto_kms::{CreateKeyRequest, Kms as RusotoKms};
+use eth::{Address, AwsClient};
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -48,19 +45,11 @@ impl Kms {
             spawn_log_printer(&container);
         }
 
-        let port = container.get_host_port_ipv4(4566).await?;
-
-        let region = AwsRegion::from(Region::Custom {
-            name: "us-east-2".to_string(),
-            endpoint: format!("http://localhost:{}", port),
-        });
-        let credentials = AwsCredentialsProvider::new_static("test", "test");
-        let client = AwsClient::try_new(true, region.clone(), credentials)?;
+        let client = AwsClient::new().await;
 
         Ok(KmsProcess {
             _container: container,
             client,
-            region,
         })
     }
 }
@@ -92,18 +81,16 @@ fn spawn_log_printer(container: &testcontainers::ContainerAsync<KmsImage>) {
 pub struct KmsProcess {
     _container: testcontainers::ContainerAsync<KmsImage>,
     client: AwsClient,
-    region: AwsRegion,
 }
 
 #[derive(Debug, Clone)]
 pub struct KmsKey {
     pub id: String,
     pub signer: AwsSigner,
-    pub region: AwsRegion,
 }
 
 impl KmsKey {
-    pub fn address(&self) -> H160 {
+    pub fn address(&self) -> Address {
         self.signer.address()
     }
 }
@@ -113,11 +100,10 @@ impl KmsProcess {
         let response = self
             .client
             .inner()
-            .create_key(CreateKeyRequest {
-                customer_master_key_spec: Some("ECC_SECG_P256K1".to_string()),
-                key_usage: Some("SIGN_VERIFY".to_string()),
-                ..Default::default()
-            })
+            .create_key()
+            .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
+            .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
+            .send()
             .await?;
 
         let id = response
@@ -127,14 +113,6 @@ impl KmsProcess {
 
         let signer = self.client.make_signer(id.clone(), chain).await?;
 
-        Ok(KmsKey {
-            id,
-            signer,
-            region: self.region.clone(),
-        })
-    }
-
-    pub fn region(&self) -> &AwsRegion {
-        &self.region
+        Ok(KmsKey { id, signer })
     }
 }

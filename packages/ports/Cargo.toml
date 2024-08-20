@@ -10,6 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+alloy = { workspace = true }
 async-trait = { workspace = true, optional = true }
 ethers-core = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }

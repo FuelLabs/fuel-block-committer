@@ -1,3 +1,4 @@
+use alloy::transports::TransportErrorKind;
 use ethers::{
     prelude::{ContractError, SignerMiddleware},
     providers::{Provider, Ws},
@@ -17,6 +18,39 @@ pub enum Error {
 impl From<ethers::providers::ProviderError> for Error {
     fn from(err: ethers::providers::ProviderError) -> Self {
         Self::Network(err.to_string())
+    }
+}
+
+impl From<alloy::transports::RpcError<TransportErrorKind>> for Error {
+    fn from(err: alloy::transports::RpcError<TransportErrorKind>) -> Self {
+        Self::Network(err.to_string())
+    }
+}
+
+impl From<alloy::contract::Error> for Error {
+    fn from(value: alloy::contract::Error) -> Self {
+        match value {
+            alloy::contract::Error::TransportError(e) => Self::Network(e.to_string()),
+            _ => Self::Other(value.to_string()),
+        }
+    }
+}
+
+impl From<c_kzg::Error> for Error {
+    fn from(value: c_kzg::Error) -> Self {
+        Self::Other(value.to_string())
+    }
+}
+
+impl From<alloy::sol_types::Error> for Error {
+    fn from(value: alloy::sol_types::Error) -> Self {
+        Self::Other(value.to_string())
+    }
+}
+
+impl From<alloy::signers::aws::AwsSignerError> for Error {
+    fn from(value: alloy::signers::aws::AwsSignerError) -> Self {
+        Self::Other(value.to_string())
     }
 }
 
