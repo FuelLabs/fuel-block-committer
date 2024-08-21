@@ -41,7 +41,7 @@ jobs:
         with:
           helm: latest
       - name: Lint helm chart
-        run: helm lint deployment/charts
+        run: helm lint helm/fuel-block-committer
       - name: Verify helm chart version matches crate
         run: |
           ./.github/scripts/verify_chart_version.sh
@@ -139,7 +139,7 @@ jobs:
           image_name: ${{ env.IMAGE_NAME }}
           docker_username: ${{ github.repository_owner }}
           docker_password: ${{ secrets.GITHUB_TOKEN }}
-          docker_platforms: linux/amd64,linux/arm64
+          docker_platforms: linux/amd64
 
       - uses: FuelLabs/.github/.github/actions/slack-notify-template@master
         if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')

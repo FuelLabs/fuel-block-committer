@@ -14,7 +14,7 @@ curl -sSLf "https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_l
 chmod +x dasel
 mv ./dasel /usr/local/bin/dasel
 # check appVersion with crate package metadata
-HELM_APP_VERSION=$(cat deployment/charts/Chart.yaml | dasel -r yaml 'appVersion')
+HELM_APP_VERSION=$(cat helm/fuel-block-committer/Chart.yaml | dasel -r yaml 'appVersion')
 CRATE_VERSION=$(cat Cargo.toml | dasel -r toml 'workspace.package.version')
 if [ "$HELM_APP_VERSION" != "$CRATE_VERSION" ]; then
 	err "crate version $CRATE_VERSION, doesn't match helm app version $HELM_APP_VERSION"

@@ -61,9 +61,6 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
-        - name: fuel-block-committer-vol
-          persistentVolumeClaim:
-            claimName: {{ include "fuel-block-committer.fullname" . }}
         - name: config-volume
           configMap:
             name: {{ include "fuel-block-committer.fullname" . }}-config
