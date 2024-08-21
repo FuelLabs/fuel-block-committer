@@ -32,15 +32,10 @@ services = { path = "./packages/services", default-features = false }
 validator = { path = "./packages/validator", default-features = false }
 
 actix-web = { version = "4", default-features = false }
-tempfile = { version = "3.10", default-features = false }
-portpicker = { version = "0.1" }
-itertools = { version = "0.13", default-features = false }
-reqwest = { version = "0.12", default-features = false }
-zip = { version = "2.1", default-features = false }
 anyhow = { version = "1.0", default-features = false }
 async-trait = { version = "0.1", default-features = false }
 c-kzg = { version = "1.0", default-features = false }
-clap = { version = "4.5" }
+clap = { version = "4.5", default-features = false }
 config = { version = "0.14", default-features = false }
 ethers = { version = "2.0", default-features = false }
 ethers-core = { version = "2.0", default-features = false }
@@ -48,18 +43,31 @@ fuel-core-client = { version = "0.31", default-features = false }
 fuel-crypto = { version = "0.55", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
+humantime = { version = "2.1", default-features = false }
+# `ethers` uses `rusoto_kms` for its AWS signer. To configure the AWS client, 
+# both `hyper` and `hyper-rustls` are required. The versions specified here 
+# are taken from the `Cargo.toml` of the `rusoto_kms` version that ethers 
+# uses. These crates are necessary because ethers doesn't re-export the 
+# types required to configure the AWS client.
+hyper = { version = "0.14", default-features = false }
+hyper-rustls = { version = "0.23", default-features = false }
 impl-tools = { version = "0.10.0", default-features = false }
+itertools = { version = "0.13", default-features = false }
 mockall = { version = "0.12", default-features = false }
+portpicker = { version = "0.1", default-features = false }
 prometheus = { version = "0.13", default-features = false }
 rand = { version = "0.8", default-features = false }
-rlp = { version = "0.5.2" }
+reqwest = { version = "0.12", default-features = false }
+rlp = { version = "0.5.2", default-features = false }
+rusoto_core = { version = "0.48", default-features = false }
+rusoto_kms = { version = "0.48", default-features = false }
+rusoto_sts = { version = "0.48", default-features = false }
+secp256k1 = { version = "0.29", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 sqlx = { version = "0.7.4", default-features = false }
 tai64 = { version = "4.0.0", default-features = false }
-humantime = { version = "2.1", default-features = false }
-secp256k1 = { version = "0.29", default-features = false }
-walkdir = { version = "2.5", default-features = false }
+tempfile = { version = "3.10", default-features = false }
 testcontainers = { version = "0.20", default-features = false }
 thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.37", default-features = false }
@@ -67,3 +75,5 @@ tokio-util = { version = "0.7", default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
 url = { version = "2.3", default-features = false }
+walkdir = { version = "2.5", default-features = false }
+zip = { version = "2.1", default-features = false }

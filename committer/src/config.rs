@@ -11,12 +11,13 @@ pub struct Config {
     pub eth: Eth,
     pub fuel: Fuel,
     pub app: App,
+    pub aws: Aws,
 }
 
 impl Config {
     pub fn validate(&self) -> crate::errors::Result<()> {
-        if let Some(blob_pool_wallet_key) = &self.eth.blob_pool_wallet_key {
-            if blob_pool_wallet_key == &self.eth.wallet_key {
+        if let Some(blob_pool_wallet_key) = &self.eth.blob_pool_key_id {
+            if blob_pool_wallet_key == &self.eth.main_key_id {
                 return Err(crate::errors::Error::Other(
                     "Wallet key and blob pool wallet key must be different".to_string(),
                 ));
@@ -38,10 +39,10 @@ pub struct Fuel {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
-    /// The secret key authorized by the L1 bridging contracts to post block commitments.
-    pub wallet_key: String,
-    /// The secret key for posting L2 state to L1.
-    pub blob_pool_wallet_key: Option<String>,
+    /// The AWS KMS key ID authorized by the L1 bridging contracts to post block commitments.
+    pub main_key_id: String,
+    /// The AWS KMS key ID for posting L2 state to L1.
+    pub blob_pool_key_id: Option<String>,
     /// URL to a Ethereum RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
@@ -72,6 +73,11 @@ where
         let msg = format!("Failed to parse URL '{url_str}': {e};");
         serde::de::Error::custom(msg)
     })
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Aws {
+    pub allow_http: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

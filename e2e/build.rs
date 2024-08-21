@@ -42,7 +42,7 @@ async fn init_and_build(revision: &str, path: &Path) -> anyhow::Result<()> {
     foundry::install_deps(path).await?;
     foundry::build(path).await?;
 
-    foundry::add_deploy_script(path).await?;
+    foundry::add_tx_building_script(path).await?;
     Ok(())
 }
 
@@ -327,8 +327,8 @@ mod foundry {
         Ok(())
     }
 
-    pub async fn add_deploy_script(path: &Path) -> anyhow::Result<()> {
-        let script_path = path.join("script/deploy.sol");
+    pub async fn add_tx_building_script(path: &Path) -> anyhow::Result<()> {
+        let script_path = path.join("script/build_tx.sol");
         if let Some(parent) = script_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -342,8 +342,8 @@ import {FuelChainState} from "../src/fuelchain/FuelChainState.sol";
 
 contract MyScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerPrivateKey);
+        address deployer_addr = vm.envAddress("ADDRESS");
+        vm.startBroadcast(deployer_addr);
 
         uint256 timeToFinalize = vm.envUint("TIME_TO_FINALIZE");
         uint256 blocksPerCommitInterval = vm.envUint("BLOCKS_PER_COMMIT_INTERVAL");
@@ -354,9 +354,6 @@ contract MyScript is Script {
             address(implementation),
             abi.encodeCall(FuelChainState.initialize, ())
         );
-
-        console.log("PROXY:", proxy);
-        console.log("IMPL:", address(implementation));
 
         vm.stopBroadcast();
     }

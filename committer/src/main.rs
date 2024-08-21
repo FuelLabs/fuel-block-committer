@@ -7,12 +7,13 @@ mod setup;
 use api::launch_api_server;
 use errors::Result;
 use metrics::prometheus::Registry;
+use ports::l1::Contract;
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
-use ports::l1::Contract;
 
 pub type L1 = eth::WebsocketClient;
+pub type AwsClient = eth::AwsClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
 pub type Validator = validator::BlockValidator;
@@ -71,8 +72,8 @@ async fn main() -> Result<()> {
     ];
 
     // If the blob pool wallet key is set, we need to start
-    // the state committer, state importer and state listener
-    if config.eth.blob_pool_wallet_key.is_some() {
+    // the state committer and state importer
+    if config.eth.blob_pool_key_id.is_some() {
         let state_committer_handle = setup::state_committer(
             ethereum_rpc.clone(),
             storage.clone(),

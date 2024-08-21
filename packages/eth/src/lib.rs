@@ -1,7 +1,6 @@
 #![deny(unused_crate_dependencies)]
 
-use std::num::NonZeroU32;
-use std::pin::Pin;
+use std::{num::NonZeroU32, pin::Pin};
 
 use async_trait::async_trait;
 use ethers::types::U256;
@@ -12,11 +11,13 @@ use ports::{
 };
 use websocket::EthEventStreamer;
 
+mod aws;
 mod eip_4844;
 mod error;
 mod metrics;
 mod websocket;
 
+pub use aws::*;
 pub use ethers::types::{Address, Chain};
 pub use websocket::WebsocketClient;
 

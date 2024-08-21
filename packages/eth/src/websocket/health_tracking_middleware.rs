@@ -1,8 +1,8 @@
+use std::num::NonZeroU32;
+
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-
-use std::num::NonZeroU32;
 
 use ports::types::{TransactionResponse, ValidatedFuelBlock, U256};
 

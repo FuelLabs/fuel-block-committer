@@ -158,7 +158,7 @@ mod tests {
         // when
         commit_listener.run().await.unwrap();
 
-        //then
+        // then
         let res = db.submission_w_latest_block().await.unwrap().unwrap();
 
         assert!(res.completed);
@@ -188,7 +188,7 @@ mod tests {
         // when
         commit_listener.run().await.unwrap();
 
-        //then
+        // then
         let metrics = registry.gather();
         let latest_committed_block_metric = metrics
             .iter()
@@ -227,7 +227,7 @@ mod tests {
         // when
         commit_listener.run().await.unwrap();
 
-        //then
+        // then
         let latest_submission = db.submission_w_latest_block().await.unwrap().unwrap();
         assert_eq!(
             BlockSubmission {

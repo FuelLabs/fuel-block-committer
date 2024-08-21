@@ -1,11 +1,14 @@
+use std::num::NonZeroU32;
+
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use ethers::types::{Address, Chain};
 use ports::{
     l1::Result,
     types::{TransactionResponse, ValidatedFuelBlock, U256},
 };
-use std::num::NonZeroU32;
 use url::Url;
+
+use crate::AwsClient;
 
 pub use self::event_streamer::EthEventStreamer;
 use self::{
@@ -27,18 +30,25 @@ impl WebsocketClient {
         url: &Url,
         chain_id: Chain,
         contract_address: Address,
-        wallet_key: &str,
-        blob_pool_wallet_key: Option<String>,
+        main_key_id: String,
+        blob_pool_key_id: Option<String>,
         unhealthy_after_n_errors: usize,
+        aws_client: AwsClient,
     ) -> ports::l1::Result<Self> {
-        let provider = WsConnection::connect(
-            url,
-            chain_id,
-            contract_address,
-            wallet_key,
-            blob_pool_wallet_key,
-        )
-        .await?;
+        let main_signer = aws_client.make_signer(main_key_id, chain_id.into()).await?;
+
+        let blob_signer = if let Some(key_id) = blob_pool_key_id {
+            Some(
+                aws_client
+                    .make_signer(key_id.clone(), chain_id.into())
+                    .await?,
+            )
+        } else {
+            None
+        };
+
+        let provider =
+            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),

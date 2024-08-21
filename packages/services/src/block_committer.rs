@@ -175,18 +175,17 @@ mod tests {
 
     use fuel_crypto::{Message, SecretKey, Signature};
     use metrics::prometheus::{proto::Metric, Registry};
-    use rand::{rngs::StdRng, Rng, SeedableRng};
-    use validator::BlockValidator;
-
-    use super::*;
-
     use mockall::predicate::{self, eq};
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
         l1::{Contract, EventStreamer, MockContract},
         types::{L1Height, TransactionResponse, U256},
     };
+    use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{Postgres, PostgresProcess};
+    use validator::BlockValidator;
+
+    use super::*;
 
     struct MockL1 {
         api: ports::l1::MockApi,
@@ -368,7 +367,7 @@ mod tests {
         // when
         block_committer.run().await.unwrap();
 
-        //then
+        // then
         let metrics = registry.gather();
         let latest_block_metric = metrics
             .iter()

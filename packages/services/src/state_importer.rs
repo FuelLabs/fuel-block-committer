@@ -125,12 +125,10 @@ where
 #[cfg(test)]
 mod tests {
     use fuel_crypto::{Message, SecretKey, Signature};
-    use ports::fuel::{FuelConsensus, FuelPoAConsensus};
+    use ports::fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus};
     use rand::{rngs::StdRng, SeedableRng};
     use storage::PostgresProcess;
     use validator::BlockValidator;
-
-    use ports::fuel::{FuelBlock, FuelBlockId, FuelHeader};
 
     use super::*;
 
