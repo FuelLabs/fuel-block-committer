@@ -15,7 +15,7 @@ inputs:
   docker_platforms:
     require: true
   docker_file:
-    default: deployment/Dockerfile
+    default: Dockerfile
     require: true
   docker_username:
     require: true
