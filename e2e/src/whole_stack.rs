@@ -27,12 +27,15 @@ impl WholeStack {
         let eth_node = start_eth(logs).await?;
         let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
 
+        dbg!("Deploying contract");
         let (contract_args, deployed_contract) = deploy_contract(&eth_node, &main_key).await?;
 
+        dbg!("Starting fuel node");
         let fuel_node = start_fuel_node(logs).await?;
 
         let (db_process, db) = start_db().await?;
 
+        dbg!("Starting committer");
         let committer = start_committer(
             logs,
             blob_support,
@@ -127,7 +130,8 @@ async fn start_committer(
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
         .with_fuel_block_producer_public_key(fuel_node.consensus_pub_key())
-        .with_main_key_id(main_key.id.clone());
+        .with_main_key_id(main_key.id.clone())
+        .with_kms_url(main_key.url.clone());
 
     let committer = if blob_support {
         committer_builder.with_blob_key_id(secondary_key.id.clone())

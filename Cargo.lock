@@ -257,6 +257,7 @@ dependencies = [
  "alloy-pubsub",
  "alloy-rpc-client",
  "alloy-rpc-types",
+ "alloy-serde",
  "alloy-signer",
  "alloy-signer-aws",
  "alloy-signer-local",
@@ -272,6 +273,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b515e82c8468ddb6ff8db21c78a5997442f113fd8471fd5b2261b2602dd0c67"
 dependencies = [
  "num_enum",
+ "serde",
  "strum 0.26.3",
 ]
 
@@ -1360,6 +1362,7 @@ dependencies = [
  "base64-simd",
  "bytes",
  "bytes-utils",
+ "futures-core",
  "http 0.2.12",
  "http 1.1.0",
  "http-body 0.4.6",
@@ -1372,6 +1375,8 @@ dependencies = [
  "ryu",
  "serde",
  "time",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -3148,6 +3153,7 @@ name = "fuel-block-committer"
 version = "0.4.0"
 dependencies = [
  "actix-web",
+ "alloy-chains",
  "anyhow",
  "clap",
  "config",
