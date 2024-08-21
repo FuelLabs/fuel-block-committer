@@ -3,13 +3,13 @@ use std::time::Duration;
 
 use alloy::{
     network::EthereumWallet,
-    primitives::Bytes,
-    providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::TransactionRequest,
+    primitives::{Bytes, TxKind},
+    providers::{fillers::{ChainIdFiller, NonceFiller}, Provider, ProviderBuilder, WsConnect},
+    rpc::types::TransactionRequest, signers::Signer,
 };
 use alloy_chains::NamedChain;
-use eth::{AwsClient, WebsocketClient};
-use ports::types::{Address, ValidatedFuelBlock, U256};
+use eth::{AwsClient, AwsRegion, WebsocketClient};
+use ports::types::{Address, ValidatedFuelBlock};
 use serde::Deserialize;
 use url::Url;
 
@@ -23,7 +23,7 @@ pub struct DeployedContract {
 impl DeployedContract {
     pub async fn connect(url: &Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
         let blob_wallet = None;
-        let aws_client = AwsClient::new().await;
+        let aws_client = AwsClient::new(AwsRegion::Test(key.url)).await;
 
         let chain_state_contract = WebsocketClient::connect(
             url,
@@ -87,9 +87,9 @@ impl CreateTransactions {
                 tx: TransactionRequest {
                     from: Some(tx.raw_tx.from),
                     gas: Some(tx.raw_tx.gas),
-                    value: Some(tx.raw_tx.value),
                     input: tx.raw_tx.input.into(),
                     chain_id: Some(tx.raw_tx.chain_id),
+                    to: Some(TxKind::Create),
                     ..Default::default()
                 },
             })
@@ -112,7 +112,7 @@ impl CreateTransactions {
                 .send_transaction(tx.tx)
                 .await?
                 .with_required_confirmations(1)
-                .with_timeout(Some(Duration::from_millis(100)))
+                .with_timeout(Some(Duration::from_secs(1)))
                 .get_receipt()
                 .await?
                 .status();
@@ -163,15 +163,32 @@ fn extract_transactions_file_path(stdout: String) -> Result<String, anyhow::Erro
     Ok(transactions_file)
 }
 
+fn deserialize_u128_from_hex<'de, D>(deserializer: D) -> Result<u128, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    u128::from_str_radix(&s[2..], 16).map_err(serde::de::Error::custom)
+}
+
+fn deserialize_u64_from_hex<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    u64::from_str_radix(&s[2..], 16).map_err(serde::de::Error::custom)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct RawTx {
     from: Address,
+    #[serde(deserialize_with = "deserialize_u128_from_hex")]
     gas: u128,
-    value: U256,
     input: Bytes,
-    #[serde(rename = "chainId")]
+    #[serde(rename = "chainId", deserialize_with = "deserialize_u64_from_hex")]
     chain_id: u64,
 }
+
 #[derive(Debug, Clone, Deserialize)]
 struct CreateContractTx {
     #[serde(rename = "contractName")]

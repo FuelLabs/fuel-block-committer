@@ -1,6 +1,6 @@
 use alloy::signers::{aws::AwsSigner, Signer};
 use anyhow::Context;
-use eth::{Address, AwsClient};
+use eth::{Address, AwsClient, AwsRegion};
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -45,11 +45,16 @@ impl Kms {
             spawn_log_printer(&container);
         }
 
-        let client = AwsClient::new().await;
+        let port = container.get_host_port_ipv4(4566).await?;
+        let url = format!("http://localhost:{}", port);
+
+        let region = AwsRegion::Test(url.clone());
+        let client = AwsClient::new(region).await;
 
         Ok(KmsProcess {
             _container: container,
             client,
+            url,
         })
     }
 }
@@ -96,12 +101,14 @@ fn spawn_log_printer(container: &testcontainers::ContainerAsync<KmsImage>) {
 pub struct KmsProcess {
     _container: testcontainers::ContainerAsync<KmsImage>,
     client: AwsClient,
+    url: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct KmsKey {
     pub id: String,
     pub signer: AwsSigner,
+    pub url: String,
 }
 
 impl KmsKey {
@@ -128,6 +135,11 @@ impl KmsProcess {
 
         let signer = self.client.make_signer(id.clone(), chain).await?;
 
-        Ok(KmsKey { id, signer })
+        Ok(KmsKey { id, signer, url: self.url.clone() })
+    }
+
+
+    pub fn url(&self) -> &str {
+        &self.url
     }
 }

@@ -11,6 +11,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 actix-web = { workspace = true, features = ["macros"] }
+alloy-chains = { workspace = true, features = [ "serde" ] }
 clap = { workspace = true, features = ["default", "derive"] }
 config = { workspace = true, features = ["toml", "async"] }
 eth = { workspace = true }

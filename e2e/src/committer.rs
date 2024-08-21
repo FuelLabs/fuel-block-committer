@@ -15,6 +15,7 @@ pub struct Committer {
     fuel_block_producer_public_key: Option<String>,
     db_port: Option<u16>,
     db_name: Option<String>,
+    kms_url: Option<String>,
 }
 
 impl Committer {
@@ -31,8 +32,10 @@ impl Committer {
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-block-committer"))?;
 
+        let kms_url = get_field!(kms_url);
         let mut cmd = tokio::process::Command::new("fuel-block-committer");
         cmd.arg(config)
+            .env("E2E_TEST_AWS_REGION", kms_url)
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_id))
@@ -77,6 +80,11 @@ impl Committer {
 
     pub fn with_main_key_id(mut self, wallet_id: String) -> Self {
         self.main_key_id = Some(wallet_id);
+        self
+    }
+
+    pub fn with_kms_url(mut self, kms_url: String) -> Self {
+        self.kms_url = Some(kms_url);
         self
     }
 
@@ -132,7 +140,9 @@ pub struct CommitterProcess {
 impl CommitterProcess {
     pub async fn wait_for_committed_block(&self, height: u64) -> anyhow::Result<()> {
         loop {
-            match self.fetch_latest_committed_block().await {
+            let skibidi = self.fetch_latest_committed_block().await;
+            dbg!(&skibidi);
+            match skibidi {
                 Ok(current_height) if current_height >= height => break,
                 _ => {
                     tokio::time::sleep(Duration::from_secs(1)).await;

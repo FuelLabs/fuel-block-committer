@@ -1,7 +1,8 @@
 use std::{net::Ipv4Addr, path::PathBuf, str::FromStr, time::Duration};
 
+use alloy_chains::NamedChain;
 use clap::{command, Parser};
-use eth::{Address, ChainId};
+use eth::Address;
 use serde::Deserialize;
 use storage::DbConfig;
 use url::Url;
@@ -46,21 +47,18 @@ pub struct Eth {
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
     /// Chain id of the ethereum network.
-    #[serde(deserialize_with = "parse_chain_id")]
-    pub chain_id: ChainId,
+    #[serde(deserialize_with = "deserialize_named_chain")]
+    pub chain_id: NamedChain,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
 }
 
-fn parse_chain_id<'de, D>(deserializer: D) -> Result<ChainId, D::Error>
+fn deserialize_named_chain<'de, D>(deserializer: D) -> Result<NamedChain, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let chain_id: String = Deserialize::deserialize(deserializer)?;
-    ChainId::from_str(&chain_id).map_err(|_| {
-        let msg = format!("Failed to parse chain id '{chain_id}'");
-        serde::de::Error::custom(msg)
-    })
+    let chain_id: String = Deserialize::deserialize(deserializer).unwrap();
+    NamedChain::from_str(&chain_id).map_err(serde::de::Error::custom)
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
