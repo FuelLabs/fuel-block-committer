@@ -41,7 +41,7 @@ jobs:
         with:
           helm: latest
       - name: Lint helm chart
-        run: helm lint deployment/charts
+        run: helm lint helm/fuel-block-committer
       - name: Verify helm chart version matches crate
         run: |
           ./.github/scripts/verify_chart_version.sh
