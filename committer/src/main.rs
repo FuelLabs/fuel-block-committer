@@ -5,7 +5,7 @@ mod errors;
 mod setup;
 
 use api::launch_api_server;
-use errors::Result;
+use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
 use ports::l1::Contract;
 use tokio_util::sync::CancellationToken;
@@ -22,10 +22,14 @@ pub type Validator = validator::BlockValidator;
 async fn main() -> Result<()> {
     setup::logger();
 
-    let config = config::parse()?;
-    config.validate()?;
+    let config = config::parse().with_context(|| "failed to parse config")?;
+    config
+        .validate()
+        .with_context(|| "config validation failed")?;
 
-    let storage = setup::storage(&config).await?;
+    let storage = setup::storage(&config)
+        .await
+        .with_context(|| "failed to connect to database")?;
 
     let internal_config = config::Internal::default();
     let cancel_token = CancellationToken::new();
@@ -36,7 +40,9 @@ async fn main() -> Result<()> {
         setup::fuel_adapter(&config, &internal_config, &metrics_registry);
 
     let (ethereum_rpc, eth_health_check) =
-        setup::l1_adapter(&config, &internal_config, &metrics_registry).await?;
+        setup::l1_adapter(&config, &internal_config, &metrics_registry)
+            .await
+            .with_context(|| "could not setup l1 adapter")?;
 
     let commit_interval = ethereum_rpc.commit_interval();
 
@@ -105,7 +111,8 @@ async fn main() -> Result<()> {
         fuel_health_check,
         eth_health_check,
     )
-    .await?;
+    .await
+    .with_context(|| "api server")?;
 
     shut_down(cancel_token, handles, storage).await
 }

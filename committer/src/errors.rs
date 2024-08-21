@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use actix_web::ResponseError;
 use tokio::task::JoinError;
 
@@ -9,6 +11,13 @@ pub enum Error {
     Network(String),
     #[error("Storage error: {0}")]
     Storage(String),
+}
+
+pub trait WithContext<T> {
+    fn with_context<C, F>(self, context: F) -> Result<T>
+    where
+        C: Display + Send + Sync + 'static,
+        F: FnOnce() -> C;
 }
 
 impl From<serde_json::Error> for Error {
@@ -71,3 +80,22 @@ impl From<config::ConfigError> for Error {
 impl ResponseError for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl<T> WithContext<T> for Result<T> {
+    fn with_context<C, F>(self, context: F) -> Result<T>
+    where
+        C: Display + Send + Sync + 'static,
+        F: FnOnce() -> C,
+    {
+        if let Err(err) = self {
+            let new_err = match err {
+                Error::Other(e) => Error::Other(format!("{}: {}", context(), e)),
+                Error::Network(e) => Error::Network(format!("{}: {}", context(), e)),
+                Error::Storage(e) => Error::Storage(format!("{}: {}", context(), e)),
+            };
+            Err(new_err)
+        } else {
+            self
+        }
+    }
+}

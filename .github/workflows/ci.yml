@@ -20,7 +20,7 @@ env:
 
 jobs:
   verify-rust-version:
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       # Ensure CI is using the same minimum toolchain specified in fuels Cargo.toml
@@ -49,7 +49,7 @@ jobs:
   cargo-verifications:
     needs:
       - verify-rust-version
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -79,7 +79,7 @@ jobs:
         run: ./run_tests.sh
 
   publish-crates-check:
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -101,7 +101,7 @@ jobs:
       - publish-crates-check
     # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -125,7 +125,7 @@ jobs:
   publish-docker-image:
     needs:
       - cargo-verifications
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
