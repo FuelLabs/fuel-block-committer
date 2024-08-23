@@ -192,14 +192,14 @@ jobs:
           platforms: ${{ matrix.arch.platform }}
           file: Dockerfile
           tags: localimage:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest-${{ matrix.arch.runner }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest-${{ matrix.arch.runner }},mode=max
           outputs: type=docker,dest=/tmp/img.tar
 
       - name: Upload Docker image
         uses: actions/upload-artifact@v2
         with:
-          name: docker-${{ matrix.arch.platform }}
+          name: docker-${{ matrix.arch.runner }}
           path: /tmp/img.tar
 
   publish-docker-images:
