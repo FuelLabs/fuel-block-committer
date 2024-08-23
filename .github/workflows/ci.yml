@@ -236,6 +236,7 @@ jobs:
       - name: Load Docker images
         run: |
           ls -al ${{ steps.download-files.outputs.download-path }}
+          find ${{ steps.download-files.outputs.download-path }}
           for f in ${{ steps.download-files.outputs.download-path }}/*; do docker load --input $f; done
           docker image ls
 
