@@ -169,22 +169,39 @@ jobs:
           username: fuellabs
           password: ${{ secrets.DOCKER_IO_READ_ONLY_TOKEN }}
 
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{raw}}
+            type=raw,value=sha-{{sha}}-{{date 'YYYYMMDDhhmmss'}}
+          flavor: |
+            latest=${{ github.ref == 'refs/heads/master' }}
+
       - name: Build Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
           platforms: ${{ matrix.arch.platform }}
           file: Dockerfile
-          tags: localimage:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest-${{ matrix.arch.runner }}
           cache-to: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest-${{ matrix.arch.runner }},mode=max
-          outputs: type=docker,dest=/tmp/img.tar
+          outputs: type=docker,dest=/tmp/img-${{ matrix.arch.runner }}.tar
 
       - name: Upload Docker image
         uses: actions/upload-artifact@v4
         with:
           name: docker-${{ matrix.arch.runner }}
-          path: /tmp/img.tar
+          path: /tmp/img-${{ matrix.arch.runner }}.tar
 
   publish-docker-images:
     needs:
@@ -200,7 +217,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: docker-*
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
