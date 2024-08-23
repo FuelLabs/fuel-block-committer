@@ -24,7 +24,7 @@ env:
 
 jobs:
   verify-rust-version:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v3
       # Ensure CI is using the same minimum toolchain specified in fuels Cargo.toml
@@ -37,7 +37,7 @@ jobs:
           test "$MIN_VERSION" == "$RUST_VERSION"
 
   verify-helm-chart:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v3
       - uses: alexellis/setup-arkade@v1
@@ -53,7 +53,7 @@ jobs:
   cargo-verifications:
     needs:
       - verify-rust-version
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -67,6 +67,16 @@ jobs:
           components: clippy,rustfmt
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+      - name: Build cache
+        uses: buildjet/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run cargo check with all features
         run: cargo check --all-features
       - name: Run cargo fmt --check
@@ -83,7 +93,7 @@ jobs:
         run: ./run_tests.sh
 
   publish-crates-check:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -105,7 +115,7 @@ jobs:
       - publish-crates-check
     # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
 
     steps:
       - name: Checkout repository
@@ -129,7 +139,7 @@ jobs:
   publish-docker-image:
     needs:
       - cargo-verifications
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: buildjet-8vcpu-ubuntu-2204
     permissions:
       contents: read
       packages: write
