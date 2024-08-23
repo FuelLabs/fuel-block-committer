@@ -24,7 +24,7 @@ env:
 
 jobs:
   verify-rust-version:
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       # Ensure CI is using the same minimum toolchain specified in fuels Cargo.toml
@@ -37,7 +37,7 @@ jobs:
           test "$MIN_VERSION" == "$RUST_VERSION"
 
   verify-helm-chart:
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: alexellis/setup-arkade@v1
@@ -93,7 +93,7 @@ jobs:
         run: ./run_tests.sh
 
   publish-crates-check:
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -115,7 +115,7 @@ jobs:
       - publish-crates-check
     # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -136,29 +136,22 @@ jobs:
           publish-delay: 30000
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  publish-docker-image:
+  build-docker-images:
     needs:
       - cargo-verifications
-    runs-on: buildjet-8vcpu-ubuntu-2204
+    strategy:
+      matrix:
+        arch: [
+          {platform: linux/amd64, runner: buildjet-8vcpu-ubuntu-2204},
+          {platform: linux/arm64, runner: buildjet-8vcpu-ubuntu-2204-arm}
+        ]
+    runs-on: ${{ matrix.arch.runner }}
     permissions:
       contents: read
       packages: write
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Configure AWS credentials for ECR publishing
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: us-east-1 # ecr public is only in us-east-1
-
-      - name: Login to Amazon ECR Public
-        id: login-ecr-public
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
 
       - name: Docker metadata
         id: meta
@@ -192,20 +185,106 @@ jobs:
           username: fuellabs
           password: ${{ secrets.DOCKER_IO_READ_ONLY_TOKEN }}
 
-      - name: Build and publish Docker images
+      - name: Build Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.arch.platform }}
           file: Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: localimage:latest
           cache-from: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest
           cache-to: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest,mode=max
+          outputs: type=docker,dest=/tmp/img.tar
 
-      - uses: FuelLabs/.github/.github/actions/slack-notify-template@master
-        if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
+      - name: Upload Docker image
+        uses: actions/upload-artifact@v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          slack_webhook: ${{ secrets.SLACK_WEBHOOK_NOTIFY_BUILD }}
+          name: docker-${{ matrix.arch.platform }}
+          path: /tmp/img.tar
+
+  publish-docker-images:
+    needs:
+      - build-docker-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download Docker images
+        uses: actions/download-artifact@v4
+        with:
+          pattern: docker-*
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Load Docker images
+        run: |
+          for f in ./docker*; do docker load --input $f; done
+          docker image ls
+
+      - name: Configure AWS credentials for ECR publishing
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: us-east-1 # ecr public is only in us-east-1
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      # - name: Docker metadata
+      #   id: meta
+      #   uses: docker/metadata-action@v3
+      #   with:
+      #     images: |
+      #       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      #       ${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}
+      #     tags: |
+      #       type=sha
+      #       type=ref,event=branch
+      #       type=ref,event=tag
+      #       type=semver,pattern={{raw}}
+      #       type=raw,value=sha-{{sha}}-{{date 'YYYYMMDDhhmmss'}}
+      #     flavor: |
+      #       latest=${{ github.ref == 'refs/heads/master' }}
+
+      # - name: Set up Docker Buildx
+      #   uses: docker/setup-buildx-action@v1
+
+      # - name: Log in to the ghcr.io registry
+      #   uses: docker/login-action@v1
+      #   with:
+      #     registry: ${{ env.REGISTRY }}
+      #     username: ${{ github.repository_owner }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Log in to the docker.io registry
+      #   uses: docker/login-action@v2
+      #   with:
+      #     username: fuellabs
+      #     password: ${{ secrets.DOCKER_IO_READ_ONLY_TOKEN }}
+
+      # - name: Build and publish Docker images
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     context: .
+      #     platforms: ${{ matrix.arch.platform }}
+      #     file: Dockerfile
+      #     push: true
+      #     tags: ${{ steps.meta.outputs.tags }}
+      #     labels: ${{ steps.meta.outputs.labels }}
+      #     cache-from: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest
+      #     cache-to: type=registry,ref=${{ env.REGISTRY }}/fuellabs/fuel-block-committer-build-cache:latest,mode=max
+
+      # - uses: FuelLabs/.github/.github/actions/slack-notify-template@master
+      #   if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     slack_webhook: ${{ secrets.SLACK_WEBHOOK_NOTIFY_BUILD }}
