@@ -197,7 +197,7 @@ jobs:
           outputs: type=docker,dest=/tmp/img.tar
 
       - name: Upload Docker image
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: docker-${{ matrix.arch.runner }}
           path: /tmp/img.tar
@@ -211,20 +211,19 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
       - name: Download Docker images
+        id: download-files
         uses: actions/download-artifact@v4
         with:
           pattern: docker-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
       - name: Load Docker images
         run: |
-          for f in ./docker*; do docker load --input $f; done
+          for f in ${{ steps.download-files.outputs.download-path }}; do docker load --input $f; done
           docker image ls
 
       - name: Configure AWS credentials for ECR publishing
@@ -238,6 +237,19 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Log in to the ghcr.io registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to the docker.io registry
+        uses: docker/login-action@v2
+        with:
+          username: fuellabs
+          password: ${{ secrets.DOCKER_IO_READ_ONLY_TOKEN }}
 
       # - name: Docker metadata
       #   id: meta
@@ -254,22 +266,6 @@ jobs:
       #       type=raw,value=sha-{{sha}}-{{date 'YYYYMMDDhhmmss'}}
       #     flavor: |
       #       latest=${{ github.ref == 'refs/heads/master' }}
-
-      # - name: Set up Docker Buildx
-      #   uses: docker/setup-buildx-action@v1
-
-      # - name: Log in to the ghcr.io registry
-      #   uses: docker/login-action@v1
-      #   with:
-      #     registry: ${{ env.REGISTRY }}
-      #     username: ${{ github.repository_owner }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Log in to the docker.io registry
-      #   uses: docker/login-action@v2
-      #   with:
-      #     username: fuellabs
-      #     password: ${{ secrets.DOCKER_IO_READ_ONLY_TOKEN }}
 
       # - name: Build and publish Docker images
       #   uses: docker/build-push-action@v4
