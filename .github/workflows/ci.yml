@@ -268,7 +268,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v5
         with:
           images: |
             ${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}
@@ -281,6 +281,11 @@ jobs:
             type=raw,value=sha-{{sha}}-{{date 'YYYYMMDDhhmmss'}}
           flavor: |
             latest=${{ github.ref == 'refs/heads/master' }}
+
+      - name: Debug
+        run: |
+          echo $DOCKER_METADATA_OUTPUT_JSON
+          jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON"
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
