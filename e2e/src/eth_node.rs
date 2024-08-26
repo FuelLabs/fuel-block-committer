@@ -140,8 +140,7 @@ impl EthNodeProcess {
             .with_required_confirmations(1)
             .with_timeout(Some(Duration::from_secs(1)))
             .get_receipt()
-            .await
-            .unwrap()
+            .await?
             .status();
 
         if succeeded {
