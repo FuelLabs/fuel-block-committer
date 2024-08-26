@@ -4,8 +4,8 @@ use std::time::Duration;
 use alloy::{
     network::EthereumWallet,
     primitives::{Bytes, TxKind},
-    providers::{fillers::{ChainIdFiller, NonceFiller}, Provider, ProviderBuilder, WsConnect},
-    rpc::types::TransactionRequest, signers::Signer,
+    providers::{Provider, ProviderBuilder, WsConnect},
+    rpc::types::TransactionRequest,
 };
 use alloy_chains::NamedChain;
 use eth::{AwsClient, AwsRegion, WebsocketClient};

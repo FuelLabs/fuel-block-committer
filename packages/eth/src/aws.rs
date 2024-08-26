@@ -1,5 +1,5 @@
 use alloy::signers::aws::AwsSigner;
-use aws_config::{environment::EnvironmentVariableCredentialsProvider, meta::credentials::CredentialsProviderChain, Region};
+use aws_config::Region;
 use aws_sdk_kms::config::{BehaviorVersion, Credentials};
 
 use crate::error::Error;

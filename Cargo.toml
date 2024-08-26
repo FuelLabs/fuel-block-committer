@@ -41,8 +41,6 @@ async-trait = { version = "0.1", default-features = false }
 c-kzg = { version = "1.0", default-features = false }
 clap = { version = "4.5", default-features = false }
 config = { version = "0.14", default-features = false }
-ethers = { version = "2.0", default-features = false }
-ethers-core = { version = "2.0", default-features = false }
 fuel-core-client = { version = "0.31", default-features = false }
 fuel-crypto = { version = "0.55", default-features = false }
 futures = { version = "0.3", default-features = false }

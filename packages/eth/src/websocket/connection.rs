@@ -2,9 +2,16 @@ use std::num::NonZeroU32;
 
 use alloy::{
     consensus::{SidecarBuilder, SimpleCoder},
-    network::{EthereumWallet, TransactionBuilder, TxSigner},
-    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, WsConnect},
+    network::{Ethereum, EthereumWallet, TransactionBuilder, TxSigner},
+    primitives::{Address, U256},
+    providers::{
+        fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
+        utils::Eip1559Estimation,
+        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
+    },
+    pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
+    signers::aws::AwsSigner,
     sol,
 };
 use ports::types::{TransactionResponse, ValidatedFuelBlock};
@@ -13,44 +20,26 @@ use url::Url;
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
 use crate::error::{Error, Result};
 
-pub type AlloyWs = alloy::providers::fillers::FillProvider<
-    alloy::providers::fillers::JoinFill<
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::Identity,
-                    alloy::providers::fillers::GasFiller,
-                >,
-                alloy::providers::fillers::NonceFiller,
-            >,
-            alloy::providers::fillers::ChainIdFiller,
-        >,
-        alloy::providers::fillers::WalletFiller<alloy::network::EthereumWallet>,
+pub type WsProvider = FillProvider<
+    JoinFill<
+        JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
+        WalletFiller<EthereumWallet>,
     >,
-    alloy::providers::RootProvider<alloy::pubsub::PubSubFrontend>,
-    alloy::pubsub::PubSubFrontend,
-    alloy::network::Ethereum,
+    RootProvider<PubSubFrontend>,
+    PubSubFrontend,
+    Ethereum,
 >;
 
 type Instance = IFuelStateContract::IFuelStateContractInstance<
-    alloy::pubsub::PubSubFrontend,
-    alloy::providers::fillers::FillProvider<
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::JoinFill<
-                        alloy::providers::Identity,
-                        alloy::providers::fillers::GasFiller,
-                    >,
-                    alloy::providers::fillers::NonceFiller,
-                >,
-                alloy::providers::fillers::ChainIdFiller,
-            >,
-            alloy::providers::fillers::WalletFiller<alloy::network::EthereumWallet>,
+    PubSubFrontend,
+    FillProvider<
+        JoinFill<
+            JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
+            WalletFiller<EthereumWallet>,
         >,
-        alloy::providers::RootProvider<alloy::pubsub::PubSubFrontend>,
-        alloy::pubsub::PubSubFrontend,
-        alloy::network::Ethereum,
+        RootProvider<PubSubFrontend>,
+        PubSubFrontend,
+        Ethereum,
     >,
 >;
 
@@ -66,20 +55,20 @@ sol!(
 );
 
 #[derive(Clone)]
-pub struct WsConnectionAlloy {
-    provider: AlloyWs,
-    blob_signer: Option<alloy::signers::aws::AwsSigner>,
+pub struct WsConnection {
+    provider: WsProvider,
+    blob_signer: Option<AwsSigner>,
     contract: Instance,
     commit_interval: NonZeroU32,
-    address: alloy::primitives::Address,
+    address: Address,
 }
 
-impl WsConnectionAlloy {
+impl WsConnection {
     pub async fn connect(
         url: &Url,
-        contract_address: alloy::primitives::Address,
-        main_signer: alloy::signers::aws::AwsSigner,
-        blob_signer: Option<alloy::signers::aws::AwsSigner>,
+        contract_address: Address,
+        main_signer: AwsSigner,
+        blob_signer: Option<AwsSigner>,
     ) -> Result<Self> {
         let ws = WsConnect::new(url.clone()); // TODO fix deref
 
@@ -92,7 +81,7 @@ impl WsConnectionAlloy {
             .on_ws(ws)
             .await?;
 
-        let contract_address = alloy::primitives::Address::from_slice(contract_address.as_ref());
+        let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = IFuelStateContract::new(contract_address, provider.clone());
 
         let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
@@ -114,26 +103,16 @@ impl WsConnectionAlloy {
         })
     }
 
-    pub(crate) fn calculate_commit_height(
-        block_height: u32,
-        commit_interval: NonZeroU32,
-    ) -> alloy::primitives::U256 {
-        alloy::primitives::U256::from(block_height / commit_interval)
+    pub(crate) fn calculate_commit_height(block_height: u32, commit_interval: NonZeroU32) -> U256 {
+        U256::from(block_height / commit_interval)
     }
 
-    async fn _balance(
-        &self,
-        address: alloy::primitives::Address,
-    ) -> Result<alloy::primitives::U256> {
+    async fn _balance(&self, address: Address) -> Result<U256> {
         Ok(self.provider.get_balance(address).await?)
     }
 
-    async fn prepare_blob_tx(
-        &self,
-        data: &[u8],
-        address: alloy::primitives::Address,
-    ) -> Result<TransactionRequest> {
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &data).build()?;
+    async fn prepare_blob_tx(&self, data: &[u8], address: Address) -> Result<TransactionRequest> {
+        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
 
         let nonce = self.provider.get_transaction_count(address).await?;
         let gas_price = self.provider.get_gas_price().await?;
@@ -170,23 +149,17 @@ impl WsConnectionAlloy {
     }
 
     fn extract_block_number_from_receipt(receipt: &TransactionReceipt) -> Result<u64> {
-        receipt
-            .block_number
-            .ok_or_else(|| {
-                Error::Other("transaction receipt does not contain block number".to_string())
-            })?
-            .try_into()
-            .map_err(|_| Error::Other("could not convert `block_number` to `u64`".to_string()))
+        receipt.block_number.ok_or_else(|| {
+            Error::Other("transaction receipt does not contain block number".to_string())
+        })
     }
 }
 
 #[async_trait::async_trait]
-impl EthApi for WsConnectionAlloy {
+impl EthApi for WsConnection {
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
         let commit_height = Self::calculate_commit_height(block.height(), self.commit_interval);
-        let contract_call = self
-            .contract
-            .commit(block.hash().into(), commit_height.into());
+        let contract_call = self.contract.commit(block.hash().into(), commit_height);
         let tx = contract_call.send().await?;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
@@ -198,7 +171,7 @@ impl EthApi for WsConnectionAlloy {
         Ok(response)
     }
 
-    async fn balance(&self) -> Result<alloy::primitives::U256> {
+    async fn balance(&self) -> Result<U256> {
         let address = self.address;
         Ok(self.provider.get_balance(address).await?)
     }
@@ -248,10 +221,7 @@ impl EthApi for WsConnectionAlloy {
     async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
         Ok(self
             .contract
-            .finalized(
-                block.hash().into(),
-                alloy::primitives::U256::from(block.height()),
-            )
+            .finalized(block.hash().into(), U256::from(block.height()))
             .call()
             .await?
             ._0)
@@ -261,7 +231,7 @@ impl EthApi for WsConnectionAlloy {
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]> {
         Ok(self
             .contract
-            .blockHashAtCommit(alloy::primitives::U256::from(commit_height))
+            .blockHashAtCommit(U256::from(commit_height))
             .call()
             .await?
             ._0
@@ -276,8 +246,8 @@ mod tests {
     #[test]
     fn calculates_correctly_the_commit_height() {
         assert_eq!(
-            WsConnectionAlloy::calculate_commit_height(10, 3.try_into().unwrap()),
-            alloy::primitives::U256::from(3)
+            WsConnection::calculate_commit_height(10, 3.try_into().unwrap()),
+            U256::from(3)
         );
     }
 }

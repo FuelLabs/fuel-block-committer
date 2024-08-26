@@ -57,8 +57,11 @@ fn deserialize_named_chain<'de, D>(deserializer: D) -> Result<NamedChain, D::Err
 where
     D: serde::Deserializer<'de>,
 {
-    let chain_id: String = Deserialize::deserialize(deserializer).unwrap();
-    NamedChain::from_str(&chain_id).map_err(serde::de::Error::custom)
+    let chain_str: String = Deserialize::deserialize(deserializer).unwrap();
+    NamedChain::from_str(&chain_str).map_err(|_| {
+        let msg = format!("Failed to parse chain from '{chain_str}'");
+        serde::de::Error::custom(msg)
+    })
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>

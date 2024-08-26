@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
-use alloy::primitives::ChainId;
+use alloy::primitives::{Address, ChainId};
 use ports::{
     l1::Result,
     types::{TransactionResponse, ValidatedFuelBlock, U256},
@@ -12,7 +12,7 @@ use crate::AwsClient;
 
 pub use self::event_streamer::EthEventStreamer;
 use self::{
-    connection::WsConnectionAlloy,
+    connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
 
@@ -22,14 +22,14 @@ mod health_tracking_middleware;
 
 #[derive(Clone)]
 pub struct WebsocketClient {
-    inner: HealthTrackingMiddleware<WsConnectionAlloy>,
+    inner: HealthTrackingMiddleware<WsConnection>,
 }
 
 impl WebsocketClient {
     pub async fn connect(
         url: &Url,
         chain_id: ChainId,
-        contract_address: alloy::primitives::Address,
+        contract_address: Address,
         main_key_id: String,
         blob_pool_key_id: Option<String>,
         unhealthy_after_n_errors: usize,
@@ -41,10 +41,10 @@ impl WebsocketClient {
             None
         };
 
-        let main_signer = aws_client.make_signer(main_key_id, chain_id.into()).await?;
+        let main_signer = aws_client.make_signer(main_key_id, chain_id).await?;
 
         let provider =
-            WsConnectionAlloy::connect(url, contract_address, main_signer, blob_signer).await?;
+            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),

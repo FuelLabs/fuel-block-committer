@@ -10,9 +10,8 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-alloy = { workspace = true }
+alloy = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
-ethers-core = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 impl-tools = { workspace = true, optional = true }
@@ -26,7 +25,7 @@ validator = { workspace = true, optional = true }
 [features]
 test-helpers = ["dep:mockall", "dep:rand", "validator?/test-helpers"]
 l1 = [
-  "dep:ethers-core",
+  "dep:alloy",
   "dep:futures",
   "dep:thiserror",
   "dep:async-trait",

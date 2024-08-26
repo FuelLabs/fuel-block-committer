@@ -1,5 +1,4 @@
 #[cfg(feature = "l1")]
-#[cfg(feature = "l1")]
 pub use alloy::primitives::{Address, U256};
 #[cfg(feature = "l1")]
 pub use futures::Stream;

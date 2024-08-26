@@ -21,10 +21,9 @@ alloy = { workspace = true, features = [
     "reqwest-rustls-tls", 
 ] }
 async-trait = { workspace = true }
-aws-config = { workspace = true }
-aws-sdk-kms = { workspace = true, features = ["default", "behavior-version-latest" ] }
+aws-config = { workspace = true, features = ["rustls"] }
+aws-sdk-kms = { workspace = true, features = ["rustls"] }
 c-kzg = { workspace = true }
-ethers = { workspace = true, features = ["ws", "aws", "rustls"] }
 futures = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }

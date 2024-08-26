@@ -135,11 +135,10 @@ impl KmsProcess {
 
         let signer = self.client.make_signer(id.clone(), chain).await?;
 
-        Ok(KmsKey { id, signer, url: self.url.clone() })
-    }
-
-
-    pub fn url(&self) -> &str {
-        &self.url
+        Ok(KmsKey {
+            id,
+            signer,
+            url: self.url.clone(),
+        })
     }
 }

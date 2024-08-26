@@ -1,19 +1,19 @@
-use alloy::providers::Provider;
 use alloy::sol_types::SolEvent;
+use alloy::{primitives::U256, providers::Provider, rpc::types::Filter};
 use futures::{Stream, StreamExt};
 use ports::types::FuelBlockCommittedOnL1;
 
 use crate::error::Result;
 
-use super::connection::{AlloyWs, IFuelStateContract::CommitSubmitted};
+use super::connection::{IFuelStateContract::CommitSubmitted, WsProvider};
 
 pub struct EthEventStreamer {
-    filter: alloy::rpc::types::Filter,
-    provider: AlloyWs,
+    filter: Filter,
+    provider: WsProvider,
 }
 
 impl EthEventStreamer {
-    pub fn new(filter: alloy::rpc::types::Filter, provider: AlloyWs) -> Self {
+    pub fn new(filter: Filter, provider: WsProvider) -> Self {
         Self { filter, provider }
     }
 
@@ -29,7 +29,7 @@ impl EthEventStreamer {
             } = CommitSubmitted::decode_log_data(log.data(), false)?;
             Ok(FuelBlockCommittedOnL1 {
                 fuel_block_hash: blockHash.into(),
-                commit_height: alloy::primitives::U256::from(commitHeight),
+                commit_height: U256::from(commitHeight),
             })
         });
 
