@@ -27,15 +27,12 @@ impl WholeStack {
         let eth_node = start_eth(logs).await?;
         let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
 
-        dbg!("Deploying contract");
         let (contract_args, deployed_contract) = deploy_contract(&eth_node, &main_key).await?;
 
-        dbg!("Starting fuel node");
         let fuel_node = start_fuel_node(logs).await?;
 
         let (db_process, db) = start_db().await?;
 
-        dbg!("Starting committer");
         let committer = start_committer(
             logs,
             blob_support,

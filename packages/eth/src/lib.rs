@@ -2,11 +2,12 @@
 
 use std::{num::NonZeroU32, pin::Pin};
 
+use alloy::primitives::U256;
 use async_trait::async_trait;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, Result},
-    types::{FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock, U256},
+    types::{FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock},
 };
 use websocket::EthEventStreamer;
 

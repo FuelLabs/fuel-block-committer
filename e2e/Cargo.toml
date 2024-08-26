@@ -27,9 +27,9 @@ zip = { workspace = true, features = ["deflate"] }
 [dev-dependencies]
 alloy = { workspace = true, features = [ "signer-aws", "signer-mnemonic", "serde" ] }
 alloy-chains = { workspace = true }
-anyhow = { workspace = true, features = [ "std" ] }
-aws-sdk-kms = { workspace = true, features = [ "rustls" ] }
-aws-config = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
+aws-sdk-kms = { workspace = true, features = ["rustls"] }
+aws-config = { workspace = true, features = ["rustls"] }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel = { workspace = true, features = ["test-helpers"] }
 hex = { workspace = true }
