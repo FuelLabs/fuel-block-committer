@@ -21,7 +21,6 @@ env:
   AWS_ROLE_ARN: arn:aws:iam::024848458133:role/github_oidc_FuelLabs_fuel-block-committer
   AWS_ECR_ORG: fuellabs
   REGISTRY: ghcr.io
-  ECR_BUILD_CACHE_REPO: fuel-block-committer-cache
 
 jobs:
   verify-rust-version:
