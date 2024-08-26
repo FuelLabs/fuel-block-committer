@@ -181,11 +181,15 @@ jobs:
           username: fuellabs
           password: ${{ secrets.DOCKER_IO_READ_ONLY_TOKEN }}
 
+      - name: Downcase and generate Docker image URL
+        run: |
+          echo "REGISTRY_URL=${REGISTRY@L}/${IMAGE_NAME@L}" >>${GITHUB_ENV}
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY_URL }}
 
       - name: Build Docker image
         uses: docker/build-push-action@v4
@@ -199,7 +203,7 @@ jobs:
           cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_BUILD_CACHE_REPO }}:latest-${{ matrix.arch.runner }},mode=max,image-manifest=true,oci-mediatypes=true
           #outputs: type=docker,dest=/tmp/img-${{ matrix.arch.runner }}.tar
           outputs: |
-            type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+            type=image,name=${{ env.REGISTRY_URL }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
