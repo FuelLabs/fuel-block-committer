@@ -1,6 +1,6 @@
 use std::{num::NonZeroU32, time::Duration};
 
-use eth::AwsRegion;
+use eth::AwsConfig;
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{BlockCommitter, CommitListener, Runner, WalletBalanceTracker};
@@ -127,8 +127,8 @@ pub async fn l1_adapter(
     internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let region = AwsRegion::from_env().unwrap();
-    let aws_client = AwsClient::new(region).await;
+    let aws_config = AwsConfig::from_env().expect("Could not load AWS config");
+    let aws_client = AwsClient::new(aws_config).await;
 
     let l1 = L1::connect(
         config.eth.rpc.clone(),

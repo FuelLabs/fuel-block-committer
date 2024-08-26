@@ -1,6 +1,6 @@
 use alloy::signers::{aws::AwsSigner, Signer};
 use anyhow::Context;
-use eth::{Address, AwsClient, AwsRegion};
+use eth::{Address, AwsClient, AwsConfig};
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -48,8 +48,8 @@ impl Kms {
         let port = container.get_host_port_ipv4(4566).await?;
         let url = format!("http://localhost:{}", port);
 
-        let region = AwsRegion::Test(url.clone());
-        let client = AwsClient::new(region).await;
+        let config = AwsConfig::Test(url.clone());
+        let client = AwsClient::new(config).await;
 
         Ok(KmsProcess {
             _container: container,

@@ -8,7 +8,7 @@ use alloy::{
     rpc::types::TransactionRequest,
 };
 use alloy_chains::NamedChain;
-use eth::{AwsClient, AwsRegion, WebsocketClient};
+use eth::{AwsClient, AwsConfig, WebsocketClient};
 use ports::types::{Address, ValidatedFuelBlock};
 use serde::Deserialize;
 use url::Url;
@@ -23,7 +23,7 @@ pub struct DeployedContract {
 impl DeployedContract {
     pub async fn connect(url: Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
         let blob_wallet = None;
-        let aws_client = AwsClient::new(AwsRegion::Test(key.url)).await;
+        let aws_client = AwsClient::new(AwsConfig::Test(key.url)).await;
 
         let chain_state_contract = WebsocketClient::connect(
             url,

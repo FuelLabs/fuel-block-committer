@@ -98,7 +98,7 @@ impl EthNodeProcess {
             .deploy(self.ws_url(), &kms_key)
             .await?;
 
-        DeployedContract::connect(&self.ws_url(), proxy_contract_address, kms_key).await
+        DeployedContract::connect(self.ws_url(), proxy_contract_address, kms_key).await
     }
 
     fn wallet(&self, index: u32) -> PrivateKeySigner {
