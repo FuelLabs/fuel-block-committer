@@ -231,6 +231,10 @@ jobs:
       packages: write
       id-token: write
     steps:
+      - name: Setup environment
+        run: |
+          echo "REGISTRY_URL=${REGISTRY@L}/${IMAGE_NAME@L}" >>${GITHUB_ENV}
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -271,8 +275,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
+            ${{ env.REGISTRY_URL }}
             ${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha
             type=ref,event=branch
@@ -291,7 +295,7 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}@sha256:%s ' *)
+            $(printf '${{ env.REGISTRY_URL }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
