@@ -21,7 +21,7 @@ pub struct DeployedContract {
 }
 
 impl DeployedContract {
-    pub async fn connect(url: &Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
+    pub async fn connect(url: Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
         let blob_wallet = None;
         let aws_client = AwsClient::new(AwsRegion::Test(key.url)).await;
 

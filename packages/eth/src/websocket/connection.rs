@@ -30,7 +30,7 @@ pub type WsProvider = FillProvider<
     Ethereum,
 >;
 
-type Instance = IFuelStateContract::IFuelStateContractInstance<
+type FuelStateContract = IFuelStateContract::IFuelStateContractInstance<
     PubSubFrontend,
     FillProvider<
         JoinFill<
@@ -58,101 +58,9 @@ sol!(
 pub struct WsConnection {
     provider: WsProvider,
     blob_signer: Option<AwsSigner>,
-    contract: Instance,
+    contract: FuelStateContract,
     commit_interval: NonZeroU32,
     address: Address,
-}
-
-impl WsConnection {
-    pub async fn connect(
-        url: &Url,
-        contract_address: Address,
-        main_signer: AwsSigner,
-        blob_signer: Option<AwsSigner>,
-    ) -> Result<Self> {
-        let ws = WsConnect::new(url.clone()); // TODO fix deref
-
-        let address = main_signer.address();
-
-        let wallet = EthereumWallet::from(main_signer);
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_ws(ws)
-            .await?;
-
-        let contract_address = Address::from_slice(contract_address.as_ref());
-        let contract = IFuelStateContract::new(contract_address, provider.clone());
-
-        let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
-
-        let commit_interval = u32::try_from(interval_u256)
-            .map_err(|e| Error::Other(e.to_string()))
-            .and_then(|value| {
-                NonZeroU32::new(value).ok_or_else(|| {
-                    Error::Other("l1 contract reported a commit interval of 0".to_string())
-                })
-            })?;
-
-        Ok(Self {
-            provider,
-            contract,
-            commit_interval,
-            address,
-            blob_signer,
-        })
-    }
-
-    pub(crate) fn calculate_commit_height(block_height: u32, commit_interval: NonZeroU32) -> U256 {
-        U256::from(block_height / commit_interval)
-    }
-
-    async fn _balance(&self, address: Address) -> Result<U256> {
-        Ok(self.provider.get_balance(address).await?)
-    }
-
-    async fn prepare_blob_tx(&self, data: &[u8], address: Address) -> Result<TransactionRequest> {
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
-
-        let nonce = self.provider.get_transaction_count(address).await?;
-        let gas_price = self.provider.get_gas_price().await?;
-
-        let Eip1559Estimation {
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
-        } = self.provider.estimate_eip1559_fees(None).await?;
-
-        let blob_tx = TransactionRequest::default()
-            .with_to(address)
-            .with_nonce(nonce)
-            .with_max_fee_per_blob_gas(gas_price)
-            .with_max_fee_per_gas(max_fee_per_gas)
-            .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
-            .with_blob_sidecar(sidecar);
-
-        Ok(blob_tx)
-    }
-
-    fn convert_to_tx_response(
-        tx_receipt: Option<TransactionReceipt>,
-    ) -> Result<Option<TransactionResponse>> {
-        let Some(tx_receipt) = tx_receipt else {
-            return Ok(None);
-        };
-
-        let block_number = Self::extract_block_number_from_receipt(&tx_receipt)?;
-
-        Ok(Some(TransactionResponse::new(
-            block_number,
-            tx_receipt.status(),
-        )))
-    }
-
-    fn extract_block_number_from_receipt(receipt: &TransactionReceipt) -> Result<u64> {
-        receipt.block_number.ok_or_else(|| {
-            Error::Other("transaction receipt does not contain block number".to_string())
-        })
-    }
 }
 
 #[async_trait::async_trait]
@@ -236,6 +144,98 @@ impl EthApi for WsConnection {
             .await?
             ._0
             .into())
+    }
+}
+
+impl WsConnection {
+    pub async fn connect(
+        url: Url,
+        contract_address: Address,
+        main_signer: AwsSigner,
+        blob_signer: Option<AwsSigner>,
+    ) -> Result<Self> {
+        let ws = WsConnect::new(url);
+
+        let address = main_signer.address();
+
+        let wallet = EthereumWallet::from(main_signer);
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet)
+            .on_ws(ws)
+            .await?;
+
+        let contract_address = Address::from_slice(contract_address.as_ref());
+        let contract = FuelStateContract::new(contract_address, provider.clone());
+
+        let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
+
+        let commit_interval = u32::try_from(interval_u256)
+            .map_err(|e| Error::Other(e.to_string()))
+            .and_then(|value| {
+                NonZeroU32::new(value).ok_or_else(|| {
+                    Error::Other("l1 contract reported a commit interval of 0".to_string())
+                })
+            })?;
+
+        Ok(Self {
+            provider,
+            contract,
+            commit_interval,
+            address,
+            blob_signer,
+        })
+    }
+
+    pub(crate) fn calculate_commit_height(block_height: u32, commit_interval: NonZeroU32) -> U256 {
+        U256::from(block_height / commit_interval)
+    }
+
+    async fn _balance(&self, address: Address) -> Result<U256> {
+        Ok(self.provider.get_balance(address).await?)
+    }
+
+    async fn prepare_blob_tx(&self, data: &[u8], address: Address) -> Result<TransactionRequest> {
+        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
+
+        let nonce = self.provider.get_transaction_count(address).await?;
+        let gas_price = self.provider.get_gas_price().await?;
+
+        let Eip1559Estimation {
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+        } = self.provider.estimate_eip1559_fees(None).await?;
+
+        let blob_tx = TransactionRequest::default()
+            .with_to(address)
+            .with_nonce(nonce)
+            .with_max_fee_per_blob_gas(gas_price)
+            .with_max_fee_per_gas(max_fee_per_gas)
+            .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+            .with_blob_sidecar(sidecar);
+
+        Ok(blob_tx)
+    }
+
+    fn convert_to_tx_response(
+        tx_receipt: Option<TransactionReceipt>,
+    ) -> Result<Option<TransactionResponse>> {
+        let Some(tx_receipt) = tx_receipt else {
+            return Ok(None);
+        };
+
+        let block_number = Self::extract_block_number_from_receipt(&tx_receipt)?;
+
+        Ok(Some(TransactionResponse::new(
+            block_number,
+            tx_receipt.status(),
+        )))
+    }
+
+    fn extract_block_number_from_receipt(receipt: &TransactionReceipt) -> Result<u64> {
+        receipt.block_number.ok_or_else(|| {
+            Error::Other("transaction receipt does not contain block number".to_string())
+        })
     }
 }
 

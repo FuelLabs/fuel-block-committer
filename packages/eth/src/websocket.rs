@@ -27,7 +27,7 @@ pub struct WebsocketClient {
 
 impl WebsocketClient {
     pub async fn connect(
-        url: &Url,
+        url: Url,
         chain_id: ChainId,
         contract_address: Address,
         main_key_id: String,
