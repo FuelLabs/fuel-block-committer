@@ -140,9 +140,7 @@ pub struct CommitterProcess {
 impl CommitterProcess {
     pub async fn wait_for_committed_block(&self, height: u64) -> anyhow::Result<()> {
         loop {
-            let skibidi = self.fetch_latest_committed_block().await;
-            dbg!(&skibidi);
-            match skibidi {
+            match self.fetch_latest_committed_block().await {
                 Ok(current_height) if current_height >= height => break,
                 _ => {
                     tokio::time::sleep(Duration::from_secs(1)).await;
