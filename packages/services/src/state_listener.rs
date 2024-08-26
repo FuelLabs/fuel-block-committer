@@ -3,6 +3,7 @@ use ports::{
     storage::Storage,
     types::{SubmissionTx, TransactionState},
 };
+use tracing::info;
 
 use super::Runner;
 
@@ -31,15 +32,17 @@ where
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
         for tx in pending_txs {
-            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx.hash).await? else {
+            let tx_hash = tx.hash;
+            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx_hash).await? else {
                 continue; // not committed
             };
 
             if !tx_response.succeeded() {
                 self.storage
-                    .update_submission_tx_state(tx.hash, TransactionState::Failed)
+                    .update_submission_tx_state(tx_hash, TransactionState::Failed)
                     .await?;
 
+                info!("failed blob tx {tx_hash:?}!");
                 continue;
             }
 
@@ -50,8 +53,10 @@ where
             }
 
             self.storage
-                .update_submission_tx_state(tx.hash, TransactionState::Finalized)
+                .update_submission_tx_state(tx_hash, TransactionState::Finalized)
                 .await?;
+
+            info!("finalized blob tx {tx_hash:?}!");
         }
 
         Ok(())
