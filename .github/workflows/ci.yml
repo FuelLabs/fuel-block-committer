@@ -191,7 +191,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}
 
       - name: Build Docker image
         uses: docker/build-push-action@v4
@@ -270,8 +270,8 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             ${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha
             type=ref,event=branch
