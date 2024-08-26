@@ -152,6 +152,12 @@ jobs:
       packages: write
       id-token: write
     steps:
+      - name: Setup environment
+        run: |
+          echo "REGISTRY_URL=${REGISTRY@L}/${IMAGE_NAME@L}" >>${GITHUB_ENV}
+          platform=${{ matrix.arch.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -180,10 +186,6 @@ jobs:
         with:
           username: fuellabs
           password: ${{ secrets.DOCKER_IO_READ_ONLY_TOKEN }}
-
-      - name: Downcase and generate Docker image URL
-        run: |
-          echo "REGISTRY_URL=${REGISTRY@L}/${IMAGE_NAME@L}" >>${GITHUB_ENV}
 
       - name: Docker metadata
         id: meta
