@@ -27,7 +27,7 @@ impl AwsConfig {
         }
     }
 
-    pub fn as_region(&self) -> Region {
+    pub fn region(&self) -> Region {
         match self {
             AwsConfig::Prod(region) => region.clone(),
             AwsConfig::Test(_) => Region::new("us-east-1"),
@@ -35,12 +35,15 @@ impl AwsConfig {
     }
 
     pub async fn load(&self) -> SdkConfig {
-        let loader = aws_config::defaults(BehaviorVersion::latest()).region(self.as_region());
+        let loader = aws_config::defaults(BehaviorVersion::latest()).region(self.region());
 
         let loader = match self {
-            AwsConfig::Prod(_) => {
-                loader.credentials_provider(DefaultCredentialsChain::builder().build().await)
-            }
+            AwsConfig::Prod(_) => loader.credentials_provider(
+                DefaultCredentialsChain::builder()
+                    .region(self.region())
+                    .build()
+                    .await,
+            ),
             AwsConfig::Test(url) => {
                 let credentials =
                     Credentials::new("test", "test", None, None, "Static Credentials");
