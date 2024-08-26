@@ -168,12 +168,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Login to Amazon ECR Public
-        id: login-ecr-public
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
       - name: Log in to the ghcr.io registry
         uses: docker/login-action@v3
         with:
@@ -191,7 +185,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build Docker image
         uses: docker/build-push-action@v4
@@ -199,13 +193,13 @@ jobs:
           context: .
           platforms: ${{ matrix.arch.platform }}
           file: Dockerfile
-          tags: ${{ steps.meta.outputs.tags }}
+          #tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_BUILD_CACHE_REPO }}:latest-${{ matrix.arch.runner }}
           cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_BUILD_CACHE_REPO }}:latest-${{ matrix.arch.runner }},mode=max,image-manifest=true,oci-mediatypes=true
           #outputs: type=docker,dest=/tmp/img-${{ matrix.arch.runner }}.tar
           outputs: |
-            type=image,name=${{ steps.login-ecr-public.outputs.registry }}/${{ env.AWS_ECR_ORG }}/${{ env.REPO_NAME }},push-by-digest=true,name-canonical=true,push=true
+            type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
