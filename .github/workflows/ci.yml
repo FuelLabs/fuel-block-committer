@@ -142,6 +142,7 @@ jobs:
     strategy:
       matrix:
         arch: [
+          # build on native runners instead of using emulation
           {platform: linux/amd64, runner: buildjet-8vcpu-ubuntu-2204},
           {platform: linux/arm64, runner: buildjet-8vcpu-ubuntu-2204-arm}
         ]
@@ -149,7 +150,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     steps:
       - name: Setup environment
         run: |
