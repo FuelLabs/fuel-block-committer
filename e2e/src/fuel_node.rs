@@ -41,8 +41,8 @@ impl FuelNode {
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-core"))?;
 
-        let config_dir = tempfile::tempdir()?;
-        Self::create_state_config(config_dir.path())?;
+        let snapshot_dir = tempfile::tempdir()?;
+        Self::create_state_config(snapshot_dir.path())?;
 
         let mut cmd = tokio::process::Command::new("fuel-core");
 
@@ -54,7 +54,7 @@ impl FuelNode {
             .arg("--port")
             .arg(unused_port.to_string())
             .arg("--snapshot")
-            .arg(config_dir.path())
+            .arg(snapshot_dir.path())
             .arg("--db-path")
             .arg(db_dir.path())
             .arg("--debug")
