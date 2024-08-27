@@ -42,8 +42,11 @@ c-kzg = { version = "1.0", default-features = false }
 clap = { version = "4.5", default-features = false }
 config = { version = "0.14", default-features = false }
 fuel-core-client = { version = "0.31", default-features = false }
+fuel-core-chain-config = { version = "0.31", features = ["test-helpers"] }
 fuel-crypto = { version = "0.55", default-features = false }
+fuels = { version = "0.65", default-features = false }
 futures = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 humantime = { version = "2.1", default-features = false }
 impl-tools = { version = "0.10.0", default-features = false }

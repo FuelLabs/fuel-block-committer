@@ -1,4 +1,12 @@
+use std::{path::PathBuf, str::FromStr};
+
 use fuel::HttpClient;
+use fuel_core_chain_config::{ChainConfig, SnapshotWriter, StateConfig, TESTNET_WALLET_SECRETS};
+use fuels::{
+    accounts::{provider::Provider, wallet::WalletUnlocked, Account},
+    crypto::SecretKey as FuelKey,
+    types::{bech32::Bech32Address, transaction::TxPolicies},
+};
 use ports::fuel::FuelPublicKey;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use url::Url;
@@ -16,10 +24,25 @@ pub struct FuelNodeProcess {
 }
 
 impl FuelNode {
+    fn create_state_config(path: impl Into<PathBuf>) -> anyhow::Result<()> {
+        let chain_config = ChainConfig::local_testnet();
+        let state_config = StateConfig::local_testnet();
+
+        let snapshot = SnapshotWriter::json(path);
+        snapshot
+            .write_state_config(state_config, &chain_config)
+            .map_err(|_| anyhow::anyhow!("Failed to write state config"))?;
+
+        Ok(())
+    }
+
     pub async fn start(&self) -> anyhow::Result<FuelNodeProcess> {
         let db_dir = tempfile::tempdir()?;
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-core"))?;
+
+        let config_dir = tempfile::tempdir()?;
+        Self::create_state_config(config_dir.path())?;
 
         let mut cmd = tokio::process::Command::new("fuel-core");
 
@@ -30,6 +53,8 @@ impl FuelNode {
         cmd.arg("run")
             .arg("--port")
             .arg(unused_port.to_string())
+            .arg("--snapshot")
+            .arg(config_dir.path())
             .arg("--db-path")
             .arg(db_dir.path())
             .arg("--debug")
@@ -72,6 +97,29 @@ impl FuelNode {
 impl FuelNodeProcess {
     pub fn client(&self) -> HttpClient {
         HttpClient::new(&self.url, 5)
+    }
+
+    pub async fn produce_transactions(&self, num: usize) -> anyhow::Result<()> {
+        let provider = Provider::connect(&self.url).await?;
+        let base_asset_id = provider.base_asset_id();
+
+        let secret = TESTNET_WALLET_SECRETS[0];
+        let private_key = FuelKey::from_str(&secret).expect("valid secret key");
+        let wallet = WalletUnlocked::new_from_private_key(private_key, Some(provider.clone()));
+
+        const AMOUNT: u64 = 1;
+        for _ in 0..num {
+            wallet
+                .transfer(
+                    &Bech32Address::default(),
+                    AMOUNT,
+                    *base_asset_id,
+                    TxPolicies::default(),
+                )
+                .await?;
+        }
+
+        Ok(())
     }
 
     async fn wait_until_healthy(&self) {

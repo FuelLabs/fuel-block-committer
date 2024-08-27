@@ -53,4 +53,21 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn submitted_state_and_was_finalized() -> Result<()> {
+        // given
+        let show_logs = false;
+        let blob_support = true;
+        let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
+
+        // when
+        stack.fuel_node.produce_transactions(1).await?;
+        stack.fuel_node.client().produce_blocks(1).await?;
+
+        // then
+        stack.eth_node.wait_for_included_blob().await?;
+
+        Ok(())
+    }
 }

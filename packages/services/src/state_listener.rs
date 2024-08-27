@@ -1,4 +1,8 @@
 use async_trait::async_trait;
+use metrics::{
+    prometheus::{core::Collector, IntGauge, Opts},
+    RegistersMetrics,
+};
 use ports::{
     storage::Storage,
     types::{SubmissionTx, TransactionState},
@@ -11,6 +15,7 @@ pub struct StateListener<L1, Db> {
     l1_adapter: L1,
     storage: Db,
     num_blocks_to_finalize: u64,
+    metrics: Metrics,
 }
 
 impl<L1, Db> StateListener<L1, Db> {
@@ -19,6 +24,7 @@ impl<L1, Db> StateListener<L1, Db> {
             l1_adapter,
             storage,
             num_blocks_to_finalize,
+            metrics: Metrics::default(),
         }
     }
 }
@@ -57,6 +63,10 @@ where
                 .await?;
 
             info!("finalized blob tx {tx_hash:?}!");
+
+            self.metrics
+                .last_used_eth_block
+                .set(i64::from(tx_response.block_number() as i64)); // TODO: conversion
         }
 
         Ok(())
@@ -79,6 +89,31 @@ where
         self.check_pending_txs(pending_txs).await?;
 
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct Metrics {
+    last_used_eth_block: IntGauge,
+}
+
+impl<L1, Db> RegistersMetrics for StateListener<L1, Db> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
+        vec![Box::new(self.metrics.last_used_eth_block.clone())]
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let last_used_eth_block = IntGauge::with_opts(Opts::new(
+            "last_used_eth_block",
+            "The height of the latest Ethereum block used for state submission.",
+        ))
+        .expect("last_used_eth_block metric to be correctly configured");
+
+        Self {
+            last_used_eth_block,
+        }
     }
 }
 

@@ -1,7 +1,8 @@
 mod state_contract;
-use std::time::Duration;
+use std::{future, time::Duration};
 
 use alloy::{
+    consensus::constants::EIP4844_TX_TYPE_ID,
     network::{EthereumWallet, TransactionBuilder},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
@@ -12,6 +13,7 @@ use alloy::{
 };
 use alloy_chains::NamedChain;
 use eth::Address;
+use futures_util::StreamExt;
 use ports::types::U256;
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
@@ -119,6 +121,28 @@ impl EthNodeProcess {
 
     pub fn chain_id(&self) -> u64 {
         self.chain_id
+    }
+
+    pub async fn wait_for_included_blob(&self) -> anyhow::Result<()> {
+        let ws = WsConnect::new(self.ws_url());
+        let provider = ProviderBuilder::new().on_ws(ws).await?;
+
+        let subscription = provider.subscribe_blocks().await?;
+        subscription
+            .into_stream()
+            .take_while(|block| {
+                future::ready({
+                    block.transactions.txns().any(|tx| {
+                        tx.transaction_type
+                            .map(|tx_type| tx_type == EIP4844_TX_TYPE_ID)
+                            .unwrap_or(false)
+                    })
+                })
+            })
+            .collect::<Vec<_>>()
+            .await;
+
+        Ok(())
     }
 
     pub async fn fund(&self, address: Address, amount: U256) -> anyhow::Result<()> {
