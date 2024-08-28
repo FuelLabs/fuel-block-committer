@@ -45,8 +45,7 @@ impl BlockValidator {
 
         if *producer_addr != self.producer_addr {
             return Err(Error::BlockValidation(format!(
-                "producer addr `{}` does not match \
-                 expected addr`{}`.",
+                "producer addr '{}' does not match expected addr '{}'.",
                 hex::encode(producer_addr),
                 hex::encode(self.producer_addr)
             )));
@@ -78,10 +77,10 @@ impl BlockValidator {
 
         let recovered_producer_addr = *signature
             .recover(&Message::from_bytes(*fuel_block.id))
-            .map_err(|_| {
-                Error::BlockValidation(
-                    "failed to recover public key from PoAConsensus signature".to_string(),
-                )
+            .map_err(|e| {
+                Error::BlockValidation(format!(
+                    "failed to recover public key from PoAConsensus signature: {e:?}",
+                ))
             })?
             .hash();
 
@@ -160,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "does not match expected public key")]
+    #[should_panic(expected = "does not match expected addr")]
     fn validate_public_key_mistmach() {
         let secret_key = given_secret_key();
         let fuel_block = given_a_block(Some(secret_key));
@@ -192,14 +191,23 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "signature validation failed for fuel block with id:")]
+    #[should_panic(
+        expected = "recovered producer addr `286b769a36b01cebc43cd9820ba709b438b14566e16a287c36881194eacc45c6` does not match expected addr`f95112e76de29dca6ed315c5a5be7855e62dee55478077cf209554d5bfb7cd85`."
+    )]
     fn validate_block_consensus_invalid_signature() {
-        let secret_key = given_secret_key();
-        let mut fuel_block = given_a_block(Some(secret_key));
+        let correct_secret_key = given_secret_key();
+
+        let mut fuel_block = given_a_block(Some(correct_secret_key));
+        let invalid_signature = {
+            let different_secret_key = SecretKey::random(&mut StdRng::seed_from_u64(43));
+            let id_message = Message::from_bytes(*fuel_block.id);
+            Signature::sign(&different_secret_key, &id_message)
+        };
+
         fuel_block.consensus = FuelConsensus::PoAConsensus(FuelPoAConsensus {
-            signature: Signature::default(),
+            signature: invalid_signature,
         });
-        let validator = BlockValidator::new(*secret_key.public_key().hash());
+        let validator = BlockValidator::new(*correct_secret_key.public_key().hash());
 
         validator.validate(&fuel_block).unwrap();
     }
