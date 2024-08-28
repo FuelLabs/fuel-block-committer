@@ -33,7 +33,7 @@ aws-config = { workspace = true, features = ["rustls"] }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel = { workspace = true, features = ["test-helpers"] }
 fuel-core-chain-config = { workspace = true, features = ["test-helpers"] }
-fuels = { workspace = true, features = ["default"] }
+fuel-core-types = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 portpicker = { workspace = true }

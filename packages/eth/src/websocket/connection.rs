@@ -116,11 +116,13 @@ impl EthApi for WsConnection {
             return Err(Error::Other("blob pool signer not configured".to_string()));
         };
 
+        dbg!(">>>>>>>>>>PREPARE");
         let blob_tx = self
             .prepare_blob_tx(&state_data, blob_pool_signer.address())
             .await?;
 
         let tx = self.provider.send_transaction(blob_tx).await?;
+        dbg!("SENT");
 
         Ok(tx.tx_hash().0)
     }
@@ -198,7 +200,7 @@ impl WsConnection {
     async fn prepare_blob_tx(&self, data: &[u8], address: Address) -> Result<TransactionRequest> {
         let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
 
-        let nonce = self.provider.get_transaction_count(address).await?;
+        let nonce = self.provider.get_transaction_count(address).await? + 1;
         let gas_price = self.provider.get_gas_price().await?;
 
         let Eip1559Estimation {
@@ -213,6 +215,8 @@ impl WsConnection {
             .with_max_fee_per_gas(max_fee_per_gas)
             .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
             .with_blob_sidecar(sidecar);
+
+        dbg!(">>>>>>>>>>>>>>>>>>>>>TRY SENT ", nonce);
 
         Ok(blob_tx)
     }

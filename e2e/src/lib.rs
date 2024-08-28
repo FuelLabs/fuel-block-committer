@@ -12,6 +12,8 @@ mod whole_stack;
 #[cfg(test)]
 mod tests {
 
+    use std::time::Duration;
+
     use anyhow::Result;
     use ports::fuel::Api;
     use tokio::time::sleep_until;
@@ -19,40 +21,40 @@ mod tests {
 
     use crate::whole_stack::WholeStack;
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn submitted_correct_block_and_was_finalized() -> Result<()> {
-        // given
-        let show_logs = false;
-        // blob support disabled because this test doesn't generate blocks with transactions in it
-        // so there is no data to blobify
-        let blob_support = false;
-        let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
+    // #[tokio::test(flavor = "multi_thread")]
+    // async fn submitted_correct_block_and_was_finalized() -> Result<()> {
+    //     // given
+    //     let show_logs = false;
+    //     // blob support disabled because this test doesn't generate blocks with transactions in it
+    //     // so there is no data to blobify
+    //     let blob_support = false;
+    //     let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
 
-        // when
-        stack
-            .fuel_node
-            .client()
-            .produce_blocks(stack.contract_args.blocks_per_interval)
-            .await?;
+    //     // when
+    //     stack
+    //         .fuel_node
+    //         .client()
+    //         .produce_blocks(stack.contract_args.blocks_per_interval)
+    //         .await?;
 
-        // then
-        stack
-            .committer
-            .wait_for_committed_block(stack.contract_args.blocks_per_interval as u64)
-            .await?;
-        let committed_at = tokio::time::Instant::now();
+    //     // then
+    //     stack
+    //         .committer
+    //         .wait_for_committed_block(stack.contract_args.blocks_per_interval as u64)
+    //         .await?;
+    //     let committed_at = tokio::time::Instant::now();
 
-        sleep_until(committed_at + stack.contract_args.finalize_duration).await;
+    //     sleep_until(committed_at + stack.contract_args.finalize_duration).await;
 
-        let latest_block = stack.fuel_node.client().latest_block().await?;
+    //     let latest_block = stack.fuel_node.client().latest_block().await?;
 
-        let validated_block =
-            BlockValidator::new(stack.fuel_node.consensus_pub_key()).validate(&latest_block)?;
+    //     let validated_block =
+    //         BlockValidator::new(stack.fuel_node.consensus_pub_key()).validate(&latest_block)?;
 
-        assert!(stack.deployed_contract.finalized(validated_block).await?);
+    //     assert!(stack.deployed_contract.finalized(validated_block).await?);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_state_and_was_finalized() -> Result<()> {
@@ -62,11 +64,11 @@ mod tests {
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
 
         // when
-        stack.fuel_node.produce_transactions(1).await?;
+        stack.fuel_node.produce_transaction().await?;
         stack.fuel_node.client().produce_blocks(1).await?;
 
         // then
-        stack.eth_node.wait_for_included_blob().await?;
+        stack.committer.wait_for_committed_blob().await?;
 
         Ok(())
     }

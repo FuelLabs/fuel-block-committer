@@ -65,8 +65,8 @@ where
             info!("finalized blob tx {tx_hash:?}!");
 
             self.metrics
-                .last_used_eth_block
-                .set(i64::from(tx_response.block_number() as i64)); // TODO: conversion
+                .last_eth_block_w_blob
+                .set(tx_response.block_number() as i64); // TODO: conversion
         }
 
         Ok(())
@@ -94,25 +94,25 @@ where
 
 #[derive(Clone)]
 struct Metrics {
-    last_used_eth_block: IntGauge,
+    last_eth_block_w_blob: IntGauge,
 }
 
 impl<L1, Db> RegistersMetrics for StateListener<L1, Db> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.metrics.last_used_eth_block.clone())]
+        vec![Box::new(self.metrics.last_eth_block_w_blob.clone())]
     }
 }
 
 impl Default for Metrics {
     fn default() -> Self {
-        let last_used_eth_block = IntGauge::with_opts(Opts::new(
-            "last_used_eth_block",
+        let last_eth_block_w_blob = IntGauge::with_opts(Opts::new(
+            "last_eth_block_w_blob",
             "The height of the latest Ethereum block used for state submission.",
         ))
-        .expect("last_used_eth_block metric to be correctly configured");
+        .expect("last_eth_block_w_blob metric to be correctly configured");
 
         Self {
-            last_used_eth_block,
+            last_eth_block_w_blob,
         }
     }
 }

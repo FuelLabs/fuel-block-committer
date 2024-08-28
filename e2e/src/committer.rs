@@ -151,7 +151,28 @@ impl CommitterProcess {
         Ok(())
     }
 
+    pub async fn wait_for_committed_blob(&self) -> anyhow::Result<()> {
+        loop {
+            match self.fetch_latest_blob_block().await {
+                Ok(_) => break,
+                _ => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn fetch_latest_committed_block(&self) -> anyhow::Result<u64> {
+        self.fetch_metric_value("latest_committed_block").await
+    }
+
+    async fn fetch_latest_blob_block(&self) -> anyhow::Result<u64> {
+        self.fetch_metric_value("last_eth_block_w_blob").await
+    }
+
+    async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
         let response = reqwest::get(format!("http://localhost:{}/metrics", self.port))
             .await?
             .error_for_status()?
@@ -160,8 +181,8 @@ impl CommitterProcess {
 
         let height_line = response
             .lines()
-            .find(|line| line.starts_with("latest_committed_block"))
-            .ok_or_else(|| anyhow::anyhow!("couldn't find latest_committed_block metric"))?;
+            .find(|line| line.starts_with(metric_name))
+            .ok_or_else(|| anyhow::anyhow!("couldn't find {} metric", metric_name))?;
 
         Ok(height_line
             .split_whitespace()

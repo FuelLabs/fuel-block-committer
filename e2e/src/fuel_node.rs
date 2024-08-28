@@ -1,14 +1,16 @@
 use std::{path::PathBuf, str::FromStr};
 
 use fuel::HttpClient;
-use fuel_core_chain_config::{ChainConfig, SnapshotWriter, StateConfig, TESTNET_WALLET_SECRETS};
-use fuels::{
-    accounts::{provider::Provider, wallet::WalletUnlocked, Account},
-    crypto::SecretKey as FuelKey,
-    types::{bech32::Bech32Address, transaction::TxPolicies},
+use fuel_core_chain_config::{
+    ChainConfig, ConsensusConfig, SnapshotWriter, StateConfig, TESTNET_WALLET_SECRETS,
+};
+use fuel_core_types::{
+    fuel_crypto::SecretKey as FuelSecretKey,
+    fuel_tx::{AssetId, Finalizable, Input, Output, TransactionBuilder, TxPointer},
+    fuel_types::Address,
+    fuel_vm::SecretKey as FuelKey,
 };
 use ports::fuel::FuelPublicKey;
-use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use url::Url;
 
 #[derive(Default, Debug)]
@@ -20,12 +22,20 @@ pub struct FuelNodeProcess {
     _db_dir: tempfile::TempDir,
     _child: tokio::process::Child,
     url: Url,
-    public_key: PublicKey,
+    public_key: FuelPublicKey,
 }
 
 impl FuelNode {
-    fn create_state_config(path: impl Into<PathBuf>) -> anyhow::Result<()> {
-        let chain_config = ChainConfig::local_testnet();
+    fn create_state_config(
+        path: impl Into<PathBuf>,
+        consensus_key: &FuelPublicKey,
+    ) -> anyhow::Result<()> {
+        let chain_config = ChainConfig {
+            consensus: ConsensusConfig::PoA {
+                signing_key: Input::owner(consensus_key),
+            },
+            ..ChainConfig::local_testnet()
+        };
         let state_config = StateConfig::local_testnet();
 
         let snapshot = SnapshotWriter::json(path);
@@ -41,14 +51,13 @@ impl FuelNode {
         let unused_port = portpicker::pick_unused_port()
             .ok_or_else(|| anyhow::anyhow!("No free port to start fuel-core"))?;
 
-        let snapshot_dir = tempfile::tempdir()?;
-        Self::create_state_config(snapshot_dir.path())?;
-
         let mut cmd = tokio::process::Command::new("fuel-core");
 
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::new(&mut rand::thread_rng());
-        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key = FuelSecretKey::random(&mut rand::thread_rng());
+        let public_key = secret_key.public_key();
+
+        let snapshot_dir = tempfile::tempdir()?;
+        Self::create_state_config(snapshot_dir.path(), &public_key)?;
 
         cmd.arg("run")
             .arg("--port")
@@ -60,7 +69,7 @@ impl FuelNode {
             .arg("--debug")
             .env(
                 "CONSENSUS_KEY_SECRET",
-                format!("{}", secret_key.display_secret()),
+                format!("{}", secret_key.to_string()),
             )
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null());
@@ -99,25 +108,41 @@ impl FuelNodeProcess {
         HttpClient::new(&self.url, 5)
     }
 
-    pub async fn produce_transactions(&self, num: usize) -> anyhow::Result<()> {
-        let provider = Provider::connect(&self.url).await?;
-        let base_asset_id = provider.base_asset_id();
+    pub async fn produce_transaction(&self) -> anyhow::Result<()> {
+        let mut tx = TransactionBuilder::script(vec![], vec![]);
+
+        tx.script_gas_limit(1_000_000);
 
         let secret = TESTNET_WALLET_SECRETS[0];
-        let private_key = FuelKey::from_str(&secret).expect("valid secret key");
-        let wallet = WalletUnlocked::new_from_private_key(private_key, Some(provider.clone()));
+        let secret_key = FuelKey::from_str(&secret).expect("valid secret key");
+        let address = Input::owner(&secret_key.public_key());
+
+        let base_asset = AssetId::zeroed();
+        let coin = self.client().get_coin(address, base_asset).await?;
+
+        tx.add_unsigned_coin_input(
+            secret_key,
+            coin.utxo_id,
+            coin.amount,
+            coin.asset_id,
+            TxPointer::default(),
+        );
 
         const AMOUNT: u64 = 1;
-        for _ in 0..num {
-            wallet
-                .transfer(
-                    &Bech32Address::default(),
-                    AMOUNT,
-                    *base_asset_id,
-                    TxPolicies::default(),
-                )
-                .await?;
-        }
+        let to = Address::default();
+        tx.add_output(Output::Coin {
+            to,
+            amount: AMOUNT,
+            asset_id: base_asset,
+        });
+        tx.add_output(Output::Change {
+            to: address,
+            amount: 0,
+            asset_id: base_asset,
+        });
+
+        let tx = tx.finalize();
+        self.client().send_tx(&tx.into()).await?;
 
         Ok(())
     }
@@ -135,11 +160,6 @@ impl FuelNodeProcess {
     }
 
     pub fn consensus_pub_key(&self) -> FuelPublicKey {
-        // We get `FuelPublicKey` from `fuel-core-client` which reexports it from `fuel-core-types`.
-        // what follows would normally be just a call to `.into()` had `fuel-core-client` enabled/forwarded the `std` flag on its `fuel-core-types` dependency.
-        let key_bytes = self.public_key.serialize_uncompressed();
-        let mut raw = [0; 64];
-        raw.copy_from_slice(&key_bytes[1..]);
-        serde_json::from_str(&format!("\"{}\"", hex::encode(raw))).expect("valid fuel pub key")
+        self.public_key
     }
 }
