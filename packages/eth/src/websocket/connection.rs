@@ -198,8 +198,6 @@ impl WsConnection {
     async fn prepare_blob_tx(&self, data: &[u8], address: Address) -> Result<TransactionRequest> {
         let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
 
-        let nonce = self.provider.get_transaction_count(address).await?;
-
         let Eip1559Estimation {
             max_fee_per_gas,
             max_priority_fee_per_gas,
@@ -207,7 +205,6 @@ impl WsConnection {
 
         let blob_tx = TransactionRequest::default()
             .with_to(address)
-            .with_nonce(nonce)
             .with_max_fee_per_gas(max_fee_per_gas)
             .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
             .with_blob_sidecar(sidecar);
