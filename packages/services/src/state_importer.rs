@@ -33,8 +33,6 @@ where
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
 
-        // validate block but don't return the validated block
-        // so we can use the original block for state submission
         self.block_validator.validate(&latest_block)?;
 
         Ok(latest_block)
