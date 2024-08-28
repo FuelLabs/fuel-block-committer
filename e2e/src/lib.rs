@@ -22,7 +22,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
-        let show_logs = false;
+        let show_logs = true;
         // blob support disabled because this test doesn't generate blocks with transactions in it
         // so there is no data to blobify
         let blob_support = false;
@@ -46,8 +46,8 @@ mod tests {
 
         let latest_block = stack.fuel_node.client().latest_block().await?;
 
-        let validated_block =
-            BlockValidator::new(stack.fuel_node.consensus_pub_key()).validate(&latest_block)?;
+        let validated_block = BlockValidator::new(*stack.fuel_node.consensus_pub_key().hash())
+            .validate(&latest_block)?;
 
         assert!(stack.deployed_contract.finalized(validated_block).await?);
 

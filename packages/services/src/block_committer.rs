@@ -255,7 +255,7 @@ mod tests {
     async fn will_fetch_and_submit_missed_block() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(secret_key.public_key());
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let missed_block = given_a_block(4, &secret_key);
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
@@ -278,7 +278,7 @@ mod tests {
     async fn will_not_reattempt_submitting_missed_block() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(secret_key.public_key());
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let missed_block = given_a_block(4, &secret_key);
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
@@ -303,7 +303,7 @@ mod tests {
     async fn will_not_reattempt_committing_latest_block() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(secret_key.public_key());
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let latest_block = given_a_block(6, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block]);
 
@@ -327,7 +327,7 @@ mod tests {
     async fn propagates_block_if_epoch_reached() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(secret_key.public_key());
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let block = given_a_block(4, &secret_key);
         let fuel_adapter = given_fetcher(vec![block.clone()]);
 
@@ -348,7 +348,7 @@ mod tests {
     async fn updates_block_metric_regardless_if_block_is_published() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(secret_key.public_key());
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![block]);
 

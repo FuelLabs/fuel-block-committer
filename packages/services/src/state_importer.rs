@@ -198,7 +198,7 @@ mod tests {
         let secret_key = given_secret_key();
         let block = given_a_block(1, &secret_key);
         let fuel_mock = given_fetcher(block);
-        let block_validator = BlockValidator::new(secret_key.public_key());
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
