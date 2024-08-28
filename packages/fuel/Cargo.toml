@@ -12,7 +12,7 @@ rust-version = { workspace = true }
 [dependencies]
 async-trait = { workspace = true }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
-fuel-core-types = { workspace = true }
+fuel-core-types = { workspace = true, optional = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["fuel"] }
 url = { workspace = true }
@@ -21,4 +21,4 @@ url = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 
 [features]
-test-helpers = []
+test-helpers = ["fuel-core-types"]
