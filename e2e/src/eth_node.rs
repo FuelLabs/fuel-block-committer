@@ -17,6 +17,7 @@ use futures_util::StreamExt;
 use ports::types::U256;
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
+use tokio::time::Instant;
 use url::Url;
 
 use crate::kms::KmsKey;
@@ -123,24 +124,36 @@ impl EthNodeProcess {
         self.chain_id
     }
 
-    pub async fn wait_for_included_blob(&self) -> anyhow::Result<()> {
+    pub async fn wait_for_included_blob(&self, timeout: Duration) -> anyhow::Result<()> {
         let ws = WsConnect::new(self.ws_url());
         let provider = ProviderBuilder::new().on_ws(ws).await?;
 
+        let timeout = Instant::now() + timeout;
+
         let subscription = provider.subscribe_blocks().await?;
-        subscription
+        let contains_blob = subscription
             .into_stream()
-            .take_while(|block| {
+            .map(|block| {
+                block.transactions.txns().any(|tx| {
+                    tx.transaction_type
+                        .map(|tx_type| tx_type == EIP4844_TX_TYPE_ID)
+                        .unwrap_or(false)
+                })
+            })
+            .take_while(|contains_blob_tx| {
                 future::ready({
-                    block.transactions.txns().any(|tx| {
-                        tx.transaction_type
-                            .map(|tx_type| tx_type == EIP4844_TX_TYPE_ID)
-                            .unwrap_or(false)
-                    })
+                    let timed_out = Instant::now() > timeout;
+                    !contains_blob_tx && !timed_out
                 })
             })
             .collect::<Vec<_>>()
-            .await;
+            .await
+            .into_iter()
+            .any(|contains_blob| contains_blob);
+
+        if !contains_blob {
+            return Err(anyhow::anyhow!("Blocks did not contain a blob"));
+        };
 
         Ok(())
     }
