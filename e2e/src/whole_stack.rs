@@ -128,7 +128,7 @@ async fn start_committer(
         .with_db_port(random_db.port())
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
-        .with_fuel_block_producer_public_key(fuel_node.consensus_pub_key())
+        .with_fuel_block_producer_addr(*fuel_node.consensus_pub_key().hash())
         .with_main_key_id(main_key.id.clone())
         .with_aws_region(kms.region().clone());
 

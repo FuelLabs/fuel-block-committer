@@ -56,7 +56,7 @@ pub fn block_committer(
     registry: &Registry,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let validator = BlockValidator::new(config.fuel.block_producer_public_key);
+    let validator = BlockValidator::new(*config.fuel.block_producer_address);
 
     let block_committer = BlockCommitter::new(l1, storage, fuel, validator, commit_interval);
 
@@ -94,7 +94,7 @@ pub fn state_importer(
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let validator = BlockValidator::new(config.fuel.block_producer_public_key);
+    let validator = BlockValidator::new(*config.fuel.block_producer_address);
     let state_importer = services::StateImporter::new(storage, fuel, validator);
 
     schedule_polling(
