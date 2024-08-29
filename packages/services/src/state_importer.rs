@@ -4,6 +4,7 @@ use ports::{
     storage::Storage,
     types::{StateFragment, StateSubmission},
 };
+use tracing::info;
 use validator::Validator;
 
 use crate::{Result, Runner};
@@ -114,7 +115,13 @@ where
             return Ok(());
         }
 
+        let block_id = block.id;
+        let block_height = block.header.height;
         self.import_state(block).await?;
+        info!(
+            "imported state from fuel block: height: {}, id: {}",
+            block_height, block_id
+        );
 
         Ok(())
     }

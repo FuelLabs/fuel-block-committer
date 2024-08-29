@@ -48,7 +48,7 @@ where
                     .update_submission_tx_state(tx_hash, TransactionState::Failed)
                     .await?;
 
-                info!("failed blob tx {tx_hash:?}!");
+                info!("failed blob tx {}", hex::encode(tx_hash));
                 continue;
             }
 
@@ -62,7 +62,7 @@ where
                 .update_submission_tx_state(tx_hash, TransactionState::Finalized)
                 .await?;
 
-            info!("finalized blob tx {tx_hash:?}!");
+            info!("finalized blob tx {}", hex::encode(tx_hash));
 
             self.metrics
                 .last_eth_block_w_blob

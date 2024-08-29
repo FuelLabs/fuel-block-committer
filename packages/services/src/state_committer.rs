@@ -48,7 +48,7 @@ where
             .record_pending_tx(tx_hash, fragment_ids)
             .await?;
 
-        info!("submitted blob tx {tx_hash:?}!");
+        info!("submitted blob tx {}", hex::encode(tx_hash));
 
         Ok(())
     }

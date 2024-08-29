@@ -19,6 +19,7 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+hex = { workspace = true }
 validator = { workspace = true }
 
 [dev-dependencies]

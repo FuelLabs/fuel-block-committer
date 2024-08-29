@@ -5410,6 +5410,7 @@ dependencies = [
  "async-trait",
  "fuel-crypto",
  "futures",
+ "hex",
  "itertools 0.13.0",
  "metrics",
  "mockall",
