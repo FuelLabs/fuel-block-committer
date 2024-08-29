@@ -2,8 +2,8 @@
 
 use std::{num::NonZeroU32, pin::Pin};
 
+use alloy::primitives::U256;
 use async_trait::async_trait;
-use ethers::types::U256;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, Result},
@@ -12,13 +12,12 @@ use ports::{
 use websocket::EthEventStreamer;
 
 mod aws;
-mod eip_4844;
 mod error;
 mod metrics;
 mod websocket;
 
+pub use alloy::primitives::{Address, ChainId};
 pub use aws::*;
-pub use ethers::types::{Address, Chain};
 pub use websocket::WebsocketClient;
 
 #[async_trait]

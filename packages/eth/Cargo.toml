@@ -10,22 +10,23 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+alloy = { workspace = true, features = [
+    "consensus",
+    "network",
+    "provider-ws",
+    "kzg",
+    "contract",
+    "signer-aws",
+    "rpc-types",
+    "reqwest-rustls-tls",
+] }
 async-trait = { workspace = true }
+aws-config = { workspace = true, features = ["default"] }
+aws-sdk-kms = { workspace = true, features = ["default"] }
 c-kzg = { workspace = true }
-ethers = { workspace = true, features = ["ws", "aws", "rustls"] }
 futures = { workspace = true }
-hyper = { workspace = true }
-hyper-rustls = { workspace = true }
-itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
-rlp = { workspace = true }
-rusoto_core = { workspace = true, features = ["rustls"] }
-rusoto_kms = { workspace = true, features = ["rustls"] }
-rusoto_sts = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-tempfile = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
