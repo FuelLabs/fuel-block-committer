@@ -18,7 +18,6 @@ mod tests {
 
     use crate::whole_stack::WholeStack;
 
-    #[ignore = "Enabling both tests leads to failure for some reason"]
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given

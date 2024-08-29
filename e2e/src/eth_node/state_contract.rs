@@ -8,8 +8,10 @@ use alloy::{
     rpc::types::TransactionRequest,
 };
 use eth::{AwsClient, AwsConfig, WebsocketClient};
+use fs_extra::dir::{copy, CopyOptions};
 use ports::types::{Address, ValidatedFuelBlock};
 use serde::Deserialize;
+use tokio::process::Command;
 use url::Url;
 
 use crate::kms::KmsKey;
@@ -62,11 +64,8 @@ impl CreateTransactions {
         kms_key: &KmsKey,
         contract_args: ContractArgs,
     ) -> Result<Self, anyhow::Error> {
-        let stdout = run_tx_building_script(url, kms_key, contract_args).await?;
+        let contents = run_tx_building_script(url, kms_key, contract_args).await?;
 
-        let transactions_file = extract_transactions_file_path(stdout)?;
-
-        let contents = tokio::fs::read_to_string(&transactions_file).await?;
         let broadcasts: Broadcasts = serde_json::from_str(&contents)?;
 
         let transactions = broadcasts
@@ -177,9 +176,24 @@ async fn run_tx_building_script(
     url: Url,
     kms_key: &KmsKey,
     contract_args: ContractArgs,
-) -> Result<String, anyhow::Error> {
-    let output = tokio::process::Command::new("forge")
-        .current_dir(FOUNDRY_PROJECT)
+) -> anyhow::Result<String> {
+    // Create a temporary directory
+    let temp_dir = tempfile::tempdir()?;
+    let temp_path = temp_dir.path().to_owned();
+
+    // Copy the Foundry project to the temporary directory
+    let mut options = CopyOptions::new();
+    options.copy_inside = true;
+
+    let tmp_foundry = temp_path.join("foundry");
+    tokio::task::spawn_blocking(move || {
+        copy(FOUNDRY_PROJECT, temp_path, &options).unwrap();
+    })
+    .await?;
+
+    // Build the command with the new temporary directory as the current directory
+    let output = Command::new("forge")
+        .current_dir(tmp_foundry) // Use the temporary directory
         .arg("script")
         .arg("script/build_tx.sol:MyScript")
         .arg("--fork-url")
@@ -209,5 +223,9 @@ async fn run_tx_building_script(
         ));
     }
 
-    Ok(String::from_utf8(output.stdout)?)
+    let stdout = String::from_utf8(output.stdout)?;
+    let transactions_file = extract_transactions_file_path(stdout)?;
+    let contents = tokio::fs::read_to_string(transactions_file).await?;
+
+    Ok(contents)
 }

@@ -25,7 +25,12 @@ walkdir = { workspace = true }
 zip = { workspace = true, features = ["deflate"] }
 
 [dev-dependencies]
-alloy = { workspace = true, features = [ "signer-aws", "signer-mnemonic", "serde" ] }
+fs_extra = { workspace = true }
+alloy = { workspace = true, features = [
+  "signer-aws",
+  "signer-mnemonic",
+  "serde",
+] }
 anyhow = { workspace = true, features = ["std"] }
 aws-sdk-kms = { workspace = true, features = ["rustls"] }
 aws-config = { workspace = true, features = ["rustls"] }
