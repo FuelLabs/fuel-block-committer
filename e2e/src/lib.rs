@@ -46,8 +46,8 @@ mod tests {
 
         let latest_block = stack.fuel_node.client().latest_block().await?;
 
-        let validated_block =
-            BlockValidator::new(stack.fuel_node.consensus_pub_key()).validate(&latest_block)?;
+        let validated_block = BlockValidator::new(*stack.fuel_node.consensus_pub_key().hash())
+            .validate(&latest_block)?;
 
         assert!(stack.deployed_contract.finalized(validated_block).await?);
 
