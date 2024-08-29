@@ -37,6 +37,7 @@ impl Committer {
         cmd.arg(config)
             .env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_ACCESS_KEY_ID", "test")
+            .env("AWS_REGION", "us-east-1")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_id))
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())

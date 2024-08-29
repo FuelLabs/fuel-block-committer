@@ -127,7 +127,8 @@ pub async fn l1_adapter(
     internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let aws_config = AwsConfig::from_env().expect("Could not load AWS config");
+    let aws_config = AwsConfig::from_env().await;
+
     let aws_client = AwsClient::new(aws_config).await;
 
     let l1 = L1::connect(
