@@ -22,7 +22,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
-        let show_logs = true;
+        let show_logs = false;
         // blob support disabled because this test doesn't generate blocks with transactions in it
         // so there is no data to blobify
         let blob_support = false;
