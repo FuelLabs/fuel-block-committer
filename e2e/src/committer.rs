@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use ports::{fuel::FuelPublicKey, types::Address};
+use ports::types::Address;
 use url::Url;
 
 #[derive(Default)]
