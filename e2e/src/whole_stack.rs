@@ -72,7 +72,7 @@ async fn create_and_fund_kms_keys(
     let amount = alloy::primitives::utils::parse_ether("10")?;
 
     let create_and_fund = || async {
-        let key = kms.create_key(eth_node.chain_id()).await?;
+        let key = kms.create_key().await?;
         eth_node.fund(key.address(), amount).await?;
         anyhow::Result::<_>::Ok(key)
     };

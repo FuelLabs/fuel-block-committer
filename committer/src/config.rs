@@ -1,6 +1,5 @@
 use std::{net::Ipv4Addr, path::PathBuf, str::FromStr, time::Duration};
 
-use alloy_chains::NamedChain;
 use clap::{command, Parser};
 use eth::Address;
 use serde::Deserialize;
@@ -46,22 +45,8 @@ pub struct Eth {
     /// URL to a Ethereum RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
-    /// Chain id of the ethereum network.
-    #[serde(deserialize_with = "deserialize_named_chain")]
-    pub chain_id: NamedChain,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
-}
-
-fn deserialize_named_chain<'de, D>(deserializer: D) -> Result<NamedChain, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let chain_str: String = Deserialize::deserialize(deserializer).unwrap();
-    NamedChain::from_str(&chain_str).map_err(|_| {
-        let msg = format!("Failed to parse chain from '{chain_str}'");
-        serde::de::Error::custom(msg)
-    })
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>

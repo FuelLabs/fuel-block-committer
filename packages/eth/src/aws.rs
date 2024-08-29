@@ -84,8 +84,8 @@ impl AwsClient {
         &self.client
     }
 
-    pub async fn make_signer(&self, key_id: String, chain_id: u64) -> ports::l1::Result<AwsSigner> {
-        AwsSigner::new(self.client.clone(), key_id, Some(chain_id))
+    pub async fn make_signer(&self, key_id: String) -> ports::l1::Result<AwsSigner> {
+        AwsSigner::new(self.client.clone(), key_id, None)
             .await
             .map_err(|err| ports::l1::Error::Other(format!("Error making aws signer: {err:?}")))
     }

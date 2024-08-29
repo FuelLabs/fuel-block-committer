@@ -118,7 +118,7 @@ impl KmsKey {
 }
 
 impl KmsProcess {
-    pub async fn create_key(&self, chain: u64) -> anyhow::Result<KmsKey> {
+    pub async fn create_key(&self) -> anyhow::Result<KmsKey> {
         let response = self
             .client
             .inner()
@@ -128,12 +128,14 @@ impl KmsProcess {
             .send()
             .await?;
 
+        // use arn as id to closer imitate prod behavior
         let id = response
             .key_metadata
-            .ok_or_else(|| anyhow::anyhow!("key id missing from response"))?
-            .key_id;
+            .map(|metadata| metadata.arn)
+            .flatten()
+            .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
 
-        let signer = self.client.make_signer(id.clone(), chain).await?;
+        let signer = self.client.make_signer(id.clone()).await?;
 
         Ok(KmsKey {
             id,

@@ -133,7 +133,6 @@ pub async fn l1_adapter(
 
     let l1 = L1::connect(
         config.eth.rpc.clone(),
-        config.eth.chain_id.into(),
         config.eth.state_contract_address,
         config.eth.main_key_id.clone(),
         config.eth.blob_pool_key_id.clone(),

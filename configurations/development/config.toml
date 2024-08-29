@@ -1,5 +1,4 @@
 [eth]
-chain_id = "anvil"
 state_contract_address = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
 rpc = "ws://localhost:8545"
 

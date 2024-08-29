@@ -16,7 +16,7 @@ mod error;
 mod metrics;
 mod websocket;
 
-pub use alloy::primitives::{Address, ChainId};
+pub use alloy::primitives::Address;
 pub use aws::*;
 pub use websocket::WebsocketClient;
 

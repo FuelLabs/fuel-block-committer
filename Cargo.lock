@@ -268,7 +268,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b515e82c8468ddb6ff8db21c78a5997442f113fd8471fd5b2261b2602dd0c67"
 dependencies = [
  "num_enum",
- "serde",
  "strum 0.26.3",
 ]
 
@@ -2313,7 +2312,6 @@ name = "e2e"
 version = "0.6.0"
 dependencies = [
  "alloy",
- "alloy-chains",
  "anyhow",
  "aws-config",
  "aws-sdk-kms",
@@ -2663,7 +2661,6 @@ name = "fuel-block-committer"
 version = "0.6.0"
 dependencies = [
  "actix-web",
- "alloy-chains",
  "anyhow",
  "clap",
  "config",
