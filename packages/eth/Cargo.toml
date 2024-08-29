@@ -18,11 +18,11 @@ alloy = { workspace = true, features = [
     "contract",
     "signer-aws",
     "rpc-types",
-    "reqwest-rustls-tls", 
+    "reqwest-rustls-tls",
 ] }
 async-trait = { workspace = true }
-aws-config = { workspace = true, features = ["rustls"] }
-aws-sdk-kms = { workspace = true, features = ["rustls"] }
+aws-config = { workspace = true, features = ["default"] }
+aws-sdk-kms = { workspace = true, features = ["default"] }
 c-kzg = { workspace = true }
 futures = { workspace = true }
 metrics = { workspace = true }

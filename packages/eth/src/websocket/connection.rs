@@ -58,7 +58,7 @@ pub struct WsConnection {
     provider: WsProvider,
     blob_provider: Option<WsProvider>,
     address: Address,
-    blob_address: Option<Address>,
+    blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
 }
@@ -110,12 +110,15 @@ impl EthApi for WsConnection {
     }
 
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
-        let (blob_provider, blob_address) = match (&self.blob_provider, &self.blob_address) {
-            (Some(provider), Some(address)) => (provider, address),
-            _ => return Err(Error::Other("blob pool signer not configured".to_string())),
-        };
+        let (blob_provider, blob_signer_address) =
+            match (&self.blob_provider, &self.blob_signer_address) {
+                (Some(provider), Some(address)) => (provider, address),
+                _ => return Err(Error::Other("blob pool signer not configured".to_string())),
+            };
 
-        let blob_tx = self.prepare_blob_tx(&state_data, *blob_address).await?;
+        let blob_tx = self
+            .prepare_blob_tx(&state_data, *blob_signer_address)
+            .await?;
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
 
@@ -156,10 +159,10 @@ impl WsConnection {
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), main_signer).await?;
 
-        let (blob_provider, blob_address) = if let Some(signer) = blob_signer {
-            let blob_address = signer.address();
+        let (blob_provider, blob_signer_address) = if let Some(signer) = blob_signer {
+            let blob_signer_address = signer.address();
             let blob_provider = Self::provider_with_signer(ws, signer).await?;
-            (Some(blob_provider), Some(blob_address))
+            (Some(blob_provider), Some(blob_signer_address))
         } else {
             (None, None)
         };
@@ -181,7 +184,7 @@ impl WsConnection {
             provider,
             blob_provider,
             address,
-            blob_address,
+            blob_signer_address,
             contract,
             commit_interval,
         })

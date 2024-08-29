@@ -48,7 +48,7 @@ impl Kms {
         let port = container.get_host_port_ipv4(4566).await?;
         let url = format!("http://localhost:{}", port);
 
-        let config = AwsConfig::Test(url.clone());
+        let config = AwsConfig::for_testing(url.clone()).await;
         let client = AwsClient::new(config).await;
 
         Ok(KmsProcess {

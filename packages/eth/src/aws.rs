@@ -1,70 +1,55 @@
 use alloy::signers::aws::AwsSigner;
 use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region, SdkConfig};
-use aws_sdk_kms::{
-    config::{BehaviorVersion, Credentials},
-    Client,
-};
+use aws_sdk_kms::{config::BehaviorVersion, Client};
 
-use crate::error::Error;
+#[cfg(feature = "test-helpers")]
+use aws_sdk_kms::config::Credentials;
 
 #[derive(Debug, Clone)]
-pub enum AwsConfig {
-    Prod(Region),
-    Test(String),
+pub struct AwsConfig {
+    sdk_config: SdkConfig,
 }
 
 impl AwsConfig {
-    pub fn from_env() -> crate::error::Result<Self> {
-        read_aws_test_url()
-            .or_else(read_aws_prod_region)
-            .ok_or_else(|| Error::Other("No AWS region found".to_string()))
-    }
+    pub async fn from_env() -> Self {
+        let loader = aws_config::defaults(BehaviorVersion::latest())
+            .credentials_provider(DefaultCredentialsChain::builder().build().await);
 
-    pub fn url(&self) -> Option<String> {
-        match self {
-            AwsConfig::Prod(_) => None,
-            AwsConfig::Test(url) => Some(url.clone()),
-        }
-    }
-
-    pub fn region(&self) -> Region {
-        match self {
-            AwsConfig::Prod(region) => region.clone(),
-            AwsConfig::Test(_) => Region::new("us-east-1"),
-        }
-    }
-
-    pub async fn load(&self) -> SdkConfig {
-        let loader = aws_config::defaults(BehaviorVersion::latest()).region(self.region());
-
-        let loader = match self {
-            AwsConfig::Prod(_) => loader.credentials_provider(
-                DefaultCredentialsChain::builder()
-                    .region(self.region())
-                    .build()
-                    .await,
-            ),
-            AwsConfig::Test(url) => {
-                let credentials =
-                    Credentials::new("test", "test", None, None, "Static Credentials");
-                loader.credentials_provider(credentials).endpoint_url(url)
-            }
+        let loader = match std::env::var("E2E_TEST_AWS_ENDPOINT") {
+            Ok(url) => loader.endpoint_url(url),
+            _ => loader,
         };
 
-        loader.load().await
+        Self {
+            sdk_config: loader.load().await,
+        }
     }
-}
 
-fn read_aws_test_url() -> Option<AwsConfig> {
-    let env_value = std::env::var("E2E_TEST_AWS_ENDPOINT").ok()?;
-    Some(AwsConfig::Test(env_value))
-}
+    #[cfg(feature = "test-helpers")]
+    pub async fn for_testing(url: String) -> Self {
+        let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+            .credentials_provider(Credentials::new(
+                "test",
+                "test",
+                None,
+                None,
+                "Static Credentials",
+            ))
+            .endpoint_url(url)
+            .region(Region::new("us-east-1")) // placeholder region for test
+            .load()
+            .await;
 
-fn read_aws_prod_region() -> Option<AwsConfig> {
-    let env_value = std::env::var("AWS_REGION")
-        .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
-        .ok()?;
-    Some(AwsConfig::Prod(Region::new(env_value)))
+        Self { sdk_config }
+    }
+
+    pub fn url(&self) -> Option<&str> {
+        self.sdk_config.endpoint_url()
+    }
+
+    pub fn region(&self) -> Option<&Region> {
+        self.sdk_config.region()
+    }
 }
 
 #[derive(Clone)]
@@ -74,7 +59,7 @@ pub struct AwsClient {
 
 impl AwsClient {
     pub async fn new(config: AwsConfig) -> Self {
-        let config = config.load().await;
+        let config = config.sdk_config;
         let client = Client::new(&config);
 
         Self { client }

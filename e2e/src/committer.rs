@@ -36,6 +36,7 @@ impl Committer {
         let mut cmd = tokio::process::Command::new("fuel-block-committer");
         cmd.arg(config)
             .env("E2E_TEST_AWS_ENDPOINT", kms_url)
+            .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ARN", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__MAIN_KEY_ARN", get_field!(main_key_arn))
