@@ -7,8 +7,8 @@ use url::Url;
 #[derive(Default)]
 pub struct Committer {
     show_logs: bool,
-    main_key_id: Option<String>,
-    blob_key_id: Option<String>,
+    main_key_arn: Option<String>,
+    blob_key_arn: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
@@ -38,7 +38,7 @@ impl Committer {
             .env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
-            .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_id))
+            .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_arn))
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
             .env(
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
@@ -59,8 +59,8 @@ impl Committer {
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
-        if let Some(blob_wallet_key_id) = self.blob_key_id {
-            cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ID", blob_wallet_key_id);
+        if let Some(blob_wallet_key_arn) = self.blob_key_arn {
+            cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ARN", blob_wallet_key_arn);
         }
 
         let sink = if self.show_logs {
@@ -78,8 +78,8 @@ impl Committer {
         })
     }
 
-    pub fn with_main_key_id(mut self, wallet_id: String) -> Self {
-        self.main_key_id = Some(wallet_id);
+    pub fn with_main_key_arn(mut self, wallet_arn: String) -> Self {
+        self.main_key_arn = Some(wallet_arn);
         self
     }
 
@@ -88,8 +88,8 @@ impl Committer {
         self
     }
 
-    pub fn with_blob_key_id(mut self, blob_wallet_id: String) -> Self {
-        self.blob_key_id = Some(blob_wallet_id);
+    pub fn with_blob_key_arn(mut self, blob_wallet_arn: String) -> Self {
+        self.blob_key_arn = Some(blob_wallet_arn);
         self
     }
 

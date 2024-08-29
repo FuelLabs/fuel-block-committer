@@ -134,8 +134,8 @@ pub async fn l1_adapter(
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        config.eth.main_key_id.clone(),
-        config.eth.blob_pool_key_id.clone(),
+        config.eth.main_key_arn.clone(),
+        config.eth.blob_pool_key_arn.clone(),
         internal_config.eth_errors_before_unhealthy,
         aws_client,
     )

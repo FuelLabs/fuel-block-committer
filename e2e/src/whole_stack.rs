@@ -127,11 +127,11 @@ async fn start_committer(
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
         .with_fuel_block_producer_addr(*fuel_node.consensus_pub_key().hash())
-        .with_main_key_id(main_key.id.clone())
+        .with_main_key_arn(main_key.id.clone())
         .with_kms_url(main_key.url.clone());
 
     let committer = if blob_support {
-        committer_builder.with_blob_key_id(secondary_key.id.clone())
+        committer_builder.with_blob_key_arn(secondary_key.id.clone())
     } else {
         committer_builder
     };
