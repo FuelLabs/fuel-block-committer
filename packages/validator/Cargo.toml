@@ -16,6 +16,7 @@ mockall = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 fuel-crypto = { workspace = true, features = ["random"] }

@@ -6578,6 +6578,7 @@ version = "0.6.0"
 dependencies = [
  "fuel-core-client",
  "fuel-crypto",
+ "hex",
  "mockall",
  "rand",
  "serde",

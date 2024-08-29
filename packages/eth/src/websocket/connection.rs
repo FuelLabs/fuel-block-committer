@@ -6,7 +6,6 @@ use alloy::{
     primitives::{Address, U256},
     providers::{
         fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
-        utils::Eip1559Estimation,
         Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
     },
     pubsub::PubSubFrontend,
@@ -57,10 +56,11 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
-    blob_signer: Option<AwsSigner>,
+    blob_provider: Option<WsProvider>,
+    address: Address,
+    blob_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
-    address: Address,
 }
 
 #[async_trait::async_trait]
@@ -110,17 +110,14 @@ impl EthApi for WsConnection {
     }
 
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
-        let blob_pool_signer = if let Some(blob_pool_signer) = &self.blob_signer {
-            blob_pool_signer
-        } else {
-            return Err(Error::Other("blob pool signer not configured".to_string()));
+        let (blob_provider, blob_address) = match (&self.blob_provider, &self.blob_address) {
+            (Some(provider), Some(address)) => (provider, address),
+            _ => return Err(Error::Other("blob pool signer not configured".to_string())),
         };
 
-        let blob_tx = self
-            .prepare_blob_tx(&state_data, blob_pool_signer.address())
-            .await?;
+        let blob_tx = self.prepare_blob_tx(&state_data, *blob_address).await?;
 
-        let tx = self.provider.send_transaction(blob_tx).await?;
+        let tx = blob_provider.send_transaction(blob_tx).await?;
 
         Ok(tx.tx_hash().0)
     }
@@ -154,16 +151,18 @@ impl WsConnection {
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
     ) -> Result<Self> {
-        let ws = WsConnect::new(url);
-
         let address = main_signer.address();
 
-        let wallet = EthereumWallet::from(main_signer);
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_ws(ws)
-            .await?;
+        let ws = WsConnect::new(url);
+        let provider = Self::provider_with_signer(ws.clone(), main_signer).await?;
+
+        let (blob_provider, blob_address) = if let Some(signer) = blob_signer {
+            let blob_address = signer.address();
+            let blob_provider = Self::provider_with_signer(ws, signer).await?;
+            (Some(blob_provider), Some(blob_address))
+        } else {
+            (None, None)
+        };
 
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FuelStateContract::new(contract_address, provider.clone());
@@ -180,11 +179,22 @@ impl WsConnection {
 
         Ok(Self {
             provider,
+            blob_provider,
+            address,
+            blob_address,
             contract,
             commit_interval,
-            address,
-            blob_signer,
         })
+    }
+
+    async fn provider_with_signer(ws: WsConnect, signer: AwsSigner) -> Result<WsProvider> {
+        let wallet = EthereumWallet::from(signer);
+        ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet)
+            .on_ws(ws)
+            .await
+            .map_err(Into::into)
     }
 
     pub(crate) fn calculate_commit_height(block_height: u32, commit_interval: NonZeroU32) -> U256 {
@@ -195,18 +205,11 @@ impl WsConnection {
         Ok(self.provider.get_balance(address).await?)
     }
 
-    async fn prepare_blob_tx(&self, data: &[u8], address: Address) -> Result<TransactionRequest> {
+    async fn prepare_blob_tx(&self, data: &[u8], to: Address) -> Result<TransactionRequest> {
         let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
 
-        let Eip1559Estimation {
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
-        } = self.provider.estimate_eip1559_fees(None).await?;
-
         let blob_tx = TransactionRequest::default()
-            .with_to(address)
-            .with_max_fee_per_gas(max_fee_per_gas)
-            .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+            .with_to(to)
             .with_blob_sidecar(sidecar);
 
         Ok(blob_tx)
