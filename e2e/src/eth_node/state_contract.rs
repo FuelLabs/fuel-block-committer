@@ -64,12 +64,8 @@ impl CreateTransactions {
         kms_key: &KmsKey,
         contract_args: ContractArgs,
     ) -> Result<Self, anyhow::Error> {
-        let contents = run_tx_building_script(url, kms_key, contract_args).await?;
-
-        let broadcasts: Broadcasts = serde_json::from_str(&contents)?;
-
-        let transactions = broadcasts
-            .transactions
+        let transactions = generate_transactions_via_foundry(url, kms_key, contract_args)
+            .await?
             .into_iter()
             .map(|tx| CreateTransaction {
                 name: tx.name,
@@ -172,28 +168,25 @@ struct Broadcasts {
     transactions: Vec<CreateContractTx>,
 }
 
-async fn run_tx_building_script(
+async fn generate_transactions_via_foundry(
     url: Url,
     kms_key: &KmsKey,
     contract_args: ContractArgs,
-) -> anyhow::Result<String> {
-    // Create a temporary directory
+) -> anyhow::Result<Vec<CreateContractTx>> {
     let temp_dir = tempfile::tempdir()?;
     let temp_path = temp_dir.path().to_owned();
 
-    // Copy the Foundry project to the temporary directory
     let mut options = CopyOptions::new();
-    options.copy_inside = true;
+    options.content_only = true;
 
-    let tmp_foundry = temp_path.join("foundry");
+    let destination = temp_path.clone();
     tokio::task::spawn_blocking(move || {
-        copy(FOUNDRY_PROJECT, temp_path, &options).unwrap();
+        copy(FOUNDRY_PROJECT, destination, &options).unwrap();
     })
     .await?;
 
-    // Build the command with the new temporary directory as the current directory
     let output = Command::new("forge")
-        .current_dir(tmp_foundry) // Use the temporary directory
+        .current_dir(temp_path)
         .arg("script")
         .arg("script/build_tx.sol:MyScript")
         .arg("--fork-url")
@@ -227,5 +220,6 @@ async fn run_tx_building_script(
     let transactions_file = extract_transactions_file_path(stdout)?;
     let contents = tokio::fs::read_to_string(transactions_file).await?;
 
-    Ok(contents)
+    let broadcasts: Broadcasts = serde_json::from_str(&contents)?;
+    Ok(broadcasts.transactions)
 }
