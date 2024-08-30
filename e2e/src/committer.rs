@@ -7,8 +7,8 @@ use url::Url;
 #[derive(Default)]
 pub struct Committer {
     show_logs: bool,
-    main_key_id: Option<String>,
-    blob_key_id: Option<String>,
+    main_key_arn: Option<String>,
+    blob_key_arn: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
@@ -36,10 +36,10 @@ impl Committer {
         let mut cmd = tokio::process::Command::new("fuel-block-committer");
         cmd.arg(config)
             .env("E2E_TEST_AWS_ENDPOINT", kms_url)
-            .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_REGION", "us-east-1")
+            .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
-            .env("COMMITTER__ETH__MAIN_KEY_ID", get_field!(main_key_id))
+            .env("COMMITTER__ETH__MAIN_KEY_ARN", get_field!(main_key_arn))
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
             .env(
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
@@ -56,12 +56,11 @@ impl Committer {
             .env("COMMITTER__APP__DB__PORT", get_field!(db_port).to_string())
             .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
             .env("COMMITTER__APP__PORT", unused_port.to_string())
-            .env("COMMITTER__AWS__ALLOW_HTTP", "true")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
-        if let Some(blob_wallet_key_id) = self.blob_key_id {
-            cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ID", blob_wallet_key_id);
+        if let Some(blob_wallet_key_arn) = self.blob_key_arn {
+            cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ARN", blob_wallet_key_arn);
         }
 
         let sink = if self.show_logs {
@@ -79,8 +78,8 @@ impl Committer {
         })
     }
 
-    pub fn with_main_key_id(mut self, wallet_id: String) -> Self {
-        self.main_key_id = Some(wallet_id);
+    pub fn with_main_key_arn(mut self, wallet_arn: String) -> Self {
+        self.main_key_arn = Some(wallet_arn);
         self
     }
 
@@ -89,8 +88,8 @@ impl Committer {
         self
     }
 
-    pub fn with_blob_key_id(mut self, blob_wallet_id: String) -> Self {
-        self.blob_key_id = Some(blob_wallet_id);
+    pub fn with_blob_key_arn(mut self, blob_wallet_arn: String) -> Self {
+        self.blob_key_arn = Some(blob_wallet_arn);
         self
     }
 
@@ -149,7 +148,28 @@ impl CommitterProcess {
         Ok(())
     }
 
+    pub async fn wait_for_committed_blob(&self) -> anyhow::Result<()> {
+        loop {
+            match self.fetch_latest_blob_block().await {
+                Ok(_) => break,
+                _ => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn fetch_latest_committed_block(&self) -> anyhow::Result<u64> {
+        self.fetch_metric_value("latest_committed_block").await
+    }
+
+    async fn fetch_latest_blob_block(&self) -> anyhow::Result<u64> {
+        self.fetch_metric_value("last_eth_block_w_blob").await
+    }
+
+    async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
         let response = reqwest::get(format!("http://localhost:{}/metrics", self.port))
             .await?
             .error_for_status()?
@@ -158,8 +178,8 @@ impl CommitterProcess {
 
         let height_line = response
             .lines()
-            .find(|line| line.starts_with("latest_committed_block"))
-            .ok_or_else(|| anyhow::anyhow!("couldn't find latest_committed_block metric"))?;
+            .find(|line| line.starts_with(metric_name))
+            .ok_or_else(|| anyhow::anyhow!("couldn't find {} metric", metric_name))?;
 
         Ok(height_line
             .split_whitespace()

@@ -5,12 +5,8 @@ use alloy::{
     network::{EthereumWallet, TransactionBuilder},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
-    signers::{
-        local::{coins_bip39::English, MnemonicBuilder, PrivateKeySigner},
-        Signer,
-    },
+    signers::local::{coins_bip39::English, MnemonicBuilder, PrivateKeySigner},
 };
-use alloy_chains::NamedChain;
 use eth::Address;
 use ports::types::U256;
 use state_contract::CreateTransactions;
@@ -53,12 +49,7 @@ impl EthNode {
 
         let child = cmd.spawn()?;
 
-        Ok(EthNodeProcess::new(
-            child,
-            unused_port,
-            NamedChain::AnvilHardhat.into(),
-            mnemonic,
-        ))
+        Ok(EthNodeProcess::new(child, unused_port, mnemonic))
     }
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
@@ -69,18 +60,16 @@ impl EthNode {
 
 pub struct EthNodeProcess {
     _child: tokio::process::Child,
-    chain_id: u64,
     port: u16,
     mnemonic: String,
 }
 
 impl EthNodeProcess {
-    fn new(child: tokio::process::Child, port: u16, chain_id: u64, mnemonic: String) -> Self {
+    fn new(child: tokio::process::Child, port: u16, mnemonic: String) -> Self {
         Self {
             _child: child,
             mnemonic,
             port,
-            chain_id,
         }
     }
 
@@ -108,17 +97,12 @@ impl EthNodeProcess {
             .expect("Should generate a valid derivation path")
             .build()
             .expect("phrase to be correct")
-            .with_chain_id(Some(self.chain_id))
     }
 
     pub fn ws_url(&self) -> Url {
         format!("ws://localhost:{}", self.port)
             .parse()
             .expect("URL to be well formed")
-    }
-
-    pub fn chain_id(&self) -> u64 {
-        self.chain_id
     }
 
     pub async fn fund(&self, address: Address, amount: U256) -> anyhow::Result<()> {

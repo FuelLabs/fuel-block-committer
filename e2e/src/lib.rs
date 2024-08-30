@@ -11,7 +11,6 @@ mod whole_stack;
 
 #[cfg(test)]
 mod tests {
-
     use anyhow::Result;
     use ports::fuel::Api;
     use tokio::time::sleep_until;
@@ -50,6 +49,23 @@ mod tests {
             .validate(&latest_block)?;
 
         assert!(stack.deployed_contract.finalized(validated_block).await?);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn submitted_state_and_was_finalized() -> Result<()> {
+        // given
+        let show_logs = false;
+        let blob_support = true;
+        let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
+
+        // when
+        stack.fuel_node.produce_transaction().await?;
+        stack.fuel_node.client().produce_blocks(1).await?;
+
+        // then
+        stack.committer.wait_for_committed_blob().await?;
 
         Ok(())
     }

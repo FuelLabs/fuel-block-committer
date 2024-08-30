@@ -1,6 +1,5 @@
 use std::{net::Ipv4Addr, path::PathBuf, str::FromStr, time::Duration};
 
-use alloy_chains::NamedChain;
 use clap::{command, Parser};
 use eth::Address;
 use serde::Deserialize;
@@ -16,8 +15,8 @@ pub struct Config {
 
 impl Config {
     pub fn validate(&self) -> crate::errors::Result<()> {
-        if let Some(blob_pool_wallet_key) = &self.eth.blob_pool_key_id {
-            if blob_pool_wallet_key == &self.eth.main_key_id {
+        if let Some(blob_pool_wallet_key) = &self.eth.blob_pool_key_arn {
+            if blob_pool_wallet_key == &self.eth.main_key_arn {
                 return Err(crate::errors::Error::Other(
                     "Wallet key and blob pool wallet key must be different".to_string(),
                 ));
@@ -40,28 +39,14 @@ pub struct Fuel {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
     /// The AWS KMS key ID authorized by the L1 bridging contracts to post block commitments.
-    pub main_key_id: String,
+    pub main_key_arn: String,
     /// The AWS KMS key ID for posting L2 state to L1.
-    pub blob_pool_key_id: Option<String>,
+    pub blob_pool_key_arn: Option<String>,
     /// URL to a Ethereum RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
-    /// Chain id of the ethereum network.
-    #[serde(deserialize_with = "deserialize_named_chain")]
-    pub chain_id: NamedChain,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
-}
-
-fn deserialize_named_chain<'de, D>(deserializer: D) -> Result<NamedChain, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let chain_str: String = Deserialize::deserialize(deserializer).unwrap();
-    NamedChain::from_str(&chain_str).map_err(|_| {
-        let msg = format!("Failed to parse chain from '{chain_str}'");
-        serde::de::Error::custom(msg)
-    })
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>

@@ -1,11 +1,9 @@
-use alloy::sol_types::SolEvent;
-use alloy::{primitives::U256, providers::Provider, rpc::types::Filter};
+use alloy::{primitives::U256, providers::Provider, rpc::types::Filter, sol_types::SolEvent};
 use futures::{Stream, StreamExt};
 use ports::types::FuelBlockCommittedOnL1;
 
-use crate::error::Result;
-
 use super::connection::{IFuelStateContract::CommitSubmitted, WsProvider};
+use crate::error::Result;
 
 pub struct EthEventStreamer {
     filter: Filter,

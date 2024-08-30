@@ -79,25 +79,24 @@ async fn main() -> Result<()> {
 
     // If the blob pool wallet key is set, we need to start
     // the state committer and state importer
-    if config.eth.blob_pool_key_id.is_some() {
+    if config.eth.blob_pool_key_arn.is_some() {
         let state_committer_handle = setup::state_committer(
             ethereum_rpc.clone(),
             storage.clone(),
-            &metrics_registry,
             cancel_token.clone(),
             &config,
         );
 
-        let state_importer_handle = setup::state_importer(
-            fuel_adapter,
+        let state_importer_handle =
+            setup::state_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
+
+        let state_listener_handle = setup::state_listener(
+            ethereum_rpc,
             storage.clone(),
-            &metrics_registry,
             cancel_token.clone(),
+            &metrics_registry,
             &config,
         );
-
-        let state_listener_handle =
-            setup::state_listener(ethereum_rpc, storage.clone(), cancel_token.clone(), &config);
 
         handles.push(state_committer_handle);
         handles.push(state_importer_handle);

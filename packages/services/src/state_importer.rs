@@ -4,6 +4,7 @@ use ports::{
     storage::Storage,
     types::{StateFragment, StateSubmission},
 };
+use tracing::info;
 use validator::Validator;
 
 use crate::{Result, Runner};
@@ -33,8 +34,6 @@ where
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
 
-        // validate block but don't return the validated block
-        // so we can use the original block for state submission
         self.block_validator.validate(&latest_block)?;
 
         Ok(latest_block)
@@ -116,7 +115,13 @@ where
             return Ok(());
         }
 
+        let block_id = block.id;
+        let block_height = block.header.height;
         self.import_state(block).await?;
+        info!(
+            "imported state from fuel block: height: {}, id: {}",
+            block_height, block_id
+        );
 
         Ok(())
     }

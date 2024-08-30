@@ -1,9 +1,8 @@
 use alloy::signers::aws::AwsSigner;
 use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region, SdkConfig};
-use aws_sdk_kms::{config::BehaviorVersion, Client};
-
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
+use aws_sdk_kms::{config::BehaviorVersion, Client};
 
 #[derive(Debug, Clone)]
 pub struct AwsConfig {
@@ -69,9 +68,9 @@ impl AwsClient {
         &self.client
     }
 
-    pub async fn make_signer(&self, key_id: String, chain_id: u64) -> ports::l1::Result<AwsSigner> {
-        AwsSigner::new(self.client.clone(), key_id, Some(chain_id))
+    pub async fn make_signer(&self, key_arn: String) -> ports::l1::Result<AwsSigner> {
+        AwsSigner::new(self.client.clone(), key_arn, None)
             .await
-            .map_err(|err| ports::l1::Error::Other(format!("Error making aws signer: {err}")))
+            .map_err(|err| ports::l1::Error::Other(format!("Error making aws signer: {err:?}")))
     }
 }

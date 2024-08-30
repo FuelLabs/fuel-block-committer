@@ -73,7 +73,6 @@ pub fn block_committer(
 pub fn state_committer(
     l1: L1,
     storage: impl Storage + 'static,
-    _registry: &Registry,
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
@@ -90,7 +89,6 @@ pub fn state_committer(
 pub fn state_importer(
     fuel: FuelApi,
     storage: impl Storage + 'static,
-    _registry: &Registry,
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
@@ -109,10 +107,13 @@ pub fn state_listener(
     l1: L1,
     storage: impl Storage + 'static,
     cancel_token: CancellationToken,
+    registry: &Registry,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
     let state_listener =
         services::StateListener::new(l1, storage, config.app.num_blocks_to_finalize_tx);
+
+    state_listener.register_metrics(registry);
 
     schedule_polling(
         config.app.block_check_interval,
@@ -133,10 +134,9 @@ pub async fn l1_adapter(
 
     let l1 = L1::connect(
         config.eth.rpc.clone(),
-        config.eth.chain_id.into(),
         config.eth.state_contract_address,
-        config.eth.main_key_id.clone(),
-        config.eth.blob_pool_key_id.clone(),
+        config.eth.main_key_arn.clone(),
+        config.eth.blob_pool_key_arn.clone(),
         internal_config.eth_errors_before_unhealthy,
         aws_client,
     )

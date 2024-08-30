@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use ports::storage::Storage;
+use tracing::info;
 
 use crate::{Result, Runner};
 
@@ -46,6 +47,8 @@ where
         self.storage
             .record_pending_tx(tx_hash, fragment_ids)
             .await?;
+
+        info!("submitted blob tx {}", hex::encode(tx_hash));
 
         Ok(())
     }

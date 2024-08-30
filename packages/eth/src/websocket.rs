@@ -1,20 +1,19 @@
 use std::num::NonZeroU32;
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
-use alloy::primitives::{Address, ChainId};
+use alloy::primitives::Address;
 use ports::{
     l1::Result,
     types::{TransactionResponse, ValidatedFuelBlock, U256},
 };
 use url::Url;
 
-use crate::AwsClient;
-
 pub use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
+use crate::AwsClient;
 
 mod connection;
 mod event_streamer;
@@ -28,20 +27,19 @@ pub struct WebsocketClient {
 impl WebsocketClient {
     pub async fn connect(
         url: Url,
-        chain_id: ChainId,
         contract_address: Address,
-        main_key_id: String,
-        blob_pool_key_id: Option<String>,
+        main_key_arn: String,
+        blob_pool_key_arn: Option<String>,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
     ) -> ports::l1::Result<Self> {
-        let blob_signer = if let Some(key_id) = blob_pool_key_id {
-            Some(aws_client.make_signer(key_id, chain_id).await?)
+        let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
+            Some(aws_client.make_signer(key_arn).await?)
         } else {
             None
         };
 
-        let main_signer = aws_client.make_signer(main_key_id, chain_id).await?;
+        let main_signer = aws_client.make_signer(main_key_arn).await?;
 
         let provider =
             WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;

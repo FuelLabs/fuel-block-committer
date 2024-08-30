@@ -7,10 +7,11 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
 };
-use alloy_chains::NamedChain;
 use eth::{AwsClient, AwsConfig, WebsocketClient};
+use fs_extra::dir::{copy, CopyOptions};
 use ports::types::{Address, ValidatedFuelBlock};
 use serde::Deserialize;
+use tokio::process::Command;
 use url::Url;
 
 use crate::kms::KmsKey;
@@ -25,16 +26,8 @@ impl DeployedContract {
         let blob_wallet = None;
         let aws_client = AwsClient::new(AwsConfig::for_testing(key.url).await).await;
 
-        let chain_state_contract = WebsocketClient::connect(
-            url,
-            NamedChain::AnvilHardhat.into(),
-            address,
-            key.id,
-            blob_wallet,
-            5,
-            aws_client,
-        )
-        .await?;
+        let chain_state_contract =
+            WebsocketClient::connect(url, address, key.id, blob_wallet, 5, aws_client).await?;
 
         Ok(Self {
             address,
@@ -71,24 +64,15 @@ impl CreateTransactions {
         kms_key: &KmsKey,
         contract_args: ContractArgs,
     ) -> Result<Self, anyhow::Error> {
-        let stdout = run_tx_building_script(url, kms_key, contract_args).await?;
-
-        let transactions_file = extract_transactions_file_path(stdout)?;
-
-        let contents = tokio::fs::read_to_string(&transactions_file).await?;
-        let broadcasts: Broadcasts = serde_json::from_str(&contents)?;
-
-        let transactions = broadcasts
-            .transactions
+        let transactions = generate_transactions_via_foundry(url, kms_key, contract_args)
+            .await?
             .into_iter()
             .map(|tx| CreateTransaction {
                 name: tx.name,
                 address: tx.address,
                 tx: TransactionRequest {
                     from: Some(tx.raw_tx.from),
-                    gas: Some(tx.raw_tx.gas),
                     input: tx.raw_tx.input.into(),
-                    chain_id: Some(tx.raw_tx.chain_id),
                     to: Some(TxKind::Create),
                     ..Default::default()
                 },
@@ -163,30 +147,10 @@ fn extract_transactions_file_path(stdout: String) -> Result<String, anyhow::Erro
     Ok(transactions_file)
 }
 
-fn deserialize_u128_from_hex<'de, D>(deserializer: D) -> Result<u128, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    u128::from_str_radix(&s[2..], 16).map_err(serde::de::Error::custom)
-}
-
-fn deserialize_u64_from_hex<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    u64::from_str_radix(&s[2..], 16).map_err(serde::de::Error::custom)
-}
-
 #[derive(Debug, Clone, Deserialize)]
 struct RawTx {
     from: Address,
-    #[serde(deserialize_with = "deserialize_u128_from_hex")]
-    gas: u128,
     input: Bytes,
-    #[serde(rename = "chainId", deserialize_with = "deserialize_u64_from_hex")]
-    chain_id: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -204,13 +168,25 @@ struct Broadcasts {
     transactions: Vec<CreateContractTx>,
 }
 
-async fn run_tx_building_script(
+async fn generate_transactions_via_foundry(
     url: Url,
     kms_key: &KmsKey,
     contract_args: ContractArgs,
-) -> Result<String, anyhow::Error> {
-    let output = tokio::process::Command::new("forge")
-        .current_dir(FOUNDRY_PROJECT)
+) -> anyhow::Result<Vec<CreateContractTx>> {
+    let temp_dir = tempfile::tempdir()?;
+    let temp_path = temp_dir.path().to_owned();
+
+    let mut options = CopyOptions::new();
+    options.content_only = true;
+
+    let destination = temp_path.clone();
+    tokio::task::spawn_blocking(move || {
+        copy(FOUNDRY_PROJECT, destination, &options).unwrap();
+    })
+    .await?;
+
+    let output = Command::new("forge")
+        .current_dir(temp_path)
         .arg("script")
         .arg("script/build_tx.sol:MyScript")
         .arg("--fork-url")
@@ -240,5 +216,10 @@ async fn run_tx_building_script(
         ));
     }
 
-    Ok(String::from_utf8(output.stdout)?)
+    let stdout = String::from_utf8(output.stdout)?;
+    let transactions_file = extract_transactions_file_path(stdout)?;
+    let contents = tokio::fs::read_to_string(transactions_file).await?;
+
+    let broadcasts: Broadcasts = serde_json::from_str(&contents)?;
+    Ok(broadcasts.transactions)
 }
