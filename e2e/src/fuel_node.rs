@@ -20,6 +20,7 @@ pub struct FuelNode {
 
 pub struct FuelNodeProcess {
     _db_dir: tempfile::TempDir,
+    _snapshot_dir: tempfile::TempDir,
     _child: tokio::process::Child,
     url: Url,
     public_key: FuelPublicKey,
@@ -87,6 +88,7 @@ impl FuelNode {
             _db_dir: db_dir,
             url,
             public_key,
+            _snapshot_dir: snapshot_dir,
         };
 
         process.wait_until_healthy().await;
