@@ -1,14 +1,14 @@
 # Stage 1: Build
-FROM lukemathwalker/cargo-chef:latest-rust-1.79 as chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.79 AS chef
 WORKDIR /build/
 # hadolint ignore=DL3008
 
-FROM chef as planner
+FROM chef AS planner
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json --bin fuel-block-committer
 
-FROM chef as builder
+FROM chef AS builder
 COPY --from=planner /build/recipe.json recipe.json
 # Build our project dependencies, not our application!
 RUN cargo chef cook --release --recipe-path recipe.json --bin fuel-block-committer
@@ -18,7 +18,7 @@ COPY . .
 RUN cargo build --release --bin fuel-block-committer
 
 # Stage 2: Run
-FROM ubuntu:22.04 as run
+FROM ubuntu:22.04 AS run
 
 RUN apt-get update -y \
   && apt-get install -y --no-install-recommends ca-certificates \
