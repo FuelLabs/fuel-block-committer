@@ -8,13 +8,12 @@ use ports::{
 };
 use url::Url;
 
-use crate::AwsClient;
-
 pub use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
+use crate::AwsClient;
 
 mod connection;
 mod event_streamer;

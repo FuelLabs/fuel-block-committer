@@ -3,7 +3,6 @@ use std::num::NonZeroU32;
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-
 use ports::types::{TransactionResponse, ValidatedFuelBlock, U256};
 
 use crate::{

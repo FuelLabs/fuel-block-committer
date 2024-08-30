@@ -3,10 +3,9 @@ use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
     Coin, CoinType,
 };
+use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
-
-use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
