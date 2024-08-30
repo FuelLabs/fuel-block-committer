@@ -67,10 +67,7 @@ impl FuelNode {
             .arg("--db-path")
             .arg(db_dir.path())
             .arg("--debug")
-            .env(
-                "CONSENSUS_KEY_SECRET",
-                format!("{}", secret_key.to_string()),
-            )
+            .env("CONSENSUS_KEY_SECRET", format!("{}", secret_key))
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null());
 
@@ -114,7 +111,7 @@ impl FuelNodeProcess {
         tx.script_gas_limit(1_000_000);
 
         let secret = TESTNET_WALLET_SECRETS[0];
-        let secret_key = FuelKey::from_str(&secret).expect("valid secret key");
+        let secret_key = FuelKey::from_str(secret).expect("valid secret key");
         let address = Input::owner(&secret_key.public_key());
 
         let base_asset = AssetId::zeroed();

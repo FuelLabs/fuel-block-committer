@@ -131,8 +131,7 @@ impl KmsProcess {
         // use arn as id to closer imitate prod behavior
         let id = response
             .key_metadata
-            .map(|metadata| metadata.arn)
-            .flatten()
+            .and_then(|metadata| metadata.arn)
             .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
 
         let signer = self.client.make_signer(id.clone()).await?;
