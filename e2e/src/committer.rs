@@ -37,7 +37,7 @@ impl Committer {
         cmd.arg(config)
             .env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
-            .env("AWS_ACCESS_KEY_ARN", "test")
+            .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__MAIN_KEY_ARN", get_field!(main_key_arn))
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
@@ -56,7 +56,6 @@ impl Committer {
             .env("COMMITTER__APP__DB__PORT", get_field!(db_port).to_string())
             .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
             .env("COMMITTER__APP__PORT", unused_port.to_string())
-            .env("COMMITTER__AWS__ALLOW_HTTP", "true")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
