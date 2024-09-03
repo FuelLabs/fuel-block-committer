@@ -2683,6 +2683,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "clap",
+ "clock",
  "config",
  "eth",
  "fuel",
@@ -5429,6 +5430,7 @@ name = "services"
 version = "0.6.0"
 dependencies = [
  "async-trait",
+ "clock",
  "fuel-crypto",
  "futures",
  "hex",

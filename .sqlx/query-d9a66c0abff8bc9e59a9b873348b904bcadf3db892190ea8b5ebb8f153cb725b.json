@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            MAX(l1_transactions.finalized_at) AS last_fragment_time\n        FROM \n            l1_transaction_fragments\n        JOIN \n            l1_transactions ON l1_transactions.id = l1_transaction_fragments.transaction_id\n        WHERE \n            l1_transactions.state = $1;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_fragment_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d9a66c0abff8bc9e59a9b873348b904bcadf3db892190ea8b5ebb8f153cb725b"
+}

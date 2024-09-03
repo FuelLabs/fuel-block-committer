@@ -73,6 +73,9 @@ pub struct App {
     pub block_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
+    /// How long to wait in order to improve blob space utilization
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub state_accumulation_timeout: Duration,
 }
 
 fn human_readable_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>

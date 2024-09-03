@@ -4,6 +4,7 @@ use metrics::{
     RegistersMetrics,
 };
 use ports::{
+    clock::Clock,
     storage::Storage,
     types::{SubmissionTx, TransactionState},
 };
@@ -11,28 +12,31 @@ use tracing::info;
 
 use super::Runner;
 
-pub struct StateListener<L1, Db> {
+pub struct StateListener<L1, Db, C> {
     l1_adapter: L1,
     storage: Db,
     num_blocks_to_finalize: u64,
     metrics: Metrics,
+    clock: C,
 }
 
-impl<L1, Db> StateListener<L1, Db> {
-    pub fn new(l1_adapter: L1, storage: Db, num_blocks_to_finalize: u64) -> Self {
+impl<L1, Db, C> StateListener<L1, Db, C> {
+    pub fn new(l1_adapter: L1, storage: Db, num_blocks_to_finalize: u64, clock: C) -> Self {
         Self {
             l1_adapter,
             storage,
             num_blocks_to_finalize,
             metrics: Metrics::default(),
+            clock,
         }
     }
 }
 
-impl<L1, Db> StateListener<L1, Db>
+impl<L1, Db, C> StateListener<L1, Db, C>
 where
     L1: ports::l1::Api,
     Db: Storage,
+    C: Clock,
 {
     async fn check_pending_txs(&mut self, pending_txs: Vec<SubmissionTx>) -> crate::Result<()> {
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
@@ -59,7 +63,7 @@ where
             }
 
             self.storage
-                .update_submission_tx_state(tx_hash, TransactionState::Finalized)
+                .update_submission_tx_state(tx_hash, TransactionState::Finalized(self.clock.now()))
                 .await?;
 
             info!("finalized blob tx {}", hex::encode(tx_hash));
@@ -74,10 +78,11 @@ where
 }
 
 #[async_trait]
-impl<L1, Db> Runner for StateListener<L1, Db>
+impl<L1, Db, C> Runner for StateListener<L1, Db, C>
 where
     L1: ports::l1::Api + Send + Sync,
     Db: Storage,
+    C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> crate::Result<()> {
         let pending_txs = self.storage.get_pending_txs().await?;
@@ -97,7 +102,7 @@ struct Metrics {
     last_eth_block_w_blob: IntGauge,
 }
 
-impl<L1, Db> RegistersMetrics for StateListener<L1, Db> {
+impl<L1, Db, C> RegistersMetrics for StateListener<L1, Db, C> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.metrics.last_eth_block_w_blob.clone())]
     }
@@ -119,6 +124,7 @@ impl Default for Metrics {
 
 #[cfg(test)]
 mod tests {
+    use clock::{SystemClock, TestClock};
     use mockall::predicate;
     use ports::types::{L1Height, StateFragment, StateSubmission, TransactionResponse, U256};
     use storage::PostgresProcess;
@@ -234,7 +240,10 @@ mod tests {
         );
 
         let num_blocks_to_finalize = 1;
-        let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
+        let test_clock = TestClock::default();
+        let now = test_clock.now();
+        let mut listener =
+            StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize, test_clock);
         assert!(db.has_pending_txs().await?);
 
         // when
@@ -242,6 +251,7 @@ mod tests {
 
         // then
         assert!(!db.has_pending_txs().await?);
+        assert_eq!(db.last_time_a_fragment_was_finalized().await?.unwrap(), now);
 
         Ok(())
     }
@@ -266,7 +276,8 @@ mod tests {
         );
 
         let num_blocks_to_finalize = 4;
-        let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
+        let mut listener =
+            StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize, SystemClock);
         assert!(db.has_pending_txs().await?);
 
         // when
@@ -292,7 +303,8 @@ mod tests {
         let l1_mock = given_l1_that_returns_failed_transaction(tx_hash);
 
         let num_blocks_to_finalize = 4;
-        let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
+        let mut listener =
+            StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize, SystemClock);
         assert!(db.has_pending_txs().await?);
 
         // when

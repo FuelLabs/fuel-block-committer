@@ -1,5 +1,6 @@
 use std::{num::NonZeroU32, time::Duration};
 
+use clock::SystemClock;
 use eth::AwsConfig;
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
@@ -76,7 +77,12 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_committer = services::StateCommitter::new(l1, storage);
+    let state_committer = services::StateCommitter::new(
+        l1,
+        storage,
+        SystemClock,
+        config.app.state_accumulation_timeout,
+    );
 
     schedule_polling(
         config.app.block_check_interval,
@@ -110,8 +116,12 @@ pub fn state_listener(
     registry: &Registry,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_listener =
-        services::StateListener::new(l1, storage, config.app.num_blocks_to_finalize_tx);
+    let state_listener = services::StateListener::new(
+        l1,
+        storage,
+        config.app.num_blocks_to_finalize_tx,
+        SystemClock,
+    );
 
     state_listener.register_metrics(registry);
 

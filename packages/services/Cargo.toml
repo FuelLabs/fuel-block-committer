@@ -24,6 +24,7 @@ validator = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
+clock = { workspace = true, features = ["test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["full", "test-helpers"] }
