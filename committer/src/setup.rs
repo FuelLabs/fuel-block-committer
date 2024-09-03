@@ -125,6 +125,8 @@ pub fn state_listener(
 
     state_listener.register_metrics(registry);
 
+    state_listener.register_metrics(registry);
+
     schedule_polling(
         config.app.block_check_interval,
         state_listener,

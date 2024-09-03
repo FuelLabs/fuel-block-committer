@@ -49,6 +49,7 @@ fuel-core-client = { version = "0.31", default-features = false }
 fuel-core-types = { version = "0.31", default-features = false }
 fuel-crypto = { version = "0.55", default-features = false }
 futures = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 humantime = { version = "2.1", default-features = false }
 impl-tools = { version = "0.10.0", default-features = false }

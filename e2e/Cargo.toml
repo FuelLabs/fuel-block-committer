@@ -46,9 +46,6 @@ portpicker = { workspace = true }
 ports = { workspace = true, features = ["fuel", "l1"] }
 rand = { workspace = true, features = ["std"] }
 reqwest = { workspace = true }
-# `rustls` must be used because `ethers` enables it, and it cannot be enabled 
-# simultaneously with `native-tls`. Since we cannot configure this within 
-# `ethers`, we must also use `rustls`.
 secp256k1 = { workspace = true, features = ["rand-std"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
