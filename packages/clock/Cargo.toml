@@ -1,0 +1,23 @@
+[package]
+name = "clock"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+ports = { workspace = true, features = ["clock"] }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["sync"], optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[features]
+# TODO: remove
+default = ["test-helpers"]
+test-helpers = ["dep:tokio"]
