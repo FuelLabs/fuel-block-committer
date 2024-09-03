@@ -1,6 +1,6 @@
 #[cfg(feature = "l1")]
 pub use alloy::primitives::{Address, U256};
-#[cfg(feature = "l1")]
+#[cfg(any(feature = "l1", feature = "storage"))]
 pub use futures::Stream;
 
 mod block_submission;

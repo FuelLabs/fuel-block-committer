@@ -2,6 +2,9 @@
 mod tables;
 #[cfg(feature = "test-helpers")]
 mod test_instance;
+use std::pin::Pin;
+
+use futures::{Stream, StreamExt, TryStreamExt};
 #[cfg(feature = "test-helpers")]
 pub use test_instance::*;
 
@@ -41,8 +44,12 @@ impl Storage for Postgres {
         Ok(self._insert_state_submission(submission, fragments).await?)
     }
 
-    async fn get_unsubmitted_fragments(&self, max_total_size: usize) -> Result<Vec<StateFragment>> {
-        Ok(self._get_unsubmitted_fragments(max_total_size).await?)
+    fn stream_unsubmitted_fragments<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Stream<Item = Result<StateFragment>> + 'a + Send>> {
+        self._stream_unsubmitted_fragments()
+            .map_err(Into::into)
+            .boxed()
     }
 
     async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()> {
@@ -75,6 +82,7 @@ mod tests {
 
     use std::time::Duration;
 
+    use futures::TryStreamExt;
     use ports::{
         storage::{Error, Result, Storage},
         types::{BlockSubmission, DateTime, StateFragment, StateSubmission, TransactionState, Utc},
@@ -168,7 +176,7 @@ mod tests {
         db.insert_state_submission(state, fragments.clone()).await?;
 
         // then
-        let db_fragments = db.get_unsubmitted_fragments(usize::MAX).await?;
+        let db_fragments: Vec<_> = db.stream_unsubmitted_fragments().try_collect().await?;
 
         assert_eq!(db_fragments.len(), fragments.len());
 
@@ -258,9 +266,11 @@ mod tests {
         db.record_pending_tx(tx_hash, fragment_ids).await?;
 
         // then
-        let db_fragments = db.get_unsubmitted_fragments(usize::MAX).await?;
-
-        let db_fragment_id: Vec<_> = db_fragments.iter().map(|f| f.id.expect("has id")).collect();
+        let db_fragment_id: Vec<_> = db
+            .stream_unsubmitted_fragments()
+            .map_ok(|f| f.id.expect("has id"))
+            .try_collect()
+            .await?;
 
         // unsubmitted fragments are not associated to any finalized or pending tx
         assert_eq!(db_fragment_id, vec![1, 4, 5]);

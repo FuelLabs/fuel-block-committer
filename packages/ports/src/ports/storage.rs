@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
+use futures::Stream;
 use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{
@@ -29,7 +30,9 @@ pub trait Storage: Send + Sync {
         submission: StateSubmission,
         fragments: Vec<StateFragment>,
     ) -> Result<()>;
-    async fn get_unsubmitted_fragments(&self, max_total_size: usize) -> Result<Vec<StateFragment>>;
+    fn stream_unsubmitted_fragments<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Stream<Item = Result<StateFragment>> + 'a + Send>>;
     async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>>;
     async fn has_pending_txs(&self) -> Result<bool>;

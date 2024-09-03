@@ -38,6 +38,6 @@ fuel = [
   "dep:fuel-core-client",
   "dep:validator",
 ]
-storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]
+storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait", "dep:futures"]
 clock = []
 full = ["l1", "fuel", "storage", "clock"]

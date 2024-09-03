@@ -37,11 +37,8 @@ where
     Db: Storage,
     C: Clock,
 {
-    async fn fetch_fragments(&self, max_total_size: usize) -> Result<(Vec<u32>, Vec<u8>)> {
-        let fragments = self
-            .storage
-            .get_unsubmitted_fragments(max_total_size)
-            .await?;
+    async fn fetch_fragments(&self) -> Result<(Vec<u32>, Vec<u8>)> {
+        let fragments = self.storage.stream_unsubmitted_fragments().await?;
 
         let num_fragments = fragments.len();
         let mut fragment_ids = Vec::with_capacity(num_fragments);
@@ -55,11 +52,8 @@ where
     }
 
     async fn submit_state(&self) -> Result<()> {
-        // 6 blobs per tx
-        let max_total_size = 6 * 128 * 1024;
-
         // TODO: segfault, what about encoding overhead?
-        let (fragment_ids, data) = self.fetch_fragments(max_total_size).await?;
+        let (fragment_ids, data) = self.fetch_fragments().await?;
 
         // TODO: segfault what about when the fragments don't add up cleanly to max_total_size
         if data.len() < max_total_size {

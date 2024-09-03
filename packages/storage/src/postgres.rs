@@ -1,4 +1,6 @@
-use futures::StreamExt;
+use std::pin::Pin;
+
+use futures::{Stream, StreamExt, TryStreamExt};
 use ports::types::{
     BlockSubmission, DateTime, StateFragment, StateSubmission, SubmissionTx, TransactionState, Utc,
 };
@@ -201,11 +203,10 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _get_unsubmitted_fragments(
+    pub(crate) fn _stream_unsubmitted_fragments(
         &self,
-        max_total_size: usize,
-    ) -> Result<Vec<StateFragment>> {
-        let mut fragments = sqlx::query_as!(
+    ) -> impl Stream<Item = Result<StateFragment>> + '_ + Send {
+        sqlx::query_as!(
             // all fragments that are not associated to any pending or finalized tx
             tables::L1StateFragment,
             "SELECT l1_fragments.*
@@ -221,24 +222,11 @@ impl Postgres {
             L1SubmissionTxState::FINALIZED_STATE,
             L1SubmissionTxState::PENDING_STATE
         )
-        .fetch(&self.connection_pool);
-
-        let mut total_size = 0;
-
-        let mut chosen_fragments = vec![];
-
-        while let Some(fragment) = fragments.next().await {
-            let fragment = StateFragment::try_from(fragment?)?;
-
-            total_size += fragment.data.len();
-            if total_size > max_total_size {
-                break;
-            }
-
-            chosen_fragments.push(fragment);
-        }
-
-        Ok(chosen_fragments)
+        .fetch(&self.connection_pool)
+        .map_err(Error::from)
+        .and_then(|row| async move {
+            StateFragment::try_from(row)
+        })
     }
 
     pub(crate) async fn _record_pending_tx(
