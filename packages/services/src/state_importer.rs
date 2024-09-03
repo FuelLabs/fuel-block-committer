@@ -105,6 +105,10 @@ where
     BlockValidator: Validator,
 {
     async fn run(&mut self) -> Result<()> {
+        // TODO: segfault we can miss blocks if we only fetch the latest
+        // This is different from the contract call which happens much rarer, state should be
+        // committed of every block
+        // Logic needs to be implemented which will track holes and fetch them
         let block = self.fetch_latest_block().await?;
 
         if self.check_if_stale(block.header.height).await? {

@@ -1,7 +1,11 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use ports::{clock::Clock, storage::Storage};
+use ports::{
+    clock::Clock,
+    storage::Storage,
+    types::{DateTime, Utc},
+};
 use tracing::{info, warn};
 
 use crate::{Result, Runner};
@@ -11,15 +15,18 @@ pub struct StateCommitter<L1, Db, Clock> {
     storage: Db,
     clock: Clock,
     accumulation_timeout: Duration,
+    component_created_at: DateTime<Utc>,
 }
 
-impl<L1, Db, Clock> StateCommitter<L1, Db, Clock> {
-    pub fn new(l1: L1, storage: Db, clock: Clock, accumulation_timeout: Duration) -> Self {
+impl<L1, Db, C: Clock> StateCommitter<L1, Db, C> {
+    pub fn new(l1: L1, storage: Db, clock: C, accumulation_timeout: Duration) -> Self {
+        let now = clock.now();
         Self {
             l1_adapter: l1,
             storage,
             clock,
             accumulation_timeout,
+            component_created_at: now,
         }
     }
 }
@@ -60,11 +67,14 @@ where
             let data_size = data.len();
             let remaining_space = max_total_size.saturating_sub(data_size);
 
-            let Some(last_finalization) = self.storage.last_time_a_fragment_was_finalized().await?
-            else {
-                info!("Found {fragment_count} fragment(s) with total size of {data_size}B. Didn't detect any previous finalized fragments. Waiting for additional fragments to use up more of the remaining {remaining_space}B.");
-                return Ok(());
-            };
+            let last_finalization = self
+                .storage
+                .last_time_a_fragment_was_finalized()
+                .await?
+                .unwrap_or_else(|| {
+                    info!("No fragment has been finalized yet, accumulation timeout will be calculated from the time the committer was started ({})", self.component_created_at);
+                    self.component_created_at
+                });
 
             let now = self.clock.now();
             let time_delta = now - last_finalization;
