@@ -7,13 +7,25 @@ pub struct StateSubmission {
     pub block_height: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct StateFragment {
     pub id: Option<u32>,
     pub submission_id: Option<u32>,
     pub fragment_idx: u32,
     pub data: Vec<u8>,
     pub created_at: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for StateFragment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateFragment")
+            .field("id", &self.id)
+            .field("submission_id", &self.submission_id)
+            .field("fragment_idx", &self.fragment_idx)
+            .field("data", &hex::encode(&self.data))
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 impl StateFragment {
@@ -30,28 +42,8 @@ pub struct SubmissionTx {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionState {
     Pending,
-    Finalized,
+    Finalized(DateTime<Utc>),
     Failed,
-}
-
-// Used for DB storage
-impl TransactionState {
-    pub fn into_i16(&self) -> i16 {
-        match self {
-            TransactionState::Pending => 0,
-            TransactionState::Finalized => 1,
-            TransactionState::Failed => 2,
-        }
-    }
-
-    pub fn from_i16(value: i16) -> Option<Self> {
-        match value {
-            0 => Some(Self::Pending),
-            1 => Some(Self::Finalized),
-            2 => Some(Self::Failed),
-            _ => None,
-        }
-    }
 }
 
 pub struct TransactionResponse {

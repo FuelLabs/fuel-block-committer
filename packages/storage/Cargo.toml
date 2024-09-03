@@ -24,9 +24,13 @@ sqlx = { workspace = true, features = [
   "time",
   "chrono",
 ] }
-testcontainers = { workspace = true, optional = true }
+testcontainers = { workspace = true, optional = true, features = [
+  "signal-hook",
+  "watchdog",
+] }
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 ports = { workspace = true, features = ["storage"] }

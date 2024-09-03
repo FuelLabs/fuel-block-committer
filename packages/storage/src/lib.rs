@@ -9,7 +9,10 @@ mod error;
 mod postgres;
 use ports::{
     storage::{Result, Storage},
-    types::{BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState},
+    types::{
+        BlockSubmission, DateTime, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+        Utc,
+    },
 };
 pub use postgres::{DbConfig, Postgres};
 
@@ -19,6 +22,9 @@ impl Storage for Postgres {
         Ok(self._insert(submission).await?)
     }
 
+    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
+        Ok(self._last_time_a_fragment_was_finalized().await?)
+    }
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
         Ok(self._submission_w_latest_block().await?)
     }
@@ -35,8 +41,8 @@ impl Storage for Postgres {
         Ok(self._insert_state_submission(submission, fragments).await?)
     }
 
-    async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
-        Ok(self._get_unsubmitted_fragments().await?)
+    async fn get_unsubmitted_fragments(&self, max_total_size: usize) -> Result<Vec<StateFragment>> {
+        Ok(self._get_unsubmitted_fragments(max_total_size).await?)
     }
 
     async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()> {
@@ -66,9 +72,12 @@ impl Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
+
+    use std::time::Duration;
+
     use ports::{
         storage::{Error, Result, Storage},
-        types::{BlockSubmission, StateFragment, StateSubmission, TransactionState},
+        types::{BlockSubmission, DateTime, StateFragment, StateSubmission, TransactionState, Utc},
     };
     use rand::{thread_rng, Rng};
     use storage as _;
@@ -159,7 +168,7 @@ mod tests {
         db.insert_state_submission(state, fragments.clone()).await?;
 
         // then
-        let db_fragments = db.get_unsubmitted_fragments().await?;
+        let db_fragments = db.get_unsubmitted_fragments(usize::MAX).await?;
 
         assert_eq!(db_fragments.len(), fragments.len());
 
@@ -206,7 +215,7 @@ mod tests {
         db.record_pending_tx(tx_hash, fragment_ids).await?;
 
         // when
-        db.update_submission_tx_state(tx_hash, TransactionState::Finalized)
+        db.update_submission_tx_state(tx_hash, TransactionState::Finalized(Utc::now()))
             .await?;
 
         // then
@@ -220,7 +229,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsbumitted_fragments_are_not_in_pending_or_finalized_tx() -> Result<()> {
+    async fn unsubmitted_fragments_are_only_those_that_failed_or_never_tried() -> Result<()> {
         // given
         let process = PostgresProcess::shared().await?;
         let db = process.create_random_db().await?;
@@ -240,7 +249,7 @@ mod tests {
         let tx_hash = [2; 32];
         let fragment_ids = vec![2];
         db.record_pending_tx(tx_hash, fragment_ids).await?;
-        db.update_submission_tx_state(tx_hash, TransactionState::Finalized)
+        db.update_submission_tx_state(tx_hash, TransactionState::Finalized(Utc::now()))
             .await?;
 
         // tx is pending
@@ -249,12 +258,56 @@ mod tests {
         db.record_pending_tx(tx_hash, fragment_ids).await?;
 
         // then
-        let db_fragments = db.get_unsubmitted_fragments().await?;
+        let db_fragments = db.get_unsubmitted_fragments(usize::MAX).await?;
 
         let db_fragment_id: Vec<_> = db_fragments.iter().map(|f| f.id.expect("has id")).collect();
 
         // unsubmitted fragments are not associated to any finalized or pending tx
         assert_eq!(db_fragment_id, vec![1, 4, 5]);
+
+        Ok(())
+    }
+
+    fn round_to_micros(time: DateTime<Utc>) -> DateTime<Utc> {
+        DateTime::from_timestamp_micros(time.timestamp_micros()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn can_get_the_time_when_last_we_successfully_submitted_a_fragment() -> Result<()> {
+        // given
+        let process = PostgresProcess::shared().await?;
+        let db = process.create_random_db().await?;
+
+        let (state, fragments) = given_state_and_fragments();
+        db.insert_state_submission(state, fragments.clone()).await?;
+
+        let old_tx_hash = [1; 32];
+        let old_fragment_ids = vec![1, 2];
+        db.record_pending_tx(old_tx_hash, old_fragment_ids).await?;
+
+        let finalization_time_old = round_to_micros(Utc::now());
+        db.update_submission_tx_state(
+            old_tx_hash,
+            TransactionState::Finalized(finalization_time_old),
+        )
+        .await?;
+
+        let new_tx_hash = [2; 32];
+        let new_fragment_ids = vec![3];
+
+        db.record_pending_tx(new_tx_hash, new_fragment_ids).await?;
+        let finalization_time_new = round_to_micros(finalization_time_old + Duration::from_secs(1));
+
+        // when
+        db.update_submission_tx_state(
+            new_tx_hash,
+            TransactionState::Finalized(finalization_time_new),
+        )
+        .await?;
+
+        // then
+        let time = db.last_time_a_fragment_was_finalized().await?.unwrap();
+        assert_eq!(time, finalization_time_new);
 
         Ok(())
     }

@@ -23,6 +23,7 @@ hex = { workspace = true }
 validator = { workspace = true }
 
 [dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["full", "test-helpers"] }

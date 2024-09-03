@@ -21,6 +21,7 @@ serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
 validator = { workspace = true, optional = true }
+hex = { workspace = true }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand", "validator?/test-helpers"]
@@ -38,4 +39,5 @@ fuel = [
   "dep:validator",
 ]
 storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait"]
-full = ["l1", "fuel", "storage"]
+clock = []
+full = ["l1", "fuel", "storage", "clock"]

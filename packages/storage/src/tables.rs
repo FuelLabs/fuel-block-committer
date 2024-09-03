@@ -1,11 +1,11 @@
 use ports::types::{
-    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+    BlockSubmission, DateTime, StateFragment, StateSubmission, SubmissionTx, TransactionState, Utc,
 };
-use sqlx::types::chrono;
+use sqlx::{postgres::PgRow, types::chrono, Row};
 
 macro_rules! bail {
     ($msg: literal, $($args: expr),*) => {
-        return Err(Self::Error::Conversion(format!($msg, $($args),*)));
+        return Err($crate::error::Error::Conversion(format!($msg, $($args),*)))
     };
 }
 
@@ -138,11 +138,51 @@ impl From<StateFragment> for L1StateFragment {
     }
 }
 
-#[derive(sqlx::FromRow)]
 pub struct L1SubmissionTx {
     pub id: i64,
     pub hash: Vec<u8>,
+    // The fields `state` and `finalized_at` are duplicated in `L1SubmissionTxState` since #[sqlx(flatten)] is not an option because `query_as!` doesn't use `FromRow` and consequently doesn't flatten
     pub state: i16,
+    pub finalized_at: Option<DateTime<Utc>>,
+}
+
+impl L1SubmissionTx {
+    pub fn parse_state(&self) -> Result<TransactionState, crate::error::Error> {
+        match (self.state, self.finalized_at) {
+            (0, _) => Ok(TransactionState::Pending),
+            (1, Some(finalized_at)) => Ok(TransactionState::Finalized(finalized_at)),
+            (1, None) => {
+                bail!(
+                    "L1SubmissionTx(id={}) is missing finalized_at field. Must not happen since there should have been a constraint on the table!", self.id
+                )
+            }
+            (2, _) => Ok(TransactionState::Failed),
+            _ => {
+                bail!(
+                    "L1SubmissionTx(id={}) has invalid state {}",
+                    self.id,
+                    self.state
+                )
+            }
+        }
+    }
+}
+
+impl From<SubmissionTx> for L1SubmissionTx {
+    fn from(value: SubmissionTx) -> Self {
+        let L1SubmissionTxState {
+            state,
+            finalized_at,
+        } = value.state.into();
+
+        Self {
+            // if not present use placeholder as id is given by db
+            id: value.id.unwrap_or_default() as i64,
+            hash: value.hash.to_vec(),
+            state,
+            finalized_at,
+        }
+    }
 }
 
 impl TryFrom<L1SubmissionTx> for SubmissionTx {
@@ -153,13 +193,7 @@ impl TryFrom<L1SubmissionTx> for SubmissionTx {
         let Ok(hash) = hash.try_into() else {
             bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
         };
-
-        let Some(state) = TransactionState::from_i16(value.state) else {
-            bail!(
-                "state: {:?} is not a valid variant of `TransactionState`",
-                value.state
-            );
-        };
+        let state = value.parse_state()?;
 
         Ok(SubmissionTx {
             id: Some(value.id as u32),
@@ -169,13 +203,50 @@ impl TryFrom<L1SubmissionTx> for SubmissionTx {
     }
 }
 
-impl From<SubmissionTx> for L1SubmissionTx {
-    fn from(value: SubmissionTx) -> Self {
+impl<'r> sqlx::FromRow<'r, PgRow> for L1SubmissionTx {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let L1SubmissionTxState {
+            state,
+            finalized_at,
+        } = L1SubmissionTxState::from_row(row)?;
+
+        let id = row.try_get("id")?;
+        let hash = row.try_get("hash")?;
+
+        Ok(Self {
+            id,
+            hash,
+            state,
+            finalized_at,
+        })
+    }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct L1SubmissionTxState {
+    pub state: i16,
+    pub finalized_at: Option<DateTime<Utc>>,
+}
+
+impl L1SubmissionTxState {
+    pub const PENDING_STATE: i16 = 0;
+    pub const FINALIZED_STATE: i16 = 1;
+    pub const FAILED_STATE: i16 = 2;
+}
+
+impl From<TransactionState> for L1SubmissionTxState {
+    fn from(value: TransactionState) -> Self {
+        let (state, finalized_at) = match value {
+            TransactionState::Pending => (Self::PENDING_STATE, None),
+            TransactionState::Finalized(finalized_at) => {
+                (Self::FINALIZED_STATE, Some(finalized_at))
+            }
+            TransactionState::Failed => (Self::FAILED_STATE, None),
+        };
+
         Self {
-            // if not present use placeholder as id is given by db
-            id: value.id.unwrap_or_default() as i64,
-            hash: value.hash.to_vec(),
-            state: value.state.into_i16(),
+            state,
+            finalized_at,
         }
     }
 }

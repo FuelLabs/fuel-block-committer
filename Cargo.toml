@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "committer",
   "e2e",
+  "packages/clock",
   "packages/eth",
   "packages/fuel",
   "packages/metrics",
@@ -30,6 +31,7 @@ ports = { path = "./packages/ports", default-features = false }
 storage = { path = "./packages/storage", default-features = false }
 services = { path = "./packages/services", default-features = false }
 validator = { path = "./packages/validator", default-features = false }
+clock = { path = "./packages/clock", default-features = false }
 
 actix-web = { version = "4", default-features = false }
 alloy = { version = "0.2.1", default-features = false }
@@ -47,7 +49,6 @@ fuel-core-client = { version = "0.31", default-features = false }
 fuel-core-types = { version = "0.31", default-features = false }
 fuel-crypto = { version = "0.55", default-features = false }
 futures = { version = "0.3", default-features = false }
-futures-util = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 humantime = { version = "2.1", default-features = false }
 impl-tools = { version = "0.10.0", default-features = false }

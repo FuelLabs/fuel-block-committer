@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use sqlx::types::chrono::{DateTime, Utc};
+
 use crate::types::{
     BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
 };
@@ -27,11 +29,12 @@ pub trait Storage: Send + Sync {
         submission: StateSubmission,
         fragments: Vec<StateFragment>,
     ) -> Result<()>;
-    async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>>;
+    async fn get_unsubmitted_fragments(&self, max_total_size: usize) -> Result<Vec<StateFragment>>;
     async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
+    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_submission_tx_state(
         &self,
         hash: [u8; 32],

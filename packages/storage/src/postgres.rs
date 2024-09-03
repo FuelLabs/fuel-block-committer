@@ -1,10 +1,11 @@
+use futures::StreamExt;
 use ports::types::{
-    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+    BlockSubmission, DateTime, StateFragment, StateSubmission, SubmissionTx, TransactionState, Utc,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
-use crate::tables;
+use crate::tables::{self, L1SubmissionTxState};
 
 #[derive(Clone)]
 pub struct Postgres {
@@ -113,6 +114,28 @@ impl Postgres {
         .transpose()
     }
 
+    pub(crate) async fn _last_time_a_fragment_was_finalized(
+        &self,
+    ) -> crate::error::Result<Option<DateTime<Utc>>> {
+        let response = sqlx::query!(
+            r#"SELECT
+            MAX(l1_transactions.finalized_at) AS last_fragment_time
+        FROM 
+            l1_transaction_fragments
+        JOIN 
+            l1_transactions ON l1_transactions.id = l1_transaction_fragments.transaction_id
+        WHERE 
+            l1_transactions.state = $1;
+        "#,
+            L1SubmissionTxState::FINALIZED_STATE
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .and_then(|response| response.last_fragment_time);
+
+        Ok(response)
+    }
+
     pub(crate) async fn _set_submission_completed(
         &self,
         fuel_block_hash: [u8; 32],
@@ -178,9 +201,11 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
-        const BLOB_LIMIT: i64 = 6;
-        let rows = sqlx::query_as!(
+    pub(crate) async fn _get_unsubmitted_fragments(
+        &self,
+        max_total_size: usize,
+    ) -> Result<Vec<StateFragment>> {
+        let mut fragments = sqlx::query_as!(
             // all fragments that are not associated to any pending or finalized tx
             tables::L1StateFragment,
             "SELECT l1_fragments.*
@@ -192,18 +217,28 @@ impl Postgres {
                 JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id
                 WHERE l1_transactions.state IN ($1, $2)
             )
-            ORDER BY l1_fragments.created_at
-            LIMIT $3;",
-            TransactionState::Finalized.into_i16(),
-            TransactionState::Pending.into_i16(),
-            BLOB_LIMIT
+            ORDER BY l1_fragments.created_at;",
+            L1SubmissionTxState::FINALIZED_STATE,
+            L1SubmissionTxState::PENDING_STATE
         )
-        .fetch_all(&self.connection_pool)
-        .await?
-        .into_iter()
-        .map(StateFragment::try_from);
+        .fetch(&self.connection_pool);
 
-        rows.collect::<Result<Vec<_>>>()
+        let mut total_size = 0;
+
+        let mut chosen_fragments = vec![];
+
+        while let Some(fragment) = fragments.next().await {
+            let fragment = StateFragment::try_from(fragment?)?;
+
+            total_size += fragment.data.len();
+            if total_size > max_total_size {
+                break;
+            }
+
+            chosen_fragments.push(fragment);
+        }
+
+        Ok(chosen_fragments)
     }
 
     pub(crate) async fn _record_pending_tx(
@@ -216,7 +251,7 @@ impl Postgres {
         let transaction_id = sqlx::query!(
             "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
             tx_hash.as_slice(),
-            TransactionState::Pending.into_i16(),
+            L1SubmissionTxState::PENDING_STATE
         )
         .fetch_one(&mut *transaction)
         .await?
@@ -240,7 +275,7 @@ impl Postgres {
     pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
         Ok(sqlx::query!(
             "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
-            TransactionState::Pending.into_i16()
+            L1SubmissionTxState::PENDING_STATE
         )
         .fetch_one(&self.connection_pool)
         .await?
@@ -251,7 +286,7 @@ impl Postgres {
         sqlx::query_as!(
             tables::L1SubmissionTx,
             "SELECT * FROM l1_transactions WHERE state = $1",
-            TransactionState::Pending.into_i16()
+            L1SubmissionTxState::PENDING_STATE
         )
         .fetch_all(&self.connection_pool)
         .await?
@@ -278,9 +313,14 @@ impl Postgres {
         hash: [u8; 32],
         state: TransactionState,
     ) -> Result<()> {
+        let L1SubmissionTxState {
+            state,
+            finalized_at,
+        } = state.into();
         sqlx::query!(
-            "UPDATE l1_transactions SET state = $1 WHERE hash = $2",
-            state.into_i16(),
+            "UPDATE l1_transactions SET state = $1, finalized_at = $2 WHERE hash = $3",
+            state,
+            finalized_at,
             hash.as_slice(),
         )
         .execute(&self.connection_pool)
