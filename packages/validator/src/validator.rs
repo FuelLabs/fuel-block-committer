@@ -45,7 +45,7 @@ impl BlockValidator {
 
         if *producer_addr != self.producer_addr {
             return Err(Error::BlockValidation(format!(
-                "producer addr '{}' does not match expected addr '{}'.",
+                "producer addr '{}' does not match expected addr '{}'. block: {fuel_block:?}",
                 hex::encode(producer_addr),
                 hex::encode(self.producer_addr)
             )));

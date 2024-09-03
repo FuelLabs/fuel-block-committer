@@ -16,6 +16,7 @@ pub struct Committer {
     db_port: Option<u16>,
     db_name: Option<String>,
     kms_url: Option<String>,
+    state_accumulation_timeout: Option<String>,
 }
 
 impl Committer {
@@ -56,6 +57,10 @@ impl Committer {
             .env("COMMITTER__APP__DB__PORT", get_field!(db_port).to_string())
             .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
             .env("COMMITTER__APP__PORT", unused_port.to_string())
+            .env(
+                "COMMITTER__APP__STATE_ACCUMULATION_TIMEOUT",
+                get_field!(state_accumulation_timeout),
+            )
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
@@ -127,6 +132,11 @@ impl Committer {
         self.show_logs = show_logs;
         self
     }
+
+    pub fn with_state_accumulation_timeout(mut self, timeout: String) -> Self {
+        self.state_accumulation_timeout = Some(timeout);
+        self
+    }
 }
 
 pub struct CommitterProcess {
@@ -151,7 +161,9 @@ impl CommitterProcess {
     pub async fn wait_for_committed_blob(&self) -> anyhow::Result<()> {
         loop {
             match self.fetch_latest_blob_block().await {
-                Ok(_) => break,
+                Ok(value) if value != 0 => {
+                    break;
+                }
                 _ => {
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     continue;

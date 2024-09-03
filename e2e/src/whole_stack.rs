@@ -121,6 +121,7 @@ async fn start_committer(
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
         .with_show_logs(logs)
+        .with_state_accumulation_timeout("3s".to_string())
         .with_eth_rpc((eth_node).ws_url().clone())
         .with_fuel_rpc(fuel_node.url().clone())
         .with_db_port(random_db.port())
