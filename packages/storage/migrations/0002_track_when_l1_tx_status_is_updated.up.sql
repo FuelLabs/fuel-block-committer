@@ -1,22 +1,24 @@
 BEGIN;
 
+-- Step 1: Add the finalized_at column to the l1_transactions table
 ALTER TABLE l1_transactions
 ADD COLUMN finalized_at TIMESTAMPTZ;
 
--- So that previous data passes the constraint added below
+-- Step 2: Set finalized_at for existing finalized transactions
 UPDATE l1_transactions
 SET finalized_at = CURRENT_TIMESTAMP
 WHERE state = 1;
 
--- All finalized tranasctions must have the finalized_at set
+-- Step 3: Add a constraint to ensure finalized transactions have finalized_at set
 ALTER TABLE l1_transactions
 ADD CONSTRAINT check_finalized_at_set
 CHECK (state != 1 OR finalized_at IS NOT NULL);
 
-ALTER TABLE l1_fuel_block_submission
+-- Step 4: Add the data column as NULLABLE to the l1_submissions table
+ALTER TABLE l1_submissions
 ADD COLUMN data BYTEA;
 
--- Reassemble and populate data from l1_fragments
+-- Step 5: Reassemble and populate data from l1_fragments into l1_submissions
 WITH fragment_data AS (
     SELECT 
         f.submission_id, 
@@ -24,21 +26,19 @@ WITH fragment_data AS (
     FROM l1_fragments f
     GROUP BY f.submission_id
 )
-UPDATE l1_fuel_block_submission
+UPDATE l1_submissions
 SET data = (
     SELECT full_data
     FROM fragment_data
     WHERE l1_submissions.id = fragment_data.submission_id
-)
-FROM l1_submissions
-WHERE l1_fuel_block_submission.fuel_block_hash = l1_submissions.fuel_block_hash;
+);
 
+-- Step 6: Drop the old l1_transaction_fragments and l1_fragments tables
 DROP TABLE IF EXISTS l1_transaction_fragments;
 DROP TABLE IF EXISTS l1_fragments;
 
--- Set the data column to NOT NULL now that all rows are populated
-ALTER TABLE l1_fuel_block_submission
+-- Step 7: Set the data column to NOT NULL now that all rows are populated
+ALTER TABLE l1_submissions
 ALTER COLUMN data SET NOT NULL;
-
 
 COMMIT;
