@@ -242,6 +242,8 @@ impl WsConnection {
 
 #[cfg(test)]
 mod tests {
+    use alloy::consensus::SidecarCoder;
+
     use super::*;
 
     #[test]
@@ -250,5 +252,25 @@ mod tests {
             WsConnection::calculate_commit_height(10, 3.try_into().unwrap()),
             U256::from(3)
         );
+    }
+
+    #[test]
+    fn sidecarstuff() {
+        let data = vec![1; 6 * 128 * 1024];
+        let mut sidecar = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 6);
+
+        sidecar.ingest(&data);
+
+        let sidecar = sidecar.build().unwrap();
+
+        // let coder = SimpleCoder::default();
+        // let required_fe = coder.required_fe(data);
+        // let mut this = SidecarBuilder::from_coder_and_capacity(
+        //     SimpleCoder::default(),
+        //     required_fe.div_ceil(alloy::eips::eip4844::FIELD_ELEMENTS_PER_BLOB as usize),
+        // );
+
+        eprintln!("{}", sidecar.blobs.len());
+        panic!("kray");
     }
 }
