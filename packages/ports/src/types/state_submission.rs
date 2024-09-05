@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 pub use sqlx::types::chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5,27 +7,62 @@ pub struct StateSubmission {
     pub id: Option<u32>,
     pub block_hash: [u8; 32],
     pub block_height: u32,
+    pub data: Vec<u8>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+pub struct InvalidRange {
+    pub message: String,
+}
+
+impl std::fmt::Display for InvalidRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Invalid range: {}", self.message)
+    }
+}
+
+impl std::error::Error for InvalidRange {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedRange {
+    range: Range<u32>,
+}
+
+impl TryFrom<Range<u32>> for ValidatedRange {
+    type Error = InvalidRange;
+
+    fn try_from(range: Range<u32>) -> Result<Self, Self::Error> {
+        if range.start > range.end {
+            Err(Self::Error {
+                message: format!(
+                    "start ({}) must be less than or equal to end ({})",
+                    range.start, range.end
+                ),
+            })
+        } else {
+            Ok(Self { range })
+        }
+    }
+}
+
+impl From<ValidatedRange> for Range<u32> {
+    fn from(value: ValidatedRange) -> Self {
+        value.range
+    }
+}
+
+impl AsRef<Range<u32>> for ValidatedRange {
+    fn as_ref(&self) -> &Range<u32> {
+        &self.range
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateFragment {
     pub id: Option<u32>,
     pub submission_id: Option<u32>,
-    pub fragment_idx: u32,
-    pub data: Vec<u8>,
+    pub data_range: ValidatedRange,
     pub created_at: DateTime<Utc>,
-}
-
-impl std::fmt::Debug for StateFragment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StateFragment")
-            .field("id", &self.id)
-            .field("submission_id", &self.submission_id)
-            .field("fragment_idx", &self.fragment_idx)
-            .field("data", &hex::encode(&self.data))
-            .field("created_at", &self.created_at)
-            .finish()
-    }
 }
 
 impl StateFragment {

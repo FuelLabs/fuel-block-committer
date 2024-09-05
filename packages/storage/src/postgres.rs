@@ -1,13 +1,14 @@
-use std::pin::Pin;
-
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, TryStreamExt};
 use ports::types::{
     BlockSubmission, DateTime, StateFragment, StateSubmission, SubmissionTx, TransactionState, Utc,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
-use crate::tables::{self, L1SubmissionTxState};
+use crate::mappings::{
+    queries::UnfinalizedSegmentData,
+    tables::{self, L1StateSubmission, L1SubmissionTxState},
+};
 
 #[derive(Clone)]
 pub struct Postgres {
@@ -119,23 +120,23 @@ impl Postgres {
     pub(crate) async fn _last_time_a_fragment_was_finalized(
         &self,
     ) -> crate::error::Result<Option<DateTime<Utc>>> {
-        let response = sqlx::query!(
-            r#"SELECT
-            MAX(l1_transactions.finalized_at) AS last_fragment_time
-        FROM 
-            l1_transaction_fragments
-        JOIN 
-            l1_transactions ON l1_transactions.id = l1_transaction_fragments.transaction_id
-        WHERE 
-            l1_transactions.state = $1;
-        "#,
-            L1SubmissionTxState::FINALIZED_STATE
-        )
-        .fetch_optional(&self.connection_pool)
-        .await?
-        .and_then(|response| response.last_fragment_time);
-
-        Ok(response)
+        todo!()
+        // let response = sqlx::query!(
+        //     r#"SELECT
+        //     MAX(l1_transactions.finalized_at) AS last_fragment_time
+        // FROM
+        //     l1_transaction_fragments
+        // JOIN
+        //     l1_transactions ON l1_transactions.id = l1_transaction_fragments.transaction_id
+        // WHERE
+        //     l1_transactions.state = $1;
+        // "#,
+        //     L1SubmissionTxState::FINALIZED_STATE
+        // )
+        // .fetch_optional(&self.connection_pool)
+        // .await?
+        // .and_then(|response| response.last_fragment_time);
+        // Ok(response)
     }
 
     pub(crate) async fn _set_submission_completed(
@@ -156,77 +157,57 @@ impl Postgres {
         }
     }
 
-    pub(crate) async fn _insert_state_submission(
-        &self,
-        state: StateSubmission,
-        fragments: Vec<StateFragment>,
-    ) -> Result<()> {
-        if fragments.is_empty() {
-            return Err(Error::Database(
-                "cannot insert state with no fragments".to_string(),
-            ));
-        }
+    pub(crate) async fn _insert_state_submission(&self, state: StateSubmission) -> Result<()> {
+        let L1StateSubmission {
+            fuel_block_hash,
+            fuel_block_height,
+            data,
+            ..
+        } = state.into();
 
-        let state_row = tables::L1StateSubmission::from(state);
-        let fragment_rows = fragments
-            .into_iter()
-            .map(tables::L1StateFragment::from)
-            .collect::<Vec<_>>();
-
-        let mut transaction = self.connection_pool.begin().await?;
-
-        // Insert the state submission
-        let submission_id = sqlx::query!(
-            "INSERT INTO l1_submissions (fuel_block_hash, fuel_block_height) VALUES ($1, $2) RETURNING id",
-            state_row.fuel_block_hash,
-            state_row.fuel_block_height
+        sqlx::query!(
+            "INSERT INTO l1_submissions (fuel_block_hash, fuel_block_height, data) VALUES ($1, $2, $3)",
+            fuel_block_hash,
+            fuel_block_height,
+            data
         )
-        .fetch_one(&mut *transaction)
-        .await?.id;
-
-        // Insert the state fragments
-        // TODO: optimize this
-        for fragment_row in fragment_rows {
-            sqlx::query!(
-                "INSERT INTO l1_fragments (fragment_idx, submission_id, data, created_at) VALUES ($1, $2, $3, $4)",
-                fragment_row.fragment_idx,
-                submission_id,
-                fragment_row.data,
-                fragment_row.created_at
-            )
-            .execute(&mut *transaction)
-            .await?;
-        }
-
-        transaction.commit().await?;
+        .execute(&self.connection_pool)
+        .await?;
 
         Ok(())
     }
 
-    pub(crate) fn _stream_unsubmitted_fragments(
+    pub(crate) fn _stream_unfinalized_segment_data(
         &self,
-    ) -> impl Stream<Item = Result<StateFragment>> + '_ + Send {
+    ) -> impl Stream<Item = Result<UnfinalizedSegmentData>> + '_ + Send {
         sqlx::query_as!(
-            // all fragments that are not associated to any pending or finalized tx
-            tables::L1StateFragment,
-            "SELECT l1_fragments.*
-            FROM l1_fragments
-            WHERE l1_fragments.id NOT IN (
-                SELECT l1_fragments.id
-                FROM l1_fragments
-                JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id
-                JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id
-                WHERE l1_transactions.state IN ($1, $2)
-            )
-            ORDER BY l1_fragments.created_at;",
-            L1SubmissionTxState::FINALIZED_STATE,
-            L1SubmissionTxState::PENDING_STATE
+            UnfinalizedSegmentData,
+        r#"
+        WITH finalized_fragments AS (
+            SELECT 
+                s.fuel_block_height,
+                s.id AS submission_id,
+                octet_length(s.data) AS total_size,
+                COALESCE(MAX(f.end_byte), 0) AS last_finalized_end_byte  -- Default to 0 if no fragments are finalized
+            FROM l1_submissions s
+            LEFT JOIN l1_fragments f ON f.submission_id = s.id
+            LEFT JOIN l1_transactions t ON f.tx_id = t.id
+            WHERE t.state = $1  -- Only consider finalized fragments
+            GROUP BY s.fuel_block_height, s.id, s.data
         )
-        .fetch(&self.connection_pool)
-        .map_err(Error::from)
-        .and_then(|row| async move {
-            StateFragment::try_from(row)
-        })
+        SELECT 
+            ff.submission_id,
+            COALESCE(ff.last_finalized_end_byte, 0) AS uncommitted_start,  -- Default to 0 if NULL
+            ff.total_size AS uncommitted_end,  -- Non-inclusive end, which is the total size of the segment
+            COALESCE(SUBSTRING(s.data FROM ff.last_finalized_end_byte + 1 FOR ff.total_size - ff.last_finalized_end_byte), ''::bytea) AS segment_data  -- Clip the data and default to an empty byte array if NULL
+        FROM finalized_fragments ff
+        JOIN l1_submissions s ON s.id = ff.submission_id
+        ORDER BY ff.fuel_block_height ASC;
+        "#,
+        L1SubmissionTxState::FINALIZED_STATE as i16  // Only finalized transactions
+    )
+    .fetch(&self.connection_pool)
+    .map_err(Error::from)
     }
 
     pub(crate) async fn _record_pending_tx(
@@ -246,13 +227,14 @@ impl Postgres {
         .id;
 
         for fragment_id in fragment_ids {
-            sqlx::query!(
-                "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
-                transaction_id,
-                fragment_id as i64
-            )
-            .execute(&mut *transaction)
-            .await?;
+            todo!()
+            // sqlx::query!(
+            //     "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
+            //     transaction_id,
+            //     fragment_id as i64
+            // )
+            // .execute(&mut *transaction)
+            // .await?;
         }
 
         transaction.commit().await?;

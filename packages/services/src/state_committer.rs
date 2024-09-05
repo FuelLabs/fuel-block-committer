@@ -38,7 +38,7 @@ where
     C: Clock,
 {
     async fn fetch_fragments(&self) -> Result<(Vec<u32>, Vec<u8>)> {
-        let fragments = self.storage.stream_unsubmitted_fragments().await?;
+        let fragments = self.storage.stream_unfinalized_segment_data().await?;
 
         let num_fragments = fragments.len();
         let mut fragment_ids = Vec::with_capacity(num_fragments);

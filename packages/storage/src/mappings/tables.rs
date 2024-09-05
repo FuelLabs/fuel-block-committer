@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use ports::types::{
     BlockSubmission, DateTime, StateFragment, StateSubmission, SubmissionTx, TransactionState, Utc,
 };
@@ -63,6 +65,7 @@ pub struct L1StateSubmission {
     pub id: i64,
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
+    pub data: Vec<u8>,
 }
 
 impl TryFrom<L1StateSubmission> for StateSubmission {
@@ -86,6 +89,7 @@ impl TryFrom<L1StateSubmission> for StateSubmission {
             id: Some(value.id as u32),
             block_height,
             block_hash,
+            data: value.data,
         })
     }
 }
@@ -97,6 +101,7 @@ impl From<StateSubmission> for L1StateSubmission {
             id: value.id.unwrap_or_default() as i64,
             fuel_block_height: i64::from(value.block_height),
             fuel_block_hash: value.block_hash.to_vec(),
+            data: value.data,
         }
     }
 }
@@ -105,8 +110,8 @@ impl From<StateSubmission> for L1StateSubmission {
 pub struct L1StateFragment {
     pub id: i64,
     pub submission_id: i64,
-    pub fragment_idx: i64,
-    pub data: Vec<u8>,
+    pub start_byte: i64,
+    pub end_byte: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -114,12 +119,29 @@ impl TryFrom<L1StateFragment> for StateFragment {
     type Error = crate::error::Error;
 
     fn try_from(value: L1StateFragment) -> Result<Self, Self::Error> {
+        let start: u32 = value.start_byte.try_into().map_err(|_| {
+            Self::Error::Conversion(format!(
+                "Could not convert `start_byte` to u32. Got: {} from db",
+                value.start_byte
+            ))
+        })?;
+
+        let end: u32 = value.end_byte.try_into().map_err(|_| {
+            Self::Error::Conversion(format!(
+                "Could not convert `end_byte` to u32. Got: {} from db",
+                value.end_byte
+            ))
+        })?;
+
+        let range = Range { start, end }.try_into().map_err(|e| {
+            Self::Error::Conversion(format!("Db state fragment range validation failed: {e}"))
+        })?;
+
         Ok(Self {
             id: Some(value.id as u32),
             submission_id: Some(value.submission_id as u32),
-            fragment_idx: value.fragment_idx as u32,
-            data: value.data,
             created_at: value.created_at,
+            data_range: range,
         })
     }
 }
@@ -131,9 +153,9 @@ impl From<StateFragment> for L1StateFragment {
             id: value.id.unwrap_or_default() as i64,
             // if not present use placeholder as id is given by db
             submission_id: value.submission_id.unwrap_or_default() as i64,
-            fragment_idx: value.fragment_idx as i64,
-            data: value.data,
             created_at: value.created_at,
+            start_byte: value.data_range.as_ref().start.into(),
+            end_byte: value.data_range.as_ref().end.into(),
         }
     }
 }

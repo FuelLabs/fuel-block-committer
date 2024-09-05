@@ -217,7 +217,7 @@ mod tests {
         importer.run().await.unwrap();
 
         // then
-        let fragments = db.stream_unsubmitted_fragments(usize::MAX).await?;
+        let fragments = db.stream_unfinalized_segment_data(usize::MAX).await?;
         let latest_submission = db.state_submission_w_latest_block().await?.unwrap();
         assert_eq!(fragments.len(), 1);
         assert_eq!(fragments[0].submission_id, latest_submission.id);

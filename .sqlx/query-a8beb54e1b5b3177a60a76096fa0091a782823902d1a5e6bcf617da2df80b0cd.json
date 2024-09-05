@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH finalized_fragments AS (\n            SELECT \n                s.fuel_block_height,\n                s.id AS submission_id,\n                octet_length(s.data) AS total_size,\n                COALESCE(MAX(f.end_byte), 0) AS last_finalized_end_byte  -- Default to 0 if no fragments are finalized\n            FROM l1_submissions s\n            LEFT JOIN l1_fragments f ON f.submission_id = s.id\n            LEFT JOIN l1_transactions t ON f.tx_id = t.id\n            WHERE t.state = $1  -- Only consider finalized fragments\n            GROUP BY s.fuel_block_height, s.id, s.data\n        )\n        SELECT \n            ff.submission_id,\n            COALESCE(ff.last_finalized_end_byte + 1, 0) AS uncommitted_start,  -- Default to 0 if NULL\n            ff.total_size AS uncommitted_end,  -- Non-inclusive end, which is the total size of the segment\n            COALESCE(SUBSTRING(s.data FROM ff.last_finalized_end_byte + 1 FOR ff.total_size - ff.last_finalized_end_byte), ''::bytea) AS segment_data  -- Clip the data and default to an empty byte array if NULL\n        FROM finalized_fragments ff\n        JOIN l1_submissions s ON s.id = ff.submission_id\n        ORDER BY ff.fuel_block_height ASC;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "submission_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "uncommitted_start",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "uncommitted_end",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "segment_data",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a8beb54e1b5b3177a60a76096fa0091a782823902d1a5e6bcf617da2df80b0cd"
+}

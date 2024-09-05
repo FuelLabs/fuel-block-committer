@@ -17,12 +17,18 @@
         "ordinal": 2,
         "name": "fuel_block_height",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "data",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
       "Left": []
     },
     "nullable": [
+      false,
       false,
       false,
       false
