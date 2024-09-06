@@ -2,9 +2,11 @@ use std::ops::Range;
 
 pub use sqlx::types::chrono::{DateTime, Utc};
 
+use super::NumericId;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateSubmission {
-    pub id: Option<u32>,
+    pub id: Option<NumericId>,
     pub block_hash: [u8; 32],
     pub block_height: u32,
     pub data: Vec<u8>,
@@ -59,8 +61,7 @@ impl AsRef<Range<u32>> for ValidatedRange {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateFragment {
-    pub id: Option<u32>,
-    pub submission_id: Option<u32>,
+    pub submission_id: u64,
     pub data_range: ValidatedRange,
     pub created_at: DateTime<Utc>,
 }
@@ -71,7 +72,7 @@ impl StateFragment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubmissionTx {
-    pub id: Option<u32>,
+    pub id: Option<u64>,
     pub hash: [u8; 32],
     pub state: TransactionState,
 }

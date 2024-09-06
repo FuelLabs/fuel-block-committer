@@ -42,15 +42,15 @@ impl Storage for Postgres {
 
     fn stream_unfinalized_segment_data<'a>(
         &'a self,
-    ) -> Pin<Box<dyn Stream<Item = Result<ports::types::UnfinalizedSegmentData>> + 'a + Send>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<ports::types::UnfinalizedSubmissionData>> + 'a + Send>> {
         self._stream_unfinalized_segment_data()
             .and_then(|entry| async move { entry.try_into() })
             .map_err(Into::into)
             .boxed()
     }
 
-    async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()> {
-        Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
+    async fn record_pending_tx(&self, tx_hash: [u8; 32], fragments: Vec<StateFragment>) -> Result<()> {
+        Ok(self._record_pending_tx(tx_hash, fragments).await?)
     }
 
     async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>> {
@@ -77,12 +77,15 @@ impl Storage for Postgres {
 #[cfg(test)]
 mod tests {
 
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use futures::TryStreamExt;
     use ports::{
         storage::{Error, Result, Storage},
-        types::{BlockSubmission, DateTime, StateFragment, StateSubmission, TransactionState, Utc},
+        types::{
+            BlockSubmission, DateTime, SubmissionDataSlice, StateFragment, StateSubmission,
+            TransactionState, UnfinalizedSubmissionData, Utc, ValidatedRange,
+        },
     };
     use rand::{thread_rng, Rng};
     use storage as _;
@@ -162,7 +165,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_state_submission() -> Result<()> {
+    async fn whole_state_submission_not_finalized() -> Result<()> {
         // given
         let process = PostgresProcess::shared().await?;
         let db = process.create_random_db().await?;
@@ -170,13 +173,56 @@ mod tests {
         let state = given_state_submission();
 
         // when
-        db.insert_state_submission(state).await?;
+        db.insert_state_submission(state.clone()).await?;
 
         // then
-        let unsubmitted_data: Vec<_> = db.stream_unfinalized_segment_data().try_collect().await?;
-        tokio::time::sleep(Duration::from_secs(1000)).await;
+        let unfinalized_data: Vec<_> = db.stream_unfinalized_segment_data().try_collect().await?;
 
-        assert_eq!(unsubmitted_data.len(), 1);
+        assert_eq!(
+            unfinalized_data,
+            vec![UnfinalizedSubmissionData {
+                submission_id: 1,
+                data_slice: SubmissionDataSlice {
+                    bytes: state.data.clone(),
+                    location_in_segment: ValidatedRange::try_from(0..state.data.len() as u32)
+                        .unwrap()
+                }
+            }]
+        );
+
+        assert_eq!(unfinalized_data.len(), 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn part_of_state_submission_not_finalized() -> Result<()> {
+        // given
+        let process = PostgresProcess::shared().await?;
+        let db = process.create_random_db().await?;
+
+        let state = given_state_submission();
+        db.insert_state_submission(state.clone()).await?;
+
+        // when
+        db.record_pending_tx([0; 32], )
+
+        // then
+        let unfinalized_data: Vec<_> = db.stream_unfinalized_segment_data().try_collect().await?;
+
+        assert_eq!(
+            unfinalized_data,
+            vec![UnfinalizedSubmissionData {
+                submission_id: 1,
+                data_slice: SubmissionDataSlice {
+                    bytes: state.data.clone(),
+                    location_in_segment: ValidatedRange::try_from(0..state.data.len() as u32)
+                        .unwrap()
+                }
+            }]
+        );
+
+        assert_eq!(unfinalized_data.len(), 1);
 
         Ok(())
     }

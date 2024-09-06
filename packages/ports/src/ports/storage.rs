@@ -5,7 +5,7 @@ use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{
     BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
-    UnfinalizedSegmentData,
+    UnfinalizedSubmissionData,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -29,8 +29,12 @@ pub trait Storage: Send + Sync {
     async fn insert_state_submission(&self, submission: StateSubmission) -> Result<()>;
     fn stream_unfinalized_segment_data<'a>(
         &'a self,
-    ) -> Pin<Box<dyn Stream<Item = Result<UnfinalizedSegmentData>> + 'a + Send>>;
-    async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()>;
+    ) -> Pin<Box<dyn Stream<Item = Result<UnfinalizedSubmissionData>> + 'a + Send>>;
+    async fn record_pending_tx(
+        &self,
+        tx_hash: [u8; 32],
+        fragments: Vec<StateFragment>,
+    ) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;

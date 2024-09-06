@@ -192,7 +192,7 @@ impl Postgres {
             FROM l1_submissions s
             LEFT JOIN l1_fragments f ON f.submission_id = s.id
             LEFT JOIN l1_transactions t ON f.tx_id = t.id
-            WHERE t.state = $1  -- Only consider finalized fragments
+            WHERE t.state = $1 OR t.state IS NULL
             GROUP BY s.fuel_block_height, s.id, s.data
         )
         SELECT 
@@ -213,7 +213,7 @@ impl Postgres {
     pub(crate) async fn _record_pending_tx(
         &self,
         tx_hash: [u8; 32],
-        fragment_ids: Vec<u32>,
+        fragments: Vec<StateFragment>,
     ) -> Result<()> {
         let mut transaction = self.connection_pool.begin().await?;
 
@@ -226,15 +226,23 @@ impl Postgres {
         .await?
         .id;
 
-        for fragment_id in fragment_ids {
-            todo!()
-            // sqlx::query!(
-            //     "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
-            //     transaction_id,
-            //     fragment_id as i64
-            // )
-            // .execute(&mut *transaction)
-            // .await?;
+        for fragment in fragments {
+            let tables::L1StateFragment {
+                submission_id,
+                start_byte,
+                end_byte,
+                ..
+            } = tables::L1StateFragment::from(fragment);
+
+            sqlx::query!(
+                "INSERT INTO l1_fragments (tx_id, submission_id, start_byte, end_byte) VALUES ($1, $2, $3, $4)",
+                transaction_id,
+        submission_id,
+        start_byte,
+        end_byte
+            )
+            .execute(&mut *transaction)
+            .await?;
         }
 
         transaction.commit().await?;

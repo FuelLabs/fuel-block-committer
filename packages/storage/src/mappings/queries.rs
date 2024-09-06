@@ -1,4 +1,4 @@
-use ports::types::{SegmentDataSlice, ValidatedRange};
+use ports::types::{SubmissionDataSlice, ValidatedRange};
 use sqlx::FromRow;
 
 #[derive(FromRow, Debug)]
@@ -10,7 +10,7 @@ pub(crate) struct UnfinalizedSegmentData {
     pub uncommitted_end: Option<i32>,
 }
 
-impl TryFrom<UnfinalizedSegmentData> for ports::types::UnfinalizedSegmentData {
+impl TryFrom<UnfinalizedSegmentData> for ports::types::UnfinalizedSubmissionData {
     type Error = crate::error::Error;
 
     fn try_from(value: UnfinalizedSegmentData) -> Result<Self, Self::Error> {
@@ -55,7 +55,7 @@ impl TryFrom<UnfinalizedSegmentData> for ports::types::UnfinalizedSegmentData {
             .try_into()
             .map_err(|e| crate::error::Error::Conversion(format!("{e}")))?;
 
-        let data_slice = SegmentDataSlice {
+        let data_slice = SubmissionDataSlice {
             bytes,
             location_in_segment: range,
         };
