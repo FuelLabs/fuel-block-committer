@@ -12,6 +12,13 @@ macro_rules! bail {
 }
 
 #[derive(sqlx::FromRow)]
+pub struct FuelBlock {
+    pub hash: Vec<u8>,
+    pub height: i64,
+    pub data: Vec<u8>,
+}
+
+#[derive(sqlx::FromRow)]
 pub struct L1FuelBlockSubmission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,

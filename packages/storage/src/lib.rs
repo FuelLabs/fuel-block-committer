@@ -25,6 +25,10 @@ impl Storage for Postgres {
         Ok(self._insert(submission).await?)
     }
 
+    async fn all_blocks(&self) -> Result<Vec<ports::types::FuelBlock>>{
+        Ok(self._all_blocks().await?)
+    }
+
 
     async fn insert_bundle_and_fragments(
         &self,
@@ -33,6 +37,8 @@ impl Storage for Postgres {
     ) -> Result<()> {
         Ok(self._insert_bundle_and_fragments(bundle_blocks, fragments).await?)
     }
+
+
 
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
         Ok(self._last_time_a_fragment_was_finalized().await?)

@@ -93,15 +93,23 @@ impl Postgres {
     }
 
     pub(crate) async fn _insert(&self, submission: BlockSubmission) -> crate::error::Result<()> {
-        let row = tables::L1FuelBlockSubmission::from(submission);
-        sqlx::query!(
-            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
-            row.fuel_block_hash,
-            row.fuel_block_height,
-            row.completed,
-            row.submittal_height
-        ).execute(&self.connection_pool).await?;
-        Ok(())
+        todo!()
+        // let row = tables::L1FuelBlockSubmission::from(submission);
+        // sqlx::query!(
+        //     "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
+        //     row.fuel_block_hash,
+        //     row.fuel_block_height,
+        //     row.completed,
+        //     row.submittal_height
+        // ).execute(&self.connection_pool).await?;
+        // Ok(())
+    }
+
+    pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<FuelBlock>> {
+        sqlx::query_as!(tables::FuelBlock, "SELECT * FROM fuel_blocks")
+            .fetch_all(&self.connection_pool)
+            .await
+            .map_err(Error::from)
     }
 
     pub(crate) async fn _submission_w_latest_block(
@@ -314,6 +322,41 @@ impl Postgres {
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
-        todo!()
+        // Insert a new bundle
+        let bundle_id = sqlx::query!(
+            "INSERT INTO bundles (cancelled) VALUES ($1) RETURNING id",
+            false // Initializing with `cancelled = false`
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .id;
+
+        // Insert blocks into bundle_blocks table
+        for block_hash in bundle_blocks {
+            sqlx::query!(
+                "INSERT INTO bundle_blocks (bundle_id, block_hash) VALUES ($1, $2)",
+                bundle_id,
+                block_hash
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Insert fragments associated with the bundle
+        for (idx, fragment_data) in fragments.into_iter().enumerate() {
+            sqlx::query!(
+                "INSERT INTO l1_fragments (fragment_idx, data, bundle_id) VALUES ($1, $2, $3)",
+                idx as i64,
+                fragment_data,
+                bundle_id
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Commit the transaction
+        tx.commit().await?;
+
+        Ok(())
     }
 }

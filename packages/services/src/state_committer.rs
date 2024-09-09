@@ -198,9 +198,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn will_create_bundle_and_fragments_if_no_fragments_available() -> Result<()> {
+    async fn will_bundle_and_fragment_if_none_available() -> Result<()> {
         //given
         let l1_mock = MockL1::new();
+        let blocks = vec![];
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;

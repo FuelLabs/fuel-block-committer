@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_import_state() -> Result<()> {
+    async fn imports_new_block() -> Result<()> {
         // given
         let secret_key = given_secret_key();
         let block = given_a_block(1, &secret_key);
@@ -217,11 +217,34 @@ mod tests {
         importer.run().await.unwrap();
 
         // then
-        let fragments = db.stream_unfinalized_segment_data(usize::MAX).await?;
-        let latest_submission = db.state_submission_w_latest_block().await?.unwrap();
+        let latest_submission: Vec<_> = db.all_blocks().await?;
         assert_eq!(fragments.len(), 1);
         assert_eq!(fragments[0].submission_id, latest_submission.id);
 
         Ok(())
     }
+
+    // #[tokio::test]
+    // async fn test_import_state() -> Result<()> {
+    //     // given
+    //     let secret_key = given_secret_key();
+    //     let block = given_a_block(1, &secret_key);
+    //     let fuel_mock = given_fetcher(block);
+    //     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+    //
+    //     let process = PostgresProcess::shared().await.unwrap();
+    //     let db = process.create_random_db().await?;
+    //     let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
+    //
+    //     // when
+    //     importer.run().await.unwrap();
+    //
+    //     // then
+    //     let fragments = db.stream_unfinalized_segment_data(usize::MAX).await?;
+    //     let latest_submission = db.state_submission_w_latest_block().await?.unwrap();
+    //     assert_eq!(fragments.len(), 1);
+    //     assert_eq!(fragments[0].submission_id, latest_submission.id);
+    //
+    //     Ok(())
+    // }
 }
