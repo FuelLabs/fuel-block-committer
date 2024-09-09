@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{

@@ -1,4 +1,8 @@
-use std::ops::{Range, RangeInclusive};
+use std::{
+    cmp::max,
+    collections::BTreeSet,
+    ops::{Range, RangeInclusive},
+};
 
 use async_trait::async_trait;
 use futures::{stream, StreamExt, TryStreamExt};
@@ -7,20 +11,28 @@ use ports::{fuel::FuelBlock, storage::Storage, types::StateSubmission};
 use tracing::info;
 use validator::Validator;
 
-use crate::{Result, Runner};
+use crate::{Error, Result, Runner};
 
+// TODO: rename to block importer
 pub struct StateImporter<Db, A, BlockValidator> {
     storage: Db,
     fuel_adapter: A,
     block_validator: BlockValidator,
+    import_depth: u32,
 }
 
 impl<Db, A, BlockValidator> StateImporter<Db, A, BlockValidator> {
-    pub fn new(storage: Db, fuel_adapter: A, block_validator: BlockValidator) -> Self {
+    pub fn new(
+        storage: Db,
+        fuel_adapter: A,
+        block_validator: BlockValidator,
+        import_depth: u32,
+    ) -> Self {
         Self {
             storage,
             fuel_adapter,
             block_validator,
+            import_depth,
         }
     }
 }
@@ -40,7 +52,7 @@ where
     }
 
     async fn check_if_imported(&self, hash: &[u8; 32]) -> Result<bool> {
-        Ok(self.storage.block_available(hash).await?)
+        Ok(self.storage.is_block_available(hash).await?)
     }
 
     async fn last_submitted_block_height(&self) -> Result<Option<u32>> {
@@ -54,7 +66,7 @@ where
     async fn import_state(&self, block: FuelBlock) -> Result<()> {
         let block_id = block.id;
         let block_height = block.header.height;
-        if !self.storage.block_available(&block_id).await? {
+        if !self.storage.is_block_available(&block_id).await? {
             self.storage.insert_block(block.into()).await?;
 
             info!("imported state from fuel block: height: {block_height}, id: {block_id}");
@@ -71,52 +83,59 @@ where
     BlockValidator: Validator,
 {
     async fn run(&mut self) -> Result<()> {
-        let block_roster = self.storage.block_roster().await?;
+        if self.import_depth == 0 {
+            return Ok(());
+        }
 
+        let available_blocks = self.storage.available_blocks().await?.into_inner();
+        let db_empty = available_blocks.is_empty();
+
+        // TODO: segfault check that the latest block is higher than everything we have in the db
+        // (out of sync node)
         let latest_block = self.fetch_latest_block().await?;
 
-        // TODO: segfault the cutoff to be configurable
-        let mut missing_blocks = block_roster.missing_block_heights(latest_block.header.height, 0);
-        missing_blocks.retain(|height| *height != latest_block.header.height);
+        let chain_height = latest_block.header.height;
+        let db_height = available_blocks.end.saturating_sub(1);
 
-        // Everything up to the latest block
-        stream::iter(split_into_ranges(missing_blocks))
-            .flat_map(|range| self.fuel_adapter.blocks_in_height_range(range))
-            .map_err(crate::Error::from)
-            .try_for_each(|block| async {
-                self.import_state(block).await?;
-                Ok(())
-            })
-            .await?;
+        if !db_empty && db_height > chain_height {
+            return Err(Error::Other(format!(
+                "db height({}) is greater than chain height({})",
+                db_height, chain_height
+            )));
+        }
+
+        let import_start = if db_empty {
+            chain_height.saturating_sub(self.import_depth)
+        } else {
+            max(
+                chain_height
+                    .saturating_add(1)
+                    .saturating_sub(self.import_depth),
+                available_blocks.end,
+            )
+        };
+
+        // We don't include the latest block in the range because we already have it
+        let import_range = import_start..chain_height;
+
+        if !import_range.is_empty() {
+            self.fuel_adapter
+                .blocks_in_height_range(import_start..chain_height)
+                .map_err(crate::Error::from)
+                .try_for_each(|block| async {
+                    self.import_state(block).await?;
+                    Ok(())
+                })
+                .await?;
+        }
+
+        let latest_block_missing = db_height != chain_height;
+        if latest_block_missing || db_empty {
+            self.import_state(latest_block).await?;
+        }
 
         Ok(())
     }
-}
-
-fn split_into_ranges(nums: Vec<u32>) -> Vec<Range<u32>> {
-    nums.into_iter()
-        .sorted()
-        .fold(Vec::new(), |mut ranges, num| {
-            if let Some((_start, end)) = ranges.last_mut() {
-                if num == *end + 1 {
-                    // Extend the current range
-                    *end = num;
-                } else {
-                    // Start a new range
-                    ranges.push((num, num));
-                }
-            } else {
-                // First range
-                ranges.push((num, num));
-            }
-            ranges
-        })
-        .into_iter()
-        .map(|(begin, end_inclusive)| {
-            let end_exclusive = end_inclusive.saturating_add(1);
-            begin..end_exclusive
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -127,6 +146,8 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use storage::PostgresProcess;
     use validator::BlockValidator;
+
+    use crate::Error;
 
     use super::*;
 
@@ -180,17 +201,6 @@ mod tests {
         }
     }
 
-    fn given_streaming_fetcher(block: FuelBlock) -> ports::fuel::MockApi {
-        let mut fetcher = ports::fuel::MockApi::new();
-
-        fetcher
-            .expect_blocks_in_height_range()
-            .with(eq(block.header.height..block.header.height + 1))
-            .return_once(move |_| stream::once(async move { Ok(block.clone()) }).boxed());
-
-        fetcher
-    }
-
     fn given_latest_fetcher(block: FuelBlock) -> ports::fuel::MockApi {
         let mut fetcher = ports::fuel::MockApi::new();
 
@@ -200,17 +210,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn imports_latest_block_when_no_blocks_are_missing() -> Result<()> {
+    async fn imports_block_on_empty_db() -> Result<()> {
         // given
         let secret_key = given_secret_key();
-        let block = given_a_block(1, &secret_key);
+        let block = given_a_block(0, &secret_key);
         let fuel_mock = given_latest_fetcher(block.clone());
 
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
-        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 1);
 
         // when
         importer.run().await.unwrap();
@@ -224,100 +234,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skips_import_if_block_imported() -> Result<()> {
+    async fn shortens_import_depth_if_db_already_has_the_blocks() -> Result<()> {
         // given
         let secret_key = given_secret_key();
-        let block = given_a_block(1, &secret_key);
-        let fuel_mock = given_latest_fetcher(block.clone());
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
-        let process = PostgresProcess::shared().await.unwrap();
-
-        let db = process.create_random_db().await?;
-        db.insert_block(block.clone().into()).await?;
-
-        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
-
-        // when
-        let res = importer.run().await;
-
-        // then
-        res.unwrap();
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn fills_in_missing_blocks_in_middle() -> Result<()> {
-        // given
-        let secret_key = given_secret_key();
+        let block_0 = given_a_block(0, &secret_key);
         let block_1 = given_a_block(1, &secret_key);
         let block_2 = given_a_block(2, &secret_key);
-        let block_3 = given_a_block(3, &secret_key);
-        let block_4 = given_a_block(4, &secret_key);
-        let block_5 = given_a_block(5, &secret_key);
 
         let mut fuel_mock = ports::fuel::MockApi::new();
+        let ret = block_1.clone();
+        fuel_mock
+            .expect_blocks_in_height_range()
+            .with(eq(1..2))
+            .return_once(move |_| stream::iter(vec![Ok(ret)]).boxed());
 
         let ret = block_2.clone();
-        fuel_mock
-            .expect_blocks_in_height_range()
-            .with(eq(2..3))
-            .return_once(move |_| stream::once(async move { Ok(ret) }).boxed());
-
-        let ret = block_4.clone();
-        fuel_mock
-            .expect_blocks_in_height_range()
-            .with(eq(4..5))
-            .return_once(move |_| stream::once(async move { Ok(ret) }).boxed());
-
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
-        let process = PostgresProcess::shared().await.unwrap();
-
-        let db = process.create_random_db().await?;
-        db.insert_block(block_1.clone().into()).await?;
-        db.insert_block(block_3.clone().into()).await?;
-        db.insert_block(block_5.clone().into()).await?;
-
-        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
-
-        // when
-        importer.run().await?;
-
-        // then
-        let available_blocks = db.all_blocks().await?;
-        assert_eq!(
-            available_blocks,
-            vec![
-                block_1.clone().into(),
-                block_2.clone().into(),
-                block_3.clone().into(),
-                block_4.clone().into(),
-                block_5.clone().into()
-            ]
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn fills_in_missing_blocks_at_end() -> Result<()> {
-        // given
-        let secret_key = given_secret_key();
-        let block_1 = given_a_block(1, &secret_key);
-        let block_2 = given_a_block(2, &secret_key);
-        let block_3 = given_a_block(3, &secret_key);
-        let block_4 = given_a_block(4, &secret_key);
-
-        let mut fuel_mock = ports::fuel::MockApi::new();
-
-        let ret = vec![Ok(block_2.clone()), Ok(block_3.clone())];
-        fuel_mock
-            .expect_blocks_in_height_range()
-            .with(eq(2..4))
-            .return_once(move |_| stream::iter(ret).boxed());
-
-        let ret = block_4.clone();
         fuel_mock.expect_latest_block().return_once(|| Ok(ret));
 
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -325,48 +256,212 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
 
         let db = process.create_random_db().await?;
-        db.insert_block(block_1.clone().into()).await?;
+        db.insert_block(block_0.clone().into()).await?;
 
-        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 3);
 
         // when
         importer.run().await?;
 
         // then
-        let available_blocks = db.all_blocks().await?;
+        let all_blocks = db.all_blocks().await?;
         assert_eq!(
-            available_blocks,
+            all_blocks,
             vec![
+                block_0.clone().into(),
                 block_1.clone().into(),
-                block_2.clone().into(),
-                block_3.clone().into(),
-                block_4.clone().into(),
+                block_2.clone().into()
+            ]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn does_nothing_if_depth_is_0() -> Result<()> {
+        // given
+        let secret_key = given_secret_key();
+        let fuel_mock = ports::fuel::MockApi::new();
+
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let process = PostgresProcess::shared().await.unwrap();
+
+        let db = process.create_random_db().await?;
+
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 0);
+
+        // when
+        importer.run().await?;
+
+        // then
+        // mocks didn't fail since we didn't call them
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fails_if_db_height_is_greater_than_chain_height() -> Result<()> {
+        // given
+        let secret_key = given_secret_key();
+        let db_block = given_a_block(10, &secret_key);
+        let chain_block = given_a_block(2, &secret_key);
+        let fuel_mock = given_latest_fetcher(chain_block);
+
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let process = PostgresProcess::shared().await.unwrap();
+
+        let db = process.create_random_db().await?;
+        db.insert_block(db_block.clone().into()).await?;
+
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 1);
+
+        // when
+        let result = importer.run().await;
+
+        // then
+        let Err(Error::Other(err)) = result else {
+            panic!("Expected an Error::Other, got: {:?}", result);
+        };
+
+        assert_eq!(err, "db height(10) is greater than chain height(2)");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn imports_on_very_stale_db() -> Result<()> {
+        // given
+        let secret_key = given_secret_key();
+        let db_block = given_a_block(0, &secret_key);
+        let chain_block_11 = given_a_block(11, &secret_key);
+        let chain_block_12 = given_a_block(12, &secret_key);
+        let mut fuel_mock = ports::fuel::MockApi::new();
+
+        let ret = vec![Ok(chain_block_11.clone())];
+        fuel_mock
+            .expect_blocks_in_height_range()
+            .with(eq(11..12))
+            .return_once(move |_| stream::iter(ret).boxed());
+
+        let ret = chain_block_12.clone();
+        fuel_mock.expect_latest_block().return_once(|| Ok(ret));
+
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let process = PostgresProcess::shared().await.unwrap();
+
+        let db = process.create_random_db().await?;
+        db.insert_block(db_block.clone().into()).await?;
+
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 2);
+
+        // when
+        importer.run().await?;
+
+        // then
+        let all_blocks = db.all_blocks().await?;
+        assert_eq!(
+            all_blocks,
+            vec![
+                db_block.clone().into(),
+                chain_block_11.clone().into(),
+                chain_block_12.clone().into()
             ]
         );
 
         Ok(())
     }
 
+    //
     // #[tokio::test]
-    // async fn test_import_state() -> Result<()> {
+    // async fn fills_in_missing_blocks_at_end() -> Result<()> {
     //     // given
     //     let secret_key = given_secret_key();
-    //     let block = given_a_block(1, &secret_key);
-    //     let fuel_mock = given_fetcher(block);
+    //     let block_1 = given_a_block(1, &secret_key);
+    //     let block_2 = given_a_block(2, &secret_key);
+    //     let block_3 = given_a_block(3, &secret_key);
+    //     let block_4 = given_a_block(4, &secret_key);
+    //
+    //     let mut fuel_mock = ports::fuel::MockApi::new();
+    //
+    //     let ret = vec![Ok(block_2.clone()), Ok(block_3.clone())];
+    //     fuel_mock
+    //         .expect_blocks_in_height_range()
+    //         .with(eq(2..=3))
+    //         .return_once(move |_| stream::iter(ret).boxed());
+    //
+    //     let ret = block_4.clone();
+    //     fuel_mock.expect_latest_block().return_once(|| Ok(ret));
+    //
     //     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
     //
     //     let process = PostgresProcess::shared().await.unwrap();
+    //
     //     let db = process.create_random_db().await?;
-    //     let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
+    //     db.insert_block(block_1.clone().into()).await?;
+    //
+    //     let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 0);
     //
     //     // when
-    //     importer.run().await.unwrap();
+    //     importer.run().await?;
     //
     //     // then
-    //     let fragments = db.stream_unfinalized_segment_data(usize::MAX).await?;
-    //     let latest_submission = db.state_submission_w_latest_block().await?.unwrap();
-    //     assert_eq!(fragments.len(), 1);
-    //     assert_eq!(fragments[0].submission_id, latest_submission.id);
+    //     let available_blocks = db.all_blocks().await?;
+    //     assert_eq!(
+    //         available_blocks,
+    //         vec![
+    //             block_1.clone().into(),
+    //             block_2.clone().into(),
+    //             block_3.clone().into(),
+    //             block_4.clone().into(),
+    //         ]
+    //     );
+    //
+    //     Ok(())
+    // }
+    //
+    // #[tokio::test]
+    // async fn if_no_blocks_available() -> Result<()> {
+    //     // given
+    //     let secret_key = given_secret_key();
+    //     let block_1 = given_a_block(1, &secret_key);
+    //     let block_2 = given_a_block(2, &secret_key);
+    //     let block_3 = given_a_block(3, &secret_key);
+    //     let block_4 = given_a_block(4, &secret_key);
+    //
+    //     let mut fuel_mock = ports::fuel::MockApi::new();
+    //
+    //     let ret = vec![Ok(block_2.clone()), Ok(block_3.clone())];
+    //     fuel_mock
+    //         .expect_blocks_in_height_range()
+    //         .with(eq(2..=3))
+    //         .return_once(move |_| stream::iter(ret).boxed());
+    //
+    //     let ret = block_4.clone();
+    //     fuel_mock.expect_latest_block().return_once(|| Ok(ret));
+    //
+    //     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+    //
+    //     let process = PostgresProcess::shared().await.unwrap();
+    //
+    //     let db = process.create_random_db().await?;
+    //     db.insert_block(block_1.clone().into()).await?;
+    //
+    //     let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 0);
+    //
+    //     // when
+    //     importer.run().await?;
+    //
+    //     // then
+    //     let available_blocks = db.all_blocks().await?;
+    //     assert_eq!(
+    //         available_blocks,
+    //         vec![
+    //             block_1.clone().into(),
+    //             block_2.clone().into(),
+    //             block_3.clone().into(),
+    //             block_4.clone().into(),
+    //         ]
+    //     );
     //
     //     Ok(())
     // }

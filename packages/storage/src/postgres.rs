@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use futures::{Stream, TryStreamExt};
 use ports::types::{
     BlockSubmission, DateTime, L1Tx, NonNegative, StateSubmission, TransactionState, Utc,
@@ -115,53 +117,29 @@ impl Postgres {
         .collect()
     }
 
-    pub(crate) async fn _block_roster(&self) -> crate::error::Result<ports::storage::BlockRoster> {
-        let mut tx = self.connection_pool.begin().await?;
-        let missing_block_heights = sqlx::query!(
-            r#"WITH expected_heights AS (
-                SELECT generate_series(
-                    (SELECT MIN(height) FROM fuel_blocks), 
-                    (SELECT MAX(height) FROM fuel_blocks)
-                ) AS height
-            )
-            SELECT e.height
-            FROM expected_heights e
-            LEFT JOIN fuel_blocks fb ON fb.height = e.height
-            WHERE fb.height IS NULL
-            ORDER BY e.height ASC;  -- Explicitly enforce ascending order
-            "#
-        )
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(Error::from)?
-        .into_iter()
-        .map(|row| {
-            let height = row.height.ok_or_else(|| {
-                Error::Conversion("Missing height value. This is a bug".to_string())
-            })?;
+    pub(crate) async fn _available_blocks(
+        &self,
+    ) -> crate::error::Result<ports::storage::ValidatedRange> {
+        let record = sqlx::query!("SELECT MIN(height) AS min, MAX(height) AS max FROM fuel_blocks")
+            .fetch_one(&self.connection_pool)
+            .await
+            .map_err(Error::from)?;
 
-            u32::try_from(height)
-                .map_err(|e| Error::Conversion(format!("db block height cannot fit in u32: {e}")))
-        })
-        .collect::<Result<Vec<_>>>()?;
+        let min = record.min.unwrap_or(0);
+        let max = record.max.map(|max| max + 1).unwrap_or(0);
 
-        let highest_block_present =
-            sqlx::query!("SELECT MAX(height) AS highest_block_present FROM fuel_blocks")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(Error::from)?
-                .highest_block_present
-                .map(|height| {
-                    u32::try_from(height).map_err(|_| {
-                        Error::Conversion(format!("db block height cannot fit in u32: {height}"))
-                    })
-                })
-                .transpose()?;
+        let min = u32::try_from(min)
+            .map_err(|_| Error::Conversion(format!("cannot convert height into u32: {min} ")))?;
 
-        Ok(ports::storage::BlockRoster::new(
-            missing_block_heights,
-            highest_block_present,
-        ))
+        let max = u32::try_from(max)
+            .map_err(|_| Error::Conversion(format!("cannot convert height into u32: {max} ")))?;
+
+        Range {
+            start: min,
+            end: max,
+        }
+        .try_into()
+        .map_err(|e| Error::Conversion(format!("{e}")))
     }
 
     pub(crate) async fn _insert_block(&self, block: ports::storage::FuelBlock) -> Result<()> {
@@ -434,7 +412,7 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _block_available(&self, block_hash: &[u8; 32]) -> Result<bool> {
+    pub(crate) async fn _is_block_available(&self, block_hash: &[u8; 32]) -> Result<bool> {
         let response = sqlx::query!(
             "SELECT EXISTS (SELECT 1 FROM fuel_blocks WHERE hash = $1) AS block_exists",
             block_hash

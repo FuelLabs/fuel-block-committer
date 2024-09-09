@@ -26,16 +26,16 @@ impl Storage for Postgres {
         self._all_blocks().await.map_err(Into::into)
     }
 
-    async fn block_roster(&self) -> Result<ports::storage::BlockRoster> {
-        self._block_roster().await.map_err(Into::into)
+    async fn available_blocks(&self) -> Result<ports::storage::ValidatedRange> {
+        self._available_blocks().await.map_err(Into::into)
     }
 
     async fn insert_block(&self, block: ports::storage::FuelBlock) -> Result<()> {
         Ok(self._insert_block(block).await?)
     }
 
-    async fn block_available(&self, hash: &[u8; 32]) -> Result<bool> {
-        self._block_available(&hash).await.map_err(Into::into)
+    async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool> {
+        self._is_block_available(&hash).await.map_err(Into::into)
     }
 
     async fn insert_bundle_and_fragments(
