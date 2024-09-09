@@ -16,6 +16,7 @@ fuel-core-types = { workspace = true, optional = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["fuel"] }
 url = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }

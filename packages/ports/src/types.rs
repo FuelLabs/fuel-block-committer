@@ -4,21 +4,17 @@ pub use alloy::primitives::{Address, U256};
 pub use futures::Stream;
 
 mod block_submission;
-mod fuel_block;
 #[cfg(feature = "l1")]
 mod fuel_block_committed_on_l1;
 mod l1_height;
 mod serial_id;
 mod state_submission;
-mod unfinalized_segment_data;
 
 pub use block_submission::*;
-pub use fuel_block::*;
 #[cfg(feature = "l1")]
 pub use fuel_block_committed_on_l1::*;
 pub use l1_height::*;
 pub use serial_id::*;
 pub use state_submission::*;
-pub use unfinalized_segment_data::*;
 #[cfg(any(feature = "fuel", feature = "l1"))]
 pub use validator::block::*;

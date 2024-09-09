@@ -1,5 +1,8 @@
 #![deny(unused_crate_dependencies)]
-use ports::fuel::FuelBlock;
+use std::ops::Range;
+
+use futures::StreamExt;
+use ports::fuel::{BoxStream, FuelBlock};
 mod client;
 mod metrics;
 
@@ -12,6 +15,10 @@ type Result<T> = ports::fuel::Result<T>;
 impl ports::fuel::Api for client::HttpClient {
     async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>> {
         self._block_at_height(height).await
+    }
+
+    fn blocks_in_height_range(&self, range: Range<u32>) -> BoxStream<Result<FuelBlock>, '_> {
+        self._block_in_height_range(range).boxed()
     }
 
     async fn latest_block(&self) -> ports::fuel::Result<FuelBlock> {

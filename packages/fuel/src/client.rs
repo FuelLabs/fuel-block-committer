@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
@@ -6,9 +8,11 @@ use fuel_core_client::client::types::{
 use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
+use futures::{stream, Stream, StreamExt};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
+use ports::fuel::BoxStream;
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
@@ -92,6 +96,17 @@ impl HttpClient {
                 Err(Error::Network(err.to_string()))
             }
         }
+    }
+
+    pub(crate) fn _block_in_height_range(
+        &self,
+        range: Range<u32>,
+    ) -> impl Stream<Item = Result<Block>> + '_ {
+        // TODO: segfault make 5 configurable
+        stream::iter(range)
+            .map(move |height| self._block_at_height(height))
+            .buffered(5)
+            .filter_map(|result| async move { result.transpose() })
     }
 
     pub(crate) async fn _latest_block(&self) -> Result<Block> {

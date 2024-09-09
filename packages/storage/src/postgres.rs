@@ -1,14 +1,11 @@
 use futures::{Stream, TryStreamExt};
 use ports::types::{
-    BlockSubmission, DateTime, StateFragment, StateSubmission, SubmissionTx, TransactionState, Utc,
+    BlockSubmission, DateTime, L1Tx, NonNegative, StateSubmission, TransactionState, Utc,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
-use crate::mappings::{
-    queries::UnfinalizedSegmentData,
-    tables::{self, L1StateSubmission, L1SubmissionTxState},
-};
+use crate::mappings::tables::{self, L1SubmissionTxState};
 
 #[derive(Clone)]
 pub struct Postgres {
@@ -105,24 +102,93 @@ impl Postgres {
         // Ok(())
     }
 
-    pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<FuelBlock>> {
-        sqlx::query_as!(tables::FuelBlock, "SELECT * FROM fuel_blocks")
-            .fetch_all(&self.connection_pool)
-            .await
-            .map_err(Error::from)
+    pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<ports::storage::FuelBlock>> {
+        sqlx::query_as!(
+            tables::FuelBlock,
+            "SELECT * FROM fuel_blocks ORDER BY height ASC"
+        )
+        .fetch_all(&self.connection_pool)
+        .await
+        .map_err(Error::from)?
+        .into_iter()
+        .map(ports::storage::FuelBlock::try_from)
+        .collect()
+    }
+
+    pub(crate) async fn _block_roster(&self) -> crate::error::Result<ports::storage::BlockRoster> {
+        let mut tx = self.connection_pool.begin().await?;
+        let missing_block_heights = sqlx::query!(
+            r#"WITH expected_heights AS (
+                SELECT generate_series(
+                    (SELECT MIN(height) FROM fuel_blocks), 
+                    (SELECT MAX(height) FROM fuel_blocks)
+                ) AS height
+            )
+            SELECT e.height
+            FROM expected_heights e
+            LEFT JOIN fuel_blocks fb ON fb.height = e.height
+            WHERE fb.height IS NULL
+            ORDER BY e.height ASC;  -- Explicitly enforce ascending order
+            "#
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(Error::from)?
+        .into_iter()
+        .map(|row| {
+            let height = row.height.ok_or_else(|| {
+                Error::Conversion("Missing height value. This is a bug".to_string())
+            })?;
+
+            u32::try_from(height)
+                .map_err(|e| Error::Conversion(format!("db block height cannot fit in u32: {e}")))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+        let highest_block_present =
+            sqlx::query!("SELECT MAX(height) AS highest_block_present FROM fuel_blocks")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(Error::from)?
+                .highest_block_present
+                .map(|height| {
+                    u32::try_from(height).map_err(|_| {
+                        Error::Conversion(format!("db block height cannot fit in u32: {height}"))
+                    })
+                })
+                .transpose()?;
+
+        Ok(ports::storage::BlockRoster::new(
+            missing_block_heights,
+            highest_block_present,
+        ))
+    }
+
+    pub(crate) async fn _insert_block(&self, block: ports::storage::FuelBlock) -> Result<()> {
+        let row = tables::FuelBlock::from(block);
+        sqlx::query!(
+            "INSERT INTO fuel_blocks (hash, height, data) VALUES ($1, $2, $3)",
+            row.hash,
+            row.height,
+            row.data
+        )
+        .execute(&self.connection_pool)
+        .await?;
+        Ok(())
     }
 
     pub(crate) async fn _submission_w_latest_block(
         &self,
     ) -> crate::error::Result<Option<BlockSubmission>> {
-        sqlx::query_as!(
-            tables::L1FuelBlockSubmission,
-            "SELECT * FROM l1_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
-        )
-        .fetch_optional(&self.connection_pool)
-        .await?
-        .map(BlockSubmission::try_from)
-        .transpose()
+        todo!()
+        // sqlx::query_as!(
+        //     tables::L1FuelBlockSubmission,
+        //     "SELECT * FROM l1_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
+        // )
+        // .fetch_optional(&self.connection_pool)
+        // .await?
+        // .map(BlockSubmission::try_from)
+        // .transpose()
     }
 
     pub(crate) async fn _last_time_a_fragment_was_finalized(
@@ -151,147 +217,154 @@ impl Postgres {
         &self,
         fuel_block_hash: [u8; 32],
     ) -> Result<BlockSubmission> {
-        let updated_row = sqlx::query_as!(
-            tables::L1FuelBlockSubmission,
-            "UPDATE l1_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
-            fuel_block_hash.as_slice(),
-        ).fetch_optional(&self.connection_pool).await?;
-
-        if let Some(row) = updated_row {
-            Ok(row.try_into()?)
-        } else {
-            let hash = hex::encode(fuel_block_hash);
-            Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
-        }
+        todo!()
+        // let updated_row = sqlx::query_as!(
+        //     tables::L1FuelBlockSubmission,
+        //     "UPDATE l1_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
+        //     fuel_block_hash.as_slice(),
+        // ).fetch_optional(&self.connection_pool).await?;
+        //
+        // if let Some(row) = updated_row {
+        //     Ok(row.try_into()?)
+        // } else {
+        //     let hash = hex::encode(fuel_block_hash);
+        //     Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
+        // }
     }
 
     pub(crate) async fn _insert_state_submission(&self, state: StateSubmission) -> Result<()> {
-        let L1StateSubmission {
-            fuel_block_hash,
-            fuel_block_height,
-            data,
-            ..
-        } = state.into();
-
-        sqlx::query!(
-            "INSERT INTO l1_submissions (fuel_block_hash, fuel_block_height, data) VALUES ($1, $2, $3)",
-            fuel_block_hash,
-            fuel_block_height,
-            data
-        )
-        .execute(&self.connection_pool)
-        .await?;
-
-        Ok(())
+        todo!()
+        // let L1StateSubmission {
+        //     fuel_block_hash,
+        //     fuel_block_height,
+        //     data,
+        //     ..
+        // } = state.into();
+        //
+        // sqlx::query!(
+        //     "INSERT INTO l1_submissions (fuel_block_hash, fuel_block_height, data) VALUES ($1, $2, $3)",
+        //     fuel_block_hash,
+        //     fuel_block_height,
+        //     data
+        // )
+        // .execute(&self.connection_pool)
+        // .await?;
+        //
+        // Ok(())
     }
 
-    pub(crate) fn _stream_unfinalized_segment_data(
-        &self,
-    ) -> impl Stream<Item = Result<UnfinalizedSegmentData>> + '_ + Send {
-        sqlx::query_as!(
-            UnfinalizedSegmentData,
-        r#"
-        WITH finalized_fragments AS (
-            SELECT 
-                s.fuel_block_height,
-                s.id AS submission_id,
-                octet_length(s.data) AS total_size,
-                COALESCE(MAX(f.end_byte), 0) AS last_finalized_end_byte  -- Default to 0 if no fragments are finalized
-            FROM l1_submissions s
-            LEFT JOIN l1_fragments f ON f.submission_id = s.id
-            LEFT JOIN l1_transactions t ON f.tx_id = t.id
-            WHERE t.state = $1 OR t.state IS NULL
-            GROUP BY s.fuel_block_height, s.id, s.data
-        )
-        SELECT 
-            ff.submission_id,
-            COALESCE(ff.last_finalized_end_byte, 0) AS uncommitted_start,  -- Default to 0 if NULL
-            ff.total_size AS uncommitted_end,  -- Non-inclusive end, which is the total size of the segment
-            COALESCE(SUBSTRING(s.data FROM ff.last_finalized_end_byte + 1 FOR ff.total_size - ff.last_finalized_end_byte), ''::bytea) AS segment_data  -- Clip the data and default to an empty byte array if NULL
-        FROM finalized_fragments ff
-        JOIN l1_submissions s ON s.id = ff.submission_id
-        ORDER BY ff.fuel_block_height ASC;
-        "#,
-        L1SubmissionTxState::FINALIZED_STATE as i16  // Only finalized transactions
-    )
-    .fetch(&self.connection_pool)
-    .map_err(Error::from)
-    }
+    // pub(crate) fn _stream_unfinalized_segment_data(
+    //     &self,
+    // ) -> impl Stream<Item = Result<UnfinalizedSegmentData>> + '_ + Send {
+    //     todo!()
+    //     //     sqlx::query_as!(
+    //     //         UnfinalizedSegmentData,
+    //     //     r#"
+    //     //     WITH finalized_fragments AS (
+    //     //         SELECT
+    //     //             s.fuel_block_height,
+    //     //             s.id AS submission_id,
+    //     //             octet_length(s.data) AS total_size,
+    //     //             COALESCE(MAX(f.end_byte), 0) AS last_finalized_end_byte  -- Default to 0 if no fragments are finalized
+    //     //         FROM l1_submissions s
+    //     //         LEFT JOIN l1_fragments f ON f.submission_id = s.id
+    //     //         LEFT JOIN l1_transactions t ON f.tx_id = t.id
+    //     //         WHERE t.state = $1 OR t.state IS NULL
+    //     //         GROUP BY s.fuel_block_height, s.id, s.data
+    //     //     )
+    //     //     SELECT
+    //     //         ff.submission_id,
+    //     //         COALESCE(ff.last_finalized_end_byte, 0) AS uncommitted_start,  -- Default to 0 if NULL
+    //     //         ff.total_size AS uncommitted_end,  -- Non-inclusive end, which is the total size of the segment
+    //     //         COALESCE(SUBSTRING(s.data FROM ff.last_finalized_end_byte + 1 FOR ff.total_size - ff.last_finalized_end_byte), ''::bytea) AS segment_data  -- Clip the data and default to an empty byte array if NULL
+    //     //     FROM finalized_fragments ff
+    //     //     JOIN l1_submissions s ON s.id = ff.submission_id
+    //     //     ORDER BY ff.fuel_block_height ASC;
+    //     //     "#,
+    //     //     L1SubmissionTxState::FINALIZED_STATE as i16  // Only finalized transactions
+    //     // )
+    //     // .fetch(&self.connection_pool)
+    //     // .map_err(Error::from)
+    // }
 
-    pub(crate) async fn _record_pending_tx(
-        &self,
-        tx_hash: [u8; 32],
-        fragments: Vec<StateFragment>,
-    ) -> Result<()> {
-        let mut transaction = self.connection_pool.begin().await?;
-
-        let transaction_id = sqlx::query!(
-            "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
-            tx_hash.as_slice(),
-            L1SubmissionTxState::PENDING_STATE
-        )
-        .fetch_one(&mut *transaction)
-        .await?
-        .id;
-
-        for fragment in fragments {
-            let tables::L1StateFragment {
-                submission_id,
-                start_byte,
-                end_byte,
-                ..
-            } = tables::L1StateFragment::from(fragment);
-
-            sqlx::query!(
-                "INSERT INTO l1_fragments (tx_id, submission_id, start_byte, end_byte) VALUES ($1, $2, $3, $4)",
-                transaction_id,
-        submission_id,
-        start_byte,
-        end_byte
-            )
-            .execute(&mut *transaction)
-            .await?;
-        }
-
-        transaction.commit().await?;
-
-        Ok(())
-    }
+    // pub(crate) async fn _record_pending_tx(
+    //     &self,
+    //     tx_hash: [u8; 32],
+    //     fragments: Vec<StateFragment>,
+    // ) -> Result<()> {
+    //     todo!()
+    //     // let mut transaction = self.connection_pool.begin().await?;
+    //     //
+    //     // let transaction_id = sqlx::query!(
+    //     //     "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
+    //     //     tx_hash.as_slice(),
+    //     //     L1SubmissionTxState::PENDING_STATE
+    //     // )
+    //     // .fetch_one(&mut *transaction)
+    //     // .await?
+    //     // .id;
+    //     //
+    //     // for fragment in fragments {
+    //     //     let tables::L1StateFragment {
+    //     //         submission_id,
+    //     //         start_byte,
+    //     //         end_byte,
+    //     //         ..
+    //     //     } = tables::L1StateFragment::from(fragment);
+    //     //
+    //     //     sqlx::query!(
+    //     //         "INSERT INTO l1_fragments (tx_id, submission_id, start_byte, end_byte) VALUES ($1, $2, $3, $4)",
+    //     //         transaction_id,
+    //     // submission_id,
+    //     // start_byte,
+    //     // end_byte
+    //     //     )
+    //     //     .execute(&mut *transaction)
+    //     //     .await?;
+    //     // }
+    //     //
+    //     // transaction.commit().await?;
+    //     //
+    //     // Ok(())
+    // }
 
     pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
-        Ok(sqlx::query!(
-            "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
-            L1SubmissionTxState::PENDING_STATE
-        )
-        .fetch_one(&self.connection_pool)
-        .await?
-        .has_pending_transactions.unwrap_or(false))
+        todo!()
+        // Ok(sqlx::query!(
+        //     "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
+        //     L1SubmissionTxState::PENDING_STATE
+        // )
+        // .fetch_one(&self.connection_pool)
+        // .await?
+        // .has_pending_transactions.unwrap_or(false))
     }
 
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<SubmissionTx>> {
-        sqlx::query_as!(
-            tables::L1SubmissionTx,
-            "SELECT * FROM l1_transactions WHERE state = $1",
-            L1SubmissionTxState::PENDING_STATE
-        )
-        .fetch_all(&self.connection_pool)
-        .await?
-        .into_iter()
-        .map(SubmissionTx::try_from)
-        .collect::<Result<Vec<_>>>()
+    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<L1Tx>> {
+        todo!()
+        // sqlx::query_as!(
+        //     tables::L1SubmissionTx,
+        //     "SELECT * FROM l1_transactions WHERE state = $1",
+        //     L1SubmissionTxState::PENDING_STATE
+        // )
+        // .fetch_all(&self.connection_pool)
+        // .await?
+        // .into_iter()
+        // .map(SubmissionTx::try_from)
+        // .collect::<Result<Vec<_>>>()
     }
 
     pub(crate) async fn _state_submission_w_latest_block(
         &self,
     ) -> crate::error::Result<Option<StateSubmission>> {
-        sqlx::query_as!(
-            tables::L1StateSubmission,
-            "SELECT * FROM l1_submissions ORDER BY fuel_block_height DESC LIMIT 1"
-        )
-        .fetch_optional(&self.connection_pool)
-        .await?
-        .map(StateSubmission::try_from)
-        .transpose()
+        todo!()
+        // sqlx::query_as!(
+        //     tables::L1StateSubmission,
+        //     "SELECT * FROM l1_submissions ORDER BY fuel_block_height DESC LIMIT 1"
+        // )
+        // .fetch_optional(&self.connection_pool)
+        // .await?
+        // .map(StateSubmission::try_from)
+        // .transpose()
     }
 
     pub(crate) async fn _update_submission_tx_state(
@@ -299,20 +372,21 @@ impl Postgres {
         hash: [u8; 32],
         state: TransactionState,
     ) -> Result<()> {
-        let L1SubmissionTxState {
-            state,
-            finalized_at,
-        } = state.into();
-        sqlx::query!(
-            "UPDATE l1_transactions SET state = $1, finalized_at = $2 WHERE hash = $3",
-            state,
-            finalized_at,
-            hash.as_slice(),
-        )
-        .execute(&self.connection_pool)
-        .await?;
-
-        Ok(())
+        todo!()
+        // let L1SubmissionTxState {
+        //     state,
+        //     finalized_at,
+        // } = state.into();
+        // sqlx::query!(
+        //     "UPDATE l1_transactions SET state = $1, finalized_at = $2 WHERE hash = $3",
+        //     state,
+        //     finalized_at,
+        //     hash.as_slice(),
+        // )
+        // .execute(&self.connection_pool)
+        // .await?;
+        //
+        // Ok(())
     }
 
     pub(crate) async fn insert_bundle_and_fragments(
@@ -358,5 +432,18 @@ impl Postgres {
         tx.commit().await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn _block_available(&self, block_hash: &[u8; 32]) -> Result<bool> {
+        let response = sqlx::query!(
+            "SELECT EXISTS (SELECT 1 FROM fuel_blocks WHERE hash = $1) AS block_exists",
+            block_hash
+        )
+        .fetch_one(&self.connection_pool)
+        .await?;
+
+        response.block_exists.ok_or_else(|| {
+            Error::Database("Failed to determine if block exists. This is a bug".to_string())
+        })
     }
 }

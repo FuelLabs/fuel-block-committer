@@ -1,4 +1,3 @@
-#![deny(unused_crate_dependencies)]
 mod block_committer;
 mod commit_listener;
 mod health_reporter;

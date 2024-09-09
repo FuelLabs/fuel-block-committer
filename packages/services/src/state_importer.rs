@@ -1,9 +1,9 @@
+use std::ops::{Range, RangeInclusive};
+
 use async_trait::async_trait;
-use ports::{
-    fuel::FuelBlock,
-    storage::Storage,
-    types::{StateFragment, StateSubmission},
-};
+use futures::{stream, StreamExt, TryStreamExt};
+use itertools::Itertools;
+use ports::{fuel::FuelBlock, storage::Storage, types::StateSubmission};
 use tracing::info;
 use validator::Validator;
 
@@ -39,12 +39,8 @@ where
         Ok(latest_block)
     }
 
-    async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
-        let Some(submitted_height) = self.last_submitted_block_height().await? else {
-            return Ok(false);
-        };
-
-        Ok(submitted_height >= block_height)
+    async fn check_if_imported(&self, hash: &[u8; 32]) -> Result<bool> {
+        Ok(self.storage.block_available(hash).await?)
     }
 
     async fn last_submitted_block_height(&self) -> Result<Option<u32>> {
@@ -55,44 +51,14 @@ where
             .map(|submission| submission.block_height))
     }
 
-    fn block_to_state_submission(
-        &self,
-        block: FuelBlock,
-    ) -> Result<(StateSubmission, Vec<StateFragment>)> {
-        use itertools::Itertools;
-
-        // Serialize the block into bytes
-        let fragments = block
-            .transactions
-            .iter()
-            .flat_map(|tx| tx.iter())
-            .chunks(StateFragment::MAX_FRAGMENT_SIZE)
-            .into_iter()
-            .enumerate()
-            .map(|(index, chunk)| StateFragment {
-                id: None,
-                submission_id: None,
-                fragment_idx: index as u32,
-                data: chunk.copied().collect(),
-                created_at: ports::types::Utc::now(),
-            })
-            .collect();
-
-        let submission = StateSubmission {
-            id: None,
-            block_hash: *block.id,
-            block_height: block.header.height,
-        };
-
-        Ok((submission, fragments))
-    }
-
     async fn import_state(&self, block: FuelBlock) -> Result<()> {
-        let (submission, fragments) = self.block_to_state_submission(block)?;
-        self.storage
-            .insert_state_submission(submission, fragments)
-            .await?;
+        let block_id = block.id;
+        let block_height = block.header.height;
+        if !self.storage.block_available(&block_id).await? {
+            self.storage.insert_block(block.into()).await?;
 
+            info!("imported state from fuel block: height: {block_height}, id: {block_id}");
+        }
         Ok(())
     }
 }
@@ -105,35 +71,58 @@ where
     BlockValidator: Validator,
 {
     async fn run(&mut self) -> Result<()> {
-        // TODO: segfault we can miss blocks if we only fetch the latest
-        // This is different from the contract call which happens much rarer, state should be
-        // committed of every block
-        // Logic needs to be implemented which will track holes and fetch them
-        let block = self.fetch_latest_block().await?;
+        let block_roster = self.storage.block_roster().await?;
 
-        if self.check_if_stale(block.header.height).await? {
-            return Ok(());
-        }
+        let latest_block = self.fetch_latest_block().await?;
 
-        if block.transactions.is_empty() {
-            return Ok(());
-        }
+        // TODO: segfault the cutoff to be configurable
+        let mut missing_blocks = block_roster.missing_block_heights(latest_block.header.height, 0);
+        missing_blocks.retain(|height| *height != latest_block.header.height);
 
-        let block_id = block.id;
-        let block_height = block.header.height;
-        self.import_state(block).await?;
-        info!(
-            "imported state from fuel block: height: {}, id: {}",
-            block_height, block_id
-        );
+        // Everything up to the latest block
+        stream::iter(split_into_ranges(missing_blocks))
+            .flat_map(|range| self.fuel_adapter.blocks_in_height_range(range))
+            .map_err(crate::Error::from)
+            .try_for_each(|block| async {
+                self.import_state(block).await?;
+                Ok(())
+            })
+            .await?;
 
         Ok(())
     }
 }
 
+fn split_into_ranges(nums: Vec<u32>) -> Vec<Range<u32>> {
+    nums.into_iter()
+        .sorted()
+        .fold(Vec::new(), |mut ranges, num| {
+            if let Some((_start, end)) = ranges.last_mut() {
+                if num == *end + 1 {
+                    // Extend the current range
+                    *end = num;
+                } else {
+                    // Start a new range
+                    ranges.push((num, num));
+                }
+            } else {
+                // First range
+                ranges.push((num, num));
+            }
+            ranges
+        })
+        .into_iter()
+        .map(|(begin, end_inclusive)| {
+            let end_exclusive = end_inclusive.saturating_add(1);
+            begin..end_exclusive
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use fuel_crypto::{Message, SecretKey, Signature};
+    use mockall::predicate::eq;
     use ports::fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus};
     use rand::{rngs::StdRng, SeedableRng};
     use storage::PostgresProcess;
@@ -191,22 +180,32 @@ mod tests {
         }
     }
 
-    fn given_fetcher(block: FuelBlock) -> ports::fuel::MockApi {
+    fn given_streaming_fetcher(block: FuelBlock) -> ports::fuel::MockApi {
         let mut fetcher = ports::fuel::MockApi::new();
 
         fetcher
-            .expect_latest_block()
-            .returning(move || Ok(block.clone()));
+            .expect_blocks_in_height_range()
+            .with(eq(block.header.height..block.header.height + 1))
+            .return_once(move |_| stream::once(async move { Ok(block.clone()) }).boxed());
+
+        fetcher
+    }
+
+    fn given_latest_fetcher(block: FuelBlock) -> ports::fuel::MockApi {
+        let mut fetcher = ports::fuel::MockApi::new();
+
+        fetcher.expect_latest_block().return_once(move || Ok(block));
 
         fetcher
     }
 
     #[tokio::test]
-    async fn imports_new_block() -> Result<()> {
+    async fn imports_latest_block_when_no_blocks_are_missing() -> Result<()> {
         // given
         let secret_key = given_secret_key();
         let block = given_a_block(1, &secret_key);
-        let fuel_mock = given_fetcher(block);
+        let fuel_mock = given_latest_fetcher(block.clone());
+
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let process = PostgresProcess::shared().await.unwrap();
@@ -217,9 +216,133 @@ mod tests {
         importer.run().await.unwrap();
 
         // then
-        let latest_submission: Vec<_> = db.all_blocks().await?;
-        assert_eq!(fragments.len(), 1);
-        assert_eq!(fragments[0].submission_id, latest_submission.id);
+        let all_blocks = db.all_blocks().await?;
+
+        assert_eq!(all_blocks, vec![block.into()]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn skips_import_if_block_imported() -> Result<()> {
+        // given
+        let secret_key = given_secret_key();
+        let block = given_a_block(1, &secret_key);
+        let fuel_mock = given_latest_fetcher(block.clone());
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let process = PostgresProcess::shared().await.unwrap();
+
+        let db = process.create_random_db().await?;
+        db.insert_block(block.clone().into()).await?;
+
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
+
+        // when
+        let res = importer.run().await;
+
+        // then
+        res.unwrap();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fills_in_missing_blocks_in_middle() -> Result<()> {
+        // given
+        let secret_key = given_secret_key();
+        let block_1 = given_a_block(1, &secret_key);
+        let block_2 = given_a_block(2, &secret_key);
+        let block_3 = given_a_block(3, &secret_key);
+        let block_4 = given_a_block(4, &secret_key);
+        let block_5 = given_a_block(5, &secret_key);
+
+        let mut fuel_mock = ports::fuel::MockApi::new();
+
+        let ret = block_2.clone();
+        fuel_mock
+            .expect_blocks_in_height_range()
+            .with(eq(2..3))
+            .return_once(move |_| stream::once(async move { Ok(ret) }).boxed());
+
+        let ret = block_4.clone();
+        fuel_mock
+            .expect_blocks_in_height_range()
+            .with(eq(4..5))
+            .return_once(move |_| stream::once(async move { Ok(ret) }).boxed());
+
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let process = PostgresProcess::shared().await.unwrap();
+
+        let db = process.create_random_db().await?;
+        db.insert_block(block_1.clone().into()).await?;
+        db.insert_block(block_3.clone().into()).await?;
+        db.insert_block(block_5.clone().into()).await?;
+
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
+
+        // when
+        importer.run().await?;
+
+        // then
+        let available_blocks = db.all_blocks().await?;
+        assert_eq!(
+            available_blocks,
+            vec![
+                block_1.clone().into(),
+                block_2.clone().into(),
+                block_3.clone().into(),
+                block_4.clone().into(),
+                block_5.clone().into()
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fills_in_missing_blocks_at_end() -> Result<()> {
+        // given
+        let secret_key = given_secret_key();
+        let block_1 = given_a_block(1, &secret_key);
+        let block_2 = given_a_block(2, &secret_key);
+        let block_3 = given_a_block(3, &secret_key);
+        let block_4 = given_a_block(4, &secret_key);
+
+        let mut fuel_mock = ports::fuel::MockApi::new();
+
+        let ret = vec![Ok(block_2.clone()), Ok(block_3.clone())];
+        fuel_mock
+            .expect_blocks_in_height_range()
+            .with(eq(2..4))
+            .return_once(move |_| stream::iter(ret).boxed());
+
+        let ret = block_4.clone();
+        fuel_mock.expect_latest_block().return_once(|| Ok(ret));
+
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let process = PostgresProcess::shared().await.unwrap();
+
+        let db = process.create_random_db().await?;
+        db.insert_block(block_1.clone().into()).await?;
+
+        let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator);
+
+        // when
+        importer.run().await?;
+
+        // then
+        let available_blocks = db.all_blocks().await?;
+        assert_eq!(
+            available_blocks,
+            vec![
+                block_1.clone().into(),
+                block_2.clone().into(),
+                block_3.clone().into(),
+                block_4.clone().into(),
+            ]
+        );
 
         Ok(())
     }

@@ -12,17 +12,47 @@ impl std::fmt::Display for InvalidConversion {
 impl std::error::Error for InvalidConversion {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NonNegativeI32 {
-    id: i32,
+pub struct NonNegative<NUM> {
+    val: NUM,
 }
 
-impl NonNegativeI32 {
+impl NonNegative<i32> {
     pub fn as_u32(&self) -> u32 {
-        self.id as u32
+        self.val as u32
     }
 }
 
-impl TryFrom<u32> for NonNegativeI32 {
+impl NonNegative<i64> {
+    pub fn as_u64(&self) -> u64 {
+        self.val as u64
+    }
+
+    pub fn as_i64(&self) -> i64 {
+        self.val
+    }
+}
+
+impl From<u32> for NonNegative<i64> {
+    fn from(value: u32) -> Self {
+        Self {
+            val: i64::from(value),
+        }
+    }
+}
+
+impl TryFrom<i64> for NonNegative<i64> {
+    type Error = InvalidConversion;
+    fn try_from(id: i64) -> Result<Self, Self::Error> {
+        if id < 0 {
+            return Err(InvalidConversion {
+                message: format!("{id} is negative"),
+            });
+        }
+        Ok(Self { val: id })
+    }
+}
+
+impl TryFrom<u32> for NonNegative<i32> {
     type Error = InvalidConversion;
     fn try_from(id: u32) -> Result<Self, Self::Error> {
         if id > i32::MAX as u32 {
@@ -30,6 +60,6 @@ impl TryFrom<u32> for NonNegativeI32 {
                 message: format!("{id} is too large for i32"),
             });
         }
-        Ok(Self { id: id as i32 })
+        Ok(Self { val: id as i32 })
     }
 }
