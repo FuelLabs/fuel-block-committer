@@ -1,36 +1,24 @@
 BEGIN;
 
--- Step 1: Drop the l1_transaction_fragments table
-DROP TABLE IF EXISTS l1_transaction_fragments;
+-- Rename 'l1_fuel_block_submission' to 'fuel_blocks' to represent the fuel block only
+ALTER TABLE l1_fuel_block_submission
+RENAME TO fuel_blocks;
 
--- Step 2: Delete all previous data from l1_fragments and l1_submissions
-DELETE FROM l1_fragments;
-DELETE FROM l1_submissions;
+-- Create new 'bundles' table to represent groups of blocks
+CREATE TABLE IF NOT EXISTS bundles (
+    id          SERIAL PRIMARY KEY,
+    cancelled   BOOLEAN NOT NULL DEFAULT FALSE -- Boolean flag to indicate if the bundle is cancelled
+);
 
-ALTER TABLE l1_submissions
-ADD COLUMN data BYTEA NOT NULL;
+-- Create a many-to-many relationship between bundles and blocks
+CREATE TABLE IF NOT EXISTS bundle_blocks (
+    bundle_id   INTEGER NOT NULL REFERENCES bundles(id),
+    block_hash  BYTEA NOT NULL REFERENCES fuel_blocks(fuel_block_hash),
+    PRIMARY KEY (bundle_id, block_hash)
+);
 
--- Step 4: Add columns for tracking blob ranges and Ethereum transaction (now tx_id)
+-- Add a new 'bundle_id' column to 'l1_fragments' to link fragments to bundles
 ALTER TABLE l1_fragments
-DROP COLUMN fragment_idx,       -- Remove fragment index if no longer needed
-DROP COLUMN data,
-ADD COLUMN start_byte INTEGER NOT NULL CHECK(start_byte >=0),
-ADD COLUMN end_byte INTEGER NOT NULL CHECK(end_byte >= start_byte),
-ADD COLUMN tx_id INTEGER NOT NULL  REFERENCES l1_transactions(id) ON DELETE CASCADE;
-
--- Step 6: Set finalized_at column in l1_transactions table
-ALTER TABLE l1_transactions
-ADD COLUMN finalized_at TIMESTAMPTZ;
-
--- Step 7: Set finalized_at for existing finalized transactions
-UPDATE l1_transactions
-SET finalized_at = CURRENT_TIMESTAMP
-WHERE state = 1;
-
--- Step 8: Add a constraint to ensure finalized transactions have finalized_at set
-ALTER TABLE l1_transactions
-ADD CONSTRAINT check_finalized_at_set
-CHECK (state != 1 OR finalized_at IS NOT NULL);
+ADD COLUMN bundle_id INTEGER REFERENCES bundles(id);
 
 COMMIT;
-

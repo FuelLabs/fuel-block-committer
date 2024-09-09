@@ -25,6 +25,15 @@ impl Storage for Postgres {
         Ok(self._insert(submission).await?)
     }
 
+
+    async fn insert_bundle_and_fragments(
+        &self,
+        bundle_blocks: &[[u8; 32]],
+        fragments: Vec<Vec<u8>>,
+    ) -> Result<()> {
+        Ok(self._insert_bundle_and_fragments(bundle_blocks, fragments).await?)
+    }
+
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
         Ok(self._last_time_a_fragment_was_finalized().await?)
     }

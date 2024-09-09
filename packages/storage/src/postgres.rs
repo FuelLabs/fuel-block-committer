@@ -306,4 +306,14 @@ impl Postgres {
 
         Ok(())
     }
+
+    pub(crate) async fn insert_bundle_and_fragments(
+        &self,
+        bundle_blocks: &[[u8; 32]],
+        fragments: Vec<Vec<u8>>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        todo!()
+    }
 }

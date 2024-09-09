@@ -25,6 +25,11 @@ pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
+    async fn insert_bundle_and_fragments(
+        &self,
+        bundle_blocks: &[[u8; 32]],
+        fragments: Vec<Vec<u8>>,
+    ) -> Result<()>;
 
     async fn insert_state_submission(&self, submission: StateSubmission) -> Result<()>;
     fn stream_unfinalized_segment_data<'a>(

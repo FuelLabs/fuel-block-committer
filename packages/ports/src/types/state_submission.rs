@@ -2,11 +2,11 @@ use std::ops::Range;
 
 pub use sqlx::types::chrono::{DateTime, Utc};
 
-use super::NumericId;
+use super::NonNegativeI32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateSubmission {
-    pub id: Option<NumericId>,
+    pub id: Option<NonNegativeI32>,
     pub block_hash: [u8; 32],
     pub block_height: u32,
     pub data: Vec<u8>,
@@ -27,7 +27,8 @@ impl std::error::Error for InvalidRange {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedRange {
-    range: Range<u32>,
+    start: NonNegativeI32,
+    end: NonNegativeI32,
 }
 
 impl TryFrom<Range<u32>> for ValidatedRange {
@@ -35,27 +36,28 @@ impl TryFrom<Range<u32>> for ValidatedRange {
 
     fn try_from(range: Range<u32>) -> Result<Self, Self::Error> {
         if range.start > range.end {
-            Err(Self::Error {
+            return Err(Self::Error {
                 message: format!(
                     "start ({}) must be less than or equal to end ({})",
                     range.start, range.end
                 ),
-            })
-        } else {
-            Ok(Self { range })
+            });
         }
+
+        let start = NonNegativeI32::try_from(range.start).map_err(|e| InvalidRange {
+            message: e.to_string(),
+        })?;
+        let end = NonNegativeI32::try_from(range.end).map_err(|e| InvalidRange {
+            message: e.to_string(),
+        })?;
+
+        Ok(Self { start, end })
     }
 }
 
 impl From<ValidatedRange> for Range<u32> {
     fn from(value: ValidatedRange) -> Self {
-        value.range
-    }
-}
-
-impl AsRef<Range<u32>> for ValidatedRange {
-    fn as_ref(&self) -> &Range<u32> {
-        &self.range
+        value.start.as_u32()..value.end.as_u32()
     }
 }
 
