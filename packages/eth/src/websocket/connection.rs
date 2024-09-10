@@ -65,6 +65,10 @@ pub struct WsConnection {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
+    fn split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
+        todo!()
+    }
+
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
         let commit_height = Self::calculate_commit_height(block.height(), self.commit_interval);
         let contract_call = self.contract.commit(block.hash().into(), commit_height);

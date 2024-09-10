@@ -22,8 +22,16 @@ impl Storage for Postgres {
         Ok(self._insert(submission).await?)
     }
 
+    async fn oldest_nonfinalized_fragment(&self) -> Result<Option<ports::storage::BundleFragment>> {
+        Ok(self._oldest_nonfinalized_fragment().await?)
+    }
+
     async fn all_blocks(&self) -> Result<Vec<ports::storage::FuelBlock>> {
         self._all_blocks().await.map_err(Into::into)
+    }
+
+    async fn all_fragments(&self) -> Result<Vec<ports::storage::BundleFragment>> {
+        self._all_fragments().await.map_err(Into::into)
     }
 
     async fn available_blocks(&self) -> Result<ports::storage::ValidatedRange> {
@@ -35,7 +43,7 @@ impl Storage for Postgres {
     }
 
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool> {
-        self._is_block_available(&hash).await.map_err(Into::into)
+        self._is_block_available(hash).await.map_err(Into::into)
     }
 
     async fn insert_bundle_and_fragments(
@@ -43,8 +51,9 @@ impl Storage for Postgres {
         bundle_blocks: &[[u8; 32]],
         fragments: Vec<Vec<u8>>,
     ) -> Result<()> {
-        todo!()
-        // Ok(self._insert_bundle_and_fragments(bundle_blocks, fragments).await?)
+        Ok(self
+            ._insert_bundle_and_fragments(bundle_blocks, fragments)
+            .await?)
     }
 
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
@@ -73,9 +82,13 @@ impl Storage for Postgres {
     //     //     .boxed()
     // }
 
-    // async fn record_pending_tx(&self, tx_hash: [u8; 32], fragments: Vec<StateFragment>) -> Result<()> {
-    //     Ok(self._record_pending_tx(tx_hash, fragments).await?)
-    // }
+    async fn record_pending_tx(
+        &self,
+        tx_hash: [u8; 32],
+        fragment_id: NonNegative<i32>,
+    ) -> Result<()> {
+        Ok(self._record_pending_tx(tx_hash, fragment_id).await?)
+    }
 
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
         Ok(self._get_pending_txs().await?)
@@ -89,12 +102,8 @@ impl Storage for Postgres {
         Ok(self._state_submission_w_latest_block().await?)
     }
 
-    async fn update_submission_tx_state(
-        &self,
-        hash: [u8; 32],
-        state: TransactionState,
-    ) -> Result<()> {
-        Ok(self._update_submission_tx_state(hash, state).await?)
+    async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()> {
+        Ok(self._update_tx_state(hash, state).await?)
     }
 }
 

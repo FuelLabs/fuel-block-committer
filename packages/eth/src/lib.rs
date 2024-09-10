@@ -37,16 +37,20 @@ impl Contract for WebsocketClient {
 
 #[async_trait]
 impl Api for WebsocketClient {
+    fn split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
+        Ok(self._split_into_submittable_state_chunks(data)?)
+    }
+
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
-        Ok(self.submit_l2_state(state_data).await?)
+        Ok(self._submit_l2_state(state_data).await?)
     }
 
     async fn balance(&self) -> Result<U256> {
-        Ok(self.balance().await?)
+        Ok(self._balance().await?)
     }
 
     async fn get_block_number(&self) -> Result<L1Height> {
-        let block_num = self.get_block_number().await?;
+        let block_num = self._get_block_number().await?;
         let height = L1Height::try_from(block_num)?;
 
         Ok(height)
@@ -56,7 +60,7 @@ impl Api for WebsocketClient {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
-        Ok(self.get_transaction_response(tx_hash).await?)
+        Ok(self._get_transaction_response(tx_hash).await?)
     }
 }
 

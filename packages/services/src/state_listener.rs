@@ -49,7 +49,7 @@ where
 
             if !tx_response.succeeded() {
                 self.storage
-                    .update_submission_tx_state(tx_hash, TransactionState::Failed)
+                    .update_tx_state(tx_hash, TransactionState::Failed)
                     .await?;
 
                 info!("failed blob tx {}", hex::encode(tx_hash));
@@ -63,7 +63,7 @@ where
             }
 
             self.storage
-                .update_submission_tx_state(tx_hash, TransactionState::Finalized(self.clock.now()))
+                .update_tx_state(tx_hash, TransactionState::Finalized(self.clock.now()))
                 .await?;
 
             info!("finalized blob tx {}", hex::encode(tx_hash));

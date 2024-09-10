@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use ports::{
     clock::Clock,
-    storage::Storage,
+    storage::{BundleFragment, Storage},
     types::{DateTime, Utc},
 };
 use tracing::{info, warn};
@@ -57,8 +57,16 @@ where
         // Ok((fragment_ids, data))
     }
 
-    async fn submit_state(&self) -> Result<()> {
+    async fn submit_state(&self, fragment: &BundleFragment) -> Result<()> {
+        let fragments = self.storage.all_fragments().await?;
+
+        for fragment in fragments {
+            let tx = self.l1_adapter.submit_l2_state(fragment.data).await?;
+            self.storage.record_pending_tx(tx, fragment.id).await?;
+        }
+
         Ok(())
+
         // // TODO: segfault, what about encoding overhead?
         // let (fragment_ids, data) = self.fetch_fragments().await?;
         //
@@ -127,7 +135,24 @@ where
             return Ok(());
         };
 
-        self.submit_state().await?;
+        let fragment = if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
+            Some(fragment)
+        } else {
+            let block = self.storage.all_blocks().await?.pop().unwrap();
+            let chunks = self
+                .l1_adapter
+                .split_into_submittable_state_chunks(&block.data)?;
+
+            self.storage
+                .insert_bundle_and_fragments(&[block.hash], chunks.clone())
+                .await?;
+
+            self.storage.oldest_nonfinalized_fragment().await?
+        };
+
+        if let Some(fragment) = fragment {
+            self.submit_state(&fragment).await?;
+        }
 
         Ok(())
     }
@@ -135,81 +160,255 @@ where
 
 #[cfg(test)]
 mod tests {
-    // #[allow(dead_code)]
-    // fn setup_logger() {
-    //     tracing_subscriber::fmt()
-    //         .with_writer(std::io::stderr)
-    //         .with_level(true)
-    //         .with_line_number(true)
-    //         .json()
-    //         .init();
-    // }
-    //
-    // use clock::TestClock;
-    // use mockall::predicate;
-    // use ports::types::{L1Height, StateSubmission, TransactionResponse, TransactionState, U256};
-    // use storage::PostgresProcess;
-    //
-    // use super::*;
-    //
-    // struct MockL1 {
-    //     api: ports::l1::MockApi,
-    // }
-    // impl MockL1 {
-    //     fn new() -> Self {
-    //         Self {
-    //             api: ports::l1::MockApi::new(),
-    //         }
-    //     }
-    // }
-    //
-    // #[async_trait::async_trait]
-    // impl ports::l1::Api for MockL1 {
-    //     async fn submit_l2_state(&self, state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
-    //         self.api.submit_l2_state(state_data).await
-    //     }
-    //
-    //     async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
-    //         Ok(0.into())
-    //     }
-    //
-    //     async fn balance(&self) -> ports::l1::Result<U256> {
-    //         Ok(U256::ZERO)
-    //     }
-    //
-    //     async fn get_transaction_response(
-    //         &self,
-    //         _tx_hash: [u8; 32],
-    //     ) -> ports::l1::Result<Option<TransactionResponse>> {
-    //         Ok(None)
-    //     }
-    // }
-    //
-    // fn given_l1_that_expects_submission(data: Vec<u8>) -> MockL1 {
-    //     let mut l1 = MockL1::new();
-    //
-    //     l1.api
-    //         .expect_submit_l2_state()
-    //         .with(predicate::eq(data))
-    //         .return_once(move |_| Ok([1u8; 32]));
-    //
-    //     l1
-    // }
-    //
+    #[allow(dead_code)]
+    fn setup_logger() {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_level(true)
+            .with_line_number(true)
+            .json()
+            .init();
+    }
+
+    use clock::TestClock;
+    use mockall::predicate::{self, eq};
+    use ports::{
+        storage::FuelBlock,
+        types::{L1Height, StateSubmission, TransactionResponse, TransactionState, U256},
+    };
+    use storage::PostgresProcess;
+
+    use super::*;
+
+    struct MockL1 {
+        api: ports::l1::MockApi,
+    }
+    impl MockL1 {
+        fn new() -> Self {
+            Self {
+                api: ports::l1::MockApi::new(),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ports::l1::Api for MockL1 {
+        fn split_into_submittable_state_chunks(
+            &self,
+            data: &[u8],
+        ) -> ports::l1::Result<Vec<Vec<u8>>> {
+            self.api.split_into_submittable_state_chunks(data)
+        }
+
+        async fn submit_l2_state(&self, state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
+            self.api.submit_l2_state(state_data).await
+        }
+
+        async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
+            Ok(0.into())
+        }
+
+        async fn balance(&self) -> ports::l1::Result<U256> {
+            Ok(U256::ZERO)
+        }
+
+        async fn get_transaction_response(
+            &self,
+            _tx_hash: [u8; 32],
+        ) -> ports::l1::Result<Option<TransactionResponse>> {
+            Ok(None)
+        }
+    }
+
+    fn given_l1_that_expects_submission(data: Vec<u8>) -> MockL1 {
+        let mut l1 = MockL1::new();
+
+        l1.api
+            .expect_submit_l2_state()
+            .with(predicate::eq(data))
+            .return_once(move |_| Ok([1u8; 32]));
+
+        l1
+    }
+
+    #[tokio::test]
+    async fn does_nothing_if_there_are_pending_transactions() -> Result<()> {
+        //given
+        let l1_mock = MockL1::new();
+
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+
+        let block = FuelBlock {
+            hash: [1; 32],
+            height: 0,
+            data: random_data(100),
+        };
+        db.insert_block(block.clone()).await?;
+
+        db.insert_bundle_and_fragments(&[block.hash], vec![block.data.clone()])
+            .await?;
+        let fragments = db.all_fragments().await?;
+        dbg!(&fragments);
+
+        let config = BundleGenerationConfig {
+            num_blocks: 1,
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        db.record_pending_tx([0; 32], 1.into()).await?;
+
+        let pending_txs = db.get_pending_txs().await?;
+        dbg!(&pending_txs);
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // mock didn't fail due to unexpected calls
+        Ok(())
+    }
+
+    // TODO: segfault add .once() to all tests since mocks dont fail by default if their
+    // expectations were not exercised, only if they were exercised incorrectly
+    #[tokio::test]
+    async fn fragments_available_block_and_sends_first_fragment() -> Result<()> {
+        //given
+        let block = ports::storage::FuelBlock {
+            hash: [1; 32],
+            height: 0,
+            data: random_data(100),
+        };
+
+        let mut l1_mock = MockL1::new();
+
+        let fragments = vec![block.data.clone()];
+        {
+            let fragments = fragments.clone();
+            l1_mock
+                .api
+                .expect_split_into_submittable_state_chunks()
+                .once()
+                .with(eq(block.data.clone()))
+                .return_once(move |_| Ok(fragments));
+        }
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .once()
+            .with(eq(fragments[0].clone()))
+            .return_once(|_| Ok([1; 32]));
+
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(block.clone()).await?;
+
+        let config = BundleGenerationConfig {
+            num_blocks: 1,
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // mocks will validate the fragment was submitted
+        let pending = db.get_pending_txs().await?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].hash, [1; 32]);
+
+        Ok(())
+    }
+
+    fn random_data(size: usize) -> Vec<u8> {
+        (0..size).map(|_| rand::random::<u8>()).collect()
+    }
+
+    #[tokio::test]
+    async fn sends_next_unsent_fragment() -> Result<()> {
+        //given
+        let block = ports::storage::FuelBlock {
+            hash: [1; 32],
+            height: 0,
+            data: random_data(100),
+        };
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(block.clone()).await?;
+
+        db.insert_bundle_and_fragments(
+            &[block.hash],
+            vec![block.data[..50].to_vec(), block.data[50..].to_vec()],
+        )
+        .await?;
+
+        let fragments = db.all_fragments().await?;
+        db.record_pending_tx([0; 32], fragments[0].id).await?;
+        db.update_tx_state([0; 32], TransactionState::Finalized(Utc::now()))
+            .await?;
+
+        let mut l1_mock = MockL1::new();
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .once()
+            .with(eq(fragments[1].data.clone()))
+            .return_once(|_| Ok([1; 32]));
+
+        let config = BundleGenerationConfig {
+            num_blocks: 1,
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // mocks will validate the fragment was submitted
+        let pending = db.get_pending_txs().await?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].hash, [1; 32]);
+
+        Ok(())
+    }
+
     // #[tokio::test]
-    // async fn will_bundle_and_fragment_if_none_available() -> Result<()> {
-    //     //given
+    // async fn will_wait_for_more_data() -> Result<()> {
+    //     // given
+    //     let (block_1_state, block_1_state_fragment) = (
+    //         StateSubmission {
+    //             id: None,
+    //             block_hash: [0u8; 32],
+    //             block_height: 1,
+    //         },
+    //         StateFragment {
+    //             id: None,
+    //             submission_id: None,
+    //             fragment_idx: 0,
+    //             data: vec![0; 127_000],
+    //             created_at: ports::types::Utc::now(),
+    //         },
+    //     );
     //     let l1_mock = MockL1::new();
-    //     let blocks = vec![];
     //
     //     let process = PostgresProcess::shared().await.unwrap();
     //     let db = process.create_random_db().await?;
-    //     let config = BundleGenerationConfig {
-    //         num_blocks: 2,
-    //         accumulation_timeout: Duration::from_secs(1),
-    //     };
+    //     db.insert_state_submission(block_1_state, vec![block_1_state_fragment])
+    //         .await?;
     //
-    //     let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+    //     let mut committer = StateCommitter::new(
+    //         l1_mock,
+    //         db.clone(),
+    //         TestClock::default(),
+    //         Duration::from_secs(1),
+    //     );
     //
     //     // when
     //     committer.run().await.unwrap();
@@ -220,176 +419,136 @@ mod tests {
     //     Ok(())
     // }
     //
-    // // #[tokio::test]
-    // // async fn will_wait_for_more_data() -> Result<()> {
-    // //     // given
-    // //     let (block_1_state, block_1_state_fragment) = (
-    // //         StateSubmission {
-    // //             id: None,
-    // //             block_hash: [0u8; 32],
-    // //             block_height: 1,
-    // //         },
-    // //         StateFragment {
-    // //             id: None,
-    // //             submission_id: None,
-    // //             fragment_idx: 0,
-    // //             data: vec![0; 127_000],
-    // //             created_at: ports::types::Utc::now(),
-    // //         },
-    // //     );
-    // //     let l1_mock = MockL1::new();
-    // //
-    // //     let process = PostgresProcess::shared().await.unwrap();
-    // //     let db = process.create_random_db().await?;
-    // //     db.insert_state_submission(block_1_state, vec![block_1_state_fragment])
-    // //         .await?;
-    // //
-    // //     let mut committer = StateCommitter::new(
-    // //         l1_mock,
-    // //         db.clone(),
-    // //         TestClock::default(),
-    // //         Duration::from_secs(1),
-    // //     );
-    // //
-    // //     // when
-    // //     committer.run().await.unwrap();
-    // //
-    // //     // then
-    // //     assert!(!db.has_pending_txs().await?);
-    // //
-    // //     Ok(())
-    // // }
-    // //
-    // // #[tokio::test]
-    // // async fn triggers_when_enough_data_is_made_available() -> Result<()> {
-    // //     // given
-    // //     let max_data = 6 * 128 * 1024;
-    // //     let (block_1_state, block_1_state_fragment) = (
-    // //         StateSubmission {
-    // //             id: None,
-    // //             block_hash: [0u8; 32],
-    // //             block_height: 1,
-    // //         },
-    // //         StateFragment {
-    // //             id: None,
-    // //             submission_id: None,
-    // //             fragment_idx: 0,
-    // //             data: vec![1; max_data - 1000],
-    // //             created_at: ports::types::Utc::now(),
-    // //         },
-    // //     );
-    // //
-    // //     let (block_2_state, block_2_state_fragment) = (
-    // //         StateSubmission {
-    // //             id: None,
-    // //             block_hash: [1u8; 32],
-    // //             block_height: 2,
-    // //         },
-    // //         StateFragment {
-    // //             id: None,
-    // //             submission_id: None,
-    // //             fragment_idx: 0,
-    // //             data: vec![1; 1000],
-    // //             created_at: ports::types::Utc::now(),
-    // //         },
-    // //     );
-    // //     let l1_mock = given_l1_that_expects_submission(
-    // //         [
-    // //             block_1_state_fragment.data.clone(),
-    // //             block_2_state_fragment.data.clone(),
-    // //         ]
-    // //         .concat(),
-    // //     );
-    // //
-    // //     let process = PostgresProcess::shared().await.unwrap();
-    // //     let db = process.create_random_db().await?;
-    // //     db.insert_state_submission(block_1_state, vec![block_1_state_fragment])
-    // //         .await?;
-    // //
-    // //     let mut committer = StateCommitter::new(
-    // //         l1_mock,
-    // //         db.clone(),
-    // //         TestClock::default(),
-    // //         Duration::from_secs(1),
-    // //     );
-    // //     committer.run().await?;
-    // //     assert!(!db.has_pending_txs().await?);
-    // //     assert!(db.get_pending_txs().await?.is_empty());
-    // //
-    // //     db.insert_state_submission(block_2_state, vec![block_2_state_fragment])
-    // //         .await?;
-    // //     tokio::time::sleep(Duration::from_millis(2000)).await;
-    // //
-    // //     // when
-    // //     committer.run().await?;
-    // //
-    // //     // then
-    // //     assert!(!db.get_pending_txs().await?.is_empty());
-    // //     assert!(db.has_pending_txs().await?);
-    // //
-    // //     Ok(())
-    // // }
-    // //
-    // // #[tokio::test]
-    // // async fn will_trigger_on_accumulation_timeout() -> Result<()> {
-    // //     // given
-    // //     let (block_1_state, block_1_submitted_fragment, block_1_unsubmitted_state_fragment) = (
-    // //         StateSubmission {
-    // //             id: None,
-    // //             block_hash: [0u8; 32],
-    // //             block_height: 1,
-    // //         },
-    // //         StateFragment {
-    // //             id: None,
-    // //             submission_id: None,
-    // //             fragment_idx: 0,
-    // //             data: vec![0; 100],
-    // //             created_at: ports::types::Utc::now(),
-    // //         },
-    // //         StateFragment {
-    // //             id: None,
-    // //             submission_id: None,
-    // //             fragment_idx: 0,
-    // //             data: vec![0; 127_000],
-    // //             created_at: ports::types::Utc::now(),
-    // //         },
-    // //     );
-    // //
-    // //     let l1_mock =
-    // //         given_l1_that_expects_submission(block_1_unsubmitted_state_fragment.data.clone());
-    // //
-    // //     let process = PostgresProcess::shared().await.unwrap();
-    // //     let db = process.create_random_db().await?;
-    // //     db.insert_state_submission(
-    // //         block_1_state,
-    // //         vec![
-    // //             block_1_submitted_fragment,
-    // //             block_1_unsubmitted_state_fragment,
-    // //         ],
-    // //     )
-    // //     .await?;
-    // //
-    // //     let clock = TestClock::default();
-    // //
-    // //     db.record_pending_tx([0; 32], vec![1]).await?;
-    // //     db.update_submission_tx_state([0; 32], TransactionState::Finalized(clock.now()))
-    // //         .await?;
-    // //
-    // //     let accumulation_timeout = Duration::from_secs(1);
-    // //     let mut committer =
-    // //         StateCommitter::new(l1_mock, db.clone(), clock.clone(), accumulation_timeout);
-    // //     committer.run().await?;
-    // //     // No pending tx since we have not accumulated enough data nor did the timeout expire
-    // //     assert!(!db.has_pending_txs().await?);
-    // //
-    // //     clock.adv_time(Duration::from_secs(1)).await;
-    // //
-    // //     // when
-    // //     committer.run().await?;
-    // //
-    // //     // then
-    // //     assert!(db.has_pending_txs().await?);
-    // //
-    // //     Ok(())
-    // // }
+    // #[tokio::test]
+    // async fn triggers_when_enough_data_is_made_available() -> Result<()> {
+    //     // given
+    //     let max_data = 6 * 128 * 1024;
+    //     let (block_1_state, block_1_state_fragment) = (
+    //         StateSubmission {
+    //             id: None,
+    //             block_hash: [0u8; 32],
+    //             block_height: 1,
+    //         },
+    //         StateFragment {
+    //             id: None,
+    //             submission_id: None,
+    //             fragment_idx: 0,
+    //             data: vec![1; max_data - 1000],
+    //             created_at: ports::types::Utc::now(),
+    //         },
+    //     );
+    //
+    //     let (block_2_state, block_2_state_fragment) = (
+    //         StateSubmission {
+    //             id: None,
+    //             block_hash: [1u8; 32],
+    //             block_height: 2,
+    //         },
+    //         StateFragment {
+    //             id: None,
+    //             submission_id: None,
+    //             fragment_idx: 0,
+    //             data: vec![1; 1000],
+    //             created_at: ports::types::Utc::now(),
+    //         },
+    //     );
+    //     let l1_mock = given_l1_that_expects_submission(
+    //         [
+    //             block_1_state_fragment.data.clone(),
+    //             block_2_state_fragment.data.clone(),
+    //         ]
+    //         .concat(),
+    //     );
+    //
+    //     let process = PostgresProcess::shared().await.unwrap();
+    //     let db = process.create_random_db().await?;
+    //     db.insert_state_submission(block_1_state, vec![block_1_state_fragment])
+    //         .await?;
+    //
+    //     let mut committer = StateCommitter::new(
+    //         l1_mock,
+    //         db.clone(),
+    //         TestClock::default(),
+    //         Duration::from_secs(1),
+    //     );
+    //     committer.run().await?;
+    //     assert!(!db.has_pending_txs().await?);
+    //     assert!(db.get_pending_txs().await?.is_empty());
+    //
+    //     db.insert_state_submission(block_2_state, vec![block_2_state_fragment])
+    //         .await?;
+    //     tokio::time::sleep(Duration::from_millis(2000)).await;
+    //
+    //     // when
+    //     committer.run().await?;
+    //
+    //     // then
+    //     assert!(!db.get_pending_txs().await?.is_empty());
+    //     assert!(db.has_pending_txs().await?);
+    //
+    //     Ok(())
+    // }
+    //
+    // #[tokio::test]
+    // async fn will_trigger_on_accumulation_timeout() -> Result<()> {
+    //     // given
+    //     let (block_1_state, block_1_submitted_fragment, block_1_unsubmitted_state_fragment) = (
+    //         StateSubmission {
+    //             id: None,
+    //             block_hash: [0u8; 32],
+    //             block_height: 1,
+    //         },
+    //         StateFragment {
+    //             id: None,
+    //             submission_id: None,
+    //             fragment_idx: 0,
+    //             data: vec![0; 100],
+    //             created_at: ports::types::Utc::now(),
+    //         },
+    //         StateFragment {
+    //             id: None,
+    //             submission_id: None,
+    //             fragment_idx: 0,
+    //             data: vec![0; 127_000],
+    //             created_at: ports::types::Utc::now(),
+    //         },
+    //     );
+    //
+    //     let l1_mock =
+    //         given_l1_that_expects_submission(block_1_unsubmitted_state_fragment.data.clone());
+    //
+    //     let process = PostgresProcess::shared().await.unwrap();
+    //     let db = process.create_random_db().await?;
+    //     db.insert_state_submission(
+    //         block_1_state,
+    //         vec![
+    //             block_1_submitted_fragment,
+    //             block_1_unsubmitted_state_fragment,
+    //         ],
+    //     )
+    //     .await?;
+    //
+    //     let clock = TestClock::default();
+    //
+    //     db.record_pending_tx([0; 32], vec![1]).await?;
+    //     db.update_submission_tx_state([0; 32], TransactionState::Finalized(clock.now()))
+    //         .await?;
+    //
+    //     let accumulation_timeout = Duration::from_secs(1);
+    //     let mut committer =
+    //         StateCommitter::new(l1_mock, db.clone(), clock.clone(), accumulation_timeout);
+    //     committer.run().await?;
+    //     // No pending tx since we have not accumulated enough data nor did the timeout expire
+    //     assert!(!db.has_pending_txs().await?);
+    //
+    //     clock.adv_time(Duration::from_secs(1)).await;
+    //
+    //     // when
+    //     committer.run().await?;
+    //
+    //     // then
+    //     assert!(db.has_pending_txs().await?);
+    //
+    //     Ok(())
+    // }
 }

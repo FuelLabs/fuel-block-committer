@@ -20,6 +20,10 @@ impl NonNegative<i32> {
     pub fn as_u32(&self) -> u32 {
         self.val as u32
     }
+
+    pub fn as_i32(&self) -> i32 {
+        self.val
+    }
 }
 
 impl NonNegative<i64> {
@@ -37,6 +41,12 @@ impl From<u32> for NonNegative<i64> {
         Self {
             val: i64::from(value),
         }
+    }
+}
+
+impl From<i32> for NonNegative<i32> {
+    fn from(val: i32) -> Self {
+        Self { val }
     }
 }
 

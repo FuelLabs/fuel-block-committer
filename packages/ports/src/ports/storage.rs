@@ -24,6 +24,19 @@ pub struct FuelBlock {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FuelBundle {
+    pub id: NonNegative<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleFragment {
+    pub id: NonNegative<i32>,
+    pub idx: NonNegative<i32>,
+    pub bundle_id: NonNegative<i32>,
+    pub data: Vec<u8>,
+}
+
 impl From<crate::fuel::FuelBlock> for FuelBlock {
     fn from(value: crate::fuel::FuelBlock) -> Self {
         let data = value
@@ -46,6 +59,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
+    async fn all_fragments(&self) -> Result<Vec<BundleFragment>>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_block(&self, block: FuelBlock) -> Result<()>;
@@ -62,20 +76,17 @@ pub trait Storage: Send + Sync {
     // fn stream_unfinalized_segment_data<'a>(
     //     &'a self,
     // ) -> Pin<Box<dyn Stream<Item = Result<UnfinalizedSubmissionData>> + 'a + Send>>;
-    // async fn record_pending_tx(
-    //     &self,
-    //     tx_hash: [u8; 32],
-    //     fragments: Vec<StateFragment>,
-    // ) -> Result<()>;
+    async fn record_pending_tx(
+        &self,
+        tx_hash: [u8; 32],
+        fragment_id: NonNegative<i32>,
+    ) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
+    async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
-    async fn update_submission_tx_state(
-        &self,
-        hash: [u8; 32],
-        state: TransactionState,
-    ) -> Result<()>;
+    async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

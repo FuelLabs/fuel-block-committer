@@ -216,6 +216,12 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ports::l1::Api for MockL1 {
+        fn split_into_submittable_state_chunks(
+            &self,
+            data: &[u8],
+        ) -> ports::l1::Result<Vec<Vec<u8>>> {
+            self.api.split_into_submittable_state_chunks(data)
+        }
         async fn submit_l2_state(&self, state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
             self.api.submit_l2_state(state_data).await
         }

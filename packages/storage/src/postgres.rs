@@ -2,12 +2,12 @@ use std::ops::Range;
 
 use futures::{Stream, TryStreamExt};
 use ports::types::{
-    BlockSubmission, DateTime, L1Tx, NonNegative, StateSubmission, TransactionState, Utc,
+    BlockSubmission, DateTime, NonNegative, StateSubmission, TransactionState, Utc,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
-use crate::mappings::tables::{self, L1SubmissionTxState};
+use crate::mappings::tables::{self, L1TxState};
 
 #[derive(Clone)]
 pub struct Postgres {
@@ -104,6 +104,12 @@ impl Postgres {
         // Ok(())
     }
 
+    pub(crate) async fn _oldest_nonfinalized_fragment(
+        &self,
+    ) -> crate::error::Result<Option<ports::storage::BundleFragment>> {
+        todo!()
+    }
+
     pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<ports::storage::FuelBlock>> {
         sqlx::query_as!(
             tables::FuelBlock,
@@ -114,6 +120,22 @@ impl Postgres {
         .map_err(Error::from)?
         .into_iter()
         .map(ports::storage::FuelBlock::try_from)
+        .collect()
+    }
+
+    pub(crate) async fn _all_fragments(
+        &self,
+    ) -> crate::error::Result<Vec<ports::storage::BundleFragment>> {
+        // TODO: segfault add cascading rules
+        sqlx::query_as!(
+            tables::L1Fragment,
+            "SELECT * FROM l1_fragments ORDER BY idx ASC"
+        )
+        .fetch_all(&self.connection_pool)
+        .await
+        .map_err(Error::from)?
+        .into_iter()
+        .map(TryFrom::try_from)
         .collect()
     }
 
@@ -265,70 +287,55 @@ impl Postgres {
     //     // .map_err(Error::from)
     // }
 
-    // pub(crate) async fn _record_pending_tx(
-    //     &self,
-    //     tx_hash: [u8; 32],
-    //     fragments: Vec<StateFragment>,
-    // ) -> Result<()> {
-    //     todo!()
-    //     // let mut transaction = self.connection_pool.begin().await?;
-    //     //
-    //     // let transaction_id = sqlx::query!(
-    //     //     "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
-    //     //     tx_hash.as_slice(),
-    //     //     L1SubmissionTxState::PENDING_STATE
-    //     // )
-    //     // .fetch_one(&mut *transaction)
-    //     // .await?
-    //     // .id;
-    //     //
-    //     // for fragment in fragments {
-    //     //     let tables::L1StateFragment {
-    //     //         submission_id,
-    //     //         start_byte,
-    //     //         end_byte,
-    //     //         ..
-    //     //     } = tables::L1StateFragment::from(fragment);
-    //     //
-    //     //     sqlx::query!(
-    //     //         "INSERT INTO l1_fragments (tx_id, submission_id, start_byte, end_byte) VALUES ($1, $2, $3, $4)",
-    //     //         transaction_id,
-    //     // submission_id,
-    //     // start_byte,
-    //     // end_byte
-    //     //     )
-    //     //     .execute(&mut *transaction)
-    //     //     .await?;
-    //     // }
-    //     //
-    //     // transaction.commit().await?;
-    //     //
-    //     // Ok(())
-    // }
+    pub(crate) async fn _record_pending_tx(
+        &self,
+        tx_hash: [u8; 32],
+        fragment_id: NonNegative<i32>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
 
-    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
-        todo!()
-        // Ok(sqlx::query!(
-        //     "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
-        //     L1SubmissionTxState::PENDING_STATE
-        // )
-        // .fetch_one(&self.connection_pool)
-        // .await?
-        // .has_pending_transactions.unwrap_or(false))
+        let tx_id = sqlx::query!(
+            "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
+            tx_hash.as_slice(),
+            L1TxState::PENDING_STATE
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .id;
+
+        sqlx::query!(
+            "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
+            tx_id,
+            fragment_id.as_i32()
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(())
     }
 
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<L1Tx>> {
-        todo!()
-        // sqlx::query_as!(
-        //     tables::L1SubmissionTx,
-        //     "SELECT * FROM l1_transactions WHERE state = $1",
-        //     L1SubmissionTxState::PENDING_STATE
-        // )
-        // .fetch_all(&self.connection_pool)
-        // .await?
-        // .into_iter()
-        // .map(SubmissionTx::try_from)
-        // .collect::<Result<Vec<_>>>()
+    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
+        Ok(sqlx::query!(
+            "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
+            L1TxState::PENDING_STATE
+        )
+        .fetch_one(&self.connection_pool)
+        .await?
+        .has_pending_transactions.unwrap_or(false))
+    }
+
+    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
+        sqlx::query_as!(
+            tables::L1Tx,
+            "SELECT * FROM l1_transactions WHERE state = $1",
+            L1TxState::PENDING_STATE
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .collect::<Result<Vec<_>>>()
     }
 
     pub(crate) async fn _state_submission_w_latest_block(
@@ -345,43 +352,39 @@ impl Postgres {
         // .transpose()
     }
 
-    pub(crate) async fn _update_submission_tx_state(
+    pub(crate) async fn _update_tx_state(
         &self,
         hash: [u8; 32],
         state: TransactionState,
     ) -> Result<()> {
-        todo!()
-        // let L1SubmissionTxState {
-        //     state,
-        //     finalized_at,
-        // } = state.into();
-        // sqlx::query!(
-        //     "UPDATE l1_transactions SET state = $1, finalized_at = $2 WHERE hash = $3",
-        //     state,
-        //     finalized_at,
-        //     hash.as_slice(),
-        // )
-        // .execute(&self.connection_pool)
-        // .await?;
-        //
-        // Ok(())
+        let L1TxState {
+            state,
+            finalized_at,
+        } = state.into();
+        sqlx::query!(
+            "UPDATE l1_transactions SET state = $1, finalized_at = $2 WHERE hash = $3",
+            state,
+            finalized_at,
+            hash.as_slice(),
+        )
+        .execute(&self.connection_pool)
+        .await?;
+
+        Ok(())
     }
 
-    pub(crate) async fn insert_bundle_and_fragments(
+    pub(crate) async fn _insert_bundle_and_fragments(
         &self,
         bundle_blocks: &[[u8; 32]],
         fragments: Vec<Vec<u8>>,
-    ) -> Result<()> {
+    ) -> Result<ports::storage::BundleFragment> {
         let mut tx = self.connection_pool.begin().await?;
 
         // Insert a new bundle
-        let bundle_id = sqlx::query!(
-            "INSERT INTO bundles (cancelled) VALUES ($1) RETURNING id",
-            false // Initializing with `cancelled = false`
-        )
-        .fetch_one(&mut *tx)
-        .await?
-        .id;
+        let bundle_id = sqlx::query!("INSERT INTO bundles DEFAULT VALUES RETURNING id",)
+            .fetch_one(&mut *tx)
+            .await?
+            .id;
 
         // Insert blocks into bundle_blocks table
         for block_hash in bundle_blocks {
@@ -397,7 +400,7 @@ impl Postgres {
         // Insert fragments associated with the bundle
         for (idx, fragment_data) in fragments.into_iter().enumerate() {
             sqlx::query!(
-                "INSERT INTO l1_fragments (fragment_idx, data, bundle_id) VALUES ($1, $2, $3)",
+                "INSERT INTO l1_fragments (idx, data, bundle_id) VALUES ($1, $2, $3)",
                 idx as i64,
                 fragment_data,
                 bundle_id

@@ -8,6 +8,44 @@ macro_rules! bail {
 }
 
 #[derive(sqlx::FromRow)]
+pub struct L1Fragment {
+    pub id: i32,
+    pub idx: i32,
+    pub bundle_id: i32,
+    pub data: Vec<u8>,
+}
+
+impl TryFrom<L1Fragment> for ports::storage::BundleFragment {
+    type Error = crate::error::Error;
+
+    fn try_from(value: L1Fragment) -> Result<Self, Self::Error> {
+        let idx = value.idx.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `idx` ({}). Reason: {e}",
+                value.idx
+            ))
+        })?;
+        let bundle_id = value.bundle_id.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `bundle_id` ({}). Reason: {e}",
+                value.bundle_id
+            ))
+        })?;
+        let data = value.data;
+        let id = value.id.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!("Invalid db `id` ({}). Reason: {e}", value.id))
+        })?;
+
+        Ok(Self {
+            id,
+            idx,
+            bundle_id,
+            data,
+        })
+    }
+}
+
+#[derive(sqlx::FromRow)]
 pub struct FuelBlock {
     pub hash: Vec<u8>,
     pub height: i64,
@@ -80,7 +118,7 @@ impl L1Tx {
 
 impl From<ports::types::L1Tx> for L1Tx {
     fn from(value: ports::types::L1Tx) -> Self {
-        let L1SubmissionTxState {
+        let L1TxState {
             state,
             finalized_at,
         } = value.state.into();
@@ -122,10 +160,10 @@ impl TryFrom<L1Tx> for ports::types::L1Tx {
 
 impl<'r> sqlx::FromRow<'r, PgRow> for L1Tx {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let L1SubmissionTxState {
+        let L1TxState {
             state,
             finalized_at,
-        } = L1SubmissionTxState::from_row(row)?;
+        } = L1TxState::from_row(row)?;
 
         let id = row.try_get("id")?;
         let hash = row.try_get("hash")?;
@@ -140,18 +178,18 @@ impl<'r> sqlx::FromRow<'r, PgRow> for L1Tx {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct L1SubmissionTxState {
+pub struct L1TxState {
     pub state: i16,
     pub finalized_at: Option<DateTime<Utc>>,
 }
 
-impl L1SubmissionTxState {
+impl L1TxState {
     pub const PENDING_STATE: i16 = 0;
     pub const FINALIZED_STATE: i16 = 1;
     pub const FAILED_STATE: i16 = 2;
 }
 
-impl From<TransactionState> for L1SubmissionTxState {
+impl From<TransactionState> for L1TxState {
     fn from(value: TransactionState) -> Self {
         let (state, finalized_at) = match value {
             TransactionState::Pending => (Self::PENDING_STATE, None),
