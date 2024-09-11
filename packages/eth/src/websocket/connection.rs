@@ -67,7 +67,7 @@ pub struct WsConnection {
 impl EthApi for WsConnection {
     fn split_into_submittable_state_chunks(
         &self,
-        data: &[u8],
+        data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         todo!()
     }

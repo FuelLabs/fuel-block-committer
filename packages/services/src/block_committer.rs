@@ -179,7 +179,7 @@ mod tests {
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
         l1::{Contract, EventStreamer, MockContract},
-        types::{L1Height, TransactionResponse, U256},
+        types::{L1Height, NonEmptyVec, TransactionResponse, U256},
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{Postgres, PostgresProcess};
@@ -218,11 +218,14 @@ mod tests {
     impl ports::l1::Api for MockL1 {
         fn split_into_submittable_state_chunks(
             &self,
-            data: &[u8],
-        ) -> ports::l1::Result<Vec<Vec<u8>>> {
+            data: &NonEmptyVec<u8>,
+        ) -> ports::l1::Result<NonEmptyVec<NonEmptyVec<u8>>> {
             self.api.split_into_submittable_state_chunks(data)
         }
-        async fn submit_l2_state(&self, state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
+        async fn submit_l2_state(
+            &self,
+            state_data: NonEmptyVec<u8>,
+        ) -> ports::l1::Result<[u8; 32]> {
             self.api.submit_l2_state(state_data).await
         }
 

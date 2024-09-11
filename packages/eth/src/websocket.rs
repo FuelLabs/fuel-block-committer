@@ -87,7 +87,7 @@ impl WebsocketClient {
 
     pub(crate) fn _split_into_submittable_state_chunks(
         &self,
-        data: &[u8],
+        data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         Ok(self.inner.split_into_submittable_state_chunks(data)?)
     }

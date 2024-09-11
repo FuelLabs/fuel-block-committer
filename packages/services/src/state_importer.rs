@@ -231,7 +231,7 @@ mod tests {
         // then
         let all_blocks = db.all_blocks().await?;
 
-        assert_eq!(all_blocks, vec![block.into()]);
+        assert_eq!(all_blocks, vec![block.try_into().unwrap()]);
 
         Ok(())
     }
@@ -259,7 +259,7 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
 
         let db = process.create_random_db().await?;
-        db.insert_block(block_0.clone().into()).await?;
+        db.insert_block(block_0.clone().try_into().unwrap()).await?;
 
         let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 3);
 
@@ -271,9 +271,9 @@ mod tests {
         assert_eq!(
             all_blocks,
             vec![
-                block_0.clone().into(),
-                block_1.clone().into(),
-                block_2.clone().into()
+                block_0.clone().try_into().unwrap(),
+                block_1.clone().try_into().unwrap(),
+                block_2.clone().try_into().unwrap()
             ]
         );
         Ok(())
@@ -314,7 +314,8 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
 
         let db = process.create_random_db().await?;
-        db.insert_block(db_block.clone().into()).await?;
+        db.insert_block(db_block.clone().try_into().unwrap())
+            .await?;
 
         let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 1);
 
@@ -353,7 +354,8 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
 
         let db = process.create_random_db().await?;
-        db.insert_block(db_block.clone().into()).await?;
+        db.insert_block(db_block.clone().try_into().unwrap())
+            .await?;
 
         let mut importer = StateImporter::new(db.clone(), fuel_mock, block_validator, 2);
 

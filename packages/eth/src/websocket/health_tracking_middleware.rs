@@ -16,7 +16,7 @@ use crate::{
 pub trait EthApi {
     fn split_into_submittable_state_chunks(
         &self,
-        data: &[u8],
+        data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
@@ -82,7 +82,7 @@ where
 {
     fn split_into_submittable_state_chunks(
         &self,
-        data: &[u8],
+        data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         let response = self.adapter.split_into_submittable_state_chunks(data);
         self.note_network_status(&response);

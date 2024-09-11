@@ -41,7 +41,7 @@ impl Contract for WebsocketClient {
 impl Api for WebsocketClient {
     fn split_into_submittable_state_chunks(
         &self,
-        data: &[u8],
+        data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         Ok(self._split_into_submittable_state_chunks(data)?)
     }
