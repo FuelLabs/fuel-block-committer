@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, Result},
-    types::{FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock},
+    types::{
+        FuelBlockCommittedOnL1, L1Height, NonEmptyVec, TransactionResponse, ValidatedFuelBlock,
+    },
 };
 use websocket::EthEventStreamer;
 
@@ -37,7 +39,10 @@ impl Contract for WebsocketClient {
 
 #[async_trait]
 impl Api for WebsocketClient {
-    fn split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
+    fn split_into_submittable_state_chunks(
+        &self,
+        data: &[u8],
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         Ok(self._split_into_submittable_state_chunks(data)?)
     }
 

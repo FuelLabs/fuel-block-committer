@@ -13,7 +13,7 @@ use alloy::{
     signers::aws::AwsSigner,
     sol,
 };
-use ports::types::{TransactionResponse, ValidatedFuelBlock};
+use ports::types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock};
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
@@ -65,7 +65,10 @@ pub struct WsConnection {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    fn split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
+    fn split_into_submittable_state_chunks(
+        &self,
+        data: &[u8],
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         todo!()
     }
 

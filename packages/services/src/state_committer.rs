@@ -148,7 +148,7 @@ where
             }
             let merged_data = blocks
                 .iter()
-                .flat_map(|b| b.data.clone())
+                .flat_map(|b| b.data.clone().into_inner())
                 .collect::<Vec<_>>();
             let heights = blocks.iter().map(|b| b.height).collect::<Vec<_>>();
 
@@ -160,10 +160,15 @@ where
                 .split_into_submittable_state_chunks(&merged_data)?;
 
             let block_range = (*min_height..*max_height + 1).try_into().unwrap();
-            let fragment_ids = self
+            let fragment_id = self
                 .storage
                 .insert_bundle_and_fragments(block_range, chunks.clone())
-                .await?;
+                .await?
+                .into_inner()
+                .into_iter()
+                .next()
+                .expect("must have at least one element due to the usage of NonEmptyVec");
+            fragment_id
         };
         eprintln!("fragment to submit: {:?}", fragment);
 

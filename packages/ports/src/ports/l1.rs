@@ -1,7 +1,7 @@
 use std::pin::Pin;
 
 use crate::types::{
-    FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, TransactionResponse,
+    FuelBlockCommittedOnL1, InvalidL1Height, L1Height, NonEmptyVec, Stream, TransactionResponse,
     ValidatedFuelBlock, U256,
 };
 
@@ -32,7 +32,10 @@ pub trait Contract: Send + Sync {
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 #[async_trait::async_trait]
 pub trait Api {
-    fn split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>>;
+    fn split_into_submittable_state_chunks(
+        &self,
+        data: &[u8],
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
     async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;

@@ -67,7 +67,10 @@ where
         let block_id = block.id;
         let block_height = block.header.height;
         if !self.storage.is_block_available(&block_id).await? {
-            self.storage.insert_block(block.into()).await?;
+            let db_block = block
+                .try_into()
+                .map_err(|err| Error::Other(format!("cannot turn block into data: {err}")))?;
+            self.storage.insert_block(db_block).await?;
 
             info!("imported state from fuel block: height: {block_height}, id: {block_id}");
         }

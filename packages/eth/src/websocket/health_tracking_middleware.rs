@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{TransactionResponse, ValidatedFuelBlock, U256};
+use ports::types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock, U256};
 
 use crate::{
     error::{Error, Result},
@@ -14,7 +14,10 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    fn split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>>;
+    fn split_into_submittable_state_chunks(
+        &self,
+        data: &[u8],
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
@@ -77,7 +80,10 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
-    fn split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
+    fn split_into_submittable_state_chunks(
+        &self,
+        data: &[u8],
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         let response = self.adapter.split_into_submittable_state_chunks(data);
         self.note_network_status(&response);
         response

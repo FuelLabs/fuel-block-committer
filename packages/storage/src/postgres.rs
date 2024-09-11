@@ -2,8 +2,10 @@ use std::ops::Range;
 
 use futures::{Stream, StreamExt, TryStreamExt};
 use ports::{
-    storage::ValidatedRange,
-    types::{BlockSubmission, DateTime, NonNegative, StateSubmission, TransactionState, Utc},
+    storage::{BundleFragment, ValidatedRange},
+    types::{
+        BlockSubmission, DateTime, NonEmptyVec, NonNegative, StateSubmission, TransactionState, Utc,
+    },
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -409,8 +411,8 @@ impl Postgres {
     pub(crate) async fn _insert_bundle_and_fragments(
         &self,
         block_range: ValidatedRange<u32>,
-        fragments: Vec<Vec<u8>>,
-    ) -> Result<Vec<NonNegative<i32>>> {
+        fragment_datas: NonEmptyVec<NonEmptyVec<u8>>,
+    ) -> Result<NonEmptyVec<BundleFragment>> {
         let mut tx = self.connection_pool.begin().await?;
 
         let Range { start, end } = block_range.into_inner();
@@ -425,25 +427,32 @@ impl Postgres {
         .await?
         .id;
 
-        let mut fragment_ids = Vec::with_capacity(fragments.len());
+        let mut fragments = Vec::with_capacity(fragment_datas.len());
 
         // Insert fragments associated with the bundle
-        for (idx, fragment_data) in fragments.into_iter().enumerate() {
+        for (idx, fragment_data) in fragment_datas.into_inner().into_iter().enumerate() {
             let record = sqlx::query!(
                 "INSERT INTO l1_fragments (idx, data, bundle_id) VALUES ($1, $2, $3) RETURNING id",
-                idx as i64,
-                fragment_data,
+                idx as i32,
+                &fragment_data.inner(),
                 bundle_id
             )
             .fetch_one(&mut *tx)
             .await?;
-            fragment_ids.push(record.id.into());
+            let id = record.id.into();
+
+            fragments.push(BundleFragment {
+                id,
+                idx,
+                bundle_id,
+                data: fragment_data.clone(),
+            });
         }
 
         // Commit the transaction
         tx.commit().await?;
 
-        Ok(fragment_ids)
+        Ok(fragments)
     }
 
     pub(crate) async fn _is_block_available(&self, block_hash: &[u8; 32]) -> Result<bool> {

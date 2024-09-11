@@ -1,4 +1,4 @@
-use ports::types::{DateTime, TransactionState, Utc};
+use ports::types::{DateTime, NonEmptyVec, TransactionState, Utc};
 use sqlx::{postgres::PgRow, Row};
 
 macro_rules! bail {
@@ -57,7 +57,7 @@ impl From<ports::storage::FuelBlock> for FuelBlock {
         Self {
             hash: value.hash.to_vec(),
             height: value.height.into(),
-            data: value.data,
+            data: value.data.into_inner(),
         }
     }
 }
@@ -78,10 +78,14 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
             ))
         })?;
 
+        let data = NonEmptyVec::try_from(value.data).map_err(|e| {
+            crate::error::Error::Conversion(format!("Invalid db `data`. Reason: {e}"))
+        })?;
+
         Ok(Self {
             height,
             hash: block_hash,
-            data: value.data,
+            data,
         })
     }
 }

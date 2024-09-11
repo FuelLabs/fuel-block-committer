@@ -11,8 +11,11 @@ pub use test_instance::*;
 mod error;
 mod postgres;
 use ports::{
-    storage::{Result, Storage, ValidatedRange},
-    types::{BlockSubmission, DateTime, L1Tx, NonNegative, StateSubmission, TransactionState, Utc},
+    storage::{BundleFragment, Result, Storage, ValidatedRange},
+    types::{
+        BlockSubmission, DateTime, L1Tx, NonEmptyVec, NonNegative, StateSubmission,
+        TransactionState, Utc,
+    },
 };
 pub use postgres::{DbConfig, Postgres};
 
@@ -49,8 +52,8 @@ impl Storage for Postgres {
     async fn insert_bundle_and_fragments(
         &self,
         block_range: ValidatedRange<u32>,
-        fragments: Vec<Vec<u8>>,
-    ) -> Result<Vec<NonNegative<i32>>> {
+        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    ) -> Result<NonEmptyVec<BundleFragment>> {
         Ok(self
             ._insert_bundle_and_fragments(block_range, fragments)
             .await?)

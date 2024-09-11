@@ -4,7 +4,7 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::primitives::Address;
 use ports::{
     l1::Result,
-    types::{TransactionResponse, ValidatedFuelBlock, U256},
+    types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock, U256},
 };
 use url::Url;
 
@@ -85,7 +85,10 @@ impl WebsocketClient {
         Ok(self.inner.submit_l2_state(tx).await?)
     }
 
-    pub(crate) fn _split_into_submittable_state_chunks(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
+    pub(crate) fn _split_into_submittable_state_chunks(
+        &self,
+        data: &[u8],
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         Ok(self.inner.split_into_submittable_state_chunks(data)?)
     }
 
