@@ -32,7 +32,7 @@ pub struct BundleFragment {
     pub id: NonNegative<i32>,
     pub idx: NonNegative<i32>,
     pub bundle_id: NonNegative<i32>,
-    pub data: Vec<u8>,
+    pub data: NonEmptyVec<u8>,
 }
 
 impl TryFrom<crate::fuel::FuelBlock> for FuelBlock {

@@ -146,10 +146,13 @@ where
             {
                 return Ok(());
             }
+            // TODO: segfault, change unwraps to ? wherever possible
             let merged_data = blocks
                 .iter()
                 .flat_map(|b| b.data.clone().into_inner())
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             let heights = blocks.iter().map(|b| b.height).collect::<Vec<_>>();
 
             let min_height = heights.iter().min().unwrap();
@@ -160,15 +163,14 @@ where
                 .split_into_submittable_state_chunks(&merged_data)?;
 
             let block_range = (*min_height..*max_height + 1).try_into().unwrap();
-            let fragment_id = self
-                .storage
+
+            self.storage
                 .insert_bundle_and_fragments(block_range, chunks.clone())
                 .await?
                 .into_inner()
                 .into_iter()
                 .next()
-                .expect("must have at least one element due to the usage of NonEmptyVec");
-            fragment_id
+                .expect("must have at least one element due to the usage of NonEmptyVec")
         };
         eprintln!("fragment to submit: {:?}", fragment);
 
@@ -190,12 +192,16 @@ mod tests {
             .init();
     }
 
+    use std::num::NonZeroUsize;
+
     use clock::TestClock;
     use mockall::predicate::{self, eq};
     use ports::{
         l1::Api,
         storage::FuelBlock,
-        types::{L1Height, StateSubmission, TransactionResponse, TransactionState, U256},
+        types::{
+            L1Height, NonEmptyVec, StateSubmission, TransactionResponse, TransactionState, U256,
+        },
     };
     use storage::PostgresProcess;
 
@@ -216,12 +222,15 @@ mod tests {
     impl ports::l1::Api for MockL1 {
         fn split_into_submittable_state_chunks(
             &self,
-            data: &[u8],
-        ) -> ports::l1::Result<Vec<Vec<u8>>> {
+            data: &NonEmptyVec<u8>,
+        ) -> ports::l1::Result<NonEmptyVec<NonEmptyVec<u8>>> {
             self.api.split_into_submittable_state_chunks(data)
         }
 
-        async fn submit_l2_state(&self, state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
+        async fn submit_l2_state(
+            &self,
+            state_data: NonEmptyVec<u8>,
+        ) -> ports::l1::Result<[u8; 32]> {
             self.api.submit_l2_state(state_data).await
         }
 
@@ -241,7 +250,7 @@ mod tests {
         }
     }
 
-    fn given_l1_that_expects_submission(data: Vec<u8>) -> MockL1 {
+    fn given_l1_that_expects_submission(data: NonEmptyVec<u8>) -> MockL1 {
         let mut l1 = MockL1::new();
 
         l1.api
@@ -263,13 +272,13 @@ mod tests {
         let block = FuelBlock {
             hash: [1; 32],
             height: 0,
-            data: random_data(100),
+            data: random_data(100.try_into().unwrap()),
         };
         db.insert_block(block.clone()).await?;
 
         let range = (block.height..block.height + 1).try_into().unwrap();
 
-        db.insert_bundle_and_fragments(range, vec![block.data.clone()])
+        db.insert_bundle_and_fragments(range, vec![block.data.clone()].try_into().unwrap())
             .await?;
         let fragments = db.all_fragments().await?;
         dbg!(&fragments);
@@ -301,12 +310,12 @@ mod tests {
         let block = ports::storage::FuelBlock {
             hash: [1; 32],
             height: 0,
-            data: random_data(100),
+            data: random_data(100.try_into().unwrap()),
         };
 
         let mut l1_mock = MockL1::new();
 
-        let fragments = vec![block.data.clone()];
+        let fragments: NonEmptyVec<NonEmptyVec<u8>> = vec![block.data.clone()].try_into().unwrap();
         {
             let fragments = fragments.clone();
             l1_mock
@@ -321,7 +330,7 @@ mod tests {
             .api
             .expect_submit_l2_state()
             .once()
-            .with(eq(fragments[0].clone()))
+            .with(eq(fragments.inner()[0].clone()))
             .return_once(|_| Ok([1; 32]));
 
         let process = PostgresProcess::shared().await.unwrap();
@@ -347,8 +356,10 @@ mod tests {
         Ok(())
     }
 
-    fn random_data(size: usize) -> Vec<u8> {
-        (0..size).map(|_| rand::random::<u8>()).collect()
+    fn random_data(size: NonZeroUsize) -> NonEmptyVec<u8> {
+        let data: Vec<u8> = (0..size.into()).map(|_| rand::random::<u8>()).collect();
+
+        data.try_into().expect("is not empty due to NonZeroUsize")
     }
 
     #[tokio::test]
@@ -357,7 +368,7 @@ mod tests {
         let block = ports::storage::FuelBlock {
             hash: [1; 32],
             height: 0,
-            data: random_data(100),
+            data: random_data(100.try_into().unwrap()),
         };
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
@@ -367,7 +378,12 @@ mod tests {
 
         db.insert_bundle_and_fragments(
             range,
-            vec![block.data[..50].to_vec(), block.data[50..].to_vec()],
+            vec![
+                block.data.inner()[..50].to_vec().try_into().unwrap(),
+                block.data.inner()[50..].to_vec().try_into().unwrap(),
+            ]
+            .try_into()
+            .unwrap(),
         )
         .await?;
 
@@ -411,7 +427,7 @@ mod tests {
         let block = ports::storage::FuelBlock {
             hash: [1; 32],
             height: 0,
-            data: random_data(200),
+            data: random_data(200.try_into().unwrap()),
         };
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
@@ -419,7 +435,12 @@ mod tests {
 
         let range = (block.height..block.height + 1).try_into().unwrap();
 
-        let fragments = vec![block.data[..100].to_vec(), block.data[100..].to_vec()];
+        let fragments: NonEmptyVec<NonEmptyVec<u8>> = vec![
+            block.data.inner()[..100].to_vec().try_into().unwrap(),
+            block.data.inner()[100..].to_vec().try_into().unwrap(),
+        ]
+        .try_into()
+        .unwrap();
         db.insert_bundle_and_fragments(range, fragments.clone())
             .await?;
 
@@ -429,7 +450,7 @@ mod tests {
             .api
             .expect_submit_l2_state()
             .once()
-            .with(eq(fragments[0].clone()))
+            .with(eq(fragments.inner()[0].clone()))
             .return_once(|_| Ok([1; 32]));
 
         let config = BundleGenerationConfig {
@@ -458,12 +479,12 @@ mod tests {
             ports::storage::FuelBlock {
                 hash: [1; 32],
                 height: 0,
-                data: random_data(100),
+                data: random_data(100.try_into().unwrap()),
             },
             ports::storage::FuelBlock {
                 hash: [2; 32],
                 height: 1,
-                data: random_data(100),
+                data: random_data(100.try_into().unwrap()),
             },
         ];
 
@@ -474,12 +495,18 @@ mod tests {
 
         let range = (blocks[0].height..blocks[0].height + 1).try_into().unwrap();
 
-        let bundle_1_fragments = vec![blocks[0].data[..100].to_vec()];
+        let bundle_1_fragments: NonEmptyVec<NonEmptyVec<u8>> =
+            vec![blocks[0].data.inner()[..100].to_vec().try_into().unwrap()]
+                .try_into()
+                .unwrap();
         db.insert_bundle_and_fragments(range, bundle_1_fragments.clone())
             .await?;
 
         let range = (blocks[1].height..blocks[1].height + 1).try_into().unwrap();
-        let bundle_2_fragments = vec![blocks[1].data[..100].to_vec()];
+        let bundle_2_fragments: NonEmptyVec<NonEmptyVec<u8>> =
+            vec![blocks[1].data.inner()[..100].to_vec().try_into().unwrap()]
+                .try_into()
+                .unwrap();
         db.insert_bundle_and_fragments(range, bundle_2_fragments.clone())
             .await?;
 
@@ -489,7 +516,7 @@ mod tests {
             .api
             .expect_submit_l2_state()
             .once()
-            .with(eq(bundle_1_fragments[0].clone()))
+            .with(eq(bundle_1_fragments.inner()[0].clone()))
             .return_once(|_| Ok([1; 32]));
 
         let config = BundleGenerationConfig {
@@ -517,7 +544,7 @@ mod tests {
         let block = ports::storage::FuelBlock {
             hash: [1; 32],
             height: 0,
-            data: random_data(200),
+            data: random_data(200.try_into().unwrap()),
         };
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
@@ -525,13 +552,19 @@ mod tests {
 
         let range = (block.height..block.height + 1).try_into().unwrap();
 
-        let fragments = vec![block.data[..100].to_vec(), block.data[100..].to_vec()];
-        let fragment_ids = db
+        let fragments: NonEmptyVec<NonEmptyVec<u8>> = vec![
+            block.data.inner()[..100].to_vec().try_into().unwrap(),
+            block.data.inner()[100..].to_vec().try_into().unwrap(),
+        ]
+        .try_into()
+        .unwrap();
+        let fragments = db
             .insert_bundle_and_fragments(range, fragments.clone())
             .await?;
 
         let mut l1_mock = MockL1::new();
-        db.record_pending_tx([0; 32], fragment_ids[0]).await?;
+        db.record_pending_tx([0; 32], fragments.inner()[0].id)
+            .await?;
         db.update_tx_state([0; 32], TransactionState::Failed)
             .await?;
 
@@ -539,7 +572,7 @@ mod tests {
             .api
             .expect_submit_l2_state()
             .once()
-            .with(eq(fragments[0].clone()))
+            .with(eq(fragments.inner()[0].data.clone()))
             .return_once(|_| Ok([1; 32]));
 
         let config = BundleGenerationConfig {
@@ -567,7 +600,7 @@ mod tests {
         let block = ports::storage::FuelBlock {
             hash: [1; 32],
             height: 0,
-            data: random_data(200),
+            data: random_data(200.try_into().unwrap()),
         };
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
@@ -598,12 +631,12 @@ mod tests {
             ports::storage::FuelBlock {
                 hash: [1; 32],
                 height: 0,
-                data: random_data(200),
+                data: random_data(200.try_into().unwrap()),
             },
             ports::storage::FuelBlock {
                 hash: [2; 32],
                 height: 1,
-                data: random_data(200),
+                data: random_data(200.try_into().unwrap()),
             },
         ];
         let process = PostgresProcess::shared().await.unwrap();
@@ -612,13 +645,19 @@ mod tests {
         db.insert_block(blocks[1].clone()).await?;
 
         let mut l1_mock = MockL1::new();
-        let merged_data = [blocks[0].data.clone(), blocks[1].data.clone()].concat();
+        let merged_data: NonEmptyVec<u8> = [
+            blocks[0].data.clone().into_inner(),
+            blocks[1].data.clone().into_inner(),
+        ]
+        .concat()
+        .try_into()
+        .unwrap();
         l1_mock
             .api
             .expect_split_into_submittable_state_chunks()
             .once()
             .with(eq(merged_data.clone()))
-            .return_once(|data| Ok(vec![data.to_vec()]));
+            .return_once(|data| Ok(vec![data.clone()].try_into().unwrap()));
 
         let config = BundleGenerationConfig {
             acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
@@ -650,12 +689,12 @@ mod tests {
             ports::storage::FuelBlock {
                 hash: [1; 32],
                 height: 0,
-                data: random_data(200),
+                data: random_data(200.try_into().unwrap()),
             },
             ports::storage::FuelBlock {
                 hash: [2; 32],
                 height: 1,
-                data: random_data(200),
+                data: random_data(200.try_into().unwrap()),
             },
         ];
         let process = PostgresProcess::shared().await.unwrap();
@@ -670,7 +709,7 @@ mod tests {
             .expect_split_into_submittable_state_chunks()
             .once()
             .with(eq(data.clone()))
-            .return_once(|data| Ok(vec![data.to_vec()]));
+            .return_once(|data| Ok(vec![data.clone()].try_into().unwrap()));
 
         let config = BundleGenerationConfig {
             acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
@@ -702,12 +741,12 @@ mod tests {
             ports::storage::FuelBlock {
                 hash: [1; 32],
                 height: 0,
-                data: random_data(200),
+                data: random_data(200.try_into().unwrap()),
             },
             ports::storage::FuelBlock {
                 hash: [2; 32],
                 height: 1,
-                data: random_data(200),
+                data: random_data(200.try_into().unwrap()),
             },
         ];
         let process = PostgresProcess::shared().await.unwrap();
@@ -722,17 +761,21 @@ mod tests {
             .expect_split_into_submittable_state_chunks()
             .once()
             .with(eq(data.clone()))
-            .return_once(|data| Ok(vec![data.to_vec()]));
+            .return_once(|data| Ok(vec![data.clone()].try_into().unwrap()));
 
         let config = BundleGenerationConfig {
             acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
             accumulation_timeout: Duration::from_secs(1),
         };
 
-        let fragment_ids = db
-            .insert_bundle_and_fragments((0..1).try_into().unwrap(), vec![data.clone()])
+        let fragments = db
+            .insert_bundle_and_fragments(
+                (0..1).try_into().unwrap(),
+                vec![data.clone()].try_into().unwrap(),
+            )
             .await?;
-        db.record_pending_tx([0; 32], fragment_ids[0]).await?;
+        db.record_pending_tx([0; 32], fragments.inner()[0].id)
+            .await?;
         db.update_tx_state([0; 32], TransactionState::Finalized(Utc::now()))
             .await?;
 
@@ -760,7 +803,7 @@ mod tests {
         let blocks = [ports::storage::FuelBlock {
             hash: [1; 32],
             height: 0,
-            data: random_data(200),
+            data: random_data(200.try_into().unwrap()),
         }];
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;

@@ -31,7 +31,10 @@ impl TryFrom<L1Fragment> for ports::storage::BundleFragment {
                 value.bundle_id
             ))
         })?;
-        let data = value.data;
+        // TODO: segfault, make all errors have better context
+        let data = value.data.try_into().map_err(|e| {
+            crate::error::Error::Conversion("db fragment data is invalid".to_owned())
+        })?;
         let id = value.id.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!("Invalid db `id` ({}). Reason: {e}", value.id))
         })?;

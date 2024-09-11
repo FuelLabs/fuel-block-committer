@@ -428,14 +428,20 @@ impl Postgres {
         .id;
 
         let mut fragments = Vec::with_capacity(fragment_datas.len());
+        let bundle_id: NonNegative<i32> = bundle_id.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!("invalid bundle id received from db: {e}"))
+        })?;
 
         // Insert fragments associated with the bundle
         for (idx, fragment_data) in fragment_datas.into_inner().into_iter().enumerate() {
+            let idx = i32::try_from(idx).map_err(|e| {
+                crate::error::Error::Conversion(format!("invalid idx for fragment: {idx}"))
+            })?;
             let record = sqlx::query!(
                 "INSERT INTO l1_fragments (idx, data, bundle_id) VALUES ($1, $2, $3) RETURNING id",
-                idx as i32,
+                idx,
                 &fragment_data.inner(),
-                bundle_id
+                bundle_id.as_i32()
             )
             .fetch_one(&mut *tx)
             .await?;
@@ -443,7 +449,9 @@ impl Postgres {
 
             fragments.push(BundleFragment {
                 id,
-                idx,
+                idx: idx
+                    .try_into()
+                    .expect("guaranteed to be positive since it came from an usize"),
                 bundle_id,
                 data: fragment_data.clone(),
             });
@@ -452,7 +460,9 @@ impl Postgres {
         // Commit the transaction
         tx.commit().await?;
 
-        Ok(fragments)
+        Ok(fragments.try_into().expect(
+            "guaranteed to have at least one element since the data also came from a non empty vec",
+        ))
     }
 
     pub(crate) async fn _is_block_available(&self, block_hash: &[u8; 32]) -> Result<bool> {

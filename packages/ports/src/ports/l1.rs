@@ -34,9 +34,9 @@ pub trait Contract: Send + Sync {
 pub trait Api {
     fn split_into_submittable_state_chunks(
         &self,
-        data: &[u8],
+        data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
-    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]>;
+    async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;
     async fn get_transaction_response(

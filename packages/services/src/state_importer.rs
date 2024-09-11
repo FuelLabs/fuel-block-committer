@@ -365,9 +365,9 @@ mod tests {
         assert_eq!(
             all_blocks,
             vec![
-                db_block.clone().into(),
-                chain_block_11.clone().into(),
-                chain_block_12.clone().into()
+                db_block.clone().try_into().unwrap(),
+                chain_block_11.clone().try_into().unwrap(),
+                chain_block_12.clone().try_into().unwrap()
             ]
         );
 
