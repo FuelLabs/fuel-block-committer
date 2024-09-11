@@ -17,12 +17,43 @@ pub enum Error {
 pub struct FuelBlock {
     pub hash: [u8; 32],
     pub height: u32,
-    pub data: Vec<u8>,
+    pub data: BlockData,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuelBundle {
     pub id: NonNegative<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockData {
+    data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidData;
+
+impl std::fmt::Display for InvalidData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "block data cannot be empty")
+    }
+}
+
+impl TryFrom<Vec<u8>> for BlockData {
+    type Error = InvalidData;
+
+    fn try_from(value: Vec<u8>) -> std::result::Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(InvalidData);
+        }
+        Ok(Self { data: value })
+    }
+}
+
+impl BlockData {
+    pub fn into_inner(self) -> Vec<u8> {
+        self.data
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,18 +64,22 @@ pub struct BundleFragment {
     pub data: Vec<u8>,
 }
 
-impl From<crate::fuel::FuelBlock> for FuelBlock {
-    fn from(value: crate::fuel::FuelBlock) -> Self {
-        let data = value
+impl TryFrom<crate::fuel::FuelBlock> for FuelBlock {
+    type Error = InvalidData;
+    fn try_from(value: crate::fuel::FuelBlock) -> std::result::Result<Self, Self::Error> {
+        let tx_bytes: Vec<u8> = value
             .transactions
             .into_iter()
             .flat_map(|tx| tx.into_iter())
             .collect();
-        Self {
+
+        let data = BlockData::try_from(tx_bytes)?;
+
+        Ok(Self {
             hash: *value.id,
             height: value.header.height,
             data,
-        }
+        })
     }
 }
 

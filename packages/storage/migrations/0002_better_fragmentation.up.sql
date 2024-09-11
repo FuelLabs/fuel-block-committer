@@ -30,6 +30,7 @@ ALTER TABLE l1_fragments
 DROP COLUMN submission_id,
 DROP COLUMN created_at,
 ADD COLUMN bundle_id INTEGER REFERENCES bundles(id) NOT NULL,
+ADD CONSTRAINT check_data_not_empty CHECK (octet_length(data) > 0),
 ALTER COLUMN fragment_idx TYPE INTEGER;
 
 ALTER TABLE l1_fragments

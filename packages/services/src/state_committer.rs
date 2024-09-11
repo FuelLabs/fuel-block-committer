@@ -44,21 +44,6 @@ where
     Db: Storage,
     C: Clock,
 {
-    async fn fetch_fragments(&self) -> Result<(Vec<u32>, Vec<u8>)> {
-        todo!()
-        // let fragments = self.storage.stream_unfinalized_segment_data().await?;
-        //
-        // let num_fragments = fragments.len();
-        // let mut fragment_ids = Vec::with_capacity(num_fragments);
-        // let mut data = Vec::with_capacity(num_fragments);
-        // for fragment in fragments {
-        //     fragment_ids.push(fragment.id.expect("fragments from DB must have `id`"));
-        //     data.extend(fragment.data);
-        // }
-        //
-        // Ok((fragment_ids, data))
-    }
-
     async fn submit_state(&self, fragment: BundleFragment) -> Result<()> {
         let tx = self.l1_adapter.submit_l2_state(fragment.data).await?;
         self.storage.record_pending_tx(tx, fragment.id).await?;
@@ -150,14 +135,15 @@ where
                 .try_collect()
                 .await?;
 
-            eprintln!("Receieved blocks: {:?}", blocks);
+            if blocks.is_empty() {
+                return Ok(());
+            }
+
             if !self
                 .bundle_config
                 .acceptable_amount_of_blocks
                 .contains(blocks.len())
             {
-                eprintln!("Not enough blocks to bundle");
-
                 return Ok(());
             }
             let merged_data = blocks
@@ -174,20 +160,10 @@ where
                 .split_into_submittable_state_chunks(&merged_data)?;
 
             let block_range = (*min_height..*max_height + 1).try_into().unwrap();
-            self.storage
+            let fragment_ids = self
+                .storage
                 .insert_bundle_and_fragments(block_range, chunks.clone())
                 .await?;
-
-            // TODO: segfault maybe not a bug but sync issues that are to be expected ie
-            // leader/follower async replication
-            self.storage
-                .oldest_nonfinalized_fragment()
-                .await?
-                .ok_or_else(|| {
-                    crate::Error::Other(
-                        "fragment not available even after inserting. This is a bug.".to_string(),
-                    )
-                })?
         };
         eprintln!("fragment to submit: {:?}", fragment);
 
@@ -769,6 +745,37 @@ mod tests {
 
         // then
         assert!(db.has_pending_txs().await?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn handles_empty_range() -> Result<()> {
+        //given
+        let blocks = [ports::storage::FuelBlock {
+            hash: [1; 32],
+            height: 0,
+            data: random_data(200),
+        }];
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(blocks[0].clone()).await?;
+
+        let l1_mock = MockL1::new();
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (0..1).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // no calls to mocks were made
+        assert!(!db.has_pending_txs().await?);
 
         Ok(())
     }
