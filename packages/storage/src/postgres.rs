@@ -237,10 +237,9 @@ impl Postgres {
     ) -> impl Stream<Item = Result<ports::storage::FuelBlock>> + '_ {
         sqlx::query_as!(
             tables::FuelBlock,
-            r#"SELECT *
-            FROM fuel_blocks fb
-            WHERE fb.height >= (SELECT MAX(b.end_height) FROM bundles b);
-            "#
+            r#" SELECT *
+                FROM fuel_blocks fb
+                WHERE fb.height >= COALESCE((SELECT MAX(b.end_height) FROM bundles b), 0);"#
         )
         .fetch(&self.connection_pool)
         .map_err(Error::from)

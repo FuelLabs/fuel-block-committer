@@ -150,11 +150,14 @@ where
                 .try_collect()
                 .await?;
 
+            eprintln!("Receieved blocks: {:?}", blocks);
             if !self
                 .bundle_config
                 .acceptable_amount_of_blocks
                 .contains(blocks.len())
             {
+                eprintln!("Not enough blocks to bundle");
+
                 return Ok(());
             }
             let merged_data = blocks
