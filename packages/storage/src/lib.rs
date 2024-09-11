@@ -11,7 +11,7 @@ pub use test_instance::*;
 mod error;
 mod postgres;
 use ports::{
-    storage::{Result, Storage},
+    storage::{Result, Storage, ValidatedRange},
     types::{BlockSubmission, DateTime, L1Tx, NonNegative, StateSubmission, TransactionState, Utc},
 };
 pub use postgres::{DbConfig, Postgres};
@@ -34,7 +34,7 @@ impl Storage for Postgres {
         self._all_fragments().await.map_err(Into::into)
     }
 
-    async fn available_blocks(&self) -> Result<ports::storage::ValidatedRange> {
+    async fn available_blocks(&self) -> Result<ports::storage::ValidatedRange<u32>> {
         self._available_blocks().await.map_err(Into::into)
     }
 
@@ -48,11 +48,11 @@ impl Storage for Postgres {
 
     async fn insert_bundle_and_fragments(
         &self,
-        bundle_blocks: &[[u8; 32]],
+        block_range: ValidatedRange<u32>,
         fragments: Vec<Vec<u8>>,
-    ) -> Result<()> {
+    ) -> Result<Vec<NonNegative<i32>>> {
         Ok(self
-            ._insert_bundle_and_fragments(bundle_blocks, fragments)
+            ._insert_bundle_and_fragments(block_range, fragments)
             .await?)
     }
 
@@ -71,16 +71,11 @@ impl Storage for Postgres {
     //     Ok(self._insert_state_submission(submission).await?)
     // }
 
-    // fn stream_unfinalized_segment_data<'a>(
-    //     &'a self,
-    // ) -> Pin<Box<dyn Stream<Item = Result<ports::types::UnfinalizedSubmissionData>> + 'a + Send>>
-    // {
-    //     todo!()
-    //     // self._stream_unfinalized_segment_data()
-    //     //     .and_then(|entry| async move { entry.try_into() })
-    //     //     .map_err(Into::into)
-    //     //     .boxed()
-    // }
+    fn stream_unbundled_blocks(
+        &self,
+    ) -> ports::storage::BoxStream<Result<ports::storage::FuelBlock>, '_> {
+        self._stream_unbundled_blocks().map_err(Into::into).boxed()
+    }
 
     async fn record_pending_tx(
         &self,

@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::{StreamExt, TryStreamExt};
+use itertools::Itertools;
 use ports::{
     clock::Clock,
-    storage::{BundleFragment, Storage},
+    storage::{BundleFragment, Storage, ValidatedRange},
     types::{DateTime, Utc},
 };
 use tracing::{info, warn};
@@ -19,7 +21,7 @@ pub struct StateCommitter<L1, Db, Clock> {
 }
 
 pub struct BundleGenerationConfig {
-    pub num_blocks: usize,
+    pub acceptable_amount_of_blocks: ValidatedRange<usize>,
     pub accumulation_timeout: Duration,
 }
 
@@ -57,13 +59,9 @@ where
         // Ok((fragment_ids, data))
     }
 
-    async fn submit_state(&self, fragment: &BundleFragment) -> Result<()> {
-        let fragments = self.storage.all_fragments().await?;
-
-        for fragment in fragments {
-            let tx = self.l1_adapter.submit_l2_state(fragment.data).await?;
-            self.storage.record_pending_tx(tx, fragment.id).await?;
-        }
+    async fn submit_state(&self, fragment: BundleFragment) -> Result<()> {
+        let tx = self.l1_adapter.submit_l2_state(fragment.data).await?;
+        self.storage.record_pending_tx(tx, fragment.id).await?;
 
         Ok(())
 
@@ -136,23 +134,61 @@ where
         };
 
         let fragment = if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
-            Some(fragment)
+            fragment
         } else {
-            let block = self.storage.all_blocks().await?.pop().unwrap();
-            let chunks = self
-                .l1_adapter
-                .split_into_submittable_state_chunks(&block.data)?;
-
-            self.storage
-                .insert_bundle_and_fragments(&[block.hash], chunks.clone())
+            let max_blocks = self
+                .bundle_config
+                .acceptable_amount_of_blocks
+                .inner()
+                .clone()
+                .max()
+                .unwrap_or(0);
+            let blocks: Vec<_> = self
+                .storage
+                .stream_unbundled_blocks()
+                .take(max_blocks)
+                .try_collect()
                 .await?;
 
-            self.storage.oldest_nonfinalized_fragment().await?
-        };
+            if !self
+                .bundle_config
+                .acceptable_amount_of_blocks
+                .contains(blocks.len())
+            {
+                return Ok(());
+            }
+            let merged_data = blocks
+                .iter()
+                .flat_map(|b| b.data.clone())
+                .collect::<Vec<_>>();
+            let heights = blocks.iter().map(|b| b.height).collect::<Vec<_>>();
 
-        if let Some(fragment) = fragment {
-            self.submit_state(&fragment).await?;
-        }
+            let min_height = heights.iter().min().unwrap();
+            let max_height = heights.iter().max().unwrap();
+
+            let chunks = self
+                .l1_adapter
+                .split_into_submittable_state_chunks(&merged_data)?;
+
+            let block_range = (*min_height..*max_height + 1).try_into().unwrap();
+            self.storage
+                .insert_bundle_and_fragments(block_range, chunks.clone())
+                .await?;
+
+            // TODO: segfault maybe not a bug but sync issues that are to be expected ie
+            // leader/follower async replication
+            self.storage
+                .oldest_nonfinalized_fragment()
+                .await?
+                .ok_or_else(|| {
+                    crate::Error::Other(
+                        "fragment not available even after inserting. This is a bug.".to_string(),
+                    )
+                })?
+        };
+        eprintln!("fragment to submit: {:?}", fragment);
+
+        self.submit_state(fragment).await?;
 
         Ok(())
     }
@@ -173,6 +209,7 @@ mod tests {
     use clock::TestClock;
     use mockall::predicate::{self, eq};
     use ports::{
+        l1::Api,
         storage::FuelBlock,
         types::{L1Height, StateSubmission, TransactionResponse, TransactionState, U256},
     };
@@ -246,13 +283,15 @@ mod tests {
         };
         db.insert_block(block.clone()).await?;
 
-        db.insert_bundle_and_fragments(&[block.hash], vec![block.data.clone()])
+        let range = (block.height..block.height + 1).try_into().unwrap();
+
+        db.insert_bundle_and_fragments(range, vec![block.data.clone()])
             .await?;
         let fragments = db.all_fragments().await?;
         dbg!(&fragments);
 
         let config = BundleGenerationConfig {
-            num_blocks: 1,
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
             accumulation_timeout: Duration::from_secs(1),
         };
 
@@ -306,7 +345,7 @@ mod tests {
         db.insert_block(block.clone()).await?;
 
         let config = BundleGenerationConfig {
-            num_blocks: 1,
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
             accumulation_timeout: Duration::from_secs(1),
         };
 
@@ -340,13 +379,16 @@ mod tests {
         let db = process.create_random_db().await?;
         db.insert_block(block.clone()).await?;
 
+        let range = (block.height..block.height + 1).try_into().unwrap();
+
         db.insert_bundle_and_fragments(
-            &[block.hash],
+            range,
             vec![block.data[..50].to_vec(), block.data[50..].to_vec()],
         )
         .await?;
 
         let fragments = db.all_fragments().await?;
+        eprintln!("fragments: {:?}", fragments);
         db.record_pending_tx([0; 32], fragments[0].id).await?;
         db.update_tx_state([0; 32], TransactionState::Finalized(Utc::now()))
             .await?;
@@ -361,7 +403,7 @@ mod tests {
             .return_once(|_| Ok([1; 32]));
 
         let config = BundleGenerationConfig {
-            num_blocks: 1,
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
             accumulation_timeout: Duration::from_secs(1),
         };
 
@@ -375,6 +417,355 @@ mod tests {
         let pending = db.get_pending_txs().await?;
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].hash, [1; 32]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn chooses_fragments_in_order() -> Result<()> {
+        //given
+        let block = ports::storage::FuelBlock {
+            hash: [1; 32],
+            height: 0,
+            data: random_data(200),
+        };
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(block.clone()).await?;
+
+        let range = (block.height..block.height + 1).try_into().unwrap();
+
+        let fragments = vec![block.data[..100].to_vec(), block.data[100..].to_vec()];
+        db.insert_bundle_and_fragments(range, fragments.clone())
+            .await?;
+
+        let mut l1_mock = MockL1::new();
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .once()
+            .with(eq(fragments[0].clone()))
+            .return_once(|_| Ok([1; 32]));
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // mocks will validate the fragment was submitted
+        let pending = db.get_pending_txs().await?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].hash, [1; 32]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn chooses_fragments_from_older_bundle() -> Result<()> {
+        //given
+        let blocks = [
+            ports::storage::FuelBlock {
+                hash: [1; 32],
+                height: 0,
+                data: random_data(100),
+            },
+            ports::storage::FuelBlock {
+                hash: [2; 32],
+                height: 1,
+                data: random_data(100),
+            },
+        ];
+
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(blocks[0].clone()).await?;
+        db.insert_block(blocks[1].clone()).await?;
+
+        let range = (blocks[0].height..blocks[0].height + 1).try_into().unwrap();
+
+        let bundle_1_fragments = vec![blocks[0].data[..100].to_vec()];
+        db.insert_bundle_and_fragments(range, bundle_1_fragments.clone())
+            .await?;
+
+        let range = (blocks[1].height..blocks[1].height + 1).try_into().unwrap();
+        let bundle_2_fragments = vec![blocks[1].data[..100].to_vec()];
+        db.insert_bundle_and_fragments(range, bundle_2_fragments.clone())
+            .await?;
+
+        let mut l1_mock = MockL1::new();
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .once()
+            .with(eq(bundle_1_fragments[0].clone()))
+            .return_once(|_| Ok([1; 32]));
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // mocks will validate the fragment was submitted
+        let pending = db.get_pending_txs().await?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].hash, [1; 32]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn repeats_failed_fragments() -> Result<()> {
+        //given
+        let block = ports::storage::FuelBlock {
+            hash: [1; 32],
+            height: 0,
+            data: random_data(200),
+        };
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(block.clone()).await?;
+
+        let range = (block.height..block.height + 1).try_into().unwrap();
+
+        let fragments = vec![block.data[..100].to_vec(), block.data[100..].to_vec()];
+        let fragment_ids = db
+            .insert_bundle_and_fragments(range, fragments.clone())
+            .await?;
+
+        let mut l1_mock = MockL1::new();
+        db.record_pending_tx([0; 32], fragment_ids[0]).await?;
+        db.update_tx_state([0; 32], TransactionState::Failed)
+            .await?;
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .once()
+            .with(eq(fragments[0].clone()))
+            .return_once(|_| Ok([1; 32]));
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // mocks will validate the fragment was submitted
+        let pending = db.get_pending_txs().await?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].hash, [1; 32]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn does_nothing_if_not_enough_blocks() -> Result<()> {
+        //given
+        let block = ports::storage::FuelBlock {
+            hash: [1; 32],
+            height: 0,
+            data: random_data(200),
+        };
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(block.clone()).await?;
+
+        let mut l1_mock = MockL1::new();
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        // mocks will validate nothing happened
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn bundles_minimum_if_no_more_blocks_available() -> Result<()> {
+        //given
+        let blocks = [
+            ports::storage::FuelBlock {
+                hash: [1; 32],
+                height: 0,
+                data: random_data(200),
+            },
+            ports::storage::FuelBlock {
+                hash: [2; 32],
+                height: 1,
+                data: random_data(200),
+            },
+        ];
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(blocks[0].clone()).await?;
+        db.insert_block(blocks[1].clone()).await?;
+
+        let mut l1_mock = MockL1::new();
+        let merged_data = [blocks[0].data.clone(), blocks[1].data.clone()].concat();
+        l1_mock
+            .api
+            .expect_split_into_submittable_state_chunks()
+            .once()
+            .with(eq(merged_data.clone()))
+            .return_once(|data| Ok(vec![data.to_vec()]));
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .with(eq(merged_data))
+            .once()
+            .return_once(|_| Ok([1; 32]));
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        assert!(db.has_pending_txs().await?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn doesnt_bundle_more_than_maximum_blocks() -> Result<()> {
+        //given
+        let blocks = [
+            ports::storage::FuelBlock {
+                hash: [1; 32],
+                height: 0,
+                data: random_data(200),
+            },
+            ports::storage::FuelBlock {
+                hash: [2; 32],
+                height: 1,
+                data: random_data(200),
+            },
+        ];
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(blocks[0].clone()).await?;
+        db.insert_block(blocks[1].clone()).await?;
+
+        let mut l1_mock = MockL1::new();
+        let data = blocks[0].data.clone();
+        l1_mock
+            .api
+            .expect_split_into_submittable_state_chunks()
+            .once()
+            .with(eq(data.clone()))
+            .return_once(|data| Ok(vec![data.to_vec()]));
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .with(eq(data))
+            .once()
+            .return_once(|_| Ok([1; 32]));
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        assert!(db.has_pending_txs().await?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
+        //given
+        let blocks = [
+            ports::storage::FuelBlock {
+                hash: [1; 32],
+                height: 0,
+                data: random_data(200),
+            },
+            ports::storage::FuelBlock {
+                hash: [2; 32],
+                height: 1,
+                data: random_data(200),
+            },
+        ];
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await?;
+        db.insert_block(blocks[0].clone()).await?;
+        db.insert_block(blocks[1].clone()).await?;
+
+        let mut l1_mock = MockL1::new();
+        let data = blocks[1].data.clone();
+        l1_mock
+            .api
+            .expect_split_into_submittable_state_chunks()
+            .once()
+            .with(eq(data.clone()))
+            .return_once(|data| Ok(vec![data.to_vec()]));
+
+        let config = BundleGenerationConfig {
+            acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
+            accumulation_timeout: Duration::from_secs(1),
+        };
+
+        let fragment_ids = db
+            .insert_bundle_and_fragments((0..1).try_into().unwrap(), vec![data.clone()])
+            .await?;
+        db.record_pending_tx([0; 32], fragment_ids[0]).await?;
+        db.update_tx_state([0; 32], TransactionState::Finalized(Utc::now()))
+            .await?;
+
+        l1_mock
+            .api
+            .expect_submit_l2_state()
+            .with(eq(data))
+            .once()
+            .return_once(|_| Ok([1; 32]));
+
+        let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
+
+        // when
+        committer.run().await.unwrap();
+
+        // then
+        assert!(db.has_pending_txs().await?);
 
         Ok(())
     }

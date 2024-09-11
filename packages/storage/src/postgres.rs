@@ -1,8 +1,9 @@
 use std::ops::Range;
 
-use futures::{Stream, TryStreamExt};
-use ports::types::{
-    BlockSubmission, DateTime, NonNegative, StateSubmission, TransactionState, Utc,
+use futures::{Stream, StreamExt, TryStreamExt};
+use ports::{
+    storage::ValidatedRange,
+    types::{BlockSubmission, DateTime, NonNegative, StateSubmission, TransactionState, Utc},
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -107,7 +108,25 @@ impl Postgres {
     pub(crate) async fn _oldest_nonfinalized_fragment(
         &self,
     ) -> crate::error::Result<Option<ports::storage::BundleFragment>> {
-        todo!()
+        sqlx::query_as!(
+            tables::L1Fragment,
+            r#"
+            SELECT f.id, f.bundle_id, f.idx, f.data
+            FROM l1_fragments f
+            LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+            LEFT JOIN l1_transactions t ON t.id = tf.transaction_id
+            JOIN bundles b ON b.id = f.bundle_id
+            WHERE t.id IS NULL OR t.state = $1 -- Unsubmitted or failed fragments
+            ORDER BY b.start_height ASC, f.idx ASC
+            LIMIT 1;
+            "#,
+            L1TxState::FAILED_STATE
+        )
+        .fetch_optional(&self.connection_pool)
+        .await
+        .map_err(Error::from)?
+        .map(TryFrom::try_from)
+        .transpose()
     }
 
     pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<ports::storage::FuelBlock>> {
@@ -141,7 +160,7 @@ impl Postgres {
 
     pub(crate) async fn _available_blocks(
         &self,
-    ) -> crate::error::Result<ports::storage::ValidatedRange> {
+    ) -> crate::error::Result<ports::storage::ValidatedRange<u32>> {
         let record = sqlx::query!("SELECT MIN(height) AS min, MAX(height) AS max FROM fuel_blocks")
             .fetch_one(&self.connection_pool)
             .await
@@ -211,6 +230,21 @@ impl Postgres {
         // .await?
         // .and_then(|response| response.last_fragment_time);
         // Ok(response)
+    }
+
+    pub(crate) fn _stream_unbundled_blocks(
+        &self,
+    ) -> impl Stream<Item = Result<ports::storage::FuelBlock>> + '_ {
+        sqlx::query_as!(
+            tables::FuelBlock,
+            r#"SELECT *
+            FROM fuel_blocks fb
+            WHERE fb.height >= (SELECT MAX(b.end_height) FROM bundles b);
+            "#
+        )
+        .fetch(&self.connection_pool)
+        .map_err(Error::from)
+        .and_then(|row| async { row.try_into() })
     }
 
     pub(crate) async fn _set_submission_completed(
@@ -375,44 +409,42 @@ impl Postgres {
 
     pub(crate) async fn _insert_bundle_and_fragments(
         &self,
-        bundle_blocks: &[[u8; 32]],
+        block_range: ValidatedRange<u32>,
         fragments: Vec<Vec<u8>>,
-    ) -> Result<ports::storage::BundleFragment> {
+    ) -> Result<Vec<NonNegative<i32>>> {
         let mut tx = self.connection_pool.begin().await?;
 
-        // Insert a new bundle
-        let bundle_id = sqlx::query!("INSERT INTO bundles DEFAULT VALUES RETURNING id",)
-            .fetch_one(&mut *tx)
-            .await?
-            .id;
+        let Range { start, end } = block_range.into_inner();
 
-        // Insert blocks into bundle_blocks table
-        for block_hash in bundle_blocks {
-            sqlx::query!(
-                "INSERT INTO bundle_blocks (bundle_id, block_hash) VALUES ($1, $2)",
-                bundle_id,
-                block_hash
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        // Insert a new bundle
+        let bundle_id = sqlx::query!(
+            "INSERT INTO bundles(start_height, end_height) VALUES ($1,$2) RETURNING id",
+            i64::from(start),
+            i64::from(end)
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .id;
+
+        let mut fragment_ids = Vec::with_capacity(fragments.len());
 
         // Insert fragments associated with the bundle
         for (idx, fragment_data) in fragments.into_iter().enumerate() {
-            sqlx::query!(
-                "INSERT INTO l1_fragments (idx, data, bundle_id) VALUES ($1, $2, $3)",
+            let record = sqlx::query!(
+                "INSERT INTO l1_fragments (idx, data, bundle_id) VALUES ($1, $2, $3) RETURNING id",
                 idx as i64,
                 fragment_data,
                 bundle_id
             )
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await?;
+            fragment_ids.push(record.id.into());
         }
 
         // Commit the transaction
         tx.commit().await?;
 
-        Ok(())
+        Ok(fragment_ids)
     }
 
     pub(crate) async fn _is_block_available(&self, block_hash: &[u8; 32]) -> Result<bool> {

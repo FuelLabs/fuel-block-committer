@@ -20,14 +20,9 @@ ADD COLUMN data BYTEA NOT NULL;
 
 -- Create new 'bundles' table to represent groups of blocks
 CREATE TABLE IF NOT EXISTS bundles (
-    id          SERIAL PRIMARY KEY
-);
-
--- Create a many-to-many relationship between bundles and blocks
-CREATE TABLE IF NOT EXISTS bundle_blocks (
-    bundle_id   INTEGER NOT NULL REFERENCES bundles(id),
-    block_hash  BYTEA NOT NULL REFERENCES fuel_blocks(hash),
-    PRIMARY KEY (bundle_id, block_hash)
+    id          SERIAL PRIMARY KEY,
+    start_height  BIGINT NOT NULL CHECK (start_height >= 0),
+    end_height    BIGINT NOT NULL CHECK (end_height >= start_height) -- Ensure valid range
 );
 
 -- Drop 'submission_id' from 'l1_fragments' and add 'bundle_id'

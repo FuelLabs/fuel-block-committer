@@ -1,10 +1,6 @@
-use std::{
-    collections::{BTreeSet, HashSet},
-    ops::Range,
-    sync::Arc,
-};
+use std::{fmt::Display, ops::Range, sync::Arc};
 
-use futures::SinkExt;
+pub use futures::stream::BoxStream;
 use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{BlockSubmission, L1Tx, NonNegative, StateSubmission, TransactionState};
@@ -64,13 +60,14 @@ pub trait Storage: Send + Sync {
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_block(&self, block: FuelBlock) -> Result<()>;
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
-    async fn available_blocks(&self) -> Result<ValidatedRange>;
+    async fn available_blocks(&self) -> Result<ValidatedRange<u32>>;
     async fn all_blocks(&self) -> Result<Vec<FuelBlock>>;
+    fn stream_unbundled_blocks(&self) -> BoxStream<Result<FuelBlock>, '_>;
     async fn insert_bundle_and_fragments(
         &self,
-        bundle_blocks: &[[u8; 32]],
+        block_range: ValidatedRange<u32>,
         fragments: Vec<Vec<u8>>,
-    ) -> Result<()>;
+    ) -> Result<Vec<NonNegative<i32>>>;
 
     // async fn insert_state_submission(&self, submission: StateSubmission) -> Result<()>;
     // fn stream_unfinalized_segment_data<'a>(
@@ -90,38 +87,49 @@ pub trait Storage: Send + Sync {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidatedRange {
-    range: Range<u32>,
+pub struct ValidatedRange<NUM> {
+    range: Range<NUM>,
 }
 
-impl ValidatedRange {
-    pub fn into_inner(self) -> Range<u32> {
+impl<NUM> ValidatedRange<NUM> {
+    pub fn contains(&self, value: NUM) -> bool
+    where
+        NUM: PartialOrd,
+    {
+        self.range.contains(&value)
+    }
+
+    pub fn inner(&self) -> &Range<NUM> {
+        &self.range
+    }
+
+    pub fn into_inner(self) -> Range<NUM> {
         self.range
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvalidRange {
-    range: Range<u32>,
-}
+impl<NUM: PartialOrd + Display> TryFrom<Range<NUM>> for ValidatedRange<NUM> {
+    type Error = InvalidRange<NUM>;
 
-impl std::error::Error for InvalidRange {}
+    fn try_from(range: Range<NUM>) -> std::result::Result<Self, Self::Error> {
+        if range.start > range.end {
+            return Err(InvalidRange { range });
+        }
 
-impl std::fmt::Display for InvalidRange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid range: {:?}", self.range)
+        Ok(Self { range })
     }
 }
 
-impl TryFrom<Range<u32>> for ValidatedRange {
-    type Error = InvalidRange;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidRange<NUM> {
+    range: Range<NUM>,
+}
 
-    fn try_from(value: Range<u32>) -> std::result::Result<Self, Self::Error> {
-        if value.start > value.end {
-            return Err(InvalidRange { range: value });
-        }
+impl<NUM: std::fmt::Debug> std::error::Error for InvalidRange<NUM> {}
 
-        Ok(Self { range: value })
+impl<NUM: std::fmt::Debug> std::fmt::Display for InvalidRange<NUM> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid range: {:?}", self.range)
     }
 }
 
