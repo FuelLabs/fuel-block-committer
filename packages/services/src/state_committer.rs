@@ -250,17 +250,6 @@ mod tests {
         }
     }
 
-    fn given_l1_that_expects_submission(data: NonEmptyVec<u8>) -> MockL1 {
-        let mut l1 = MockL1::new();
-
-        l1.api
-            .expect_submit_l2_state()
-            .with(predicate::eq(data))
-            .return_once(move |_| Ok([1u8; 32]));
-
-        l1
-    }
-
     #[tokio::test]
     async fn does_nothing_if_there_are_pending_transactions() -> Result<()> {
         //given
