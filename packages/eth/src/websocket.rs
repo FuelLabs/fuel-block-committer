@@ -81,7 +81,7 @@ impl WebsocketClient {
         Ok(self.inner.balance().await?)
     }
 
-    pub async fn _submit_l2_state(&self, tx: Vec<u8>) -> Result<[u8; 32]> {
+    pub async fn _submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
         Ok(self.inner.submit_l2_state(tx).await?)
     }
 

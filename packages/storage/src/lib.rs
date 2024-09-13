@@ -33,9 +33,9 @@ impl Storage for Postgres {
         self._all_blocks().await.map_err(Into::into)
     }
 
-    async fn all_fragments(&self) -> Result<Vec<ports::storage::BundleFragment>> {
-        self._all_fragments().await.map_err(Into::into)
-    }
+    // async fn all_fragments(&self) -> Result<Vec<ports::storage::BundleFragment>> {
+    //     self._all_fragments().await.map_err(Into::into)
+    // }
 
     async fn available_blocks(&self) -> Result<ports::storage::ValidatedRange<u32>> {
         self._available_blocks().await.map_err(Into::into)

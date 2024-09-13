@@ -43,10 +43,10 @@ impl Api for WebsocketClient {
         &self,
         data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        Ok(self._split_into_submittable_state_chunks(data)?)
+        self._split_into_submittable_state_chunks(data)
     }
 
-    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
+    async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {
         Ok(self._submit_l2_state(state_data).await?)
     }
 

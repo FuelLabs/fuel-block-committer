@@ -61,7 +61,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
-    async fn all_fragments(&self) -> Result<Vec<BundleFragment>>;
+    // async fn all_fragments(&self) -> Result<Vec<BundleFragment>>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_block(&self, block: FuelBlock) -> Result<()>;

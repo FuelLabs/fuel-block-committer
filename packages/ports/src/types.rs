@@ -8,6 +8,15 @@ pub struct NonEmptyVec<T> {
     vec: Vec<T>,
 }
 
+#[macro_export]
+macro_rules! non_empty_vec {
+    ($($x:expr),+) => {
+        NonEmptyVec {
+            vec: vec![$($x),+]
+        }
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VecIsEmpty;
 

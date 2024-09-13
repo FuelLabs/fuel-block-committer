@@ -27,7 +27,7 @@ pub trait EthApi {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>>;
-    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]>;
+    async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -124,7 +124,7 @@ where
         self.adapter.commit_interval()
     }
 
-    async fn submit_l2_state(&self, tx: Vec<u8>) -> Result<[u8; 32]> {
+    async fn submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
         let response = self.adapter.submit_l2_state(tx).await;
         self.note_network_status(&response);
         response

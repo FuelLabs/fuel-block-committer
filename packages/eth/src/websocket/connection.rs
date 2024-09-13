@@ -116,7 +116,7 @@ impl EthApi for WsConnection {
         Self::convert_to_tx_response(tx_receipt)
     }
 
-    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
+    async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
@@ -124,7 +124,7 @@ impl EthApi for WsConnection {
             };
 
         let blob_tx = self
-            .prepare_blob_tx(&state_data, *blob_signer_address)
+            .prepare_blob_tx(state_data.inner(), *blob_signer_address)
             .await?;
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
