@@ -11,9 +11,7 @@ pub struct NonEmptyVec<T> {
 #[macro_export]
 macro_rules! non_empty_vec {
     ($($x:expr),+) => {
-        NonEmptyVec {
-            vec: vec![$($x),+]
-        }
+        NonEmptyVec::try_from(vec![$($x),+]).unwrap()
     };
 }
 
