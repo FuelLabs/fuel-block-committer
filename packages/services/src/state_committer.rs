@@ -16,6 +16,8 @@ pub struct GasOptimizingBundler<L1> {
     l1_adapter: L1,
     blocks: Vec<ports::storage::FuelBlock>,
     acceptable_amount_of_blocks: ValidatedRange<usize>,
+    best_run: Option<Bundle>,
+    next_block_amount: Option<usize>,
 }
 
 impl<L1> GasOptimizingBundler<L1> {
@@ -28,10 +30,13 @@ impl<L1> GasOptimizingBundler<L1> {
             l1_adapter,
             blocks,
             acceptable_amount_of_blocks,
+            best_run: None,
+            next_block_amount: None,
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bundle {
     pub fragments: SubmittableFragments,
     pub block_heights: ValidatedRange<u32>,
@@ -81,7 +86,7 @@ where
         Ok(GasOptimizingBundler::new(
             l1,
             blocks,
-            __self.acceptable_amount_of_blocks.clone(),
+            self.acceptable_amount_of_blocks.clone(),
         ))
     }
 }
@@ -97,39 +102,46 @@ where
             return Ok(None);
         }
 
-        if !self.acceptable_amount_of_blocks.contains(self.blocks.len()) {
-            eprintln!("not enough blocks found");
+        let min_possible_blocks = self
+            .acceptable_amount_of_blocks
+            .inner()
+            .clone()
+            .min()
+            .unwrap();
+
+        let max_possible_blocks = self
+            .acceptable_amount_of_blocks
+            .inner()
+            .clone()
+            .max()
+            .unwrap();
+
+        if self.blocks.len() < min_possible_blocks {
+            eprintln!("not enough blocks found: {}", self.blocks.len());
             return Ok(None);
         }
 
-        let mut gas_usage_tracking = HashMap::new();
+        let amount_of_blocks_to_try = self.next_block_amount.unwrap_or(min_possible_blocks);
 
-        for amount_of_blocks in self.acceptable_amount_of_blocks.inner().clone() {
-            eprintln!("trying amount of blocks: {}", amount_of_blocks);
-            let merged_data = self.blocks[..amount_of_blocks]
-                .iter()
-                .flat_map(|b| b.data.clone().into_inner())
-                .collect::<Vec<_>>();
+        eprintln!("trying amount of blocks: {}", amount_of_blocks_to_try);
+        let merged_data = self.blocks[..amount_of_blocks_to_try]
+            .iter()
+            .flat_map(|b| b.data.clone().into_inner())
+            .collect::<Vec<_>>();
 
-            let submittable_chunks = self.l1_adapter.split_into_submittable_fragments(
-                &merged_data.try_into().expect("cannot be empty"),
-            )?;
-            eprintln!(
-                "submittable chunks gas: {:?}",
-                submittable_chunks.gas_estimation
-            );
+        let submittable_chunks = self
+            .l1_adapter
+            .split_into_submittable_fragments(&merged_data.try_into().expect("cannot be empty"))?;
+        eprintln!(
+            "submittable chunks gas: {:?}",
+            submittable_chunks.gas_estimation
+        );
 
-            gas_usage_tracking.insert(amount_of_blocks, submittable_chunks);
-        }
-
-        let (amount_of_blocks, fragments) = gas_usage_tracking
-            .into_iter()
-            .min_by_key(|(_, chunks)| chunks.gas_estimation)
-            .unwrap();
-        eprintln!("chosen amount of blocks: {}", amount_of_blocks);
+        let fragments = submittable_chunks;
+        eprintln!("chosen amount of blocks: {}", amount_of_blocks_to_try);
         eprintln!("chosen gas usage: {:?}", fragments.gas_estimation);
 
-        let (min_height, max_height) = self.blocks.as_slice()[..amount_of_blocks]
+        let (min_height, max_height) = self.blocks.as_slice()[..amount_of_blocks_to_try]
             .iter()
             .map(|b| b.height)
             .minmax()
@@ -139,10 +151,34 @@ where
 
         let block_heights = (min_height..max_height + 1).try_into().unwrap();
 
+        match &mut self.best_run {
+            None => {
+                self.best_run = Some(Bundle {
+                    fragments,
+                    block_heights,
+                    optimal: false,
+                });
+            }
+            Some(best_run) => {
+                if best_run.fragments.gas_estimation >= fragments.gas_estimation {
+                    self.best_run = Some(Bundle {
+                        fragments,
+                        block_heights,
+                        optimal: false,
+                    });
+                }
+            }
+        }
+
+        let last_try = amount_of_blocks_to_try == max_possible_blocks;
+
+        let best = self.best_run.as_ref().unwrap().clone();
+
+        self.next_block_amount = Some(amount_of_blocks_to_try.saturating_add(1));
+
         Ok(Some(Bundle {
-            fragments,
-            block_heights,
-            optimal: true,
+            optimal: last_try,
+            ..best
         }))
     }
 }
@@ -1054,6 +1090,63 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn optimizing_gas_bundler_reports_nonoptimal_bundles_as_well() -> Result<()> {
+        // given
+        let blocks: Vec<ports::storage::FuelBlock> = (0..=3)
+            .map(|height| {
+                test_utils::mocks::fuel::generate_block(
+                    height,
+                    &SecretKey::random(&mut rand::thread_rng()),
+                )
+                .try_into()
+                .unwrap()
+            })
+            .collect_vec();
+
+        let blocks_0_and_1: NonEmptyVec<u8> = (0..=1)
+            .flat_map(|i| blocks[i].data.clone().into_inner())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let mut l1_mock = ports::l1::MockApi::new();
+        let unoptimal_fragment = random_data(100);
+        {
+            let fragments = non_empty_vec![unoptimal_fragment.clone()];
+            l1_mock
+                .expect_split_into_submittable_fragments()
+                .with(eq(blocks_0_and_1))
+                .once()
+                .return_once(|_| {
+                    Ok(SubmittableFragments {
+                        fragments,
+                        gas_estimation: 100,
+                    })
+                });
+        }
+
+        let mut sut = GasOptimizingBundler::new(l1_mock, blocks, (2..4).try_into().unwrap());
+
+        // when
+        let bundle = sut.propose_bundle().await.unwrap().unwrap();
+
+        // then
+        assert_eq!(
+            bundle,
+            Bundle {
+                fragments: SubmittableFragments {
+                    fragments: non_empty_vec!(unoptimal_fragment),
+                    gas_estimation: 100
+                },
+                block_heights: (0..2).try_into().unwrap(),
+                optimal: false
+            }
+        );
 
         Ok(())
     }
