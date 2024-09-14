@@ -1,7 +1,7 @@
 use std::cmp::max;
 
 use async_trait::async_trait;
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use ports::{fuel::FuelBlock, storage::Storage};
 use tracing::info;
 use validator::Validator;
@@ -139,6 +139,7 @@ where
 #[cfg(test)]
 mod tests {
     use fuel_crypto::{Message, SecretKey, Signature};
+    use futures::{stream, StreamExt};
     use mockall::predicate::eq;
     use ports::fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus};
     use rand::{rngs::StdRng, SeedableRng};

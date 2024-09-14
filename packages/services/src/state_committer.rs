@@ -1,185 +1,16 @@
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
-use itertools::Itertools;
+use bundler::{Bundle, BundleProposal, BundlerFactory};
 use ports::{
     clock::Clock,
-    l1::SubmittableFragments,
-    storage::{BundleFragment, Storage, ValidatedRange},
+    storage::{BundleFragment, Storage},
     types::{DateTime, NonEmptyVec, Utc},
 };
 
 use crate::{Result, Runner};
 
-pub struct GasOptimizingBundler<L1> {
-    l1_adapter: L1,
-    blocks: Vec<ports::storage::FuelBlock>,
-    acceptable_amount_of_blocks: ValidatedRange<usize>,
-    best_run: Option<Bundle>,
-    next_block_amount: Option<usize>,
-}
-
-impl<L1> GasOptimizingBundler<L1> {
-    fn new(
-        l1_adapter: L1,
-        blocks: Vec<ports::storage::FuelBlock>,
-        acceptable_amount_of_blocks: ValidatedRange<usize>,
-    ) -> Self {
-        Self {
-            l1_adapter,
-            blocks,
-            acceptable_amount_of_blocks,
-            best_run: None,
-            next_block_amount: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Bundle {
-    pub fragments: SubmittableFragments,
-    pub block_heights: ValidatedRange<u32>,
-    pub optimal: bool,
-}
-
-#[cfg_attr(feature = "test-helpers", mockall::automock)]
-#[async_trait::async_trait]
-pub trait Bundler {
-    async fn propose_bundle(&mut self) -> Result<Option<Bundle>>;
-}
-
-#[async_trait::async_trait]
-pub trait BundlerFactory {
-    type Bundler: Bundler + Send;
-    async fn build(&self) -> Result<Self::Bundler>;
-}
-
-struct GasOptimizingBundlerFactory<L1, Storage> {
-    l1: L1,
-    storage: Storage,
-    acceptable_amount_of_blocks: ValidatedRange<usize>,
-}
-
-impl<L1, Storage> GasOptimizingBundlerFactory<L1, Storage> {
-    pub fn new(
-        l1: L1,
-        storage: Storage,
-        acceptable_amount_of_blocks: ValidatedRange<usize>,
-    ) -> Self {
-        Self {
-            acceptable_amount_of_blocks,
-            l1,
-            storage,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl<L1, Storage> BundlerFactory for GasOptimizingBundlerFactory<L1, Storage>
-where
-    GasOptimizingBundler<L1>: Bundler,
-    Storage: ports::storage::Storage + 'static,
-    L1: Send + Sync + 'static + Clone,
-{
-    type Bundler = GasOptimizingBundler<L1>;
-    async fn build(&self) -> Result<Self::Bundler> {
-        let max_blocks = self
-            .acceptable_amount_of_blocks
-            .inner()
-            .end
-            .saturating_sub(1);
-        let blocks = self.storage.lowest_unbundled_blocks(max_blocks).await?;
-
-        Ok(GasOptimizingBundler::new(
-            self.l1.clone(),
-            blocks,
-            self.acceptable_amount_of_blocks.clone(),
-        ))
-    }
-}
-
-#[async_trait::async_trait]
-impl<L1> Bundler for GasOptimizingBundler<L1>
-where
-    L1: ports::l1::Api + Send + Sync,
-{
-    async fn propose_bundle(&mut self) -> Result<Option<Bundle>> {
-        if self.blocks.is_empty() {
-            return Ok(None);
-        }
-
-        let min_possible_blocks = self
-            .acceptable_amount_of_blocks
-            .inner()
-            .clone()
-            .min()
-            .unwrap();
-
-        let max_possible_blocks = self
-            .acceptable_amount_of_blocks
-            .inner()
-            .clone()
-            .max()
-            .unwrap();
-
-        if self.blocks.len() < min_possible_blocks {
-            return Ok(None);
-        }
-
-        let amount_of_blocks_to_try = self.next_block_amount.unwrap_or(min_possible_blocks);
-
-        let merged_data = self.blocks[..amount_of_blocks_to_try]
-            .iter()
-            .flat_map(|b| b.data.clone().into_inner())
-            .collect::<Vec<_>>();
-
-        let submittable_chunks = self
-            .l1_adapter
-            .split_into_submittable_fragments(&merged_data.try_into().expect("cannot be empty"))?;
-
-        let fragments = submittable_chunks;
-
-        let (min_height, max_height) = self.blocks.as_slice()[..amount_of_blocks_to_try]
-            .iter()
-            .map(|b| b.height)
-            .minmax()
-            .into_option()
-            .unwrap();
-
-        let block_heights = (min_height..max_height + 1).try_into().unwrap();
-
-        match &mut self.best_run {
-            None => {
-                self.best_run = Some(Bundle {
-                    fragments,
-                    block_heights,
-                    optimal: false,
-                });
-            }
-            Some(best_run) => {
-                if best_run.fragments.gas_estimation >= fragments.gas_estimation {
-                    self.best_run = Some(Bundle {
-                        fragments,
-                        block_heights,
-                        optimal: false,
-                    });
-                }
-            }
-        }
-
-        let last_try = amount_of_blocks_to_try == max_possible_blocks;
-
-        let best = self.best_run.as_ref().unwrap().clone();
-
-        self.next_block_amount = Some(amount_of_blocks_to_try.saturating_add(1));
-
-        Ok(Some(Bundle {
-            optimal: last_try,
-            ..best
-        }))
-    }
-}
+pub mod bundler;
 
 pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
     l1_adapter: L1,
@@ -224,14 +55,14 @@ where
     L1: ports::l1::Api,
     Db: Storage,
     C: Clock,
-    BF: BundlerFactory,
+    BF: bundler::BundlerFactory,
 {
     async fn bundle_then_fragment(&self) -> crate::Result<Option<NonEmptyVec<BundleFragment>>> {
         let mut bundler = self.bundler_factory.build().await?;
 
         let start_time = self.clock.now();
 
-        let Bundle {
+        let BundleProposal {
             fragments,
             block_heights,
             ..
@@ -357,7 +188,6 @@ mod tests {
     use clock::TestClock;
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
-    use mockall::{predicate::eq, Sequence};
     use ports::{l1::SubmittableFragments, non_empty_vec, types::NonEmptyVec};
     use tokio::sync::Mutex;
 
@@ -367,16 +197,6 @@ mod tests {
 
     // TODO: segfault add .once() to all tests since mocks dont fail by default if their
     // expectations were not exercised, only if they were exercised incorrectly
-    fn random_data(size: usize) -> NonEmptyVec<u8> {
-        if size == 0 {
-            panic!("random data size must be greater than 0");
-        }
-
-        // TODO: segfault use better random data generation
-        let data: Vec<u8> = (0..size).map(|_| rand::random::<u8>()).collect();
-
-        data.try_into().expect("is not empty due to check")
-    }
 
     #[tokio::test]
     async fn sends_fragments_in_order() -> Result<()> {
@@ -386,15 +206,15 @@ mod tests {
         let fragment_tx_ids = [[0; 32], [1; 32]];
 
         let mut sut = {
-            let fragment_0 = random_data(100);
-            let fragment_1 = random_data(100);
+            let fragment_0 = test_utils::random_data(100);
+            let fragment_1 = test_utils::random_data(100);
 
             let l1_mock =
                 test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
                     fragments: non_empty_vec![fragment_0.clone(), fragment_1.clone()],
                     gas_estimation: 1,
                 });
-            let bundler_factory = GasOptimizingBundlerFactory::new(
+            let bundler_factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 (1..2).try_into().unwrap(),
@@ -442,15 +262,15 @@ mod tests {
         let original_tx = [0; 32];
 
         let mut sut = {
-            let fragment_0 = random_data(100);
-            let fragment_1 = random_data(100);
+            let fragment_0 = test_utils::random_data(100);
+            let fragment_1 = test_utils::random_data(100);
 
             let l1_mock =
                 test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
                     fragments: non_empty_vec![fragment_0.clone(), fragment_1],
                     gas_estimation: 1,
                 });
-            let bundler_factory = GasOptimizingBundlerFactory::new(
+            let bundler_factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 (1..2).try_into().unwrap(),
@@ -503,7 +323,7 @@ mod tests {
                 l1_mock,
                 setup.db(),
                 TestClock::default(),
-                GasOptimizingBundlerFactory::new(
+                bundler::gas_optimizing::Factory::new(
                     Arc::new(ports::l1::MockApi::new()),
                     setup.db(),
                     (2..3).try_into().unwrap(),
@@ -533,10 +353,10 @@ mod tests {
         let mut sut = {
             let l1_mock =
                 test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
-                    fragments: non_empty_vec![random_data(100)],
+                    fragments: non_empty_vec![test_utils::random_data(100)],
                     gas_estimation: 1,
                 });
-            let bundler_factory = GasOptimizingBundlerFactory::new(
+            let bundler_factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 (1..2).try_into().unwrap(),
@@ -589,7 +409,7 @@ mod tests {
 
         let mut sut = {
             let mut l1_mock = ports::l1::MockApi::new();
-            let fragment = random_data(100);
+            let fragment = test_utils::random_data(100);
             let encoded_blocks: Vec<ports::storage::FuelBlock> = blocks
                 .into_iter()
                 .map(TryFrom::try_from)
@@ -615,7 +435,7 @@ mod tests {
                     )],
                 )
             }
-            let factory = GasOptimizingBundlerFactory::new(
+            let factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 (2..3).try_into().unwrap(),
@@ -676,7 +496,7 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-            let fragment = random_data(100);
+            let fragment = test_utils::random_data(100);
 
             test_utils::mocks::l1::will_split_bundles_into_fragments(
                 &mut l1_mock,
@@ -689,7 +509,7 @@ mod tests {
                 )],
             );
 
-            let factory = GasOptimizingBundlerFactory::new(
+            let factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 (2..3).try_into().unwrap(),
@@ -743,12 +563,12 @@ mod tests {
             let bundle_1 = ports::storage::FuelBlock::try_from(blocks[0].clone())
                 .unwrap()
                 .data;
-            let bundle_1_fragment = random_data(100);
+            let bundle_1_fragment = test_utils::random_data(100);
 
             let bundle_2 = ports::storage::FuelBlock::try_from(blocks[1].clone())
                 .unwrap()
                 .data;
-            let bundle_2_fragment = random_data(100);
+            let bundle_2_fragment = test_utils::random_data(100);
             test_utils::mocks::l1::will_split_bundles_into_fragments(
                 &mut l1_mock,
                 [
@@ -769,7 +589,7 @@ mod tests {
                 ],
             );
 
-            let bundler_factory = GasOptimizingBundlerFactory::new(
+            let bundler_factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 (1..2).try_into().unwrap(),
@@ -816,7 +636,7 @@ mod tests {
             ports::l1::MockApi::new(),
             setup.db(),
             TestClock::default(),
-            GasOptimizingBundlerFactory::new(
+            bundler::gas_optimizing::Factory::new(
                 Arc::new(ports::l1::MockApi::new()),
                 setup.db(),
                 (0..1).try_into().unwrap(),
@@ -889,9 +709,7 @@ mod tests {
                 .try_into()
                 .unwrap();
 
-            let mut sequence = Sequence::new();
-
-            let correct_fragment = random_data(100);
+            let correct_fragment = test_utils::random_data(100);
 
             let mut l1_mock = ports::l1::MockApi::new();
 
@@ -901,7 +719,7 @@ mod tests {
                     (
                         first_bundle.clone(),
                         SubmittableFragments {
-                            fragments: non_empty_vec![random_data(100)],
+                            fragments: non_empty_vec![test_utils::random_data(100)],
                             gas_estimation: 2,
                         },
                     ),
@@ -915,14 +733,14 @@ mod tests {
                     (
                         third_bundle,
                         SubmittableFragments {
-                            fragments: non_empty_vec![random_data(100)],
+                            fragments: non_empty_vec![test_utils::random_data(100)],
                             gas_estimation: 3,
                         },
                     ),
                 ],
             );
 
-            let bundler_factory = GasOptimizingBundlerFactory::new(
+            let bundler_factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 (2..5).try_into().unwrap(),
@@ -960,13 +778,13 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         struct TestBundler {
-            rx: tokio::sync::mpsc::Receiver<Bundle>,
+            rx: tokio::sync::mpsc::Receiver<BundleProposal>,
             notify_consumed: tokio::sync::mpsc::Sender<()>,
         }
 
         #[async_trait::async_trait]
-        impl Bundler for TestBundler {
-            async fn propose_bundle(&mut self) -> Result<Option<Bundle>> {
+        impl Bundle for TestBundler {
+            async fn propose_bundle(&mut self) -> Result<Option<BundleProposal>> {
                 let bundle = self.rx.recv().await;
                 self.notify_consumed.send(()).await.unwrap();
                 Ok(bundle)
@@ -1020,7 +838,7 @@ mod tests {
         });
 
         send_bundles
-            .send(Bundle {
+            .send(BundleProposal {
                 fragments: SubmittableFragments {
                     fragments: non_empty_vec!(non_empty_vec!(0)),
                     gas_estimation: 1,
@@ -1037,7 +855,7 @@ mod tests {
 
         // when
         send_bundles
-            .send(Bundle {
+            .send(BundleProposal {
                 fragments: SubmittableFragments {
                     fragments: non_empty_vec!(second_optimization_run_fragment.clone()),
                     gas_estimation: 1,
@@ -1054,56 +872,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn gas_optimizing_bundler_works_in_iterations() -> Result<()> {
-        // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = (0..=3)
-            .map(|height| test_utils::mocks::fuel::generate_storage_block(height, &secret_key))
-            .collect_vec();
-
-        let bundle_of_blocks_0_and_1: NonEmptyVec<u8> = blocks[0..=1]
-            .iter()
-            .flat_map(|block| block.data.clone().into_inner())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        let mut l1_mock = ports::l1::MockApi::new();
-        let fragment_of_unoptimal_block = random_data(100);
-
-        test_utils::mocks::l1::will_split_bundles_into_fragments(
-            &mut l1_mock,
-            [(
-                bundle_of_blocks_0_and_1.clone(),
-                SubmittableFragments {
-                    fragments: non_empty_vec![fragment_of_unoptimal_block.clone()],
-                    gas_estimation: 100,
-                },
-            )],
-        );
-
-        let mut sut = GasOptimizingBundler::new(l1_mock, blocks, (2..4).try_into().unwrap());
-
-        // when
-        let bundle = sut.propose_bundle().await.unwrap().unwrap();
-
-        // then
-        assert_eq!(
-            bundle,
-            Bundle {
-                fragments: SubmittableFragments {
-                    fragments: non_empty_vec!(fragment_of_unoptimal_block),
-                    gas_estimation: 100
-                },
-                block_heights: (0..2).try_into().unwrap(),
-                optimal: false
-            }
-        );
 
         Ok(())
     }

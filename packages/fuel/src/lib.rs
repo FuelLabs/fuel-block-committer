@@ -1,5 +1,5 @@
 #![deny(unused_crate_dependencies)]
-use std::ops::{Range, RangeInclusive};
+use std::ops::Range;
 
 use futures::StreamExt;
 use ports::fuel::{BoxStream, FuelBlock};

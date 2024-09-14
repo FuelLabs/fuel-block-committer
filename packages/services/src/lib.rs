@@ -69,11 +69,24 @@ pub trait Runner: Send + Sync {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+
+    pub fn random_data(size: usize) -> NonEmptyVec<u8> {
+        if size == 0 {
+            panic!("random data size must be greater than 0");
+        }
+
+        // TODO: segfault use better random data generation
+        let data: Vec<u8> = (0..size).map(|_| rand::random::<u8>()).collect();
+
+        data.try_into().expect("is not empty due to check")
+    }
+
     use std::{ops::Range, sync::Arc};
 
     use clock::TestClock;
     use fuel_crypto::SecretKey;
     use mocks::l1::TxStatus;
+    use ports::types::NonEmptyVec;
     use storage::PostgresProcess;
     use validator::BlockValidator;
 
