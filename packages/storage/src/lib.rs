@@ -74,10 +74,11 @@ impl Storage for Postgres {
     //     Ok(self._insert_state_submission(submission).await?)
     // }
 
-    fn stream_unbundled_blocks(
+    async fn lowest_unbundled_blocks(
         &self,
-    ) -> ports::storage::BoxStream<Result<ports::storage::FuelBlock>, '_> {
-        self._stream_unbundled_blocks().map_err(Into::into).boxed()
+        limit: usize,
+    ) -> Result<Vec<ports::storage::FuelBlock>> {
+        Ok(self._lowest_unbundled_blocks(limit).await?)
     }
 
     async fn record_pending_tx(

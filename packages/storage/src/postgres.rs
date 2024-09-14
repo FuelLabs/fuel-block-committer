@@ -234,18 +234,23 @@ impl Postgres {
         // Ok(response)
     }
 
-    pub(crate) fn _stream_unbundled_blocks(
+    pub(crate) async fn _lowest_unbundled_blocks(
         &self,
-    ) -> impl Stream<Item = Result<ports::storage::FuelBlock>> + '_ {
-        sqlx::query_as!(
+        limit: usize,
+    ) -> Result<Vec<ports::storage::FuelBlock>> {
+        // TODO: segfault error msg
+        let limit = i64::try_from(limit).map_err(|e| Error::Conversion(format!("{e}")))?;
+        let response = sqlx::query_as!(
             tables::FuelBlock,
             r#" SELECT *
-                FROM fuel_blocks fb
-                WHERE fb.height >= COALESCE((SELECT MAX(b.end_height) FROM bundles b), 0);"#
+                        FROM fuel_blocks fb
+                        WHERE fb.height >= COALESCE((SELECT MAX(b.end_height) FROM bundles b), 0) LIMIT $1;"#,
+            limit
         )
-        .fetch(&self.connection_pool)
-        .map_err(Error::from)
-        .and_then(|row| async { row.try_into() })
+            .fetch_all(&self.connection_pool).await
+            .map_err(Error::from)?;
+
+        response.into_iter().map(TryFrom::try_from).collect()
     }
 
     pub(crate) async fn _set_submission_completed(

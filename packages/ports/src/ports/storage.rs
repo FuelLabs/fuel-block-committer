@@ -68,7 +68,7 @@ pub trait Storage: Send + Sync {
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
     async fn available_blocks(&self) -> Result<ValidatedRange<u32>>;
     async fn all_blocks(&self) -> Result<Vec<FuelBlock>>;
-    fn stream_unbundled_blocks(&self) -> BoxStream<Result<FuelBlock>, '_>;
+    async fn lowest_unbundled_blocks(&self, limit: usize) -> Result<Vec<FuelBlock>>;
     async fn insert_bundle_and_fragments(
         &self,
         block_range: ValidatedRange<u32>,

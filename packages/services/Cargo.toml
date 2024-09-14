@@ -21,8 +21,10 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 hex = { workspace = true }
 validator = { workspace = true }
+mockall = { workspace = true, optional = true }
 
 [dev-dependencies]
+services = { workspace = true, features = ["test-helpers"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 clock = { workspace = true, features = ["test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
@@ -33,3 +35,6 @@ storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 validator = { workspace = true, features = ["test-helpers"] }
+
+[features]
+test-helpers = ["dep:mockall"]
