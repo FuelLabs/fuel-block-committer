@@ -12,15 +12,21 @@ use ports::{
 
 use crate::{Result, Runner};
 
-pub struct NonCompressingGasOptimizingBundler<L1> {
+pub struct NonCompressingGasOptimizingBundler<L1, Storage> {
     l1_adapter: L1,
+    storage: Storage,
     acceptable_amount_of_blocks: ValidatedRange<usize>,
 }
 
-impl<L1> NonCompressingGasOptimizingBundler<L1> {
-    pub fn new(l1: L1, acceptable_amount_of_blocks: ValidatedRange<usize>) -> Self {
+impl<L1, Storage> NonCompressingGasOptimizingBundler<L1, Storage> {
+    fn new(
+        l1_adapter: L1,
+        storage: Storage,
+        acceptable_amount_of_blocks: ValidatedRange<usize>,
+    ) -> Self {
         Self {
-            l1_adapter: l1,
+            l1_adapter,
+            storage,
             acceptable_amount_of_blocks,
         }
     }
@@ -29,12 +35,77 @@ impl<L1> NonCompressingGasOptimizingBundler<L1> {
 struct Bundle {
     pub fragments: SubmittableFragments,
     pub block_heights: ValidatedRange<u32>,
+    pub optimal: bool,
 }
 
-impl<L1: ports::l1::Api + Send + Sync> NonCompressingGasOptimizingBundler<L1> {
-    async fn form_bundle(&self, blocks: NonEmptyVec<ports::storage::FuelBlock>) -> Result<Bundle> {
+#[async_trait::async_trait]
+trait Bundler {
+    async fn propose_bundle(&mut self) -> Result<Option<Bundle>>;
+}
+
+trait BundlerFactory<L1, Storage> {
+    type Bundler: Bundler;
+    fn build(&self, db: Storage, l1: L1) -> Self::Bundler;
+}
+
+struct NonCompressingGasOptimizingBundlerFactory {
+    acceptable_amount_of_blocks: ValidatedRange<usize>,
+}
+
+impl NonCompressingGasOptimizingBundlerFactory {
+    pub fn new(acceptable_amount_of_blocks: ValidatedRange<usize>) -> Self {
+        Self {
+            acceptable_amount_of_blocks,
+        }
+    }
+}
+
+impl<L1, Storage> BundlerFactory<L1, Storage> for NonCompressingGasOptimizingBundlerFactory
+where
+    NonCompressingGasOptimizingBundler<L1, Storage>: Bundler,
+{
+    type Bundler = NonCompressingGasOptimizingBundler<L1, Storage>;
+    fn build(&self, storage: Storage, l1: L1) -> Self::Bundler {
+        NonCompressingGasOptimizingBundler::new(
+            l1,
+            storage,
+            self.acceptable_amount_of_blocks.clone(),
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl<L1, Storage> Bundler for NonCompressingGasOptimizingBundler<L1, Storage>
+where
+    L1: ports::l1::Api + Send + Sync,
+    Storage: ports::storage::Storage,
+{
+    async fn propose_bundle(&mut self) -> Result<Option<Bundle>> {
+        let max_blocks = self
+            .acceptable_amount_of_blocks
+            .inner()
+            .clone()
+            .max()
+            .unwrap_or(0);
+
+        let blocks: Vec<_> = self
+            .storage
+            .stream_unbundled_blocks()
+            .take(max_blocks)
+            .try_collect()
+            .await?;
+
+        if blocks.is_empty() {
+            eprintln!("no blocks found");
+            return Ok(None);
+        }
+
+        if !self.acceptable_amount_of_blocks.contains(blocks.len()) {
+            eprintln!("not enough blocks found");
+            return Ok(None);
+        }
+
         let mut gas_usage_tracking = HashMap::new();
-        let blocks = blocks.into_inner();
 
         for amount_of_blocks in self.acceptable_amount_of_blocks.inner().clone() {
             eprintln!("trying amount of blocks: {}", amount_of_blocks);
@@ -71,50 +142,45 @@ impl<L1: ports::l1::Api + Send + Sync> NonCompressingGasOptimizingBundler<L1> {
 
         let block_heights = (min_height..max_height + 1).try_into().unwrap();
 
-        Ok(Bundle {
+        Ok(Some(Bundle {
             fragments,
             block_heights,
-        })
+            optimal: true,
+        }))
     }
 }
 
-pub struct StateCommitter<L1, Db, Clock> {
+pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
     l1_adapter: L1,
-    storage: Db,
+    storage: Storage,
     clock: Clock,
-    bundler: NonCompressingGasOptimizingBundler<L1>,
-    bundle_config: BundleGenerationConfig,
     component_created_at: DateTime<Utc>,
+    bundler_factory: BundlerFactory,
 }
 
-pub struct BundleGenerationConfig {
-    pub acceptable_amount_of_blocks: ValidatedRange<usize>,
-    pub accumulation_timeout: Duration,
-}
-
-impl<L1: Clone, Db, C: Clock> StateCommitter<L1, Db, C> {
-    pub fn new(l1: L1, storage: Db, clock: C, bundle_config: BundleGenerationConfig) -> Self {
+impl<L1, Storage, C, BF> StateCommitter<L1, Storage, C, BF>
+where
+    C: Clock,
+{
+    pub fn new(l1_adapter: L1, storage: Storage, clock: C, bundler_factory: BF) -> Self {
         let now = clock.now();
-        let bundler = NonCompressingGasOptimizingBundler::new(
-            l1.clone(),
-            bundle_config.acceptable_amount_of_blocks.clone(),
-        );
+
         Self {
-            l1_adapter: l1,
+            l1_adapter,
             storage,
             clock,
-            bundle_config,
             component_created_at: now,
-            bundler,
+            bundler_factory,
         }
     }
 }
 
-impl<L1, Db, C> StateCommitter<L1, Db, C>
+impl<L1, Db, C, BF> StateCommitter<L1, Db, C, BF>
 where
     L1: ports::l1::Api,
     Db: Storage,
     C: Clock,
+    BF: BundlerFactory<L1, Db>,
 {
     async fn submit_state(&self, fragment: BundleFragment) -> Result<()> {
         eprintln!("submitting state: {:?}", fragment);
@@ -180,11 +246,12 @@ where
 }
 
 #[async_trait]
-impl<L1, Db, C> Runner for StateCommitter<L1, Db, C>
+impl<L1, Db, C, BF> Runner for StateCommitter<L1, Db, C, BF>
 where
-    L1: ports::l1::Api + Send + Sync,
-    Db: Storage,
+    L1: ports::l1::Api + Send + Sync + Clone,
+    Db: Storage + Clone,
     C: Send + Sync + Clock,
+    BF: BundlerFactory<L1, Db, Bundler: Send> + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         eprintln!("running committer");
@@ -198,51 +265,28 @@ where
             fragment
         } else {
             eprintln!("no fragment found");
-            let max_blocks = self
-                .bundle_config
-                .acceptable_amount_of_blocks
-                .inner()
-                .clone()
-                .max()
-                .unwrap_or(0);
+            let mut bundler = self
+                .bundler_factory
+                .build(self.storage.clone(), self.l1_adapter.clone());
 
-            let blocks: Vec<_> = self
-                .storage
-                .stream_unbundled_blocks()
-                .take(max_blocks)
-                .try_collect()
-                .await?;
-
-            if blocks.is_empty() {
-                eprintln!("no blocks found");
-                return Ok(());
-            }
-
-            if !self
-                .bundle_config
-                .acceptable_amount_of_blocks
-                .contains(blocks.len())
-            {
-                eprintln!("not enough blocks found");
-                return Ok(());
-            }
-
-            let Bundle {
+            if let Some(Bundle {
                 fragments,
                 block_heights,
-            } = self
-                .bundler
-                .form_bundle(blocks.try_into().expect("cannot be empty"))
-                .await?;
-
-            // TODO: segfault, change unwraps to ? wherever possible
-            self.storage
-                .insert_bundle_and_fragments(block_heights, fragments.fragments)
-                .await?
-                .into_inner()
-                .into_iter()
-                .next()
-                .expect("must have at least one element due to the usage of NonEmptyVec")
+                optimal,
+            }) = bundler.propose_bundle().await?
+            {
+                // TODO: segfault, change unwraps to ? wherever possible
+                self.storage
+                    .insert_bundle_and_fragments(block_heights, fragments.fragments)
+                    .await?
+                    .into_inner()
+                    .into_iter()
+                    .next()
+                    .expect("must have at least one element due to the usage of NonEmptyVec")
+            } else {
+                eprintln!("no bundle found");
+                return Ok(());
+            }
         };
 
         self.submit_state(fragment).await?;
@@ -332,15 +376,14 @@ mod tests {
                 .return_once(move |_| Ok(fragment_tx_ids[1]))
                 .in_sequence(&mut sequence);
 
-            let bundle_config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
+            let bundler_factory =
+                NonCompressingGasOptimizingBundlerFactory::new((1..2).try_into().unwrap());
+
             StateCommitter::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 TestClock::default(),
-                bundle_config,
+                bundler_factory,
             )
         };
 
@@ -396,15 +439,11 @@ mod tests {
                     .return_once(move |_| Ok(tx));
             }
 
-            let bundle_config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
             StateCommitter::new(
                 Arc::new(l1_mock),
                 setup.db(),
                 TestClock::default(),
-                bundle_config,
+                NonCompressingGasOptimizingBundlerFactory::new((1..2).try_into().unwrap()),
             )
         };
 
@@ -434,11 +473,12 @@ mod tests {
 
         let mut sut = {
             let l1_mock = ports::l1::MockApi::new();
-            let config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
-            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                NonCompressingGasOptimizingBundlerFactory::new((2..3).try_into().unwrap()),
+            )
         };
 
         // when
@@ -459,10 +499,6 @@ mod tests {
 
         let mut sut = {
             let mut l1_mock = ports::l1::MockApi::new();
-            let config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
             l1_mock
                 .expect_split_into_submittable_fragments()
                 .once()
@@ -477,7 +513,12 @@ mod tests {
                 .expect_submit_l2_state()
                 .once()
                 .return_once(|_| Ok([1; 32]));
-            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                NonCompressingGasOptimizingBundlerFactory::new((1..2).try_into().unwrap()),
+            )
         };
         // bundles and sends the first block
         sut.run().await.unwrap();
@@ -541,11 +582,12 @@ mod tests {
                 .once()
                 .return_once(|_| Ok([1; 32]));
 
-            let config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
-            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                NonCompressingGasOptimizingBundlerFactory::new((2..3).try_into().unwrap()),
+            )
         };
 
         // when
@@ -608,11 +650,12 @@ mod tests {
                 .once()
                 .return_once(|_| Ok([1; 32]));
 
-            let config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
-            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                NonCompressingGasOptimizingBundlerFactory::new((2..3).try_into().unwrap()),
+            )
         };
 
         // when
@@ -705,11 +748,12 @@ mod tests {
                 .return_once(move |_| Ok(bundle_2_tx))
                 .in_sequence(&mut sequence);
 
-            let config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
-            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                NonCompressingGasOptimizingBundlerFactory::new((1..2).try_into().unwrap()),
+            )
         };
 
         // bundles and sends the first block
@@ -733,16 +777,11 @@ mod tests {
         //given
         let setup = test_utils::Setup::init().await;
 
-        let config = BundleGenerationConfig {
-            acceptable_amount_of_blocks: (0..1).try_into().unwrap(),
-            accumulation_timeout: Duration::from_secs(1),
-        };
-
         let mut sut = StateCommitter::new(
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             TestClock::default(),
-            config,
+            NonCompressingGasOptimizingBundlerFactory::new((0..1).try_into().unwrap()),
         );
 
         // when
@@ -849,11 +888,12 @@ mod tests {
                 .return_once(move |_| Ok([0; 32]))
                 .in_sequence(&mut sequence);
 
-            let config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (2..5).try_into().unwrap(),
-                accumulation_timeout: Duration::from_secs(1),
-            };
-            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                NonCompressingGasOptimizingBundlerFactory::new((2..5).try_into().unwrap()),
+            )
         };
 
         // when
