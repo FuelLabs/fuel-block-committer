@@ -83,10 +83,10 @@ pub(crate) mod test_utils {
 
     pub mod mocks {
         pub mod l1 {
-            use mockall::predicate::eq;
+            use mockall::{predicate::eq, Sequence};
             use ports::{
                 l1::SubmittableFragments,
-                types::{L1Height, TransactionResponse},
+                types::{L1Height, NonEmptyVec, TransactionResponse},
             };
 
             pub enum TxStatus {
@@ -94,13 +94,35 @@ pub(crate) mod test_utils {
                 Failure,
             }
 
+            pub fn expects_state_submissions(
+                expectations: impl IntoIterator<Item = (NonEmptyVec<u8>, [u8; 32])>,
+            ) -> ports::l1::MockApi {
+                let mut sequence = Sequence::new();
+
+                let mut l1_mock = ports::l1::MockApi::new();
+                for (fragment, tx_id) in expectations {
+                    l1_mock
+                        .expect_submit_l2_state()
+                        .with(eq(fragment))
+                        .once()
+                        .return_once(move |_| Ok(tx_id))
+                        .in_sequence(&mut sequence);
+                }
+
+                l1_mock
+            }
+
             pub fn will_split_bundle_into_fragments(
-                l1: &mut ports::l1::MockApi,
                 fragments: SubmittableFragments,
-            ) {
-                l1.expect_split_into_submittable_fragments()
+            ) -> ports::l1::MockApi {
+                let mut l1_mock = ports::l1::MockApi::new();
+
+                l1_mock
+                    .expect_split_into_submittable_fragments()
                     .once()
                     .return_once(move |_| Ok(fragments));
+
+                l1_mock
             }
 
             pub fn txs_finished(
