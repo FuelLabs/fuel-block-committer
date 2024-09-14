@@ -159,14 +159,14 @@ where
             let min_height = heights.iter().min().unwrap();
             let max_height = heights.iter().max().unwrap();
 
-            let chunks = self
+            let submittable_chunks = self
                 .l1_adapter
-                .split_into_submittable_state_chunks(&merged_data)?;
+                .split_into_submittable_fragments(&merged_data)?;
 
             let block_range = (*min_height..*max_height + 1).try_into().unwrap();
 
             self.storage
-                .insert_bundle_and_fragments(block_range, chunks.clone())
+                .insert_bundle_and_fragments(block_range, submittable_chunks.fragments)
                 .await?
                 .into_inner()
                 .into_iter()
@@ -196,7 +196,7 @@ mod tests {
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
     use mockall::{predicate::eq, Sequence};
-    use ports::{non_empty_vec, types::NonEmptyVec};
+    use ports::{l1::SubmittableFragments, non_empty_vec, types::NonEmptyVec};
 
     use crate::{
         test_utils::{self, mocks::l1::TxStatus, Blocks},
@@ -228,27 +228,33 @@ mod tests {
         let mut sut = {
             let mut l1_mock = ports::l1::MockApi::new();
 
-            let fragments = [random_data(100), random_data(100)];
+            let fragment_0 = random_data(100);
+            let fragment_1 = random_data(100);
 
             {
-                let fragments = fragments.clone();
+                let fragments = non_empty_vec![fragment_0.clone(), fragment_1.clone()];
                 l1_mock
-                    .expect_split_into_submittable_state_chunks()
+                    .expect_split_into_submittable_fragments()
                     .once()
-                    .return_once(move |_| Ok(fragments.to_vec().try_into().unwrap()));
+                    .return_once(move |_| {
+                        Ok(SubmittableFragments {
+                            fragments,
+                            gas_per_byte: 1,
+                        })
+                    });
             }
 
             let mut sequence = Sequence::new();
             l1_mock
                 .expect_submit_l2_state()
-                .with(eq(fragments[0].clone()))
+                .with(eq(fragment_0))
                 .once()
                 .return_once(move |_| Ok(fragment_tx_ids[0]))
                 .in_sequence(&mut sequence);
 
             l1_mock
                 .expect_submit_l2_state()
-                .with(eq(fragments[1].clone()))
+                .with(eq(fragment_1))
                 .once()
                 .return_once(move |_| Ok(fragment_tx_ids[1]))
                 .in_sequence(&mut sequence);
@@ -287,20 +293,27 @@ mod tests {
 
         let mut sut = {
             let mut l1_mock = ports::l1::MockApi::new();
-            let fragments = [random_data(100), random_data(100)];
+            let fragment_0 = random_data(100);
+            let fragment_1 = random_data(100);
             {
-                let fragments = fragments.clone();
+                let fragments = non_empty_vec![fragment_0.clone(), fragment_1];
+
                 l1_mock
-                    .expect_split_into_submittable_state_chunks()
+                    .expect_split_into_submittable_fragments()
                     .once()
-                    .return_once(move |_| Ok(fragments.to_vec().try_into().unwrap()));
+                    .return_once(move |_| {
+                        Ok(SubmittableFragments {
+                            fragments,
+                            gas_per_byte: 1,
+                        })
+                    });
             }
 
             let retry_tx = [1; 32];
             for tx in [original_tx, retry_tx] {
                 l1_mock
                     .expect_submit_l2_state()
-                    .with(eq(fragments[0].clone()))
+                    .with(eq(fragment_0.clone()))
                     .once()
                     .return_once(move |_| Ok(tx));
             }
@@ -368,9 +381,14 @@ mod tests {
                 accumulation_timeout: Duration::from_secs(1),
             };
             l1_mock
-                .expect_split_into_submittable_state_chunks()
+                .expect_split_into_submittable_fragments()
                 .once()
-                .return_once(|_| Ok(non_empty_vec!(non_empty_vec!(0))));
+                .return_once(|_| {
+                    Ok(SubmittableFragments {
+                        fragments: non_empty_vec!(random_data(100)),
+                        gas_per_byte: 1,
+                    })
+                });
 
             l1_mock
                 .expect_submit_l2_state()
@@ -390,7 +408,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bundles_minimum_if_no_more_blocks_available() -> Result<()> {
+    async fn bundles_minimum_acceptable_if_no_more_blocks_available() -> Result<()> {
         //given
         let setup = test_utils::Setup::init().await;
 
@@ -423,10 +441,15 @@ mod tests {
             {
                 let fragment = fragment.clone();
                 l1_mock
-                    .expect_split_into_submittable_state_chunks()
+                    .expect_split_into_submittable_fragments()
                     .withf(move |data| data.inner() == &two_block_bundle)
                     .once()
-                    .return_once(|_| Ok(non_empty_vec![fragment]));
+                    .return_once(|_| {
+                        Ok(SubmittableFragments {
+                            fragments: non_empty_vec![fragment],
+                            gas_per_byte: 1,
+                        })
+                    });
             }
 
             l1_mock
@@ -485,10 +508,15 @@ mod tests {
             {
                 let fragment = fragment.clone();
                 l1_mock
-                    .expect_split_into_submittable_state_chunks()
+                    .expect_split_into_submittable_fragments()
                     .withf(move |data| data.inner() == &two_block_bundle)
                     .once()
-                    .return_once(|_| Ok(non_empty_vec![fragment]));
+                    .return_once(|_| {
+                        Ok(SubmittableFragments {
+                            fragments: non_empty_vec![fragment],
+                            gas_per_byte: 1,
+                        })
+                    });
             }
             l1_mock
                 .expect_submit_l2_state()
@@ -541,15 +569,20 @@ mod tests {
 
             let fragment = random_data(100);
             {
-                let fragment = fragment.clone();
+                let fragments = non_empty_vec![fragment.clone()];
                 l1_mock
-                    .expect_split_into_submittable_state_chunks()
+                    .expect_split_into_submittable_fragments()
                     .withf(move |data| {
                         println!("data #1: {:?}", data);
                         data.inner() == bundle_1.inner()
                     })
                     .once()
-                    .return_once(|_| Ok(non_empty_vec![fragment]))
+                    .return_once(|_| {
+                        Ok(SubmittableFragments {
+                            fragments,
+                            gas_per_byte: 1,
+                        })
+                    })
                     .in_sequence(&mut sequence);
             }
             l1_mock
@@ -565,15 +598,20 @@ mod tests {
 
             let fragment = random_data(100);
             {
-                let fragment = fragment.clone();
+                let fragments = non_empty_vec!(fragment.clone());
                 l1_mock
-                    .expect_split_into_submittable_state_chunks()
+                    .expect_split_into_submittable_fragments()
                     .withf(move |data| {
                         println!("data #2: {:?}", data);
                         data.inner() == bundle_2.inner()
                     })
                     .once()
-                    .return_once(|_| Ok(non_empty_vec![fragment]))
+                    .return_once(move |_| {
+                        Ok(SubmittableFragments {
+                            fragments,
+                            gas_per_byte: 1,
+                        })
+                    })
                     .in_sequence(&mut sequence);
             }
             l1_mock
@@ -607,7 +645,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handles_empty_range() -> Result<()> {
+    async fn can_be_disabled_by_giving_an_empty_acceptable_block_range() -> Result<()> {
         //given
         let setup = test_utils::Setup::init().await;
 
@@ -632,46 +670,6 @@ mod tests {
         Ok(())
     }
 
-    // #[tokio::test]
-    // async fn will_wait_for_more_data() -> Result<()> {
-    //     // given
-    //     let (block_1_state, block_1_state_fragment) = (
-    //         StateSubmission {
-    //             id: None,
-    //             block_hash: [0u8; 32],
-    //             block_height: 1,
-    //         },
-    //         StateFragment {
-    //             id: None,
-    //             submission_id: None,
-    //             fragment_idx: 0,
-    //             data: vec![0; 127_000],
-    //             created_at: ports::types::Utc::now(),
-    //         },
-    //     );
-    //     let l1_mock = MockL1::new();
-    //
-    //     let process = PostgresProcess::shared().await.unwrap();
-    //     let db = process.create_random_db().await?;
-    //     db.insert_state_submission(block_1_state, vec![block_1_state_fragment])
-    //         .await?;
-    //
-    //     let mut committer = StateCommitter::new(
-    //         l1_mock,
-    //         db.clone(),
-    //         TestClock::default(),
-    //         Duration::from_secs(1),
-    //     );
-    //
-    //     // when
-    //     committer.run().await.unwrap();
-    //
-    //     // then
-    //     assert!(!db.has_pending_txs().await?);
-    //
-    //     Ok(())
-    // }
-    //
     // #[tokio::test]
     // async fn triggers_when_enough_data_is_made_available() -> Result<()> {
     //     // given

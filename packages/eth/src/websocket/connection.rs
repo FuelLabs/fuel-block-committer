@@ -65,10 +65,10 @@ pub struct WsConnection {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    fn split_into_submittable_state_chunks(
+    fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
+    ) -> Result<ports::l1::SubmittableFragments> {
         todo!()
     }
 

@@ -1,5 +1,3 @@
-#![deny(unused_crate_dependencies)]
-
 use std::{num::NonZeroU32, pin::Pin};
 
 use alloy::primitives::U256;
@@ -39,11 +37,11 @@ impl Contract for WebsocketClient {
 
 #[async_trait]
 impl Api for WebsocketClient {
-    fn split_into_submittable_state_chunks(
+    fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        self._split_into_submittable_state_chunks(data)
+    ) -> Result<ports::l1::SubmittableFragments> {
+        self._split_into_submittable_fragments(data)
     }
 
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {

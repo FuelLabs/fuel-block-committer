@@ -29,13 +29,19 @@ pub trait Contract: Send + Sync {
     fn commit_interval(&self) -> std::num::NonZeroU32;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmittableFragments {
+    pub fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    pub gas_per_byte: u128,
+}
+
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 #[async_trait::async_trait]
 pub trait Api {
-    fn split_into_submittable_state_chunks(
+    fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
+    ) -> Result<SubmittableFragments>;
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;

@@ -85,11 +85,11 @@ impl WebsocketClient {
         Ok(self.inner.submit_l2_state(tx).await?)
     }
 
-    pub(crate) fn _split_into_submittable_state_chunks(
+    pub(crate) fn _split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        Ok(self.inner.split_into_submittable_state_chunks(data)?)
+    ) -> Result<ports::l1::SubmittableFragments> {
+        Ok(self.inner.split_into_submittable_fragments(data)?)
     }
 
     #[cfg(feature = "test-helpers")]

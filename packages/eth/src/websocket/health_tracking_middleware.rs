@@ -14,10 +14,10 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    fn split_into_submittable_state_chunks(
+    fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
+    ) -> Result<ports::l1::SubmittableFragments>;
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
@@ -80,11 +80,11 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
-    fn split_into_submittable_state_chunks(
+    fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        let response = self.adapter.split_into_submittable_state_chunks(data);
+    ) -> Result<ports::l1::SubmittableFragments> {
+        let response = self.adapter.split_into_submittable_fragments(data);
         self.note_network_status(&response);
         response
     }
