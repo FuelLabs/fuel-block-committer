@@ -42,6 +42,10 @@ where
     Db: Storage,
     C: Clock,
 {
+    async fn form_bundle(&self) -> Result<Vec<ports::storage::FuelBlock>> {
+        todo!()
+    }
+
     async fn submit_state(&self, fragment: BundleFragment) -> Result<()> {
         eprintln!("submitting state: {:?}", fragment);
         let tx = self.l1_adapter.submit_l2_state(fragment.data).await?;
@@ -192,132 +196,21 @@ mod tests {
             .init();
     }
 
-    use std::{
-        num::NonZeroUsize,
-        sync::{Arc, RwLock},
-    };
-
     use clock::TestClock;
-    use fuel_crypto::{Message, SecretKey, Signature};
+    use fuel_crypto::SecretKey;
     use itertools::Itertools;
-    use mockall::{
-        predicate::{self, eq},
-        Sequence,
-    };
-    use ports::{
-        fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
-        l1::Api,
-        non_empty_vec,
-        types::{
-            L1Height, NonEmptyVec, StateSubmission, TransactionResponse, TransactionState, U256,
-        },
-    };
-    use setup::{mocks::l1::TxStatus, Blocks};
-    use storage::PostgresProcess;
-    use tokio::sync::Mutex;
-    use validator::BlockValidator;
+    use mockall::{predicate::eq, Sequence};
+    use ports::{non_empty_vec, types::NonEmptyVec};
 
-    use crate::{StateImporter, StateListener};
+    use crate::{
+        test_utils::{self, mocks::l1::TxStatus, Blocks},
+        StateListener,
+    };
 
     use super::*;
 
-    // #[tokio::test]
-    // async fn does_nothing_if_there_are_pending_transactions() -> Result<()> {
-    //     //given
-    //     let l1_mock = MockL1::new();
-    //
-    //     let process = PostgresProcess::shared().await.unwrap();
-    //     let db = process.create_random_db().await?;
-    //
-    //     let block = FuelBlock {
-    //         hash: [1; 32],
-    //         height: 0,
-    //         data: random_data(100.try_into().unwrap()),
-    //     };
-    //     db.insert_block(block.clone()).await?;
-    //
-    //     let range = (block.height..block.height + 1).try_into().unwrap();
-    //
-    //     db.insert_bundle_and_fragments(range, vec![block.data.clone()].try_into().unwrap())
-    //         .await?;
-    //
-    //     let config = BundleGenerationConfig {
-    //         acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
-    //         accumulation_timeout: Duration::from_secs(1),
-    //     };
-    //
-    //     db.record_pending_tx([0; 32], 1.into()).await?;
-    //
-    //     let pending_txs = db.get_pending_txs().await?;
-    //     dbg!(&pending_txs);
-    //     let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
-    //
-    //     // when
-    //     committer.run().await.unwrap();
-    //
-    //     // then
-    //     // mock didn't fail due to unexpected calls
-    //     Ok(())
-    // }
-    //
-    // // TODO: segfault add .once() to all tests since mocks dont fail by default if their
-    // // expectations were not exercised, only if they were exercised incorrectly
-    // #[tokio::test]
-    // async fn fragments_available_block_and_sends_first_fragment() -> Result<()> {
-    //     //given
-    //     let block = ports::storage::FuelBlock {
-    //         hash: [1; 32],
-    //         height: 0,
-    //         data: random_data(100.try_into().unwrap()),
-    //     };
-    //
-    //     let l1_mock = MockL1::new();
-    //
-    //     let fragments: NonEmptyVec<NonEmptyVec<u8>> = vec![block.data.clone()].try_into().unwrap();
-    //     {
-    //         let fragments = fragments.clone();
-    //         l1_mock
-    //             .api
-    //             .lock()
-    //             .await
-    //             .expect_split_into_submittable_state_chunks()
-    //             .once()
-    //             .with(eq(block.data.clone()))
-    //             .return_once(move |_| Ok(fragments));
-    //     }
-    //
-    //     l1_mock
-    //         .api
-    //         .lock()
-    //         .await
-    //         .expect_submit_l2_state()
-    //         .once()
-    //         .with(eq(fragments.inner()[0].clone()))
-    //         .return_once(|_| Ok([1; 32]));
-    //
-    //     let process = PostgresProcess::shared().await.unwrap();
-    //     let db = process.create_random_db().await?;
-    //     db.insert_block(block.clone()).await?;
-    //
-    //     let config = BundleGenerationConfig {
-    //         acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
-    //         accumulation_timeout: Duration::from_secs(1),
-    //     };
-    //
-    //     let mut committer = StateCommitter::new(l1_mock, db.clone(), TestClock::default(), config);
-    //
-    //     // when
-    //     committer.run().await.unwrap();
-    //
-    //     // then
-    //     // mocks will validate the fragment was submitted
-    //     let pending = db.get_pending_txs().await?;
-    //     assert_eq!(pending.len(), 1);
-    //     assert_eq!(pending[0].hash, [1; 32]);
-    //
-    //     Ok(())
-    // }
-    //
+    // TODO: segfault add .once() to all tests since mocks dont fail by default if their
+    // expectations were not exercised, only if they were exercised incorrectly
     fn random_data(size: usize) -> NonEmptyVec<u8> {
         if size == 0 {
             panic!("random data size must be greater than 0");
@@ -329,247 +222,16 @@ mod tests {
         data.try_into().expect("is not empty due to check")
     }
 
-    pub mod setup {
-        use std::{ops::Range, sync::Arc};
-
-        use clock::TestClock;
-        use fuel_crypto::SecretKey;
-        use mocks::l1::TxStatus;
-        use storage::PostgresProcess;
-        use validator::BlockValidator;
-
-        use crate::{StateImporter, StateListener};
-
-        use super::Runner;
-
-        pub mod mocks {
-            pub mod l1 {
-                use mockall::predicate::eq;
-                use ports::types::{L1Height, TransactionResponse};
-
-                pub enum TxStatus {
-                    Success,
-                    Failure,
-                }
-
-                pub fn txs_finished(
-                    statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
-                ) -> ports::l1::MockApi {
-                    let mut l1_mock = ports::l1::MockApi::new();
-
-                    let height = L1Height::from(0);
-                    l1_mock
-                        .expect_get_block_number()
-                        .returning(move || Ok(height));
-
-                    for expectation in statuses {
-                        let (tx_id, status) = expectation;
-
-                        l1_mock
-                            .expect_get_transaction_response()
-                            .with(eq(tx_id))
-                            .return_once(move |_| {
-                                Ok(Some(TransactionResponse::new(
-                                    height.into(),
-                                    matches!(status, TxStatus::Success),
-                                )))
-                            });
-                    }
-                    l1_mock
-                }
-            }
-
-            pub mod fuel {
-
-                use std::ops::Range;
-
-                use fuel_crypto::{Message, SecretKey, Signature};
-                use futures::{stream, StreamExt};
-                use itertools::Itertools;
-                use ports::fuel::{
-                    FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus,
-                };
-
-                pub fn generate_block(
-                    height: u32,
-                    secret_key: &SecretKey,
-                ) -> ports::fuel::FuelBlock {
-                    let header = given_header(height);
-
-                    let mut hasher = fuel_crypto::Hasher::default();
-                    hasher.input(header.prev_root.as_ref());
-                    hasher.input(header.height.to_be_bytes());
-                    hasher.input(header.time.0.to_be_bytes());
-                    hasher.input(header.application_hash.as_ref());
-
-                    let id = FuelBlockId::from(hasher.digest());
-                    let id_message = Message::from_bytes(*id);
-                    let signature = Signature::sign(secret_key, &id_message);
-
-                    FuelBlock {
-                        id,
-                        header,
-                        consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
-                        transactions: vec![[2u8; 32].into()],
-                        block_producer: Some(secret_key.public_key()),
-                    }
-                }
-
-                fn given_header(height: u32) -> FuelHeader {
-                    let application_hash =
-                        "0x8b96f712e293e801d53da77113fec3676c01669c6ea05c6c92a5889fce5f649d"
-                            .parse()
-                            .unwrap();
-
-                    ports::fuel::FuelHeader {
-                        id: Default::default(),
-                        da_height: Default::default(),
-                        consensus_parameters_version: Default::default(),
-                        state_transition_bytecode_version: Default::default(),
-                        transactions_count: 1,
-                        message_receipt_count: Default::default(),
-                        transactions_root: Default::default(),
-                        message_outbox_root: Default::default(),
-                        event_inbox_root: Default::default(),
-                        height,
-                        prev_root: Default::default(),
-                        time: tai64::Tai64(0),
-                        application_hash,
-                    }
-                }
-
-                pub fn blocks_exists(
-                    secret_key: SecretKey,
-                    heights: Range<u32>,
-                ) -> ports::fuel::MockApi {
-                    let blocks = heights
-                        .map(|height| generate_block(height, &secret_key))
-                        .collect::<Vec<_>>();
-
-                    these_blocks_exist(blocks)
-                }
-
-                pub fn these_blocks_exist(
-                    blocks: impl IntoIterator<Item = ports::fuel::FuelBlock>,
-                ) -> ports::fuel::MockApi {
-                    let mut fuel_mock = ports::fuel::MockApi::default();
-
-                    let blocks = blocks
-                        .into_iter()
-                        .sorted_by_key(|b| b.header.height)
-                        .collect::<Vec<_>>();
-
-                    let latest_block = blocks.last().expect("Must have at least one block").clone();
-
-                    fuel_mock
-                        .expect_latest_block()
-                        .return_once(|| Ok(latest_block));
-
-                    fuel_mock
-                        .expect_blocks_in_height_range()
-                        .returning(move |arg| {
-                            let blocks = blocks
-                                .iter()
-                                .filter(move |b| arg.contains(&b.header.height))
-                                .cloned()
-                                .map(Ok)
-                                .collect_vec();
-                            stream::iter(blocks).boxed()
-                        });
-
-                    fuel_mock
-                }
-            }
-        }
-
-        pub struct Setup {
-            _db_process: Arc<PostgresProcess>,
-            db: storage::Postgres,
-        }
-
-        impl Setup {
-            pub async fn init() -> Self {
-                let db_process = PostgresProcess::shared().await.unwrap();
-                let db = db_process.create_random_db().await.unwrap();
-                Self {
-                    _db_process: db_process,
-                    db,
-                }
-            }
-
-            pub fn db(&self) -> storage::Postgres {
-                self.db.clone()
-            }
-
-            pub async fn import_blocks(&self, blocks: Blocks) {
-                self.importer_of_blocks(blocks).run().await.unwrap()
-            }
-
-            pub async fn report_txs_finished(
-                &self,
-                statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
-            ) {
-                let l1_mock = mocks::l1::txs_finished(statuses);
-
-                StateListener::new(l1_mock, self.db(), 0, TestClock::default())
-                    .run()
-                    .await
-                    .unwrap()
-            }
-
-            pub fn importer_of_blocks(
-                &self,
-                blocks: Blocks,
-            ) -> StateImporter<storage::Postgres, ports::fuel::MockApi, BlockValidator>
-            {
-                let amount = blocks.len();
-
-                match blocks {
-                    Blocks::WithHeights(range) => {
-                        let secret_key = SecretKey::random(&mut rand::thread_rng());
-
-                        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-                        let mock = mocks::fuel::blocks_exists(secret_key, range);
-
-                        StateImporter::new(self.db(), mock, block_validator, amount as u32)
-                    }
-                    Blocks::Blocks { blocks, secret_key } => {
-                        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-                        let mock = mocks::fuel::these_blocks_exist(blocks);
-
-                        StateImporter::new(self.db(), mock, block_validator, amount as u32)
-                    }
-                }
-            }
-        }
-
-        pub enum Blocks {
-            WithHeights(Range<u32>),
-            Blocks {
-                blocks: Vec<ports::fuel::FuelBlock>,
-                secret_key: SecretKey,
-            },
-        }
-
-        impl Blocks {
-            pub fn len(&self) -> usize {
-                match self {
-                    Self::WithHeights(range) => range.len(),
-                    Self::Blocks { blocks, .. } => blocks.len(),
-                }
-            }
-        }
-    }
-
     #[tokio::test]
     async fn sends_fragments_in_order() -> Result<()> {
         //given
-        let setup = setup::Setup::init().await;
+        let setup = test_utils::Setup::init().await;
 
         let fragment_tx_ids = [[0; 32], [1; 32]];
 
         let mut tx_listener = {
-            let l1_mock = setup::mocks::l1::txs_finished([(fragment_tx_ids[0], TxStatus::Success)]);
+            let l1_mock =
+                test_utils::mocks::l1::txs_finished([(fragment_tx_ids[0], TxStatus::Success)]);
 
             StateListener::new(l1_mock, setup.db(), 0, TestClock::default())
         };
@@ -627,7 +289,7 @@ mod tests {
     #[tokio::test]
     async fn repeats_failed_fragments() -> Result<()> {
         //given
-        let setup = setup::Setup::init().await;
+        let setup = test_utils::Setup::init().await;
 
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
@@ -681,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn does_nothing_if_not_enough_blocks() -> Result<()> {
         //given
-        let setup = setup::Setup::init().await;
+        let setup = test_utils::Setup::init().await;
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
         let mut sut = {
@@ -703,13 +365,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn does_nothing_if_there_are_pending_transactions() -> Result<()> {
+        //given
+        let setup = test_utils::Setup::init().await;
+
+        setup.import_blocks(Blocks::WithHeights(0..2)).await;
+
+        let mut sut = {
+            let mut l1_mock = ports::l1::MockApi::new();
+            let config = BundleGenerationConfig {
+                acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
+                accumulation_timeout: Duration::from_secs(1),
+            };
+            l1_mock
+                .expect_split_into_submittable_state_chunks()
+                .once()
+                .return_once(|_| Ok(non_empty_vec!(non_empty_vec!(0))));
+
+            l1_mock
+                .expect_submit_l2_state()
+                .once()
+                .return_once(|_| Ok([1; 32]));
+            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), config)
+        };
+        // bundles and sends the first block
+        sut.run().await.unwrap();
+
+        // when
+        sut.run().await.unwrap();
+
+        // then
+        // mocks didn't catch any additional calls
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn bundles_minimum_if_no_more_blocks_available() -> Result<()> {
         //given
-        let setup = setup::Setup::init().await;
+        let setup = test_utils::Setup::init().await;
 
         let secret_key = SecretKey::random(&mut rand::thread_rng());
         let blocks = (0..2)
-            .map(|height| setup::mocks::fuel::generate_block(height, &secret_key))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
             .collect_vec();
 
         setup
@@ -767,10 +464,10 @@ mod tests {
     #[tokio::test]
     async fn doesnt_bundle_more_than_maximum_blocks() -> Result<()> {
         //given
-        let setup = setup::Setup::init().await;
+        let setup = test_utils::Setup::init().await;
         let secret_key = SecretKey::random(&mut rand::thread_rng());
         let blocks = (0..3)
-            .map(|height| setup::mocks::fuel::generate_block(height, &secret_key))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
             .collect_vec();
 
         setup
@@ -828,11 +525,11 @@ mod tests {
     #[tokio::test]
     async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
         //given
-        let setup = setup::Setup::init().await;
+        let setup = test_utils::Setup::init().await;
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let blocks = (0..=1)
-            .map(|height| setup::mocks::fuel::generate_block(height, &secret_key))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
             .collect_vec();
 
         setup
@@ -922,7 +619,7 @@ mod tests {
     #[tokio::test]
     async fn handles_empty_range() -> Result<()> {
         //given
-        let setup = setup::Setup::init().await;
+        let setup = test_utils::Setup::init().await;
 
         let config = BundleGenerationConfig {
             acceptable_amount_of_blocks: (0..1).try_into().unwrap(),

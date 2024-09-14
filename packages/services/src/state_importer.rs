@@ -1,13 +1,8 @@
-use std::{
-    cmp::max,
-    collections::BTreeSet,
-    ops::{Range, RangeInclusive},
-};
+use std::cmp::max;
 
 use async_trait::async_trait;
 use futures::{stream, StreamExt, TryStreamExt};
-use itertools::Itertools;
-use ports::{fuel::FuelBlock, storage::Storage, types::StateSubmission};
+use ports::{fuel::FuelBlock, storage::Storage};
 use tracing::info;
 use validator::Validator;
 
