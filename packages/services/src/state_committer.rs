@@ -596,23 +596,24 @@ mod tests {
                 .try_collect()
                 .unwrap();
 
-            let two_block_bundle = encoded_blocks
-                .into_iter()
-                .flat_map(|b| b.data.into_inner())
-                .collect::<Vec<_>>();
-
             {
-                let fragment = fragment.clone();
-                l1_mock
-                    .expect_split_into_submittable_fragments()
-                    .withf(move |data| data.inner() == &two_block_bundle)
-                    .once()
-                    .return_once(|_| {
-                        Ok(SubmittableFragments {
-                            fragments: non_empty_vec![fragment],
+                let two_block_bundle: NonEmptyVec<u8> = encoded_blocks
+                    .into_iter()
+                    .flat_map(|b| b.data.into_inner())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap();
+
+                test_utils::mocks::l1::will_split_bundles_into_fragments(
+                    &mut l1_mock,
+                    [(
+                        two_block_bundle,
+                        SubmittableFragments {
+                            fragments: non_empty_vec![fragment.clone()],
                             gas_estimation: 1,
-                        })
-                    });
+                        },
+                    )],
+                )
             }
             let factory = GasOptimizingBundlerFactory::new(
                 Arc::new(l1_mock),
@@ -667,26 +668,27 @@ mod tests {
                 .try_collect()
                 .unwrap();
 
-            let two_block_bundle = encoded_blocks
+            let two_block_bundle: NonEmptyVec<u8> = encoded_blocks
                 .into_iter()
                 .take(2)
                 .flat_map(|b| b.data.into_inner())
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
 
             let fragment = random_data(100);
-            {
-                let fragment = fragment.clone();
-                l1_mock
-                    .expect_split_into_submittable_fragments()
-                    .withf(move |data| data.inner() == &two_block_bundle)
-                    .once()
-                    .return_once(|_| {
-                        Ok(SubmittableFragments {
-                            fragments: non_empty_vec![fragment],
-                            gas_estimation: 1,
-                        })
-                    });
-            }
+
+            test_utils::mocks::l1::will_split_bundles_into_fragments(
+                &mut l1_mock,
+                [(
+                    two_block_bundle.clone(),
+                    SubmittableFragments {
+                        fragments: non_empty_vec![fragment.clone()],
+                        gas_estimation: 1,
+                    },
+                )],
+            );
+
             let factory = GasOptimizingBundlerFactory::new(
                 Arc::new(l1_mock),
                 setup.db(),
@@ -736,45 +738,36 @@ mod tests {
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
         let mut sut = {
-            let mut sequence = Sequence::new();
             let mut l1_mock = ports::l1::MockApi::new();
-            let bundle_1_fragment = random_data(100);
-            {
-                let bundle_1 = ports::storage::FuelBlock::try_from(blocks[0].clone())
-                    .unwrap()
-                    .data;
-                let fragments = non_empty_vec![bundle_1_fragment.clone()];
-                l1_mock
-                    .expect_split_into_submittable_fragments()
-                    .withf(move |data| data.inner() == bundle_1.inner())
-                    .once()
-                    .return_once(|_| {
-                        Ok(SubmittableFragments {
-                            fragments,
-                            gas_estimation: 1,
-                        })
-                    })
-                    .in_sequence(&mut sequence);
-            }
 
+            let bundle_1 = ports::storage::FuelBlock::try_from(blocks[0].clone())
+                .unwrap()
+                .data;
+            let bundle_1_fragment = random_data(100);
+
+            let bundle_2 = ports::storage::FuelBlock::try_from(blocks[1].clone())
+                .unwrap()
+                .data;
             let bundle_2_fragment = random_data(100);
-            {
-                let bundle_2 = ports::storage::FuelBlock::try_from(blocks[1].clone())
-                    .unwrap()
-                    .data;
-                let fragments = non_empty_vec!(bundle_2_fragment.clone());
-                l1_mock
-                    .expect_split_into_submittable_fragments()
-                    .withf(move |data| data.inner() == bundle_2.inner())
-                    .once()
-                    .return_once(move |_| {
-                        Ok(SubmittableFragments {
-                            fragments,
+            test_utils::mocks::l1::will_split_bundles_into_fragments(
+                &mut l1_mock,
+                [
+                    (
+                        bundle_1,
+                        SubmittableFragments {
+                            fragments: non_empty_vec![bundle_1_fragment.clone()],
                             gas_estimation: 1,
-                        })
-                    })
-                    .in_sequence(&mut sequence);
-            }
+                        },
+                    ),
+                    (
+                        bundle_2,
+                        SubmittableFragments {
+                            fragments: non_empty_vec![bundle_2_fragment.clone()],
+                            gas_estimation: 1,
+                        },
+                    ),
+                ],
+            );
 
             let bundler_factory = GasOptimizingBundlerFactory::new(
                 Arc::new(l1_mock),
@@ -860,74 +853,74 @@ mod tests {
             .await;
 
         let mut sut = {
-            let first_bundle = (0..=1)
-                .flat_map(|i| {
-                    ports::storage::FuelBlock::try_from(blocks[i].clone())
+            let first_bundle: NonEmptyVec<u8> = blocks[0..=1]
+                .iter()
+                .flat_map(|block| {
+                    ports::storage::FuelBlock::try_from(block.clone())
                         .unwrap()
                         .data
                         .into_inner()
                 })
-                .collect::<Vec<_>>();
-            let second_bundle = (0..=2)
-                .flat_map(|i| {
-                    ports::storage::FuelBlock::try_from(blocks[i].clone())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+
+            let second_bundle: NonEmptyVec<u8> = blocks[0..=2]
+                .iter()
+                .flat_map(|block| {
+                    ports::storage::FuelBlock::try_from(block.clone())
                         .unwrap()
                         .data
                         .into_inner()
                 })
-                .collect::<Vec<_>>();
-            let third_bundle = (0..=3)
-                .flat_map(|i| {
-                    ports::storage::FuelBlock::try_from(blocks[i].clone())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+
+            let third_bundle: NonEmptyVec<u8> = blocks[0..=3]
+                .iter()
+                .flat_map(|block| {
+                    ports::storage::FuelBlock::try_from(block.clone())
                         .unwrap()
                         .data
                         .into_inner()
                 })
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
 
             let mut sequence = Sequence::new();
 
             let correct_fragment = random_data(100);
 
             let mut l1_mock = ports::l1::MockApi::new();
-            l1_mock
-                .expect_split_into_submittable_fragments()
-                .withf(move |data| data.inner() == &first_bundle)
-                .once()
-                .return_once(|_| {
-                    Ok(SubmittableFragments {
-                        fragments: non_empty_vec![random_data(100)],
-                        gas_estimation: 2,
-                    })
-                })
-                .in_sequence(&mut sequence);
 
-            {
-                let fragments = non_empty_vec![correct_fragment.clone()];
-                l1_mock
-                    .expect_split_into_submittable_fragments()
-                    .withf(move |data| data.inner() == &second_bundle)
-                    .once()
-                    .return_once(|_| {
-                        Ok(SubmittableFragments {
-                            fragments,
+            test_utils::mocks::l1::will_split_bundles_into_fragments(
+                &mut l1_mock,
+                [
+                    (
+                        first_bundle.clone(),
+                        SubmittableFragments {
+                            fragments: non_empty_vec![random_data(100)],
+                            gas_estimation: 2,
+                        },
+                    ),
+                    (
+                        second_bundle,
+                        SubmittableFragments {
+                            fragments: non_empty_vec![correct_fragment.clone()],
                             gas_estimation: 1,
-                        })
-                    })
-                    .in_sequence(&mut sequence);
-            }
-
-            l1_mock
-                .expect_split_into_submittable_fragments()
-                .withf(move |data| data.inner() == &third_bundle)
-                .once()
-                .return_once(|_| {
-                    Ok(SubmittableFragments {
-                        fragments: non_empty_vec![random_data(100)],
-                        gas_estimation: 3,
-                    })
-                })
-                .in_sequence(&mut sequence);
+                        },
+                    ),
+                    (
+                        third_bundle,
+                        SubmittableFragments {
+                            fragments: non_empty_vec![random_data(100)],
+                            gas_estimation: 3,
+                        },
+                    ),
+                ],
+            );
 
             let bundler_factory = GasOptimizingBundlerFactory::new(
                 Arc::new(l1_mock),
@@ -1082,19 +1075,17 @@ mod tests {
 
         let mut l1_mock = ports::l1::MockApi::new();
         let fragment_of_unoptimal_block = random_data(100);
-        {
-            let fragments = non_empty_vec![fragment_of_unoptimal_block.clone()];
-            l1_mock
-                .expect_split_into_submittable_fragments()
-                .with(eq(bundle_of_blocks_0_and_1))
-                .once()
-                .return_once(|_| {
-                    Ok(SubmittableFragments {
-                        fragments,
-                        gas_estimation: 100,
-                    })
-                });
-        }
+
+        test_utils::mocks::l1::will_split_bundles_into_fragments(
+            &mut l1_mock,
+            [(
+                bundle_of_blocks_0_and_1.clone(),
+                SubmittableFragments {
+                    fragments: non_empty_vec![fragment_of_unoptimal_block.clone()],
+                    gas_estimation: 100,
+                },
+            )],
+        );
 
         let mut sut = GasOptimizingBundler::new(l1_mock, blocks, (2..4).try_into().unwrap());
 

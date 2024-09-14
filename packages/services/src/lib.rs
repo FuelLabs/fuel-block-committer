@@ -124,6 +124,20 @@ pub(crate) mod test_utils {
 
                 l1_mock
             }
+            pub fn will_split_bundles_into_fragments(
+                l1_mock: &mut ports::l1::MockApi,
+                expectations: impl IntoIterator<Item = (NonEmptyVec<u8>, SubmittableFragments)>,
+            ) {
+                let mut sequence = Sequence::new();
+                for (bundle, fragments) in expectations {
+                    l1_mock
+                        .expect_split_into_submittable_fragments()
+                        .with(eq(bundle))
+                        .once()
+                        .return_once(move |_| Ok(fragments))
+                        .in_sequence(&mut sequence);
+                }
+            }
 
             pub fn txs_finished(
                 statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
