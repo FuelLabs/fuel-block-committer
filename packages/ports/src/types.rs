@@ -36,6 +36,10 @@ impl<T> TryFrom<Vec<T>> for NonEmptyVec<T> {
 }
 
 impl<T> NonEmptyVec<T> {
+    pub fn take_first(self) -> T {
+        self.vec.into_iter().next().expect("vec is not empty")
+    }
+
     pub fn into_inner(self) -> Vec<T> {
         self.vec
     }

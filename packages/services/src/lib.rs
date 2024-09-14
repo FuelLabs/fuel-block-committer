@@ -84,11 +84,23 @@ pub(crate) mod test_utils {
     pub mod mocks {
         pub mod l1 {
             use mockall::predicate::eq;
-            use ports::types::{L1Height, TransactionResponse};
+            use ports::{
+                l1::SubmittableFragments,
+                types::{L1Height, TransactionResponse},
+            };
 
             pub enum TxStatus {
                 Success,
                 Failure,
+            }
+
+            pub fn will_split_bundle_into_fragments(
+                l1: &mut ports::l1::MockApi,
+                fragments: SubmittableFragments,
+            ) {
+                l1.expect_split_into_submittable_fragments()
+                    .once()
+                    .return_once(move |_| Ok(fragments));
             }
 
             pub fn txs_finished(
@@ -149,6 +161,13 @@ pub(crate) mod test_utils {
                     transactions: vec![[2u8; 32].into()],
                     block_producer: Some(secret_key.public_key()),
                 }
+            }
+
+            pub fn generate_storage_block(
+                height: u32,
+                secret_key: &SecretKey,
+            ) -> ports::storage::FuelBlock {
+                generate_block(height, secret_key).try_into().unwrap()
             }
 
             fn given_header(height: u32) -> FuelHeader {
