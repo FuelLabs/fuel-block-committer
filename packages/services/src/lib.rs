@@ -247,7 +247,7 @@ pub(crate) mod test_utils {
         ) {
             let l1_mock = mocks::l1::txs_finished(statuses);
 
-            StateListener::new(l1_mock, self.db(), 0, TestClock::default())
+            StateListener::new(Arc::new(l1_mock), self.db(), 0, TestClock::default())
                 .run()
                 .await
                 .unwrap()

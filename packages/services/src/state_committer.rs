@@ -1,19 +1,88 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
+use itertools::Itertools;
 use ports::{
     clock::Clock,
+    l1::SubmittableFragments,
     storage::{BundleFragment, Storage, ValidatedRange},
-    types::{DateTime, Utc},
+    types::{DateTime, NonEmptyVec, Utc},
 };
 
 use crate::{Result, Runner};
+
+pub struct NonCompressingGasOptimizingBundler<L1> {
+    l1_adapter: L1,
+    acceptable_amount_of_blocks: ValidatedRange<usize>,
+}
+
+impl<L1> NonCompressingGasOptimizingBundler<L1> {
+    pub fn new(l1: L1, acceptable_amount_of_blocks: ValidatedRange<usize>) -> Self {
+        Self {
+            l1_adapter: l1,
+            acceptable_amount_of_blocks,
+        }
+    }
+}
+
+struct Bundle {
+    pub fragments: SubmittableFragments,
+    pub block_heights: ValidatedRange<u32>,
+}
+
+impl<L1: ports::l1::Api + Send + Sync> NonCompressingGasOptimizingBundler<L1> {
+    async fn form_bundle(&self, blocks: NonEmptyVec<ports::storage::FuelBlock>) -> Result<Bundle> {
+        let mut gas_usage_tracking = HashMap::new();
+        let blocks = blocks.into_inner();
+
+        for amount_of_blocks in self.acceptable_amount_of_blocks.inner().clone() {
+            eprintln!("trying amount of blocks: {}", amount_of_blocks);
+            let merged_data = blocks[..amount_of_blocks]
+                .iter()
+                .flat_map(|b| b.data.clone().into_inner())
+                .collect::<Vec<_>>();
+
+            let submittable_chunks = self.l1_adapter.split_into_submittable_fragments(
+                &merged_data.try_into().expect("cannot be empty"),
+            )?;
+            eprintln!(
+                "submittable chunks gas: {:?}",
+                submittable_chunks.gas_estimation
+            );
+
+            gas_usage_tracking.insert(amount_of_blocks, submittable_chunks);
+        }
+
+        let (amount_of_blocks, fragments) = gas_usage_tracking
+            .into_iter()
+            .min_by_key(|(_, chunks)| chunks.gas_estimation)
+            .unwrap();
+        eprintln!("chosen amount of blocks: {}", amount_of_blocks);
+        eprintln!("chosen gas usage: {:?}", fragments.gas_estimation);
+
+        let (min_height, max_height) = blocks.as_slice()[..amount_of_blocks]
+            .iter()
+            .map(|b| b.height)
+            .minmax()
+            .into_option()
+            .unwrap();
+        eprintln!("min height: {}, max height: {}", min_height, max_height);
+
+        let block_heights = (min_height..max_height + 1).try_into().unwrap();
+
+        Ok(Bundle {
+            fragments,
+            block_heights,
+        })
+    }
+}
 
 pub struct StateCommitter<L1, Db, Clock> {
     l1_adapter: L1,
     storage: Db,
     clock: Clock,
+    bundler: NonCompressingGasOptimizingBundler<L1>,
     bundle_config: BundleGenerationConfig,
     component_created_at: DateTime<Utc>,
 }
@@ -23,15 +92,20 @@ pub struct BundleGenerationConfig {
     pub accumulation_timeout: Duration,
 }
 
-impl<L1, Db, C: Clock> StateCommitter<L1, Db, C> {
+impl<L1: Clone, Db, C: Clock> StateCommitter<L1, Db, C> {
     pub fn new(l1: L1, storage: Db, clock: C, bundle_config: BundleGenerationConfig) -> Self {
         let now = clock.now();
+        let bundler = NonCompressingGasOptimizingBundler::new(
+            l1.clone(),
+            bundle_config.acceptable_amount_of_blocks.clone(),
+        );
         Self {
             l1_adapter: l1,
             storage,
             clock,
             bundle_config,
             component_created_at: now,
+            bundler,
         }
     }
 }
@@ -113,15 +187,17 @@ where
     C: Send + Sync + Clock,
 {
     async fn run(&mut self) -> Result<()> {
-        println!("running state committer");
+        eprintln!("running committer");
         if self.is_tx_pending().await? {
-            println!("tx pending");
+            eprintln!("tx pending, returning");
             return Ok(());
         };
 
         let fragment = if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
+            eprintln!("found fragment: {:?}", fragment);
             fragment
         } else {
+            eprintln!("no fragment found");
             let max_blocks = self
                 .bundle_config
                 .acceptable_amount_of_blocks
@@ -129,6 +205,7 @@ where
                 .clone()
                 .max()
                 .unwrap_or(0);
+
             let blocks: Vec<_> = self
                 .storage
                 .stream_unbundled_blocks()
@@ -137,6 +214,7 @@ where
                 .await?;
 
             if blocks.is_empty() {
+                eprintln!("no blocks found");
                 return Ok(());
             }
 
@@ -145,28 +223,21 @@ where
                 .acceptable_amount_of_blocks
                 .contains(blocks.len())
             {
+                eprintln!("not enough blocks found");
                 return Ok(());
             }
+
+            let Bundle {
+                fragments,
+                block_heights,
+            } = self
+                .bundler
+                .form_bundle(blocks.try_into().expect("cannot be empty"))
+                .await?;
+
             // TODO: segfault, change unwraps to ? wherever possible
-            let merged_data = blocks
-                .iter()
-                .flat_map(|b| b.data.clone().into_inner())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
-            let heights = blocks.iter().map(|b| b.height).collect::<Vec<_>>();
-
-            let min_height = heights.iter().min().unwrap();
-            let max_height = heights.iter().max().unwrap();
-
-            let submittable_chunks = self
-                .l1_adapter
-                .split_into_submittable_fragments(&merged_data)?;
-
-            let block_range = (*min_height..*max_height + 1).try_into().unwrap();
-
             self.storage
-                .insert_bundle_and_fragments(block_range, submittable_chunks.fragments)
+                .insert_bundle_and_fragments(block_heights, fragments.fragments)
                 .await?
                 .into_inner()
                 .into_iter()
@@ -191,6 +262,8 @@ mod tests {
             .json()
             .init();
     }
+
+    use std::sync::Arc;
 
     use clock::TestClock;
     use fuel_crypto::SecretKey;
@@ -239,7 +312,7 @@ mod tests {
                     .return_once(move |_| {
                         Ok(SubmittableFragments {
                             fragments,
-                            gas_per_byte: 1,
+                            gas_estimation: 1,
                         })
                     });
             }
@@ -263,7 +336,12 @@ mod tests {
                 acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
                 accumulation_timeout: Duration::from_secs(1),
             };
-            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), bundle_config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                bundle_config,
+            )
         };
 
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
@@ -304,7 +382,7 @@ mod tests {
                     .return_once(move |_| {
                         Ok(SubmittableFragments {
                             fragments,
-                            gas_per_byte: 1,
+                            gas_estimation: 1,
                         })
                     });
             }
@@ -322,7 +400,12 @@ mod tests {
                 acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
                 accumulation_timeout: Duration::from_secs(1),
             };
-            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), bundle_config)
+            StateCommitter::new(
+                Arc::new(l1_mock),
+                setup.db(),
+                TestClock::default(),
+                bundle_config,
+            )
         };
 
         // Bundles, sends the first fragment
@@ -355,7 +438,7 @@ mod tests {
                 acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
                 accumulation_timeout: Duration::from_secs(1),
             };
-            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), config)
+            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
         };
 
         // when
@@ -386,7 +469,7 @@ mod tests {
                 .return_once(|_| {
                     Ok(SubmittableFragments {
                         fragments: non_empty_vec!(random_data(100)),
-                        gas_per_byte: 1,
+                        gas_estimation: 1,
                     })
                 });
 
@@ -394,7 +477,7 @@ mod tests {
                 .expect_submit_l2_state()
                 .once()
                 .return_once(|_| Ok([1; 32]));
-            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), config)
+            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
         };
         // bundles and sends the first block
         sut.run().await.unwrap();
@@ -447,7 +530,7 @@ mod tests {
                     .return_once(|_| {
                         Ok(SubmittableFragments {
                             fragments: non_empty_vec![fragment],
-                            gas_per_byte: 1,
+                            gas_estimation: 1,
                         })
                     });
             }
@@ -462,7 +545,7 @@ mod tests {
                 acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
                 accumulation_timeout: Duration::from_secs(1),
             };
-            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), config)
+            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
         };
 
         // when
@@ -514,10 +597,11 @@ mod tests {
                     .return_once(|_| {
                         Ok(SubmittableFragments {
                             fragments: non_empty_vec![fragment],
-                            gas_per_byte: 1,
+                            gas_estimation: 1,
                         })
                     });
             }
+
             l1_mock
                 .expect_submit_l2_state()
                 .with(eq(fragment.clone()))
@@ -525,10 +609,10 @@ mod tests {
                 .return_once(|_| Ok([1; 32]));
 
             let config = BundleGenerationConfig {
-                acceptable_amount_of_blocks: (1..3).try_into().unwrap(),
+                acceptable_amount_of_blocks: (2..3).try_into().unwrap(),
                 accumulation_timeout: Duration::from_secs(1),
             };
-            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), config)
+            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
         };
 
         // when
@@ -580,7 +664,7 @@ mod tests {
                     .return_once(|_| {
                         Ok(SubmittableFragments {
                             fragments,
-                            gas_per_byte: 1,
+                            gas_estimation: 1,
                         })
                     })
                     .in_sequence(&mut sequence);
@@ -609,7 +693,7 @@ mod tests {
                     .return_once(move |_| {
                         Ok(SubmittableFragments {
                             fragments,
-                            gas_per_byte: 1,
+                            gas_estimation: 1,
                         })
                     })
                     .in_sequence(&mut sequence);
@@ -625,7 +709,7 @@ mod tests {
                 acceptable_amount_of_blocks: (1..2).try_into().unwrap(),
                 accumulation_timeout: Duration::from_secs(1),
             };
-            StateCommitter::new(l1_mock, setup.db(), TestClock::default(), config)
+            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
         };
 
         // bundles and sends the first block
@@ -655,7 +739,7 @@ mod tests {
         };
 
         let mut sut = StateCommitter::new(
-            ports::l1::MockApi::new(),
+            Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             TestClock::default(),
             config,
@@ -670,136 +754,115 @@ mod tests {
         Ok(())
     }
 
-    // #[tokio::test]
-    // async fn triggers_when_enough_data_is_made_available() -> Result<()> {
-    //     // given
-    //     let max_data = 6 * 128 * 1024;
-    //     let (block_1_state, block_1_state_fragment) = (
-    //         StateSubmission {
-    //             id: None,
-    //             block_hash: [0u8; 32],
-    //             block_height: 1,
-    //         },
-    //         StateFragment {
-    //             id: None,
-    //             submission_id: None,
-    //             fragment_idx: 0,
-    //             data: vec![1; max_data - 1000],
-    //             created_at: ports::types::Utc::now(),
-    //         },
-    //     );
-    //
-    //     let (block_2_state, block_2_state_fragment) = (
-    //         StateSubmission {
-    //             id: None,
-    //             block_hash: [1u8; 32],
-    //             block_height: 2,
-    //         },
-    //         StateFragment {
-    //             id: None,
-    //             submission_id: None,
-    //             fragment_idx: 0,
-    //             data: vec![1; 1000],
-    //             created_at: ports::types::Utc::now(),
-    //         },
-    //     );
-    //     let l1_mock = given_l1_that_expects_submission(
-    //         [
-    //             block_1_state_fragment.data.clone(),
-    //             block_2_state_fragment.data.clone(),
-    //         ]
-    //         .concat(),
-    //     );
-    //
-    //     let process = PostgresProcess::shared().await.unwrap();
-    //     let db = process.create_random_db().await?;
-    //     db.insert_state_submission(block_1_state, vec![block_1_state_fragment])
-    //         .await?;
-    //
-    //     let mut committer = StateCommitter::new(
-    //         l1_mock,
-    //         db.clone(),
-    //         TestClock::default(),
-    //         Duration::from_secs(1),
-    //     );
-    //     committer.run().await?;
-    //     assert!(!db.has_pending_txs().await?);
-    //     assert!(db.get_pending_txs().await?.is_empty());
-    //
-    //     db.insert_state_submission(block_2_state, vec![block_2_state_fragment])
-    //         .await?;
-    //     tokio::time::sleep(Duration::from_millis(2000)).await;
-    //
-    //     // when
-    //     committer.run().await?;
-    //
-    //     // then
-    //     assert!(!db.get_pending_txs().await?.is_empty());
-    //     assert!(db.has_pending_txs().await?);
-    //
-    //     Ok(())
-    // }
-    //
-    // #[tokio::test]
-    // async fn will_trigger_on_accumulation_timeout() -> Result<()> {
-    //     // given
-    //     let (block_1_state, block_1_submitted_fragment, block_1_unsubmitted_state_fragment) = (
-    //         StateSubmission {
-    //             id: None,
-    //             block_hash: [0u8; 32],
-    //             block_height: 1,
-    //         },
-    //         StateFragment {
-    //             id: None,
-    //             submission_id: None,
-    //             fragment_idx: 0,
-    //             data: vec![0; 100],
-    //             created_at: ports::types::Utc::now(),
-    //         },
-    //         StateFragment {
-    //             id: None,
-    //             submission_id: None,
-    //             fragment_idx: 0,
-    //             data: vec![0; 127_000],
-    //             created_at: ports::types::Utc::now(),
-    //         },
-    //     );
-    //
-    //     let l1_mock =
-    //         given_l1_that_expects_submission(block_1_unsubmitted_state_fragment.data.clone());
-    //
-    //     let process = PostgresProcess::shared().await.unwrap();
-    //     let db = process.create_random_db().await?;
-    //     db.insert_state_submission(
-    //         block_1_state,
-    //         vec![
-    //             block_1_submitted_fragment,
-    //             block_1_unsubmitted_state_fragment,
-    //         ],
-    //     )
-    //     .await?;
-    //
-    //     let clock = TestClock::default();
-    //
-    //     db.record_pending_tx([0; 32], vec![1]).await?;
-    //     db.update_submission_tx_state([0; 32], TransactionState::Finalized(clock.now()))
-    //         .await?;
-    //
-    //     let accumulation_timeout = Duration::from_secs(1);
-    //     let mut committer =
-    //         StateCommitter::new(l1_mock, db.clone(), clock.clone(), accumulation_timeout);
-    //     committer.run().await?;
-    //     // No pending tx since we have not accumulated enough data nor did the timeout expire
-    //     assert!(!db.has_pending_txs().await?);
-    //
-    //     clock.adv_time(Duration::from_secs(1)).await;
-    //
-    //     // when
-    //     committer.run().await?;
-    //
-    //     // then
-    //     assert!(db.has_pending_txs().await?);
-    //
-    //     Ok(())
-    // }
+    #[tokio::test]
+    async fn optimizes_for_gas_usage() -> Result<()> {
+        //given
+        let setup = test_utils::Setup::init().await;
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+
+        let blocks = (0..=3)
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
+            .collect_vec();
+
+        setup
+            .import_blocks(Blocks::Blocks {
+                blocks: blocks.clone(),
+                secret_key,
+            })
+            .await;
+
+        let mut sut = {
+            let mut l1_mock = ports::l1::MockApi::new();
+
+            let first_bundle = (0..=1)
+                .flat_map(|i| {
+                    ports::storage::FuelBlock::try_from(blocks[i].clone())
+                        .unwrap()
+                        .data
+                        .into_inner()
+                })
+                .collect::<Vec<_>>();
+            let second_bundle = (0..=2)
+                .flat_map(|i| {
+                    ports::storage::FuelBlock::try_from(blocks[i].clone())
+                        .unwrap()
+                        .data
+                        .into_inner()
+                })
+                .collect::<Vec<_>>();
+            let third_bundle = (0..=3)
+                .flat_map(|i| {
+                    ports::storage::FuelBlock::try_from(blocks[i].clone())
+                        .unwrap()
+                        .data
+                        .into_inner()
+                })
+                .collect::<Vec<_>>();
+
+            let mut sequence = Sequence::new();
+
+            let correct_fragment = random_data(100);
+
+            l1_mock
+                .expect_split_into_submittable_fragments()
+                .withf(move |data| data.inner() == &first_bundle)
+                .once()
+                .return_once(|_| {
+                    Ok(SubmittableFragments {
+                        fragments: non_empty_vec![random_data(100)],
+                        gas_estimation: 2,
+                    })
+                })
+                .in_sequence(&mut sequence);
+
+            {
+                let fragments = non_empty_vec![correct_fragment.clone()];
+                l1_mock
+                    .expect_split_into_submittable_fragments()
+                    .withf(move |data| data.inner() == &second_bundle)
+                    .once()
+                    .return_once(|_| {
+                        Ok(SubmittableFragments {
+                            fragments,
+                            gas_estimation: 1,
+                        })
+                    })
+                    .in_sequence(&mut sequence);
+            }
+
+            l1_mock
+                .expect_split_into_submittable_fragments()
+                .withf(move |data| data.inner() == &third_bundle)
+                .once()
+                .return_once(|_| {
+                    Ok(SubmittableFragments {
+                        fragments: non_empty_vec![random_data(100)],
+                        gas_estimation: 3,
+                    })
+                })
+                .in_sequence(&mut sequence);
+
+            l1_mock
+                .expect_submit_l2_state()
+                .with(eq(correct_fragment.clone()))
+                .once()
+                .return_once(move |_| Ok([0; 32]))
+                .in_sequence(&mut sequence);
+
+            let config = BundleGenerationConfig {
+                acceptable_amount_of_blocks: (2..5).try_into().unwrap(),
+                accumulation_timeout: Duration::from_secs(1),
+            };
+            StateCommitter::new(Arc::new(l1_mock), setup.db(), TestClock::default(), config)
+        };
+
+        // when
+        sut.run().await.unwrap();
+
+        // then
+        // mocks validate that the bundle including blocks 0,1 and 2 was chosen having the best gas
+        // per byte
+
+        Ok(())
+    }
 }
