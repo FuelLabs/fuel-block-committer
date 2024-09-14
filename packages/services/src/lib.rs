@@ -138,9 +138,9 @@ pub(crate) mod test_utils {
                 l1_mock
             }
             pub fn will_split_bundles_into_fragments(
-                l1_mock: &mut ports::l1::MockApi,
                 expectations: impl IntoIterator<Item = (NonEmptyVec<u8>, SubmittableFragments)>,
-            ) {
+            ) -> ports::l1::MockApi {
+                let mut l1_mock = ports::l1::MockApi::new();
                 let mut sequence = Sequence::new();
                 for (bundle, fragments) in expectations {
                     l1_mock
@@ -150,6 +150,7 @@ pub(crate) mod test_utils {
                         .return_once(move |_| Ok(fragments))
                         .in_sequence(&mut sequence);
                 }
+                l1_mock
             }
 
             pub fn txs_finished(

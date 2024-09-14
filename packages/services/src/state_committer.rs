@@ -408,7 +408,6 @@ mod tests {
             .await;
 
         let mut sut = {
-            let mut l1_mock = ports::l1::MockApi::new();
             let fragment = test_utils::random_data(100);
             let encoded_blocks: Vec<ports::storage::FuelBlock> = blocks
                 .into_iter()
@@ -416,25 +415,21 @@ mod tests {
                 .try_collect()
                 .unwrap();
 
-            {
-                let two_block_bundle: NonEmptyVec<u8> = encoded_blocks
-                    .into_iter()
-                    .flat_map(|b| b.data.into_inner())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap();
+            let two_block_bundle: NonEmptyVec<u8> = encoded_blocks
+                .into_iter()
+                .flat_map(|b| b.data.into_inner())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
 
-                test_utils::mocks::l1::will_split_bundles_into_fragments(
-                    &mut l1_mock,
-                    [(
-                        two_block_bundle,
-                        SubmittableFragments {
-                            fragments: non_empty_vec![fragment.clone()],
-                            gas_estimation: 1,
-                        },
-                    )],
-                )
-            }
+            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
+                two_block_bundle,
+                SubmittableFragments {
+                    fragments: non_empty_vec![fragment.clone()],
+                    gas_estimation: 1,
+                },
+            )]);
+
             let factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
                 setup.db(),
@@ -481,7 +476,6 @@ mod tests {
             .await;
 
         let mut sut = {
-            let mut l1_mock = ports::l1::MockApi::new();
             let encoded_blocks: Vec<ports::storage::FuelBlock> = blocks
                 .into_iter()
                 .map(TryFrom::try_from)
@@ -498,16 +492,13 @@ mod tests {
 
             let fragment = test_utils::random_data(100);
 
-            test_utils::mocks::l1::will_split_bundles_into_fragments(
-                &mut l1_mock,
-                [(
-                    two_block_bundle.clone(),
-                    SubmittableFragments {
-                        fragments: non_empty_vec![fragment.clone()],
-                        gas_estimation: 1,
-                    },
-                )],
-            );
+            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
+                two_block_bundle.clone(),
+                SubmittableFragments {
+                    fragments: non_empty_vec![fragment.clone()],
+                    gas_estimation: 1,
+                },
+            )]);
 
             let factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
@@ -558,8 +549,6 @@ mod tests {
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
         let mut sut = {
-            let mut l1_mock = ports::l1::MockApi::new();
-
             let bundle_1 = ports::storage::FuelBlock::try_from(blocks[0].clone())
                 .unwrap()
                 .data;
@@ -569,25 +558,23 @@ mod tests {
                 .unwrap()
                 .data;
             let bundle_2_fragment = test_utils::random_data(100);
-            test_utils::mocks::l1::will_split_bundles_into_fragments(
-                &mut l1_mock,
-                [
-                    (
-                        bundle_1,
-                        SubmittableFragments {
-                            fragments: non_empty_vec![bundle_1_fragment.clone()],
-                            gas_estimation: 1,
-                        },
-                    ),
-                    (
-                        bundle_2,
-                        SubmittableFragments {
-                            fragments: non_empty_vec![bundle_2_fragment.clone()],
-                            gas_estimation: 1,
-                        },
-                    ),
-                ],
-            );
+
+            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([
+                (
+                    bundle_1,
+                    SubmittableFragments {
+                        fragments: non_empty_vec![bundle_1_fragment.clone()],
+                        gas_estimation: 1,
+                    },
+                ),
+                (
+                    bundle_2,
+                    SubmittableFragments {
+                        fragments: non_empty_vec![bundle_2_fragment.clone()],
+                        gas_estimation: 1,
+                    },
+                ),
+            ]);
 
             let bundler_factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),
@@ -711,34 +698,29 @@ mod tests {
 
             let correct_fragment = test_utils::random_data(100);
 
-            let mut l1_mock = ports::l1::MockApi::new();
-
-            test_utils::mocks::l1::will_split_bundles_into_fragments(
-                &mut l1_mock,
-                [
-                    (
-                        first_bundle.clone(),
-                        SubmittableFragments {
-                            fragments: non_empty_vec![test_utils::random_data(100)],
-                            gas_estimation: 2,
-                        },
-                    ),
-                    (
-                        second_bundle,
-                        SubmittableFragments {
-                            fragments: non_empty_vec![correct_fragment.clone()],
-                            gas_estimation: 1,
-                        },
-                    ),
-                    (
-                        third_bundle,
-                        SubmittableFragments {
-                            fragments: non_empty_vec![test_utils::random_data(100)],
-                            gas_estimation: 3,
-                        },
-                    ),
-                ],
-            );
+            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([
+                (
+                    first_bundle.clone(),
+                    SubmittableFragments {
+                        fragments: non_empty_vec![test_utils::random_data(100)],
+                        gas_estimation: 2,
+                    },
+                ),
+                (
+                    second_bundle,
+                    SubmittableFragments {
+                        fragments: non_empty_vec![correct_fragment.clone()],
+                        gas_estimation: 1,
+                    },
+                ),
+                (
+                    third_bundle,
+                    SubmittableFragments {
+                        fragments: non_empty_vec![test_utils::random_data(100)],
+                        gas_estimation: 3,
+                    },
+                ),
+            ]);
 
             let bundler_factory = bundler::gas_optimizing::Factory::new(
                 Arc::new(l1_mock),

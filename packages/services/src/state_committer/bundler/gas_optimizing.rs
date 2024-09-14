@@ -181,19 +181,15 @@ mod tests {
             .try_into()
             .unwrap();
 
-        let mut l1_mock = ports::l1::MockApi::new();
         let fragment_of_unoptimal_block = test_utils::random_data(100);
 
-        test_utils::mocks::l1::will_split_bundles_into_fragments(
-            &mut l1_mock,
-            [(
-                bundle_of_blocks_0_and_1.clone(),
-                SubmittableFragments {
-                    fragments: non_empty_vec![fragment_of_unoptimal_block.clone()],
-                    gas_estimation: 100,
-                },
-            )],
-        );
+        let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
+            bundle_of_blocks_0_and_1.clone(),
+            SubmittableFragments {
+                fragments: non_empty_vec![fragment_of_unoptimal_block.clone()],
+                gas_estimation: 100,
+            },
+        )]);
 
         let mut sut = Bundler::new(l1_mock, blocks, (2..4).try_into().unwrap());
 
