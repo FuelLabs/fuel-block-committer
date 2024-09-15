@@ -1,17 +1,17 @@
 mod block_committer;
+mod block_importer;
 mod commit_listener;
 mod health_reporter;
 mod state_committer;
-mod state_importer;
 mod state_listener;
 mod status_reporter;
 mod wallet_balance_tracker;
 
 pub use block_committer::BlockCommitter;
+pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::StateCommitter;
-pub use state_importer::StateImporter;
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
 pub use wallet_balance_tracker::WalletBalanceTracker;
@@ -81,7 +81,7 @@ pub(crate) mod test_utils {
         let bytes: Vec<u8> = blocks
             .into_iter()
             .flat_map(|block| {
-                state_importer::encode_block_data(block.clone())
+                block_importer::encode_block_data(block)
                     .unwrap()
                     .into_inner()
             })
@@ -110,7 +110,7 @@ pub(crate) mod test_utils {
     use storage::PostgresProcess;
     use validator::BlockValidator;
 
-    use crate::{state_importer, StateImporter, StateListener};
+    use crate::{block_importer, BlockImporter, StateListener};
 
     use super::Runner;
 
@@ -211,7 +211,7 @@ pub(crate) mod test_utils {
                 FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus,
             };
 
-            use crate::state_importer;
+            use crate::block_importer;
 
             pub fn generate_block(height: u32, secret_key: &SecretKey) -> ports::fuel::FuelBlock {
                 let header = given_header(height);
@@ -243,7 +243,7 @@ pub(crate) mod test_utils {
                 ports::storage::FuelBlock {
                     hash: *block.id,
                     height: block.header.height,
-                    data: state_importer::encode_block_data(block).unwrap(),
+                    data: block_importer::encode_block_data(&block).unwrap(),
                 }
             }
 
@@ -353,7 +353,7 @@ pub(crate) mod test_utils {
         }
 
         pub async fn import_blocks(&self, blocks: Blocks) {
-            self.importer_of_blocks(blocks).run().await.unwrap()
+            self.block_importer(blocks).run().await.unwrap()
         }
 
         pub async fn report_txs_finished(
@@ -368,10 +368,10 @@ pub(crate) mod test_utils {
                 .unwrap()
         }
 
-        pub fn importer_of_blocks(
+        pub fn block_importer(
             &self,
             blocks: Blocks,
-        ) -> StateImporter<storage::Postgres, ports::fuel::MockApi, BlockValidator> {
+        ) -> BlockImporter<storage::Postgres, ports::fuel::MockApi, BlockValidator> {
             let amount = blocks.len();
 
             match blocks {
@@ -381,13 +381,13 @@ pub(crate) mod test_utils {
                     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
                     let mock = mocks::fuel::blocks_exists(secret_key, range);
 
-                    StateImporter::new(self.db(), mock, block_validator, amount as u32)
+                    BlockImporter::new(self.db(), mock, block_validator, amount as u32)
                 }
                 Blocks::Blocks { blocks, secret_key } => {
                     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
                     let mock = mocks::fuel::these_blocks_exist(blocks);
 
-                    StateImporter::new(self.db(), mock, block_validator, amount as u32)
+                    BlockImporter::new(self.db(), mock, block_validator, amount as u32)
                 }
             }
         }

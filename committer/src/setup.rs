@@ -99,7 +99,7 @@ pub fn state_importer(
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
-    let state_importer = services::StateImporter::new(storage, fuel, validator);
+    let state_importer = services::BlockImporter::new(storage, fuel, validator);
 
     schedule_polling(
         config.app.block_check_interval,
