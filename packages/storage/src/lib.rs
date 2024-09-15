@@ -29,10 +29,10 @@ impl Storage for Postgres {
         Ok(self._oldest_nonfinalized_fragment().await?)
     }
 
-    async fn all_blocks(&self) -> Result<Vec<ports::storage::FuelBlock>> {
-        self._all_blocks().await.map_err(Into::into)
-    }
-
+    // async fn all_blocks(&self) -> Result<Vec<ports::storage::FuelBlock>> {
+    //     self._all_blocks().await.map_err(Into::into)
+    // }
+    //
     // async fn all_fragments(&self) -> Result<Vec<ports::storage::BundleFragment>> {
     //     self._all_fragments().await.map_err(Into::into)
     // }
@@ -59,9 +59,9 @@ impl Storage for Postgres {
             .await?)
     }
 
-    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
-        Ok(self._last_time_a_fragment_was_finalized().await?)
-    }
+    // async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
+    //     Ok(self._last_time_a_fragment_was_finalized().await?)
+    // }
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
         Ok(self._submission_w_latest_block().await?)
     }
@@ -97,9 +97,9 @@ impl Storage for Postgres {
         Ok(self._has_pending_txs().await?)
     }
 
-    async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>> {
-        Ok(self._state_submission_w_latest_block().await?)
-    }
+    // async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>> {
+    //     Ok(self._state_submission_w_latest_block().await?)
+    // }
 
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()> {
         Ok(self._update_tx_state(hash, state).await?)

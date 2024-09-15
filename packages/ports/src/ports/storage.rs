@@ -35,25 +35,6 @@ pub struct BundleFragment {
     pub data: NonEmptyVec<u8>,
 }
 
-impl TryFrom<crate::fuel::FuelBlock> for FuelBlock {
-    type Error = VecIsEmpty;
-    fn try_from(value: crate::fuel::FuelBlock) -> std::result::Result<Self, Self::Error> {
-        let tx_bytes: Vec<u8> = value
-            .transactions
-            .into_iter()
-            .flat_map(|tx| tx.into_iter())
-            .collect();
-
-        let data = NonEmptyVec::try_from(tx_bytes)?;
-
-        Ok(Self {
-            hash: *value.id,
-            height: value.header.height,
-            data,
-        })
-    }
-}
-
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[async_trait::async_trait]
@@ -67,7 +48,7 @@ pub trait Storage: Send + Sync {
     async fn insert_block(&self, block: FuelBlock) -> Result<()>;
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
     async fn available_blocks(&self) -> Result<ValidatedRange<u32>>;
-    async fn all_blocks(&self) -> Result<Vec<FuelBlock>>;
+    // async fn all_blocks(&self) -> Result<Vec<FuelBlock>>;
     async fn lowest_unbundled_blocks(&self, limit: usize) -> Result<Vec<FuelBlock>>;
     async fn insert_bundle_and_fragments(
         &self,
@@ -87,8 +68,8 @@ pub trait Storage: Send + Sync {
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
     async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
-    async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
-    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
+    // async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
+    // async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
 

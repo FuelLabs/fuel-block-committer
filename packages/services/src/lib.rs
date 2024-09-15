@@ -81,9 +81,8 @@ pub(crate) mod test_utils {
         let bytes: Vec<u8> = blocks
             .into_iter()
             .flat_map(|block| {
-                ports::storage::FuelBlock::try_from(block.clone())
+                state_importer::encode_block_data(block.clone())
                     .unwrap()
-                    .data
                     .into_inner()
             })
             .collect();
@@ -111,7 +110,7 @@ pub(crate) mod test_utils {
     use storage::PostgresProcess;
     use validator::BlockValidator;
 
-    use crate::{StateImporter, StateListener};
+    use crate::{state_importer, StateImporter, StateListener};
 
     use super::Runner;
 
@@ -212,6 +211,8 @@ pub(crate) mod test_utils {
                 FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus,
             };
 
+            use crate::state_importer;
+
             pub fn generate_block(height: u32, secret_key: &SecretKey) -> ports::fuel::FuelBlock {
                 let header = given_header(height);
 
@@ -238,7 +239,12 @@ pub(crate) mod test_utils {
                 height: u32,
                 secret_key: &SecretKey,
             ) -> ports::storage::FuelBlock {
-                generate_block(height, secret_key).try_into().unwrap()
+                let block = generate_block(height, secret_key);
+                ports::storage::FuelBlock {
+                    hash: *block.id,
+                    height: block.header.height,
+                    data: state_importer::encode_block_data(block).unwrap(),
+                }
             }
 
             fn given_header(height: u32) -> FuelHeader {
@@ -287,16 +293,35 @@ pub(crate) mod test_utils {
 
                 let latest_block = blocks.last().expect("Must have at least one block").clone();
 
+                let lowest_height = blocks
+                    .first()
+                    .expect("Must have at least one block")
+                    .header
+                    .height;
+                let highest_height = latest_block.header.height;
+
                 fuel_mock
                     .expect_latest_block()
                     .return_once(|| Ok(latest_block));
 
                 fuel_mock
                     .expect_blocks_in_height_range()
-                    .returning(move |arg| {
+                    .returning(move |range| {
+                        if let Some(lowest) = range.clone().min() {
+                            if lowest < lowest_height {
+                                panic!("The range of blocks asked of the mock is not tight!");
+                            }
+                        }
+
+                        if let Some(highest) = range.clone().max() {
+                            if highest > highest_height {
+                                panic!("The range of blocks asked of the mock is not tight!");
+                            }
+                        }
+
                         let blocks = blocks
                             .iter()
-                            .filter(move |b| arg.contains(&b.header.height))
+                            .filter(move |b| range.contains(&b.header.height))
                             .cloned()
                             .map(Ok)
                             .collect_vec();
