@@ -8,10 +8,19 @@ use ports::{
     types::{DateTime, NonEmptyVec, Utc},
 };
 
-use crate::{Result, Runner};
+use crate::{Error, Result, Runner};
 
 pub mod bundler;
 
+/// Configuration for bundle generation.
+#[derive(Debug, Clone, Copy)]
+pub struct BundleGenerationConfig {
+    /// Duration after which optimization attempts should stop.
+    pub stop_optimization_attempts_after: Duration,
+}
+
+/// The `StateCommitter` is responsible for committing state fragments to L1.
+/// It bundles blocks, fragments them, and submits the fragments to the L1 adapter.
 pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
     l1_adapter: L1,
     storage: Storage,
@@ -21,15 +30,11 @@ pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
     bundle_generation_config: BundleGenerationConfig,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct BundleGenerationConfig {
-    pub stop_optimization_attempts_after: Duration,
-}
-
 impl<L1, Storage, C, BF> StateCommitter<L1, Storage, C, BF>
 where
     C: Clock,
 {
+    /// Creates a new `StateCommitter`.
     pub fn new(
         l1_adapter: L1,
         storage: Storage,
@@ -55,102 +60,92 @@ where
     L1: ports::l1::Api,
     Db: Storage,
     C: Clock,
-    BF: bundler::BundlerFactory,
+    BF: BundlerFactory,
 {
-    async fn bundle_then_fragment(&self) -> crate::Result<Option<NonEmptyVec<BundleFragment>>> {
+    async fn bundle_and_fragment_blocks(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
         let mut bundler = self.bundler_factory.build().await?;
-
         let start_time = self.clock.now();
 
-        let BundleProposal {
+        let proposal = self.find_optimal_bundle(&mut bundler, start_time).await?;
+
+        if let Some(BundleProposal {
             fragments,
             block_heights,
             ..
-        } = loop {
+        }) = proposal
+        {
+            let fragments = self
+                .storage
+                .insert_bundle_and_fragments(block_heights, fragments.fragments)
+                .await?;
+            Ok(Some(fragments))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Finds the optimal bundle within the specified time frame.
+    async fn find_optimal_bundle<B: Bundle>(
+        &self,
+        bundler: &mut B,
+        start_time: DateTime<Utc>,
+    ) -> Result<Option<BundleProposal>> {
+        loop {
             if let Some(bundle) = bundler.propose_bundle().await? {
-                let now = self.clock.now();
-
-                let elapsed = (now - start_time).to_std().unwrap_or(Duration::ZERO);
-
-                let should_stop_optimizing = elapsed
-                    >= self
-                        .bundle_generation_config
-                        .stop_optimization_attempts_after;
-
-                if bundle.optimal || should_stop_optimizing {
-                    break bundle;
+                let elapsed = self.elapsed_time_since(start_time)?;
+                if bundle.optimal || self.should_stop_optimizing(elapsed) {
+                    return Ok(Some(bundle));
                 }
             } else {
                 return Ok(None);
             }
-        };
-
-        Ok(Some(
-            self.storage
-                .insert_bundle_and_fragments(block_heights, fragments.fragments)
-                .await?,
-        ))
+        }
     }
 
+    /// Calculates the elapsed time since the given start time.
+    fn elapsed_time_since(&self, start_time: DateTime<Utc>) -> Result<Duration> {
+        let now = self.clock.now();
+        now.signed_duration_since(start_time)
+            .to_std()
+            .map_err(|e| Error::Other(format!("could not calculate elapsed time: {:?}", e)))
+    }
+
+    /// Determines whether to stop optimizing based on the elapsed time.
+    fn should_stop_optimizing(&self, elapsed: Duration) -> bool {
+        elapsed
+            >= self
+                .bundle_generation_config
+                .stop_optimization_attempts_after
+    }
+
+    /// Submits a fragment to the L1 adapter and records the tx in storage.
     async fn submit_fragment(&self, fragment: BundleFragment) -> Result<()> {
-        let tx = self.l1_adapter.submit_l2_state(fragment.data).await?;
-        self.storage.record_pending_tx(tx, fragment.id).await?;
-
-        Ok(())
-
-        // // TODO: segfault, what about encoding overhead?
-        // let (fragment_ids, data) = self.fetch_fragments().await?;
-        //
-        // // TODO: segfault what about when the fragments don't add up cleanly to max_total_size
-        // if data.len() < max_total_size {
-        //     let fragment_count = fragment_ids.len();
-        //     let data_size = data.len();
-        //     let remaining_space = max_total_size.saturating_sub(data_size);
-        //
-        //     let last_finalization = self
-        //         .storage
-        //         .last_time_a_fragment_was_finalized()
-        //         .await?
-        //         .unwrap_or_else(|| {
-        //             info!("No fragment has been finalized yet, accumulation timeout will be calculated from the time the committer was started ({})", self.component_created_at);
-        //             self.component_created_at
-        //         });
-        //
-        //     let now = self.clock.now();
-        //     let time_delta = now - last_finalization;
-        //
-        //     let duration = time_delta
-        //         .to_std()
-        //         .unwrap_or_else(|_| {
-        //             warn!("possible time skew, last fragment finalization happened at {last_finalization}, with the current clock time at: {now} making for a difference of: {time_delta}");
-        //             // we act as if the finalization happened now
-        //             Duration::ZERO
-        //         });
-        //
-        //     if duration < self.accumulation_timeout {
-        //         info!("Found {fragment_count} fragment(s) with total size of {data_size}B. Waiting for additional fragments to use up more of the remaining {remaining_space}B.");
-        //         return Ok(());
-        //     } else {
-        //         info!("Found {fragment_count} fragment(s) with total size of {data_size}B. Accumulation timeout has expired, proceeding to submit.")
-        //     }
-        // }
-        //
-        // if fragment_ids.is_empty() {
-        //     return Ok(());
-        // }
-        //
-        // let tx_hash = self.l1_adapter.submit_l2_state(data).await?;
-        // self.storage
-        //     .record_pending_tx(tx_hash, fragment_ids)
-        //     .await?;
-        //
-        // info!("submitted blob tx {}", hex::encode(tx_hash));
-        //
-        // Ok(())
+        match self.l1_adapter.submit_l2_state(fragment.data.clone()).await {
+            Ok(tx_hash) => {
+                self.storage.record_pending_tx(tx_hash, fragment.id).await?;
+                tracing::info!("Submitted fragment {:?} with tx {:?}", fragment.id, tx_hash);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("Failed to submit fragment {:?}: {:?}", fragment.id, e);
+                Err(e.into())
+            }
+        }
     }
 
-    async fn is_tx_pending(&self) -> Result<bool> {
+    async fn has_pending_transactions(&self) -> Result<bool> {
         self.storage.has_pending_txs().await.map_err(|e| e.into())
+    }
+
+    async fn next_fragment_to_submit(&self) -> Result<Option<BundleFragment>> {
+        if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
+            Ok(Some(fragment))
+        } else {
+            Ok(self
+                .bundle_and_fragment_blocks()
+                .await?
+                .map(|fragments| fragments.take_first()))
+        }
     }
 }
 
@@ -158,24 +153,21 @@ where
 impl<L1, Db, C, BF> Runner for StateCommitter<L1, Db, C, BF>
 where
     L1: ports::l1::Api + Send + Sync,
-    Db: Storage + Clone,
-    C: Send + Sync + Clock,
+    Db: Storage + Clone + Send + Sync,
+    C: Clock + Send + Sync,
     BF: BundlerFactory + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
-        if self.is_tx_pending().await? {
+        if self.has_pending_transactions().await? {
+            tracing::info!("Pending transactions detected; skipping this run.");
             return Ok(());
-        };
+        }
 
-        let fragment = if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
-            fragment
-        } else if let Some(fragments) = self.bundle_then_fragment().await? {
-            fragments.take_first()
+        if let Some(fragment) = self.next_fragment_to_submit().await? {
+            self.submit_fragment(fragment).await?;
         } else {
-            return Ok(());
-        };
-
-        self.submit_fragment(fragment).await?;
+            tracing::info!("No fragments to submit at this time.");
+        }
 
         Ok(())
     }
