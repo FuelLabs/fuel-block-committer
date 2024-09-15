@@ -187,204 +187,187 @@ mod tests {
 
     use super::*;
 
-    // TODO: segfault add .once() to all tests since mocks dont fail by default if their
-    // expectations were not exercised, only if they were exercised incorrectly
-
     #[tokio::test]
     async fn sends_fragments_in_order() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let fragment_tx_ids = [[0; 32], [1; 32]];
 
-        let mut sut = {
-            let fragment_0 = test_utils::random_data(100);
-            let fragment_1 = test_utils::random_data(100);
+        let fragment_0 = test_utils::random_data(100);
+        let fragment_1 = test_utils::random_data(100);
 
-            let l1_mock =
-                test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
-                    fragments: non_empty_vec![fragment_0.clone(), fragment_1.clone()],
-                    gas_estimation: 1,
-                });
-            let bundler_factory = bundler::gas_optimizing::Factory::new(
-                Arc::new(l1_mock),
-                setup.db(),
-                (1..2).try_into().unwrap(),
-            );
+        let l1_mock_split =
+            test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
+                fragments: non_empty_vec![fragment_0.clone(), fragment_1.clone()],
+                gas_estimation: 1,
+            });
 
-            let l1_mock = test_utils::mocks::l1::expects_state_submissions([
-                (fragment_0.clone(), fragment_tx_ids[0]),
-                (fragment_1, fragment_tx_ids[1]),
-            ]);
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (1..2).try_into().unwrap(),
+        );
 
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                bundler_factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
-                },
-            )
-        };
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
+            (fragment_0.clone(), fragment_tx_ids[0]),
+            (fragment_1.clone(), fragment_tx_ids[1]),
+        ]);
+
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            TestClock::default(),
+        );
 
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
-        // sends the first fragment
-        sut.run().await.unwrap();
+
+        // when
+        // Send the first fragment
+        state_committer.run().await?;
         setup
             .report_txs_finished([(fragment_tx_ids[0], TxStatus::Success)])
             .await;
 
-        // when
-        sut.run().await.unwrap();
+        // Send the second fragment
+        state_committer.run().await?;
 
         // then
-        // mocks validate that the second fragment has been sent after the first one
+        // Mocks validate that the fragments have been sent in order.
 
         Ok(())
     }
 
     #[tokio::test]
     async fn repeats_failed_fragments() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
 
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
         let original_tx = [0; 32];
+        let retry_tx = [1; 32];
 
-        let mut sut = {
-            let fragment_0 = test_utils::random_data(100);
-            let fragment_1 = test_utils::random_data(100);
+        let fragment_0 = test_utils::random_data(100);
+        let fragment_1 = test_utils::random_data(100);
 
-            let l1_mock =
-                test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
-                    fragments: non_empty_vec![fragment_0.clone(), fragment_1],
-                    gas_estimation: 1,
-                });
-            let bundler_factory = bundler::gas_optimizing::Factory::new(
-                Arc::new(l1_mock),
-                setup.db(),
-                (1..2).try_into().unwrap(),
-            );
+        let l1_mock_split =
+            test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
+                fragments: non_empty_vec![fragment_0.clone(), fragment_1],
+                gas_estimation: 1,
+            });
 
-            let retry_tx = [1; 32];
-            let l1_mock = test_utils::mocks::l1::expects_state_submissions([
-                (fragment_0.clone(), original_tx),
-                (fragment_0, retry_tx),
-            ]);
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (1..2).try_into().unwrap(),
+        );
 
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                bundler_factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
-                },
-            )
-        };
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
+            (fragment_0.clone(), original_tx),
+            (fragment_0.clone(), retry_tx),
+        ]);
 
-        // Bundles, sends the first fragment
-        sut.run().await.unwrap();
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            TestClock::default(),
+        );
 
-        // but the fragment tx fails
+        // when
+        // Send the first fragment (which will fail)
+        state_committer.run().await?;
         setup
             .report_txs_finished([(original_tx, TxStatus::Failure)])
             .await;
 
-        // when
-        // we try again
-        sut.run().await.unwrap();
+        // Retry sending the failed fragment
+        state_committer.run().await?;
 
         // then
-        // mocks validate that the first fragment has been sent twice
+        // Mocks validate that the failed fragment was retried.
 
         Ok(())
     }
 
     #[tokio::test]
     async fn does_nothing_if_not_enough_blocks() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
-        let mut sut = {
-            let l1_mock = ports::l1::MockApi::new();
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                bundler::gas_optimizing::Factory::new(
-                    Arc::new(ports::l1::MockApi::new()),
-                    setup.db(),
-                    (2..3).try_into().unwrap(),
-                ),
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
-                },
-            )
-        };
+        let l1_mock = ports::l1::MockApi::new();
+
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(ports::l1::MockApi::new()),
+            setup.db(),
+            (2..3).try_into().unwrap(),
+        );
+
+        let mut state_committer =
+            create_state_committer(l1_mock, setup.db(), bundler_factory, TestClock::default());
 
         // when
-        sut.run().await.unwrap();
+        state_committer.run().await?;
 
         // then
-        // mocks will validate nothing happened
+        // Mocks will validate that nothing happened.
 
         Ok(())
     }
 
     #[tokio::test]
     async fn does_nothing_if_there_are_pending_transactions() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
 
         setup.import_blocks(Blocks::WithHeights(0..2)).await;
 
-        let mut sut = {
-            let l1_mock =
-                test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
-                    fragments: non_empty_vec![test_utils::random_data(100)],
-                    gas_estimation: 1,
-                });
-            let bundler_factory = bundler::gas_optimizing::Factory::new(
-                Arc::new(l1_mock),
-                setup.db(),
-                (1..2).try_into().unwrap(),
-            );
+        let fragment = test_utils::random_data(100);
 
-            let mut l1_mock = ports::l1::MockApi::new();
-            l1_mock
-                .expect_submit_l2_state()
-                .once()
-                .return_once(|_| Ok([1; 32]));
+        let l1_mock_split =
+            test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
+                fragments: non_empty_vec![fragment.clone()],
+                gas_estimation: 1,
+            });
 
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                bundler_factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
-                },
-            )
-        };
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (1..2).try_into().unwrap(),
+        );
 
-        // bundles and sends the first block
-        sut.run().await.unwrap();
+        let mut l1_mock_submit = ports::l1::MockApi::new();
+        l1_mock_submit
+            .expect_submit_l2_state()
+            .once()
+            .return_once(|_| Ok([1; 32]));
+
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            TestClock::default(),
+        );
 
         // when
-        sut.run().await.unwrap();
+        // First run: bundles and sends the first fragment
+        state_committer.run().await?;
+
+        // Second run: should do nothing due to pending transaction
+        state_committer.run().await?;
 
         // then
-        // mocks didn't catch any additional calls
+        // Mocks validate that no additional submissions were made.
+
         Ok(())
     }
 
     #[tokio::test]
     async fn bundles_minimum_acceptable_if_no_more_blocks_available() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let secret_key = SecretKey::random(&mut rand::thread_rng());
@@ -399,49 +382,44 @@ mod tests {
             })
             .await;
 
-        let mut sut = {
-            let fragment = test_utils::random_data(100);
+        let fragment = test_utils::random_data(100);
 
-            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
-                test_utils::encode_blocks(&blocks),
-                SubmittableFragments {
-                    fragments: non_empty_vec![fragment.clone()],
-                    gas_estimation: 1,
-                },
-            )]);
+        let l1_mock_split = test_utils::mocks::l1::will_split_bundles_into_fragments([(
+            test_utils::encode_blocks(&blocks),
+            SubmittableFragments {
+                fragments: non_empty_vec![fragment.clone()],
+                gas_estimation: 1,
+            },
+        )]);
 
-            let factory = bundler::gas_optimizing::Factory::new(
-                Arc::new(l1_mock),
-                setup.db(),
-                (2..3).try_into().unwrap(),
-            );
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (2..3).try_into().unwrap(),
+        );
 
-            let l1_mock =
-                test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
+        let l1_mock_submit =
+            test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
 
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
-                },
-            )
-        };
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            TestClock::default(),
+        );
 
         // when
-        sut.run().await.unwrap();
+        state_committer.run().await?;
 
         // then
-        // mocks validate that the bundle was comprised of two blocks
+        // Mocks validate that the bundle was comprised of two blocks.
 
         Ok(())
     }
 
     #[tokio::test]
     async fn doesnt_bundle_more_than_maximum_blocks() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
         let secret_key = SecretKey::random(&mut rand::thread_rng());
         let blocks = (0..3)
@@ -455,49 +433,44 @@ mod tests {
             })
             .await;
 
-        let mut sut = {
-            let fragment = test_utils::random_data(100);
+        let fragment = test_utils::random_data(100);
 
-            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
-                test_utils::encode_blocks(&blocks[0..2]),
-                SubmittableFragments {
-                    fragments: non_empty_vec![fragment.clone()],
-                    gas_estimation: 1,
-                },
-            )]);
+        let l1_mock_split = test_utils::mocks::l1::will_split_bundles_into_fragments([(
+            test_utils::encode_blocks(&blocks[0..2]),
+            SubmittableFragments {
+                fragments: non_empty_vec![fragment.clone()],
+                gas_estimation: 1,
+            },
+        )]);
 
-            let factory = bundler::gas_optimizing::Factory::new(
-                Arc::new(l1_mock),
-                setup.db(),
-                (2..3).try_into().unwrap(),
-            );
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (2..3).try_into().unwrap(),
+        );
 
-            let l1_mock =
-                test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
+        let l1_mock_submit =
+            test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
 
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
-                },
-            )
-        };
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            TestClock::default(),
+        );
 
         // when
-        sut.run().await.unwrap();
+        state_committer.run().await?;
 
         // then
-        // mocks validate that the bundle was comprised of two blocks even though three were available
+        // Mocks validate that only two blocks were bundled even though three were available.
 
         Ok(())
     }
 
     #[tokio::test]
     async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
@@ -514,99 +487,94 @@ mod tests {
 
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
-        let mut sut = {
-            let bundle_1 = test_utils::encode_blocks(&blocks[0..=0]);
-            let bundle_1_fragment = test_utils::random_data(100);
 
-            let bundle_2 = test_utils::encode_blocks(&blocks[1..=1]);
-            let bundle_2_fragment = test_utils::random_data(100);
+        let bundle_1 = test_utils::encode_blocks(&blocks[0..=0]);
+        let bundle_1_fragment = test_utils::random_data(100);
 
-            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([
-                (
-                    bundle_1,
-                    SubmittableFragments {
-                        fragments: non_empty_vec![bundle_1_fragment.clone()],
-                        gas_estimation: 1,
-                    },
-                ),
-                (
-                    bundle_2,
-                    SubmittableFragments {
-                        fragments: non_empty_vec![bundle_2_fragment.clone()],
-                        gas_estimation: 1,
-                    },
-                ),
-            ]);
+        let bundle_2 = test_utils::encode_blocks(&blocks[1..=1]);
+        let bundle_2_fragment = test_utils::random_data(100);
 
-            let bundler_factory = bundler::gas_optimizing::Factory::new(
-                Arc::new(l1_mock),
-                setup.db(),
-                (1..2).try_into().unwrap(),
-            );
-
-            let l1_mock = test_utils::mocks::l1::expects_state_submissions([
-                (bundle_1_fragment.clone(), bundle_1_tx),
-                (bundle_2_fragment.clone(), bundle_2_tx),
-            ]);
-
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                bundler_factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
+        let l1_mock_split = test_utils::mocks::l1::will_split_bundles_into_fragments([
+            (
+                bundle_1.clone(),
+                SubmittableFragments {
+                    fragments: non_empty_vec![bundle_1_fragment.clone()],
+                    gas_estimation: 1,
                 },
-            )
-        };
+            ),
+            (
+                bundle_2.clone(),
+                SubmittableFragments {
+                    fragments: non_empty_vec![bundle_2_fragment.clone()],
+                    gas_estimation: 1,
+                },
+            ),
+        ]);
 
-        // bundles and sends the first block
-        sut.run().await.unwrap();
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (1..2).try_into().unwrap(),
+        );
 
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
+            (bundle_1_fragment.clone(), bundle_1_tx),
+            (bundle_2_fragment.clone(), bundle_2_tx),
+        ]);
+
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            TestClock::default(),
+        );
+
+        // when
+        // Send the first bundle
+        state_committer.run().await?;
         setup
             .report_txs_finished([(bundle_1_tx, TxStatus::Success)])
             .await;
 
-        // when
-        sut.run().await.unwrap();
+        // Send the second bundle
+        state_committer.run().await?;
 
         // then
-        // mocks validate that the second block was bundled and sent
+        // Mocks validate that the second block was bundled and sent.
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn can_be_disabled_by_giving_an_empty_acceptable_block_range() -> Result<()> {
-        //given
+    async fn can_be_disabled_by_empty_acceptable_block_range() -> Result<()> {
+        // given
         let setup = test_utils::Setup::init().await;
 
-        let mut sut = StateCommitter::new(
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(ports::l1::MockApi::new()),
+            setup.db(),
+            (0..1).try_into().unwrap(),
+        );
+
+        let mut state_committer = create_state_committer(
             ports::l1::MockApi::new(),
             setup.db(),
+            bundler_factory,
             TestClock::default(),
-            bundler::gas_optimizing::Factory::new(
-                Arc::new(ports::l1::MockApi::new()),
-                setup.db(),
-                (0..1).try_into().unwrap(),
-            ),
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
-            },
         );
 
         // when
-        sut.run().await.unwrap();
+        state_committer.run().await?;
 
         // then
-        // no calls to mocks were made
+        // No calls to mocks were made.
 
         Ok(())
     }
 
     #[tokio::test]
     async fn optimizes_for_gas_usage() -> Result<()> {
-        //given
+        // given
         let setup = test_utils::Setup::init().await;
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
@@ -621,87 +589,80 @@ mod tests {
             })
             .await;
 
-        let mut sut = {
-            let bundle_1 = test_utils::encode_blocks(&blocks[0..=1]);
-            let bundle_2 = test_utils::encode_blocks(&blocks[0..=2]);
-            let bundle_3 = test_utils::encode_blocks(&blocks[0..=3]);
+        let bundle_1 = test_utils::encode_blocks(&blocks[0..=1]);
+        let bundle_2 = test_utils::encode_blocks(&blocks[0..=2]);
+        let bundle_3 = test_utils::encode_blocks(&blocks[0..=3]);
 
-            let correct_fragment = test_utils::random_data(100);
+        let optimal_fragment = test_utils::random_data(100);
 
-            let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([
-                (
-                    bundle_1.clone(),
-                    SubmittableFragments {
-                        fragments: non_empty_vec![test_utils::random_data(100)],
-                        gas_estimation: 2,
-                    },
-                ),
-                (
-                    bundle_2,
-                    SubmittableFragments {
-                        fragments: non_empty_vec![correct_fragment.clone()],
-                        gas_estimation: 1,
-                    },
-                ),
-                (
-                    bundle_3,
-                    SubmittableFragments {
-                        fragments: non_empty_vec![test_utils::random_data(100)],
-                        gas_estimation: 3,
-                    },
-                ),
-            ]);
-
-            let bundler_factory = bundler::gas_optimizing::Factory::new(
-                Arc::new(l1_mock),
-                setup.db(),
-                (2..5).try_into().unwrap(),
-            );
-
-            let l1_mock = test_utils::mocks::l1::expects_state_submissions([(
-                correct_fragment.clone(),
-                [0; 32],
-            )]);
-
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                TestClock::default(),
-                bundler_factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
+        let l1_mock_split = test_utils::mocks::l1::will_split_bundles_into_fragments([
+            (
+                bundle_1,
+                SubmittableFragments {
+                    fragments: non_empty_vec![test_utils::random_data(100)],
+                    gas_estimation: 2,
                 },
-            )
-        };
+            ),
+            (
+                bundle_2,
+                SubmittableFragments {
+                    fragments: non_empty_vec![optimal_fragment.clone()],
+                    gas_estimation: 1,
+                },
+            ),
+            (
+                bundle_3,
+                SubmittableFragments {
+                    fragments: non_empty_vec![test_utils::random_data(100)],
+                    gas_estimation: 3,
+                },
+            ),
+        ]);
+
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (2..5).try_into().unwrap(),
+        );
+
+        let l1_mock_submit =
+            test_utils::mocks::l1::expects_state_submissions([(optimal_fragment.clone(), [0; 32])]);
+
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            TestClock::default(),
+        );
 
         // when
-        sut.run().await.unwrap();
+        state_committer.run().await?;
 
         // then
-        // mocks validate that the bundle including blocks 0,1 and 2 was chosen having the best gas
-        // per byte
+        // Mocks validate that the bundle with the best gas estimation was chosen.
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn stops_asking_for_optimizations_if_time_exhausted() -> Result<()> {
-        //given
+    async fn stops_optimizing_if_time_exhausted() -> Result<()> {
+        // given
         let setup = test_utils::Setup::init().await;
 
         struct TestBundler {
-            rx: tokio::sync::mpsc::Receiver<BundleProposal>,
+            rx: tokio::sync::mpsc::Receiver<Option<BundleProposal>>,
             notify_consumed: tokio::sync::mpsc::Sender<()>,
         }
 
         #[async_trait::async_trait]
         impl Bundle for TestBundler {
             async fn propose_bundle(&mut self) -> Result<Option<BundleProposal>> {
-                let bundle = self.rx.recv().await;
+                let bundle = self.rx.recv().await.unwrap_or(None);
                 self.notify_consumed.send(()).await.unwrap();
                 Ok(bundle)
             }
         }
+
         struct TestBundlerFactory {
             bundler: Mutex<Option<TestBundler>>,
         }
@@ -722,69 +683,157 @@ mod tests {
             notify_consumed: send_consumed,
         };
 
-        let factory = TestBundlerFactory {
+        let bundler_factory = TestBundlerFactory {
             bundler: Mutex::new(Some(test_bundler)),
         };
 
         let test_clock = TestClock::default();
-        let second_optimization_run_fragment = non_empty_vec!(1);
-        let mut sut = {
-            let l1_mock = test_utils::mocks::l1::expects_state_submissions([(
-                second_optimization_run_fragment.clone(),
-                [0; 32],
-            )]);
+        let final_fragment = non_empty_vec![1];
 
-            StateCommitter::new(
-                l1_mock,
-                setup.db(),
-                test_clock.clone(),
-                factory,
-                BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(1),
-                },
-            )
-        };
+        let l1_mock_submit =
+            test_utils::mocks::l1::expects_state_submissions([(final_fragment.clone(), [0; 32])]);
 
-        let sut_task = tokio::task::spawn(async move {
-            sut.run().await.unwrap();
+        let mut state_committer = create_state_committer(
+            l1_mock_submit,
+            setup.db(),
+            bundler_factory,
+            test_clock.clone(),
+        );
+
+        let state_committer_task = tokio::task::spawn(async move {
+            state_committer.run().await.unwrap();
         });
 
+        // when
+        // Send the first (non-optimal) bundle proposal
         send_bundles
-            .send(BundleProposal {
+            .send(Some(BundleProposal {
                 fragments: SubmittableFragments {
-                    fragments: non_empty_vec!(non_empty_vec!(0)),
+                    fragments: non_empty_vec![non_empty_vec![0]],
                     gas_estimation: 1,
                 },
                 block_heights: (0..1).try_into().unwrap(),
                 optimal: false,
-            })
+            }))
             .await
             .unwrap();
 
         receive_consumed.recv().await.unwrap();
 
-        test_clock.adv_time(Duration::from_secs(1)).await;
+        // Advance the clock to exceed the optimization time limit
+        test_clock.advance_time(Duration::from_secs(1)).await;
 
-        // when
+        // Send the second bundle proposal
         send_bundles
-            .send(BundleProposal {
+            .send(Some(BundleProposal {
                 fragments: SubmittableFragments {
-                    fragments: non_empty_vec!(second_optimization_run_fragment.clone()),
+                    fragments: non_empty_vec![final_fragment.clone()],
                     gas_estimation: 1,
                 },
                 block_heights: (0..1).try_into().unwrap(),
                 optimal: false,
-            })
+            }))
             .await
             .unwrap();
 
         // then
-        // the second, albeit unoptimized, bundle gets sent to l1
-        tokio::time::timeout(Duration::from_secs(1), sut_task)
+        // The state committer should stop optimization and proceed with the best proposal
+        tokio::time::timeout(Duration::from_secs(1), state_committer_task)
             .await
             .unwrap()
             .unwrap();
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn handles_no_bundle_proposals_due_to_insufficient_blocks() -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        // Import fewer blocks than the minimum acceptable amount
+        setup.import_blocks(Blocks::WithHeights(0..1)).await;
+
+        // Configure the bundler with a minimum acceptable block range greater than the available blocks
+        let min_acceptable_blocks = 2;
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(ports::l1::MockApi::new()),
+            setup.db(),
+            (min_acceptable_blocks..3).try_into().unwrap(),
+        );
+
+        let l1_mock = ports::l1::MockApi::new();
+
+        let mut state_committer =
+            create_state_committer(l1_mock, setup.db(), bundler_factory, TestClock::default());
+
+        // when
+        state_committer.run().await?;
+
+        // then
+        // No fragments should have been submitted, and no errors should occur.
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn handles_l1_adapter_submission_failure() -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        // Import enough blocks to create a bundle
+        setup.import_blocks(Blocks::WithHeights(0..1)).await;
+
+        let fragment = test_utils::random_data(100);
+
+        // Configure the L1 adapter to fail on submission
+        let mut l1_mock = ports::l1::MockApi::new();
+        l1_mock
+            .expect_submit_l2_state()
+            .return_once(|_| Err(ports::l1::Error::Other("Submission failed".into())));
+
+        // Use the actual storage and bundler
+        let l1_mock_split =
+            test_utils::mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
+                fragments: non_empty_vec![fragment.clone()],
+                gas_estimation: 1,
+            });
+
+        let bundler_factory = bundler::gas_optimizing::Factory::new(
+            Arc::new(l1_mock_split),
+            setup.db(),
+            (1..2).try_into().unwrap(),
+        );
+
+        let mut state_committer =
+            create_state_committer(l1_mock, setup.db(), bundler_factory, TestClock::default());
+
+        // when
+        let result = state_committer.run().await;
+
+        // then
+        assert!(
+            result.is_err(),
+            "Expected an error due to L1 submission failure"
+        );
+
+        Ok(())
+    }
+
+    fn create_state_committer<L1>(
+        l1_adapter: L1,
+        storage: impl Storage + Clone,
+        bundler_factory: impl BundlerFactory,
+        clock: impl Clock,
+    ) -> StateCommitter<L1, impl Storage + Clone, impl Clock, impl BundlerFactory> {
+        StateCommitter::new(
+            l1_adapter,
+            storage,
+            clock,
+            bundler_factory,
+            BundleGenerationConfig {
+                stop_optimization_attempts_after: Duration::from_secs(1),
+            },
+        )
     }
 }

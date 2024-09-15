@@ -29,8 +29,14 @@ mod test_helpers {
     }
 
     impl TestClock {
-        pub async fn adv_time(&self, adv: Duration) {
+        pub async fn advance_time(&self, adv: Duration) {
             let new_time = self.now() + adv;
+            self.epoch_millis.store(
+                new_time.timestamp_millis(),
+                std::sync::atomic::Ordering::Relaxed,
+            )
+        }
+        pub async fn set_time(&self, new_time: DateTime<Utc>) {
             self.epoch_millis.store(
                 new_time.timestamp_millis(),
                 std::sync::atomic::Ordering::Relaxed,
@@ -68,7 +74,7 @@ mod tests {
         let adv = Duration::from_secs(1);
 
         // when
-        test_clock.adv_time(adv).await;
+        test_clock.advance_time(adv).await;
 
         // then
         let new_time = starting_time + adv;
