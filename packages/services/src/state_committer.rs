@@ -409,21 +409,9 @@ mod tests {
 
         let mut sut = {
             let fragment = test_utils::random_data(100);
-            let encoded_blocks: Vec<ports::storage::FuelBlock> = blocks
-                .into_iter()
-                .map(TryFrom::try_from)
-                .try_collect()
-                .unwrap();
-
-            let two_block_bundle: NonEmptyVec<u8> = encoded_blocks
-                .into_iter()
-                .flat_map(|b| b.data.into_inner())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
 
             let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
-                two_block_bundle,
+                test_utils::encode_blocks(&blocks),
                 SubmittableFragments {
                     fragments: non_empty_vec![fragment.clone()],
                     gas_estimation: 1,
@@ -476,24 +464,10 @@ mod tests {
             .await;
 
         let mut sut = {
-            let encoded_blocks: Vec<ports::storage::FuelBlock> = blocks
-                .into_iter()
-                .map(TryFrom::try_from)
-                .try_collect()
-                .unwrap();
-
-            let two_block_bundle: NonEmptyVec<u8> = encoded_blocks
-                .into_iter()
-                .take(2)
-                .flat_map(|b| b.data.into_inner())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
-
             let fragment = test_utils::random_data(100);
 
             let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
-                two_block_bundle.clone(),
+                test_utils::encode_blocks(&blocks[0..2]),
                 SubmittableFragments {
                     fragments: non_empty_vec![fragment.clone()],
                     gas_estimation: 1,
@@ -549,14 +523,10 @@ mod tests {
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
         let mut sut = {
-            let bundle_1 = ports::storage::FuelBlock::try_from(blocks[0].clone())
-                .unwrap()
-                .data;
+            let bundle_1 = test_utils::encode_blocks(&blocks[0..=0]);
             let bundle_1_fragment = test_utils::random_data(100);
 
-            let bundle_2 = ports::storage::FuelBlock::try_from(blocks[1].clone())
-                .unwrap()
-                .data;
+            let bundle_2 = test_utils::encode_blocks(&blocks[1..=1]);
             let bundle_2_fragment = test_utils::random_data(100);
 
             let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([
@@ -660,61 +630,29 @@ mod tests {
             .await;
 
         let mut sut = {
-            let first_bundle: NonEmptyVec<u8> = blocks[0..=1]
-                .iter()
-                .flat_map(|block| {
-                    ports::storage::FuelBlock::try_from(block.clone())
-                        .unwrap()
-                        .data
-                        .into_inner()
-                })
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
-
-            let second_bundle: NonEmptyVec<u8> = blocks[0..=2]
-                .iter()
-                .flat_map(|block| {
-                    ports::storage::FuelBlock::try_from(block.clone())
-                        .unwrap()
-                        .data
-                        .into_inner()
-                })
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
-
-            let third_bundle: NonEmptyVec<u8> = blocks[0..=3]
-                .iter()
-                .flat_map(|block| {
-                    ports::storage::FuelBlock::try_from(block.clone())
-                        .unwrap()
-                        .data
-                        .into_inner()
-                })
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
+            let bundle_1 = test_utils::encode_blocks(&blocks[0..=1]);
+            let bundle_2 = test_utils::encode_blocks(&blocks[0..=2]);
+            let bundle_3 = test_utils::encode_blocks(&blocks[0..=3]);
 
             let correct_fragment = test_utils::random_data(100);
 
             let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([
                 (
-                    first_bundle.clone(),
+                    bundle_1.clone(),
                     SubmittableFragments {
                         fragments: non_empty_vec![test_utils::random_data(100)],
                         gas_estimation: 2,
                     },
                 ),
                 (
-                    second_bundle,
+                    bundle_2,
                     SubmittableFragments {
                         fragments: non_empty_vec![correct_fragment.clone()],
                         gas_estimation: 1,
                     },
                 ),
                 (
-                    third_bundle,
+                    bundle_3,
                     SubmittableFragments {
                         fragments: non_empty_vec![test_utils::random_data(100)],
                         gas_estimation: 3,

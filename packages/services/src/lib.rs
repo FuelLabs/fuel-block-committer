@@ -69,6 +69,27 @@ pub trait Runner: Send + Sync {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    pub fn encode_blocks<'a>(
+        blocks: impl IntoIterator<Item = &'a ports::fuel::FuelBlock>,
+    ) -> NonEmptyVec<u8> {
+        let blocks = blocks.into_iter().collect::<Vec<_>>();
+
+        if blocks.is_empty() {
+            panic!("blocks must not be empty");
+        }
+
+        let bytes: Vec<u8> = blocks
+            .into_iter()
+            .flat_map(|block| {
+                ports::storage::FuelBlock::try_from(block.clone())
+                    .unwrap()
+                    .data
+                    .into_inner()
+            })
+            .collect();
+
+        bytes.try_into().unwrap()
+    }
 
     pub fn random_data(size: usize) -> NonEmptyVec<u8> {
         if size == 0 {
