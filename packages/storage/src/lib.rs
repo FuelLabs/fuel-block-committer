@@ -2,9 +2,7 @@
 mod mappings;
 #[cfg(feature = "test-helpers")]
 mod test_instance;
-use std::pin::Pin;
 
-use futures::{Stream, StreamExt, TryStreamExt};
 #[cfg(feature = "test-helpers")]
 pub use test_instance::*;
 
@@ -12,10 +10,7 @@ mod error;
 mod postgres;
 use ports::{
     storage::{BundleFragment, Result, Storage, ValidatedRange},
-    types::{
-        BlockSubmission, DateTime, L1Tx, NonEmptyVec, NonNegative, StateSubmission,
-        TransactionState, Utc,
-    },
+    types::{BlockSubmission, L1Tx, NonEmptyVec, NonNegative, TransactionState},
 };
 pub use postgres::{DbConfig, Postgres};
 

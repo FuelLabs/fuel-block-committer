@@ -1,11 +1,8 @@
 use std::{fmt::Display, ops::Range, sync::Arc};
 
 pub use futures::stream::BoxStream;
-use sqlx::types::chrono::{DateTime, Utc};
 
-use crate::types::{
-    BlockSubmission, L1Tx, NonEmptyVec, NonNegative, StateSubmission, TransactionState, VecIsEmpty,
-};
+use crate::types::{BlockSubmission, L1Tx, NonEmptyVec, NonNegative, TransactionState};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
