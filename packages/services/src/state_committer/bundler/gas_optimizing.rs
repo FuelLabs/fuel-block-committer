@@ -1,26 +1,27 @@
 use itertools::Itertools;
-use ports::storage::ValidatedRange;
+use ports::{l1::SubmittableFragments, storage::ValidatedRange, types::NonEmptyVec};
+use tracing::info;
 
 use crate::Result;
 
 use super::{Bundle, BundleProposal, BundlerFactory};
 
 pub struct Factory<L1, Storage> {
-    l1: L1,
+    l1_adapter: L1,
     storage: Storage,
-    acceptable_amount_of_blocks: ValidatedRange<usize>,
+    acceptable_block_range: ValidatedRange<usize>,
 }
 
 impl<L1, Storage> Factory<L1, Storage> {
     pub fn new(
-        l1: L1,
+        l1_adapter: L1,
         storage: Storage,
-        acceptable_amount_of_blocks: ValidatedRange<usize>,
+        acceptable_block_range: ValidatedRange<usize>,
     ) -> Self {
         Self {
-            acceptable_amount_of_blocks,
-            l1,
+            l1_adapter,
             storage,
+            acceptable_block_range,
         }
     }
 }
@@ -28,48 +29,116 @@ impl<L1, Storage> Factory<L1, Storage> {
 #[async_trait::async_trait]
 impl<L1, Storage> BundlerFactory for Factory<L1, Storage>
 where
-    Bundler<L1>: Bundle,
-    Storage: ports::storage::Storage + 'static,
-    L1: Send + Sync + 'static + Clone,
+    Storage: ports::storage::Storage + Send + Sync + 'static,
+    L1: ports::l1::Api + Clone + Send + Sync + 'static,
 {
     type Bundler = Bundler<L1>;
+
     async fn build(&self) -> Result<Self::Bundler> {
-        let max_blocks = self
-            .acceptable_amount_of_blocks
-            .inner()
-            .end
-            .saturating_sub(1);
+        let max_blocks = self.acceptable_block_range.inner().end.saturating_sub(1);
         let blocks = self.storage.lowest_unbundled_blocks(max_blocks).await?;
 
         Ok(Bundler::new(
-            self.l1.clone(),
+            self.l1_adapter.clone(),
             blocks,
-            self.acceptable_amount_of_blocks.clone(),
+            self.acceptable_block_range.clone(),
         ))
     }
+}
+
+pub struct BestProposal {
+    proposal: BundleProposal,
+    gas_per_byte: f64,
+    data_size: usize, // Uncompressed data size
 }
 
 pub struct Bundler<L1> {
     l1_adapter: L1,
     blocks: Vec<ports::storage::FuelBlock>,
-    acceptable_amount_of_blocks: ValidatedRange<usize>,
-    best_run: Option<BundleProposal>,
-    next_block_amount: Option<usize>,
+    acceptable_block_range: ValidatedRange<usize>,
+    best_proposal: Option<BestProposal>, // Refactored into BestProposal
+    current_block_count: usize,
 }
 
 impl<L1> Bundler<L1> {
     pub fn new(
         l1_adapter: L1,
         blocks: Vec<ports::storage::FuelBlock>,
-        acceptable_amount_of_blocks: ValidatedRange<usize>,
+        acceptable_block_range: ValidatedRange<usize>,
     ) -> Self {
+        let min_blocks = acceptable_block_range.inner().clone().min().unwrap_or(1);
         Self {
             l1_adapter,
             blocks,
-            acceptable_amount_of_blocks,
-            best_run: None,
-            next_block_amount: None,
+            acceptable_block_range,
+            best_proposal: None,
+            current_block_count: min_blocks,
         }
+    }
+
+    /// Merges the data from the given blocks into a `NonEmptyVec<u8>`.
+    fn merge_block_data(&self, block_slice: &[ports::storage::FuelBlock]) -> NonEmptyVec<u8> {
+        let merged_data: Vec<u8> = block_slice
+            .iter()
+            .flat_map(|b| b.data.clone().into_inner())
+            .collect();
+
+        NonEmptyVec::try_from(merged_data).expect("Merged block data cannot be empty")
+    }
+
+    /// Extracts the block heights from the given blocks as a `ValidatedRange<u32>`.
+    fn extract_block_heights(
+        &self,
+        block_slice: &[ports::storage::FuelBlock],
+    ) -> ValidatedRange<u32> {
+        let min_height = block_slice
+            .first()
+            .expect("Block slice cannot be empty")
+            .height;
+        let max_height = block_slice
+            .last()
+            .expect("Block slice cannot be empty")
+            .height;
+
+        (min_height..max_height.saturating_add(1))
+            .try_into()
+            .expect("Invalid block height range")
+    }
+
+    /// Calculates the gas per byte ratio for uncompressed data.
+    fn calculate_gas_per_byte(&self, gas_estimation: u128, data_size: usize) -> f64 {
+        gas_estimation as f64 / data_size as f64
+    }
+
+    /// Determines if the current proposal is better based on gas per byte and data size.
+    fn is_current_proposal_better(&self, gas_per_byte: f64, data_size: usize) -> bool {
+        match &self.best_proposal {
+            None => true, // No best proposal yet, so the current one is better
+            Some(best_proposal) => {
+                if gas_per_byte < best_proposal.gas_per_byte {
+                    true // Current proposal has a better (lower) gas per byte ratio
+                } else if gas_per_byte == best_proposal.gas_per_byte {
+                    // If the gas per byte is the same, the proposal with more data is better
+                    data_size > best_proposal.data_size
+                } else {
+                    false // Current proposal has a worse (higher) gas per byte ratio
+                }
+            }
+        }
+    }
+
+    /// Updates the best proposal with the current proposal.
+    fn update_best_proposal(
+        &mut self,
+        current_proposal: BundleProposal,
+        gas_per_byte: f64,
+        data_size: usize,
+    ) {
+        self.best_proposal = Some(BestProposal {
+            proposal: current_proposal,
+            gas_per_byte,
+            data_size,
+        });
     }
 }
 
@@ -80,78 +149,77 @@ where
 {
     async fn propose_bundle(&mut self) -> Result<Option<BundleProposal>> {
         if self.blocks.is_empty() {
+            info!("No blocks available for bundling.");
             return Ok(None);
         }
 
-        let min_possible_blocks = self
-            .acceptable_amount_of_blocks
+        let min_blocks = self
+            .acceptable_block_range
             .inner()
             .clone()
             .min()
-            .unwrap();
-
-        let max_possible_blocks = self
-            .acceptable_amount_of_blocks
+            .unwrap_or(1);
+        let max_blocks = self
+            .acceptable_block_range
             .inner()
             .clone()
             .max()
-            .unwrap();
+            .unwrap_or(self.blocks.len());
 
-        if self.blocks.len() < min_possible_blocks {
+        if self.blocks.len() < min_blocks {
+            info!(
+                "Not enough blocks to meet the minimum requirement: {}",
+                min_blocks
+            );
             return Ok(None);
         }
 
-        let amount_of_blocks_to_try = self.next_block_amount.unwrap_or(min_possible_blocks);
-
-        let merged_data = self.blocks[..amount_of_blocks_to_try]
-            .iter()
-            .flat_map(|b| b.data.clone().into_inner())
-            .collect::<Vec<_>>();
-
-        let submittable_chunks = self
-            .l1_adapter
-            .split_into_submittable_fragments(&merged_data.try_into().expect("cannot be empty"))?;
-
-        let fragments = submittable_chunks;
-
-        let (min_height, max_height) = self.blocks.as_slice()[..amount_of_blocks_to_try]
-            .iter()
-            .map(|b| b.height)
-            .minmax()
-            .into_option()
-            .unwrap();
-
-        let block_heights = (min_height..max_height + 1).try_into().unwrap();
-
-        match &mut self.best_run {
-            None => {
-                self.best_run = Some(BundleProposal {
-                    fragments,
-                    block_heights,
-                    optimal: false,
-                });
-            }
-            Some(best_run) => {
-                if best_run.fragments.gas_estimation >= fragments.gas_estimation {
-                    self.best_run = Some(BundleProposal {
-                        fragments,
-                        block_heights,
-                        optimal: false,
-                    });
-                }
+        if self.current_block_count > max_blocks {
+            // No more block counts to try; return the best proposal.
+            // Mark as optimal if we've tried all possibilities.
+            if let Some(mut best_proposal) =
+                self.best_proposal.as_ref().map(|bp| bp.proposal.clone())
+            {
+                best_proposal.optimal = true;
+                return Ok(Some(best_proposal));
+            } else {
+                return Ok(None);
             }
         }
 
-        let last_try = amount_of_blocks_to_try == max_possible_blocks;
+        let block_slice = &self.blocks[..self.current_block_count];
 
-        let best = self.best_run.as_ref().unwrap().clone();
+        // Merge block data
+        let merged_data = self.merge_block_data(block_slice);
 
-        self.next_block_amount = Some(amount_of_blocks_to_try.saturating_add(1));
+        // Split into submittable fragments
+        let fragments = self
+            .l1_adapter
+            .split_into_submittable_fragments(&merged_data)?;
 
-        Ok(Some(BundleProposal {
-            optimal: last_try,
-            ..best
-        }))
+        // Extract block heights
+        let block_heights = self.extract_block_heights(block_slice);
+
+        // Calculate gas per byte ratio (based on uncompressed data)
+        let data_size = merged_data.len();
+        let gas_per_byte = self.calculate_gas_per_byte(fragments.gas_estimation, data_size);
+
+        let current_proposal = BundleProposal {
+            fragments,
+            block_heights,
+            optimal: false,
+        };
+
+        // Check if the current proposal is better
+        if self.is_current_proposal_better(gas_per_byte, data_size) {
+            self.update_best_proposal(current_proposal, gas_per_byte, data_size);
+        }
+
+        // Prepare for the next iteration
+        self.current_block_count += 1;
+
+        // Return the best proposal so far
+        Ok(self.best_proposal.as_ref().map(|bp| bp.proposal.clone()))
     }
 }
 

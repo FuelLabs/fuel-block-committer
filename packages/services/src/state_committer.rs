@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn optimizes_for_gas_usage() -> Result<()> {
+    async fn optimizes_for_gas_per_byte() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
         let secret_key = SecretKey::random(&mut rand::thread_rng());
@@ -589,9 +589,9 @@ mod tests {
             })
             .await;
 
-        let bundle_1 = test_utils::encode_blocks(&blocks[0..=1]);
-        let bundle_2 = test_utils::encode_blocks(&blocks[0..=2]);
-        let bundle_3 = test_utils::encode_blocks(&blocks[0..=3]);
+        let bundle_1 = test_utils::encode_blocks(&blocks[0..=1]); // 2 blocks
+        let bundle_2 = test_utils::encode_blocks(&blocks[0..=2]); // 3 blocks (best gas per byte)
+        let bundle_3 = test_utils::encode_blocks(&blocks[0..=3]); // 4 blocks
 
         let optimal_fragment = test_utils::random_data(100);
 
@@ -599,21 +599,21 @@ mod tests {
             (
                 bundle_1,
                 SubmittableFragments {
-                    fragments: non_empty_vec![test_utils::random_data(100)],
+                    fragments: non_empty_vec![test_utils::random_data(100)], // 100 bytes, gas estimation 2
                     gas_estimation: 2,
                 },
             ),
             (
                 bundle_2,
                 SubmittableFragments {
-                    fragments: non_empty_vec![optimal_fragment.clone()],
+                    fragments: non_empty_vec![optimal_fragment.clone()], // 100 bytes, gas estimation 1 (best gas per byte)
                     gas_estimation: 1,
                 },
             ),
             (
                 bundle_3,
                 SubmittableFragments {
-                    fragments: non_empty_vec![test_utils::random_data(100)],
+                    fragments: non_empty_vec![test_utils::random_data(100)], // 100 bytes, gas estimation 3
                     gas_estimation: 3,
                 },
             ),
@@ -622,7 +622,7 @@ mod tests {
         let bundler_factory = bundler::gas_optimizing::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (2..5).try_into().unwrap(),
+            (2..5).try_into().unwrap(), // Valid block range: 2 to 4 blocks
         );
 
         let l1_mock_submit =
@@ -635,11 +635,10 @@ mod tests {
             TestClock::default(),
         );
 
-        // when
         state_committer.run().await?;
 
-        // then
-        // Mocks validate that the bundle with the best gas estimation was chosen.
+        // Then: Validate that the bundle with the best gas per byte was chosen
+        // Mocks validate that the bundle with the best gas per byte (bundle_2) was submitted
 
         Ok(())
     }
