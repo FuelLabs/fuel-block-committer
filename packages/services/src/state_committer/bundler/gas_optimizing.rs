@@ -1,10 +1,10 @@
-use itertools::Itertools;
-use ports::{l1::SubmittableFragments, storage::ValidatedRange, types::NonEmptyVec};
-use tracing::info;
-
-use crate::Result;
-
 use super::{Bundle, BundleProposal, BundlerFactory};
+use crate::Result;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use ports::{storage::ValidatedRange, types::NonEmptyVec};
+use std::io::Write;
+use tracing::info;
 
 pub struct Factory<L1, Storage> {
     l1_adapter: L1,
@@ -36,7 +36,10 @@ where
 
     async fn build(&self) -> Result<Self::Bundler> {
         let max_blocks = self.acceptable_block_range.inner().end.saturating_sub(1);
-        let blocks = self.storage.lowest_unbundled_blocks(max_blocks).await?;
+        let mut blocks = self.storage.lowest_unbundled_blocks(max_blocks).await?;
+
+        // Ensure blocks are sorted by height
+        blocks.sort_by_key(|block| block.height);
 
         Ok(Bundler::new(
             self.l1_adapter.clone(),
@@ -48,15 +51,15 @@ where
 
 pub struct BestProposal {
     proposal: BundleProposal,
-    gas_per_byte: f64,
-    data_size: usize, // Uncompressed data size
+    gas_per_uncompressed_byte: f64,
+    uncompressed_data_size: usize, // Uncompressed data size
 }
 
 pub struct Bundler<L1> {
     l1_adapter: L1,
     blocks: Vec<ports::storage::FuelBlock>,
     acceptable_block_range: ValidatedRange<usize>,
-    best_proposal: Option<BestProposal>, // Refactored into BestProposal
+    best_proposal: Option<BestProposal>,
     current_block_count: usize,
 }
 
@@ -76,14 +79,12 @@ impl<L1> Bundler<L1> {
         }
     }
 
-    /// Merges the data from the given blocks into a `NonEmptyVec<u8>`.
-    fn merge_block_data(&self, block_slice: &[ports::storage::FuelBlock]) -> NonEmptyVec<u8> {
-        let merged_data: Vec<u8> = block_slice
+    /// Merges the data from the given blocks into a `Vec<u8>`.
+    fn merge_block_data(&self, block_slice: &[ports::storage::FuelBlock]) -> Vec<u8> {
+        block_slice
             .iter()
             .flat_map(|b| b.data.clone().into_inner())
-            .collect();
-
-        NonEmptyVec::try_from(merged_data).expect("Merged block data cannot be empty")
+            .collect()
     }
 
     /// Extracts the block heights from the given blocks as a `ValidatedRange<u32>`.
@@ -105,23 +106,27 @@ impl<L1> Bundler<L1> {
             .expect("Invalid block height range")
     }
 
-    /// Calculates the gas per byte ratio for uncompressed data.
-    fn calculate_gas_per_byte(&self, gas_estimation: u128, data_size: usize) -> f64 {
-        gas_estimation as f64 / data_size as f64
+    /// Calculates the gas per uncompressed byte ratio for data.
+    fn calculate_gas_per_uncompressed_byte(
+        &self,
+        gas_estimation: u128,
+        uncompressed_data_size: usize,
+    ) -> f64 {
+        gas_estimation as f64 / uncompressed_data_size as f64
     }
 
-    /// Determines if the current proposal is better based on gas per byte and data size.
-    fn is_current_proposal_better(&self, gas_per_byte: f64, data_size: usize) -> bool {
+    /// Determines if the current proposal is better based on gas per uncompressed byte and data size.
+    fn is_current_proposal_better(&self, gas_per_uncompressed_byte: f64, data_size: usize) -> bool {
         match &self.best_proposal {
-            None => true, // No best proposal yet, so the current one is better
+            None => true,
             Some(best_proposal) => {
-                if gas_per_byte < best_proposal.gas_per_byte {
-                    true // Current proposal has a better (lower) gas per byte ratio
-                } else if gas_per_byte == best_proposal.gas_per_byte {
-                    // If the gas per byte is the same, the proposal with more data is better
-                    data_size > best_proposal.data_size
+                if gas_per_uncompressed_byte < best_proposal.gas_per_uncompressed_byte {
+                    true
+                } else if gas_per_uncompressed_byte == best_proposal.gas_per_uncompressed_byte {
+                    // If the gas per byte is the same, the proposal with more uncompressed data is better
+                    data_size > best_proposal.uncompressed_data_size
                 } else {
-                    false // Current proposal has a worse (higher) gas per byte ratio
+                    false
                 }
             }
         }
@@ -131,13 +136,13 @@ impl<L1> Bundler<L1> {
     fn update_best_proposal(
         &mut self,
         current_proposal: BundleProposal,
-        gas_per_byte: f64,
-        data_size: usize,
+        gas_per_uncompressed_byte: f64,
+        uncompressed_data_size: usize,
     ) {
         self.best_proposal = Some(BestProposal {
             proposal: current_proposal,
-            gas_per_byte,
-            data_size,
+            gas_per_uncompressed_byte,
+            uncompressed_data_size,
         });
     }
 }
@@ -189,20 +194,25 @@ where
 
         let block_slice = &self.blocks[..self.current_block_count];
 
-        // Merge block data
-        let merged_data = self.merge_block_data(block_slice);
+        // Merge block data (uncompressed data)
+        let uncompressed_data = self.merge_block_data(block_slice);
 
-        // Split into submittable fragments
-        let fragments = self
-            .l1_adapter
-            .split_into_submittable_fragments(&merged_data)?;
+        // Compress the merged data for better gas usage
+        let compressed_data = compress_data(&uncompressed_data)?;
+
+        // Split into submittable fragments using the compressed data
+        let fragments = self.l1_adapter.split_into_submittable_fragments(
+            &NonEmptyVec::try_from(compressed_data.clone())
+                .expect("Compressed data cannot be empty"),
+        )?;
 
         // Extract block heights
         let block_heights = self.extract_block_heights(block_slice);
 
-        // Calculate gas per byte ratio (based on uncompressed data)
-        let data_size = merged_data.len();
-        let gas_per_byte = self.calculate_gas_per_byte(fragments.gas_estimation, data_size);
+        // Calculate gas per uncompressed byte ratio (based on the original, uncompressed data size)
+        let uncompressed_data_size = uncompressed_data.len();
+        let gas_per_uncompressed_byte = self
+            .calculate_gas_per_uncompressed_byte(fragments.gas_estimation, uncompressed_data_size);
 
         let current_proposal = BundleProposal {
             fragments,
@@ -210,9 +220,13 @@ where
             optimal: false,
         };
 
-        // Check if the current proposal is better
-        if self.is_current_proposal_better(gas_per_byte, data_size) {
-            self.update_best_proposal(current_proposal, gas_per_byte, data_size);
+        // Check if the current proposal is better based on gas per uncompressed byte
+        if self.is_current_proposal_better(gas_per_uncompressed_byte, uncompressed_data_size) {
+            self.update_best_proposal(
+                current_proposal,
+                gas_per_uncompressed_byte,
+                uncompressed_data_size,
+            );
         }
 
         // Prepare for the next iteration
@@ -221,6 +235,17 @@ where
         // Return the best proposal so far
         Ok(self.best_proposal.as_ref().map(|bp| bp.proposal.clone()))
     }
+}
+
+/// Compresses the merged block data using `flate2` with gzip compression.
+pub(crate) fn compress_data(data: &[u8]) -> Result<Vec<u8>> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(data)
+        .map_err(|e| crate::Error::Other(e.to_string()))?;
+    encoder
+        .finish()
+        .map_err(|e| crate::Error::Other(e.to_string()))
 }
 
 #[cfg(test)]

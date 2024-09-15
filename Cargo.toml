@@ -70,6 +70,7 @@ testcontainers = { version = "0.20", default-features = false }
 thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.37", default-features = false }
 tokio-util = { version = "0.7", default-features = false }
+flate2 = { version = "1.0", default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
 url = { version = "2.3", default-features = false }
