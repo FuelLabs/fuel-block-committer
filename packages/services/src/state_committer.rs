@@ -207,7 +207,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
-        );
+        )?;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (fragment_0.clone(), fragment_tx_ids[0]),
@@ -262,7 +262,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
-        );
+        )?;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (fragment_0.clone(), original_tx),
@@ -304,7 +304,7 @@ mod tests {
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             (2..3).try_into().unwrap(),
-        );
+        )?;
 
         let mut state_committer =
             create_state_committer(l1_mock, setup.db(), bundler_factory, TestClock::default());
@@ -337,7 +337,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
-        );
+        )?;
 
         let mut l1_mock_submit = ports::l1::MockApi::new();
         l1_mock_submit
@@ -396,7 +396,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (2..3).try_into().unwrap(),
-        );
+        )?;
 
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
@@ -447,7 +447,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (2..3).try_into().unwrap(),
-        );
+        )?;
 
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
@@ -515,7 +515,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
-        );
+        )?;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (bundle_1_fragment.clone(), bundle_1_tx),
@@ -541,33 +541,6 @@ mod tests {
 
         // then
         // Mocks validate that the second block was bundled and sent.
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn can_be_disabled_by_empty_acceptable_block_range() -> Result<()> {
-        // given
-        let setup = test_utils::Setup::init().await;
-
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(ports::l1::MockApi::new()),
-            setup.db(),
-            (0..1).try_into().unwrap(),
-        );
-
-        let mut state_committer = create_state_committer(
-            ports::l1::MockApi::new(),
-            setup.db(),
-            bundler_factory,
-            TestClock::default(),
-        );
-
-        // when
-        state_committer.run().await?;
-
-        // then
-        // No calls to mocks were made.
 
         Ok(())
     }
@@ -623,7 +596,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (2..5).try_into().unwrap(), // Valid block range: 2 to 4 blocks
-        );
+        )?;
 
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(optimal_fragment.clone(), [0; 32])]);
@@ -761,7 +734,7 @@ mod tests {
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             (min_acceptable_blocks..3).try_into().unwrap(),
-        );
+        )?;
 
         let l1_mock = ports::l1::MockApi::new();
 
@@ -804,7 +777,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
-        );
+        )?;
 
         let mut state_committer =
             create_state_committer(l1_mock, setup.db(), bundler_factory, TestClock::default());

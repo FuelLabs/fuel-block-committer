@@ -4,7 +4,7 @@ use ports::{l1::SubmittableFragments, storage::ValidatedRange};
 
 use flate2::{write::GzEncoder, Compression};
 use ports::types::NonEmptyVec;
-use std::io::Write;
+use std::{io::Write, num::NonZeroUsize, ops::Range};
 use tracing::info;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,20 +30,36 @@ pub trait BundlerFactory {
 pub struct Factory<L1, Storage> {
     l1_adapter: L1,
     storage: Storage,
-    acceptable_block_range: ValidatedRange<usize>,
+    min_blocks: NonZeroUsize,
+    max_blocks: NonZeroUsize,
 }
 
 impl<L1, Storage> Factory<L1, Storage> {
     pub fn new(
         l1_adapter: L1,
         storage: Storage,
-        acceptable_block_range: ValidatedRange<usize>,
-    ) -> Self {
-        Self {
+        acceptable_block_range: Range<usize>,
+    ) -> Result<Self> {
+        let Some((min, max)) = acceptable_block_range.minmax().into_option() else {
+            return Err(crate::Error::Other(
+                "acceptable block range must not be empty".to_string(),
+            ));
+        };
+
+        let min_blocks = NonZeroUsize::new(min).ok_or_else(|| {
+            crate::Error::Other("minimum block count must be non-zero".to_string())
+        })?;
+
+        let max_blocks = NonZeroUsize::new(max).ok_or_else(|| {
+            crate::Error::Other("maximum block count must be non-zero".to_string())
+        })?;
+
+        Ok(Self {
             l1_adapter,
             storage,
-            acceptable_block_range,
-        }
+            min_blocks,
+            max_blocks,
+        })
     }
 }
 
@@ -56,17 +72,16 @@ where
     type Bundler = Bundler<L1>;
 
     async fn build(&self) -> Result<Self::Bundler> {
-        let max_blocks = self.acceptable_block_range.inner().end.saturating_sub(1);
-        let mut blocks = self.storage.lowest_unbundled_blocks(max_blocks).await?;
-
-        // Ensure blocks are sorted by height
-        blocks.sort_by_key(|block| block.height);
+        let blocks = self
+            .storage
+            .lowest_unbundled_blocks(self.max_blocks.into())
+            .await?;
 
         // TODO: make compression level configurable
         Ok(Bundler::new(
             self.l1_adapter.clone(),
             blocks,
-            self.acceptable_block_range.clone(),
+            self.min_blocks,
             Compressor::default(),
         ))
     }
@@ -81,9 +96,9 @@ pub struct BestProposal {
 pub struct Bundler<L1> {
     l1_adapter: L1,
     blocks: Vec<ports::storage::FuelBlock>,
-    acceptable_block_range: ValidatedRange<usize>,
+    minimum_blocks: NonZeroUsize,
     best_proposal: Option<BestProposal>,
-    current_block_count: usize,
+    current_block_count: NonZeroUsize,
     compressor: Compressor,
 }
 
@@ -91,16 +106,16 @@ impl<L1> Bundler<L1> {
     pub fn new(
         l1_adapter: L1,
         blocks: Vec<ports::storage::FuelBlock>,
-        acceptable_block_range: ValidatedRange<usize>,
+        minimum_blocks: NonZeroUsize,
         compressor: Compressor,
     ) -> Self {
-        let min_blocks = acceptable_block_range.inner().clone().min().unwrap_or(1);
+        let blocks = blocks.into_iter().sorted_by_key(|b| b.height).collect();
         Self {
             l1_adapter,
             blocks,
-            acceptable_block_range,
+            minimum_blocks,
             best_proposal: None,
-            current_block_count: min_blocks,
+            current_block_count: minimum_blocks,
             compressor,
         }
     }
@@ -194,31 +209,17 @@ where
     L1: ports::l1::Api + Send + Sync,
 {
     async fn propose_bundle(&mut self) -> Result<Option<BundleProposal>> {
-        if self.blocks.is_empty() {
-            info!("No blocks available for bundling.");
-            return Ok(None);
-        }
-
-        let min_blocks = self
-            .acceptable_block_range
-            .inner()
-            .clone()
-            .min()
-            .unwrap_or(1);
-        let max_blocks = self
-            .acceptable_block_range
-            .inner()
-            .clone()
-            .max()
-            .unwrap_or(self.blocks.len());
-
-        if self.blocks.len() < min_blocks {
+        let min_blocks = self.minimum_blocks;
+        if self.blocks.len() < min_blocks.get() {
             info!(
                 "Not enough blocks to meet the minimum requirement: {}",
                 min_blocks
             );
             return Ok(None);
         }
+
+        let max_blocks = NonZeroUsize::try_from(self.blocks.len())
+            .expect("to not be zero since it is not less than the minimum which cannot be zero");
 
         if self.current_block_count > max_blocks {
             // No more block counts to try; return the best proposal.
@@ -233,7 +234,7 @@ where
             }
         }
 
-        let block_slice = &self.blocks[..self.current_block_count];
+        let block_slice = &self.blocks[..self.current_block_count.get()];
 
         // Merge block data (uncompressed data)
         let uncompressed_data = self.merge_block_data(block_slice)?;
@@ -275,7 +276,21 @@ where
         }
 
         // Prepare for the next iteration
-        self.current_block_count += 1;
+        self.current_block_count = self.current_block_count.saturating_add(1);
+
+        // TODO: refactor double check
+        if self.current_block_count > max_blocks {
+            // No more block counts to try; return the best proposal.
+            // Mark as optimal if we've tried all possibilities.
+            if let Some(mut best_proposal) =
+                self.best_proposal.as_ref().map(|bp| bp.proposal.clone())
+            {
+                best_proposal.optimal = true;
+                return Ok(Some(best_proposal));
+            } else {
+                return Ok(None);
+            }
+        }
 
         // Return the best proposal so far
         Ok(self.best_proposal.as_ref().map(|bp| bp.proposal.clone()))
@@ -287,17 +302,45 @@ pub struct Compressor {
     level: Compression,
 }
 
+pub enum Level {
+    Min,
+    Level0,
+    Level1,
+    Level2,
+    Level3,
+    Level4,
+    Level5,
+    Level6,
+    Level7,
+    Level8,
+    Level9,
+    Level10,
+    Max,
+}
+
 impl Compressor {
-    pub fn new(level: u32) -> Result<Self> {
-        Ok(Self {
+    pub fn new(level: Level) -> Self {
+        let level = match level {
+            Level::Level0 | Level::Min => 0,
+            Level::Level1 => 1,
+            Level::Level2 => 2,
+            Level::Level3 => 3,
+            Level::Level4 => 4,
+            Level::Level5 => 5,
+            Level::Level6 => 6,
+            Level::Level7 => 7,
+            Level::Level8 => 8,
+            Level::Level9 => 9,
+            Level::Level10 | Level::Max => 10,
+        };
+
+        Self {
             level: Compression::new(level),
-        })
+        }
     }
 
     pub fn default() -> Self {
-        Self {
-            level: Compression::default(),
-        }
+        Self::new(Level::Level6)
     }
 
     pub async fn compress(&self, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
@@ -349,7 +392,7 @@ mod tests {
         let mut sut = Bundler::new(
             l1_mock,
             blocks,
-            (2..4).try_into().unwrap(),
+            2.try_into().unwrap(),
             Compressor::default(),
         );
 
@@ -401,7 +444,7 @@ mod tests {
         let mut bundler = Bundler::new(
             l1_mock,
             blocks,
-            (2..4).try_into().unwrap(),
+            2.try_into().unwrap(),
             Compressor::default(),
         );
 
@@ -467,7 +510,7 @@ mod tests {
         let mut bundler = Bundler::new(
             l1_mock,
             blocks.clone(),
-            (2..4).try_into().unwrap(),
+            2.try_into().unwrap(),
             Compressor::default(),
         );
 
@@ -483,6 +526,113 @@ mod tests {
         assert_eq!(best_proposal.block_heights, (0..3).try_into().unwrap());
 
         approx::assert_abs_diff_eq!(best_proposal.compression_ratio, 80.84, epsilon = 0.01);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn propose_bundle_with_insufficient_blocks_returns_none() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+        let block = test_utils::mocks::fuel::generate_storage_block(0, &secret_key);
+
+        let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([]);
+
+        let mut bundler = Bundler::new(
+            l1_mock,
+            vec![block],
+            2.try_into().unwrap(), // Minimum required blocks is 2
+            Compressor::default(),
+        );
+
+        // when
+        let proposal = bundler.propose_bundle().await.unwrap();
+
+        // then
+        assert!(
+            proposal.is_none(),
+            "Expected no proposal when blocks are below minimum range"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn propose_bundle_with_exact_minimum_blocks() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+        let block_0 = test_utils::mocks::fuel::generate_storage_block(0, &secret_key);
+        let block_1 = test_utils::mocks::fuel::generate_storage_block(1, &secret_key);
+
+        let compressed_data =
+            test_utils::merge_and_compress_blocks(&[block_0.clone(), block_1.clone()]).await;
+        let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
+            compressed_data.clone(),
+            SubmittableFragments {
+                fragments: non_empty_vec![test_utils::random_data(50)],
+                gas_estimation: 100,
+            },
+        )]);
+
+        let mut bundler = Bundler::new(
+            l1_mock,
+            vec![block_0, block_1],
+            2.try_into().unwrap(), // Minimum is 2, maximum is 3
+            Compressor::default(),
+        );
+
+        // when
+        let proposal = bundler.propose_bundle().await.unwrap().unwrap();
+
+        // then
+        assert_eq!(
+            proposal.block_heights,
+            (0..2).try_into().unwrap(),
+            "Block heights should be in range from 0 to 2"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn propose_bundle_with_unsorted_blocks() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+        let blocks = vec![
+            test_utils::mocks::fuel::generate_storage_block(2, &secret_key),
+            test_utils::mocks::fuel::generate_storage_block(0, &secret_key),
+            test_utils::mocks::fuel::generate_storage_block(1, &secret_key),
+        ];
+
+        let compressed_data = test_utils::merge_and_compress_blocks(&[
+            blocks[1].clone(),
+            blocks[2].clone(),
+            blocks[0].clone(),
+        ])
+        .await;
+        let l1_mock = test_utils::mocks::l1::will_split_bundles_into_fragments([(
+            compressed_data.clone(),
+            SubmittableFragments {
+                fragments: non_empty_vec![test_utils::random_data(70)],
+                gas_estimation: 200,
+            },
+        )]);
+
+        let mut bundler = Bundler::new(
+            l1_mock,
+            blocks.clone(),
+            3.try_into().unwrap(),
+            Compressor::default(),
+        );
+
+        // when
+        let proposal = bundler.propose_bundle().await.unwrap().unwrap();
+
+        // then
+        assert!(
+            proposal.optimal,
+            "Proposal with maximum blocks should be optimal"
+        );
 
         Ok(())
     }
