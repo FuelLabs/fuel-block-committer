@@ -223,7 +223,7 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
         db.insert_state_submission(state, vec![fragment]).await?;
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
 
         let current_block_number = 34;
         let tx_block_number = 32;
@@ -235,13 +235,13 @@ mod tests {
 
         let num_blocks_to_finalize = 1;
         let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
-        assert!(db.has_pending_txs().await?);
+        assert!(db.has_pending_state_submission().await?);
 
         // when
         listener.run().await.unwrap();
 
         // then
-        assert!(!db.has_pending_txs().await?);
+        assert!(!db.has_pending_state_submission().await?);
 
         Ok(())
     }
@@ -255,7 +255,7 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
         db.insert_state_submission(state, vec![fragment]).await?;
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
 
         let current_block_number = 34;
         let tx_block_number = 32;
@@ -267,13 +267,13 @@ mod tests {
 
         let num_blocks_to_finalize = 4;
         let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
-        assert!(db.has_pending_txs().await?);
+        assert!(db.has_pending_state_submission().await?);
 
         // when
         listener.run().await.unwrap();
 
         // then
-        assert!(db.has_pending_txs().await?);
+        assert!(db.has_pending_state_submission().await?);
 
         Ok(())
     }
@@ -287,19 +287,19 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await?;
         db.insert_state_submission(state, vec![fragment]).await?;
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
 
         let l1_mock = given_l1_that_returns_failed_transaction(tx_hash);
 
         let num_blocks_to_finalize = 4;
         let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
-        assert!(db.has_pending_txs().await?);
+        assert!(db.has_pending_state_submission().await?);
 
         // when
         listener.run().await.unwrap();
 
         // then
-        assert!(!db.has_pending_txs().await?);
+        assert!(!db.has_pending_state_submission().await?);
 
         Ok(())
     }

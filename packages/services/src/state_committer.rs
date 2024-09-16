@@ -45,7 +45,7 @@ where
 
         let tx_hash = self.l1_adapter.submit_l2_state(data).await?;
         self.storage
-            .record_pending_tx(tx_hash, fragment_ids)
+            .record_state_submission(tx_hash, fragment_ids)
             .await?;
 
         info!("submitted blob tx {}", hex::encode(tx_hash));
@@ -53,8 +53,8 @@ where
         Ok(())
     }
 
-    async fn is_tx_pending(&self) -> Result<bool> {
-        self.storage.has_pending_txs().await.map_err(|e| e.into())
+    async fn has_pending_submission(&self) -> Result<bool> {
+        self.storage.has_pending_state_submission().await.map_err(|e| e.into())
     }
 }
 
@@ -65,7 +65,7 @@ where
     Db: Storage,
 {
     async fn run(&mut self) -> Result<()> {
-        if self.is_tx_pending().await? {
+        if self.has_pending_submission().await? {
             return Ok(());
         };
 
@@ -159,7 +159,7 @@ mod tests {
         committer.run().await.unwrap();
 
         // then
-        assert!(db.has_pending_txs().await?);
+        assert!(db.has_pending_state_submission().await?);
 
         Ok(())
     }

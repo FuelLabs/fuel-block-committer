@@ -65,13 +65,13 @@ pub struct WsConnection {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]> {
         let commit_height = Self::calculate_commit_height(block.height(), self.commit_interval);
         let contract_call = self.contract.commit(block.hash().into(), commit_height);
         let tx = contract_call.send().await?;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
-        Ok(())
+        Ok(tx.tx_hash().0)
     }
 
     async fn get_block_number(&self) -> Result<u64> {

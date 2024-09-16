@@ -58,7 +58,7 @@ impl WebsocketClient {
         self.inner.event_streamer(eth_block_height)
     }
 
-    pub(crate) async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
+    pub(crate) async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]> {
         Ok(self.inner.submit(block).await?)
     }
 

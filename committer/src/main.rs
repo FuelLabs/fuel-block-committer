@@ -63,18 +63,9 @@ async fn main() -> Result<()> {
         cancel_token.clone(),
     );
 
-    let listener_handle = setup::l1_event_listener(
-        &internal_config,
-        ethereum_rpc.clone(),
-        storage.clone(),
-        &metrics_registry,
-        cancel_token.clone(),
-    );
-
     let mut handles = vec![
         wallet_balance_tracker_handle,
         committer_handle,
-        listener_handle,
     ];
 
     // If the blob pool wallet key is set, we need to start

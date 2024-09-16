@@ -6,6 +6,7 @@ mod state_committer;
 mod state_importer;
 mod state_listener;
 mod status_reporter;
+mod tx_manager;
 mod wallet_balance_tracker;
 
 pub use block_committer::BlockCommitter;

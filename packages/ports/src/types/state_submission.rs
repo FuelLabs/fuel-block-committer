@@ -25,6 +25,7 @@ pub struct SubmissionTx {
     pub id: Option<u32>,
     pub hash: [u8; 32],
     pub state: TransactionState,
+    pub tx_type: TransactionType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +33,12 @@ pub enum TransactionState {
     Pending,
     Finalized,
     Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransactionType {
+    ContractCommit,
+    Blob,
 }
 
 // Used for DB storage
@@ -49,6 +56,24 @@ impl TransactionState {
             0 => Some(Self::Pending),
             1 => Some(Self::Finalized),
             2 => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+
+// Used for DB storage
+impl TransactionType {
+    pub fn into_i16(&self) -> i16 {
+        match self {
+            TransactionType::ContractCommit => 0,
+            TransactionType::Blob => 1,
+        }
+    }
+
+    pub fn from_i16(value: i16) -> Option<Self> {
+        match value {
+            0 => Some(Self::ContractCommit),
+            1 => Some(Self::Blob),
             _ => None,
         }
     }

@@ -15,16 +15,16 @@ pub use postgres::{DbConfig, Postgres};
 
 #[async_trait::async_trait]
 impl Storage for Postgres {
-    async fn insert(&self, submission: BlockSubmission) -> Result<()> {
-        Ok(self._insert(submission).await?)
+    async fn record_block_submission(
+        &self,
+        tx_hash: [u8; 32],
+        submission: BlockSubmission,
+    ) -> Result<()> {
+        Ok(self._record_block_submission(tx_hash, submission).await?)
     }
 
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
         Ok(self._submission_w_latest_block().await?)
-    }
-
-    async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
-        Ok(self._set_submission_completed(fuel_block_hash).await?)
     }
 
     async fn insert_state_submission(
@@ -39,16 +39,20 @@ impl Storage for Postgres {
         Ok(self._get_unsubmitted_fragments().await?)
     }
 
-    async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()> {
-        Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
+    async fn record_state_submission(
+        &self,
+        tx_hash: [u8; 32],
+        fragment_ids: Vec<u32>,
+    ) -> Result<()> {
+        Ok(self._record_state_submission(tx_hash, fragment_ids).await?)
     }
 
     async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>> {
         Ok(self._get_pending_txs().await?)
     }
 
-    async fn has_pending_txs(&self) -> Result<bool> {
-        Ok(self._has_pending_txs().await?)
+    async fn has_pending_state_submission(&self) -> Result<bool> {
+        Ok(self._has_pending_fragments().await?)
     }
 
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>> {
@@ -81,17 +85,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn can_insert_and_find_latest_block() {
+    async fn can_record_and_find_latest_block() {
         // given
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
         let latest_height = random_non_zero_height();
+        let tx_hash = [1; 32];
 
         let latest_submission = given_incomplete_submission(latest_height);
-        db.insert(latest_submission.clone()).await.unwrap();
+        db.record_block_submission(tx_hash, latest_submission.clone())
+            .await
+            .unwrap();
 
         let older_submission = given_incomplete_submission(latest_height - 1);
-        db.insert(older_submission).await.unwrap();
+        let older_tx_hash = [0; 32];
+        db.record_block_submission(older_tx_hash, older_submission)
+            .await
+            .unwrap();
 
         // when
         let actual = db.submission_w_latest_block().await.unwrap().unwrap();
@@ -109,7 +119,10 @@ mod tests {
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
         let block_hash = submission.block_hash;
-        db.insert(submission).await.unwrap();
+        let tx_hash = [1; 32];
+        db.record_block_submission(tx_hash, submission)
+            .await
+            .unwrap();
 
         // when
         let submission = db.set_submission_completed(block_hash).await.unwrap();
@@ -167,7 +180,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn record_pending_tx() -> Result<()> {
+    async fn record_state_submission() -> Result<()> {
         // given
         let process = PostgresProcess::shared().await?;
         let db = process.create_random_db().await?;
@@ -178,10 +191,10 @@ mod tests {
         let fragment_ids = vec![1];
 
         // when
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
 
         // then
-        let has_pending_tx = db.has_pending_txs().await?;
+        let has_pending_tx = db.has_pending_state_submission().await?;
         let pending_tx = db.get_pending_txs().await?;
 
         assert!(has_pending_tx);
@@ -203,14 +216,14 @@ mod tests {
         db.insert_state_submission(state, fragments.clone()).await?;
         let tx_hash = [1; 32];
         let fragment_ids = vec![1];
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
 
         // when
         db.update_submission_tx_state(tx_hash, TransactionState::Finalized)
             .await?;
 
         // then
-        let has_pending_tx = db.has_pending_txs().await?;
+        let has_pending_tx = db.has_pending_state_submission().await?;
         let pending_tx = db.get_pending_txs().await?;
 
         assert!(!has_pending_tx);
@@ -232,21 +245,21 @@ mod tests {
         // tx failed
         let tx_hash = [1; 32];
         let fragment_ids = vec![1, 2];
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
         db.update_submission_tx_state(tx_hash, TransactionState::Failed)
             .await?;
 
         // tx is finalized
         let tx_hash = [2; 32];
         let fragment_ids = vec![2];
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
         db.update_submission_tx_state(tx_hash, TransactionState::Finalized)
             .await?;
 
         // tx is pending
         let tx_hash = [3; 32];
         let fragment_ids = vec![3];
-        db.record_pending_tx(tx_hash, fragment_ids).await?;
+        db.record_state_submission(tx_hash, fragment_ids).await?;
 
         // then
         let db_fragments = db.get_unsubmitted_fragments().await?;

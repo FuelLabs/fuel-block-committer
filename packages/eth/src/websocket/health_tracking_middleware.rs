@@ -14,7 +14,7 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
@@ -76,7 +76,7 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]> {
         let response = self.adapter.submit(block).await;
         self.note_network_status(&response);
         response

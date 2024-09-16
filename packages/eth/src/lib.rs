@@ -22,7 +22,7 @@ pub use websocket::WebsocketClient;
 
 #[async_trait]
 impl Contract for WebsocketClient {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]> {
         self.submit(block).await
     }
 

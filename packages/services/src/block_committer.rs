@@ -81,13 +81,14 @@ where
             block_hash: fuel_block.hash(),
             block_height: fuel_block.height(),
             submittal_height,
-            completed: false,
+            tx_id: None,
         };
 
-        self.storage.insert(submission).await?;
+        let tx_hash = self.l1_adapter.submit(fuel_block).await?;
 
-        // if we have a network failure the DB entry will be left at completed:false.
-        self.l1_adapter.submit(fuel_block).await?;
+        self.storage
+            .record_block_submission(tx_hash, submission)
+            .await?;
 
         Ok(())
     }
@@ -202,7 +203,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Contract for MockL1 {
-        async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<()> {
+        async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<[u8; 32]> {
             self.contract.submit(block).await
         }
         fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
@@ -242,7 +243,7 @@ mod tests {
         l1.contract
             .expect_submit()
             .with(predicate::eq(block))
-            .return_once(move |_| Ok(()));
+            .return_once(move |_| Ok([1u8; 32]));
 
         l1.api
             .expect_get_block_number()
@@ -385,7 +386,8 @@ mod tests {
     ) -> Postgres {
         let db = process.create_random_db().await.unwrap();
         for height in pending_submissions {
-            db.insert(given_a_pending_submission(height)).await.unwrap();
+            let tx_hash = [height as u8; 32];
+            db.record_block_submission(tx_hash, given_a_pending_submission(height)).await.unwrap();
         }
 
         db

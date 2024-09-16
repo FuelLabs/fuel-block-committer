@@ -3,7 +3,7 @@ use std::{num::NonZeroU32, time::Duration};
 use eth::AwsConfig;
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
-use services::{BlockCommitter, CommitListener, Runner, WalletBalanceTracker};
+use services::{BlockCommitter, Runner, WalletBalanceTracker};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -25,24 +25,6 @@ pub fn wallet_balance_tracker(
         internal_config.balance_update_interval,
         wallet_balance_tracker,
         "Wallet Balance Tracker",
-        cancel_token,
-    )
-}
-
-pub fn l1_event_listener(
-    internal_config: &config::Internal,
-    l1: L1,
-    storage: Database,
-    registry: &Registry,
-    cancel_token: CancellationToken,
-) -> tokio::task::JoinHandle<()> {
-    let commit_listener_service = CommitListener::new(l1, storage, cancel_token.clone());
-    commit_listener_service.register_metrics(registry);
-
-    schedule_polling(
-        internal_config.between_eth_event_stream_restablishing_attempts,
-        commit_listener_service,
-        "Commit Listener",
         cancel_token,
     )
 }

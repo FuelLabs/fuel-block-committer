@@ -50,14 +50,14 @@ where
     ) -> crate::Result<()> {
         info!("received block commit event from l1 {committed_on_l1:?}");
 
-        let submission = self
-            .storage
-            .set_submission_completed(committed_on_l1.fuel_block_hash)
-            .await?;
+        // let submission = self
+        //     .storage
+        //     .set_submission_completed(committed_on_l1.fuel_block_hash)
+        //     .await?;
 
-        self.metrics
-            .latest_committed_block
-            .set(i64::from(submission.block_height));
+        // self.metrics
+        //     .latest_committed_block
+        //     .set(i64::from(submission.block_height));
 
         Ok(())
     }
