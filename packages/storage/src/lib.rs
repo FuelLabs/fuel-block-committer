@@ -12,7 +12,7 @@ mod error;
 mod postgres;
 use ports::{
     storage::{BundleFragment, Result, Storage},
-    types::{BlockSubmission, L1Tx, NonEmptyVec, NonNegative, TransactionState},
+    types::{BlockSubmission, DateTime, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc},
 };
 pub use postgres::{DbConfig, Postgres};
 
@@ -48,9 +48,10 @@ impl Storage for Postgres {
             .await?)
     }
 
-    // async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
-    //     Ok(self._last_time_a_fragment_was_finalized().await?)
-    // }
+    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
+        Ok(self._last_time_a_fragment_was_finalized().await?)
+    }
+
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
         Ok(self._submission_w_latest_block().await?)
     }

@@ -4,6 +4,7 @@ use std::{
 };
 
 pub use futures::stream::BoxStream;
+pub use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{BlockSubmission, L1Tx, NonEmptyVec, NonNegative, TransactionState};
 
@@ -69,7 +70,7 @@ pub trait Storage: Send + Sync {
     async fn has_pending_txs(&self) -> Result<bool>;
     async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
     // async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>>;
-    // async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
+    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
 
