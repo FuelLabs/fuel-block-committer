@@ -121,17 +121,23 @@ pub(crate) mod test_utils {
         data.try_into().expect("is not empty due to check")
     }
 
-    use std::{ops::Range, sync::Arc};
+    use std::{ops::Range, sync::Arc, time::Duration};
 
     use clock::TestClock;
     use fuel_crypto::SecretKey;
     use mocks::l1::TxStatus;
-    use ports::types::NonEmptyVec;
+    use ports::{
+        l1::SubmittableFragments,
+        non_empty_vec,
+        types::{DateTime, NonEmptyVec, Utc},
+    };
     use storage::PostgresProcess;
     use validator::BlockValidator;
 
     use crate::{
-        block_importer, state_committer::bundler::Compressor, BlockImporter, StateListener,
+        block_importer,
+        state_committer::bundler::{self, Compressor},
+        BlockImporter, StateCommitter, StateListener,
     };
 
     use super::Runner;
@@ -372,6 +378,43 @@ pub(crate) mod test_utils {
 
         pub fn db(&self) -> storage::Postgres {
             self.db.clone()
+        }
+
+        pub async fn commit_single_block_bundle(&self, finalization_time: DateTime<Utc>) {
+            self.import_blocks(Blocks::WithHeights(0..1)).await;
+
+            let clock = TestClock::default();
+            clock.set_time(finalization_time);
+
+            let data = random_data(100);
+            let l1_mock = mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
+                fragments: non_empty_vec!(data.clone()),
+                gas_estimation: 1,
+            });
+            let factory =
+                bundler::Factory::new(Arc::new(l1_mock), self.db(), 1..2, Compressor::default())
+                    .unwrap();
+
+            let tx = [2u8; 32];
+
+            let l1_mock = mocks::l1::expects_state_submissions(vec![(data, tx)]);
+            let mut committer = StateCommitter::new(
+                l1_mock,
+                self.db(),
+                clock.clone(),
+                factory,
+                crate::state_committer::BundleGenerationConfig {
+                    stop_optimization_attempts_after: Duration::from_secs(100),
+                },
+            );
+            committer.run().await.unwrap();
+
+            let l1_mock = mocks::l1::txs_finished([(tx, TxStatus::Success)]);
+
+            StateListener::new(Arc::new(l1_mock), self.db(), 0, clock.clone())
+                .run()
+                .await
+                .unwrap();
         }
 
         pub async fn import_blocks(&self, blocks: Blocks) {

@@ -90,6 +90,7 @@ where
         loop {
             if let Some(bundle) = bundler.propose_bundle().await? {
                 let elapsed = self.elapsed_time_since_last_finalized().await?;
+                eprintln!("Elapsed time since last finalized: {:?}", elapsed);
                 if bundle.optimal || self.should_stop_optimizing(elapsed) {
                     return Ok(Some(bundle));
                 }
@@ -105,7 +106,10 @@ where
             .storage
             .last_time_a_fragment_was_finalized()
             .await?
-            .unwrap_or(self.component_created_at);
+            .unwrap_or_else(|| {
+                eprintln!("No finalized fragment found; using component creation time.");
+                self.component_created_at
+            });
         let now = self.clock.now();
         now.signed_duration_since(last_finalized_time)
             .to_std()
@@ -787,7 +791,7 @@ mod tests {
         notify_consumed.recv().await.unwrap();
 
         // Advance the clock to exceed the optimization time limit
-        test_clock.advance_time(Duration::from_secs(2)).await;
+        test_clock.advance_time(Duration::from_secs(2));
 
         // Submit the final (unoptimal) bundle proposal
         let another_unoptimal_bundle = BundleProposal {
@@ -873,7 +877,7 @@ mod tests {
         notify_consumed.recv().await.unwrap();
 
         // Advance the clock but not beyond the optimization time limit
-        test_clock.advance_time(Duration::from_millis(500)).await;
+        test_clock.advance_time(Duration::from_millis(500));
 
         // Send the another unoptimal bundle proposal
         send_bundle.send(Some(unoptimal_bundle)).await.unwrap();
@@ -883,6 +887,78 @@ mod tests {
         let res = tokio::time::timeout(Duration::from_millis(100), state_committer_handle).await;
         // timing out means we haven't accepted the bundle
         assert!(res.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unoptimal_bundle_accepted_because_last_finalized_fragment_happened_too_long_ago(
+    ) -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        let last_finalization_time = Utc::now();
+        setup
+            .commit_single_block_bundle(last_finalization_time)
+            .await;
+
+        let fragment_tx_id = [3; 32];
+        let unoptimal_fragment = test_utils::random_data(100);
+
+        let (bundler_factory, send_bundle, mut notify_consumed) =
+            ControllableBundlerFactory::setup();
+
+        let db = setup.db().clone();
+
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
+            unoptimal_fragment.clone(),
+            fragment_tx_id,
+        )]);
+
+        // Create a TestClock
+        let test_clock = TestClock::default();
+        let optimization_timeout = Duration::from_secs(1);
+        test_clock.set_time(last_finalization_time + optimization_timeout);
+
+        // Create the StateCommitter
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            db.clone(),
+            test_clock.clone(),
+            bundler_factory,
+            BundleGenerationConfig {
+                stop_optimization_attempts_after: optimization_timeout,
+            },
+        );
+
+        // Spawn the StateCommitter run method in a separate task
+        let state_committer_handle = tokio::spawn(async move {
+            state_committer.run().await.unwrap();
+        });
+
+        // when
+        // Submit the first (unoptimal) bundle
+        let unoptimal_bundle = BundleProposal {
+            fragments: SubmittableFragments {
+                fragments: non_empty_vec![unoptimal_fragment.clone()],
+                gas_estimation: 10, // Unoptimal gas estimation
+            },
+            block_heights: 0..=0,
+            optimal: false,
+            compression_ratio: 1.0,
+        };
+
+        // Send the unoptimal bundle proposal
+        send_bundle
+            .send(Some(unoptimal_bundle.clone()))
+            .await
+            .unwrap();
+
+        notify_consumed.recv().await.unwrap();
+
+        // then
+        // Wait for the StateCommitter task to complete
+        state_committer_handle.await.unwrap();
 
         Ok(())
     }
