@@ -29,10 +29,16 @@ pub trait Contract: Send + Sync {
     fn commit_interval(&self) -> std::num::NonZeroU32;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubmittableFragments {
-    pub fragments: NonEmptyVec<NonEmptyVec<u8>>,
-    pub gas_estimation: u128,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GasUsage {
+    pub storage: u128,
+    pub normal: u128,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GasPrices {
+    pub storage: u128,
+    pub normal: u128,
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -41,7 +47,9 @@ pub trait Api {
     fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<SubmittableFragments>;
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
+    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage;
+    async fn gas_prices(&self) -> Result<GasPrices>;
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;
@@ -56,9 +64,18 @@ impl<T: Api + Send + Sync> Api for Arc<T> {
     fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<SubmittableFragments> {
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         (**self).split_into_submittable_fragments(data)
     }
+
+    async fn gas_prices(&self) -> Result<GasPrices> {
+        (**self).gas_prices().await
+    }
+
+    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
+        (**self).gas_usage_to_store_data(data)
+    }
+
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {
         (**self).submit_l2_state(state_data).await
     }

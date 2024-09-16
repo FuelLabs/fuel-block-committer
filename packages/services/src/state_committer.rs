@@ -63,8 +63,9 @@ where
     BF: BundlerFactory,
 {
     async fn bundle_and_fragment_blocks(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
-        let mut bundler = self.bundler_factory.build().await?;
-        let proposal = self.find_optimal_bundle(&mut bundler).await?;
+        let bundler = self.bundler_factory.build().await?;
+
+        let proposal = self.find_optimal_bundle(bundler).await?;
 
         if let Some(BundleProposal {
             fragments,
@@ -74,7 +75,7 @@ where
         {
             let fragments = self
                 .storage
-                .insert_bundle_and_fragments(block_heights, fragments.fragments)
+                .insert_bundle_and_fragments(block_heights, fragments)
                 .await?;
             Ok(Some(fragments))
         } else {
@@ -85,19 +86,17 @@ where
     /// Finds the optimal bundle based on the current state and time constraints.
     async fn find_optimal_bundle<B: Bundle>(
         &self,
-        bundler: &mut B,
+        mut bundler: B,
     ) -> Result<Option<BundleProposal>> {
-        loop {
-            if let Some(bundle) = bundler.propose_bundle().await? {
-                let elapsed = self.elapsed_time_since_last_finalized().await?;
-                eprintln!("Elapsed time since last finalized: {:?}", elapsed);
-                if bundle.optimal || self.should_stop_optimizing(elapsed) {
-                    return Ok(Some(bundle));
-                }
-            } else {
-                return Ok(None);
+        while bundler.advance().await? {
+            let elapsed = self.elapsed_time_since_last_finalized().await?;
+
+            if self.should_stop_optimizing(elapsed) {
+                break;
             }
         }
+
+        bundler.finish().await
     }
 
     /// Calculates the elapsed time since the last finalized fragment or component creation.

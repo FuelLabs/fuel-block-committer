@@ -54,6 +54,17 @@ impl WebsocketClient {
         self.inner.connection_health_checker()
     }
 
+    pub(crate) async fn _gas_prices(&self) -> Result<ports::l1::GasPrices> {
+        Ok(self.inner.gas_prices().await?)
+    }
+
+    pub(crate) async fn _gas_usage_to_store_data(
+        &self,
+        data: &NonEmptyVec<u8>,
+    ) -> ports::l1::GasUsage {
+        self.inner.gas_usage_to_store_data(data)
+    }
+
     pub(crate) fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
         self.inner.event_streamer(eth_block_height)
     }
@@ -88,7 +99,7 @@ impl WebsocketClient {
     pub(crate) fn _split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<ports::l1::SubmittableFragments> {
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         Ok(self.inner.split_into_submittable_fragments(data)?)
     }
 

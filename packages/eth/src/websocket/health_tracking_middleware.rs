@@ -3,7 +3,10 @@ use std::num::NonZeroU32;
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock, U256};
+use ports::{
+    l1::GasPrices,
+    types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock, U256},
+};
 
 use crate::{
     error::{Error, Result},
@@ -17,7 +20,9 @@ pub trait EthApi {
     fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<ports::l1::SubmittableFragments>;
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
+    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage;
+    async fn gas_prices(&self) -> Result<GasPrices>;
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
@@ -80,10 +85,20 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
+    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage {
+        self.adapter.gas_usage_to_store_data(data)
+    }
+
+    async fn gas_prices(&self) -> Result<GasPrices> {
+        let response = self.adapter.gas_prices().await;
+        self.note_network_status(&response);
+        response
+    }
+
     fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<ports::l1::SubmittableFragments> {
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         let response = self.adapter.split_into_submittable_fragments(data);
         self.note_network_status(&response);
         response

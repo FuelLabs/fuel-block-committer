@@ -4,7 +4,7 @@ use alloy::primitives::U256;
 use async_trait::async_trait;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
-    l1::{Api, Contract, EventStreamer, Result},
+    l1::{Api, Contract, EventStreamer, GasPrices, GasUsage, Result},
     types::{
         FuelBlockCommittedOnL1, L1Height, NonEmptyVec, TransactionResponse, ValidatedFuelBlock,
     },
@@ -40,8 +40,15 @@ impl Api for WebsocketClient {
     fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<ports::l1::SubmittableFragments> {
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
         self._split_into_submittable_fragments(data)
+    }
+
+    async fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
+        self._gas_usage_to_store_data(data).await
+    }
+    async fn gas_prices(&self) -> Result<GasPrices> {
+        self._gas_prices().await
     }
 
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {

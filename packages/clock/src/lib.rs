@@ -74,7 +74,7 @@ mod tests {
         let adv = Duration::from_secs(1);
 
         // when
-        test_clock.advance_time(adv).await;
+        test_clock.advance_time(adv);
 
         // then
         let new_time = starting_time + adv;

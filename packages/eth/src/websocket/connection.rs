@@ -13,7 +13,10 @@ use alloy::{
     signers::aws::AwsSigner,
     sol,
 };
-use ports::types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock};
+use ports::{
+    l1::GasPrices,
+    types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock},
+};
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
@@ -68,7 +71,15 @@ impl EthApi for WsConnection {
     fn split_into_submittable_fragments(
         &self,
         data: &NonEmptyVec<u8>,
-    ) -> Result<ports::l1::SubmittableFragments> {
+    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
+        todo!()
+    }
+
+    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage {
+        todo!()
+    }
+
+    async fn gas_prices(&self) -> Result<GasPrices> {
         todo!()
     }
 
@@ -267,6 +278,9 @@ mod tests {
         sidecar.ingest(&data);
 
         let sidecar = sidecar.build().unwrap();
+
+        let recreated_data = sidecar.blobs.concat();
+        assert_eq!(data.len(), recreated_data.len());
 
         // let coder = SimpleCoder::default();
         // let required_fe = coder.required_fe(data);

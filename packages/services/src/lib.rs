@@ -127,7 +127,6 @@ pub(crate) mod test_utils {
     use fuel_crypto::SecretKey;
     use mocks::l1::TxStatus;
     use ports::{
-        l1::SubmittableFragments,
         non_empty_vec,
         types::{DateTime, NonEmptyVec, Utc},
     };
@@ -145,10 +144,7 @@ pub(crate) mod test_utils {
     pub mod mocks {
         pub mod l1 {
             use mockall::{predicate::eq, Sequence};
-            use ports::{
-                l1::SubmittableFragments,
-                types::{L1Height, NonEmptyVec, TransactionResponse},
-            };
+            use ports::types::{L1Height, NonEmptyVec, TransactionResponse};
 
             pub enum TxStatus {
                 Success,
@@ -174,7 +170,7 @@ pub(crate) mod test_utils {
             }
 
             pub fn will_split_bundle_into_fragments(
-                fragments: SubmittableFragments,
+                fragments: NonEmptyVec<NonEmptyVec<u8>>,
             ) -> ports::l1::MockApi {
                 let mut l1_mock = ports::l1::MockApi::new();
 
@@ -186,7 +182,7 @@ pub(crate) mod test_utils {
                 l1_mock
             }
             pub fn will_split_bundles_into_fragments(
-                expectations: impl IntoIterator<Item = (NonEmptyVec<u8>, SubmittableFragments)>,
+                expectations: impl IntoIterator<Item = (NonEmptyVec<u8>, NonEmptyVec<NonEmptyVec<u8>>)>,
             ) -> ports::l1::MockApi {
                 let mut l1_mock = ports::l1::MockApi::new();
                 let mut sequence = Sequence::new();
