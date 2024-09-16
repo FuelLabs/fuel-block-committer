@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 #[cfg(feature = "l1")]
 pub use alloy::primitives::{Address, U256};
 #[cfg(any(feature = "l1", feature = "storage"))]
@@ -60,12 +62,12 @@ impl<T> NonEmptyVec<T> {
         self.vec
     }
 
-    pub fn len(&self) -> usize {
-        self.vec.len()
+    pub fn len(&self) -> NonZeroUsize {
+        self.vec.len().try_into().expect("vec is not empty")
     }
 
     pub fn is_empty(&self) -> bool {
-        self.vec.is_empty()
+        false
     }
 
     pub fn inner(&self) -> &Vec<T> {

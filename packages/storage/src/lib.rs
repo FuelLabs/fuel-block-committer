@@ -26,14 +26,6 @@ impl Storage for Postgres {
         Ok(self._oldest_nonfinalized_fragment().await?)
     }
 
-    // async fn all_blocks(&self) -> Result<Vec<ports::storage::FuelBlock>> {
-    //     self._all_blocks().await.map_err(Into::into)
-    // }
-    //
-    // async fn all_fragments(&self) -> Result<Vec<ports::storage::BundleFragment>> {
-    //     self._all_fragments().await.map_err(Into::into)
-    // }
-
     async fn available_blocks(&self) -> Result<Range<u32>> {
         self._available_blocks().await.map_err(Into::into)
     }

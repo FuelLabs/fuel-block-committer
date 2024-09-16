@@ -94,17 +94,19 @@ where
     }
 }
 
-pub struct BestProposal {
-    proposal: BundleProposal,
+pub struct Proposal {
+    fragments: SubmittableFragments,
+    block_heights: RangeInclusive<u32>,
     gas_per_uncompressed_byte: f64,
-    uncompressed_data_size: usize,
+    uncompressed_data_size: NonZeroUsize,
+    compressed_data_size: NonZeroUsize,
 }
 
 pub struct Bundler<L1> {
     l1_adapter: L1,
     blocks: Vec<ports::storage::FuelBlock>,
     minimum_blocks: NonZeroUsize,
-    best_proposal: Option<BestProposal>,
+    best_proposal: Option<Proposal>,
     current_block_count: NonZeroUsize,
     compressor: Compressor,
 }
@@ -112,11 +114,11 @@ pub struct Bundler<L1> {
 impl<L1> Bundler<L1> {
     pub fn new(
         l1_adapter: L1,
-        blocks: Vec<ports::storage::FuelBlock>,
+        mut blocks: Vec<ports::storage::FuelBlock>,
         minimum_blocks: NonZeroUsize,
         compressor: Compressor,
     ) -> Self {
-        let blocks = blocks.into_iter().sorted_by_key(|b| b.height).collect();
+        blocks.sort_unstable_by_key(|b| b.height);
         Self {
             l1_adapter,
             blocks,
@@ -128,31 +130,21 @@ impl<L1> Bundler<L1> {
     }
 
     /// Checks if all block counts have been tried and returns the best proposal if available.
-    fn best_proposal(&mut self) -> Result<Option<BundleProposal>> {
-        if self.current_block_count.get() > self.blocks.len() {
-            if let Some(mut best_proposal) = self.best_proposal.take().map(|bp| bp.proposal.clone())
-            {
-                best_proposal.optimal = true;
-                return Ok(Some(best_proposal));
-            }
-            return Ok(None);
-        }
-        Ok(self.best_proposal.as_ref().map(|bp| bp.proposal.clone()))
+    fn best_proposal(&self) -> Option<BundleProposal> {
+        let optimal = self.current_block_count.get() > self.blocks.len();
+
+        self.best_proposal.as_ref().map(|bp| BundleProposal {
+            fragments: bp.fragments.clone(),
+            block_heights: bp.block_heights.clone(),
+            optimal,
+            compression_ratio: self
+                .calculate_compression_ratio(bp.uncompressed_data_size, bp.compressed_data_size),
+        })
     }
 
-    fn merge_block_data(
-        &self,
-        blocks: NonEmptyVec<ports::storage::FuelBlock>,
-    ) -> Result<NonEmptyVec<u8>> {
-        if blocks.is_empty() {
-            return Err(crate::Error::Other(
-                "should never be empty. this is a bug".to_string(),
-            ));
-        }
-
+    fn merge_block_data(&self, blocks: NonEmptyVec<ports::storage::FuelBlock>) -> NonEmptyVec<u8> {
         let bytes = blocks.into_iter().flat_map(|b| b.data).collect_vec();
-
-        Ok(bytes.try_into().expect("Merged data cannot be empty"))
+        bytes.try_into().expect("cannot be empty")
     }
 
     /// Extracts the block heights from the given blocks as a `ValidatedRange<u32>`.
@@ -167,45 +159,37 @@ impl<L1> Bundler<L1> {
     fn calculate_gas_per_uncompressed_byte(
         &self,
         gas_estimation: u128,
-        uncompressed_data_size: usize,
+        uncompressed_data_size: NonZeroUsize,
     ) -> f64 {
-        gas_estimation as f64 / uncompressed_data_size as f64
+        gas_estimation as f64 / uncompressed_data_size.get() as f64
     }
 
     /// Calculates the compression ratio (uncompressed size / compressed size).
-    fn calculate_compression_ratio(&self, uncompressed_size: usize, compressed_size: usize) -> f64 {
-        uncompressed_size as f64 / compressed_size as f64
+    fn calculate_compression_ratio(
+        &self,
+        uncompressed_size: NonZeroUsize,
+        compressed_size: NonZeroUsize,
+    ) -> f64 {
+        uncompressed_size.get() as f64 / compressed_size.get() as f64
     }
 
     /// Determines if the current proposal is better based on gas per uncompressed byte and data size.
-    fn is_current_proposal_better(&self, gas_per_uncompressed_byte: f64, data_size: usize) -> bool {
+    fn is_new_proposal_better(&self, proposal: &Proposal) -> bool {
         match &self.best_proposal {
             None => true, // No best proposal yet, so the current one is better
             Some(best_proposal) => {
-                if gas_per_uncompressed_byte < best_proposal.gas_per_uncompressed_byte {
+                if proposal.gas_per_uncompressed_byte < best_proposal.gas_per_uncompressed_byte {
                     true // Current proposal has a better (lower) gas per uncompressed byte
-                } else if gas_per_uncompressed_byte == best_proposal.gas_per_uncompressed_byte {
+                } else if proposal.gas_per_uncompressed_byte
+                    == best_proposal.gas_per_uncompressed_byte
+                {
                     // If the gas per byte is the same, the proposal with more uncompressed data is better
-                    data_size > best_proposal.uncompressed_data_size
+                    proposal.uncompressed_data_size > best_proposal.uncompressed_data_size
                 } else {
                     false // Current proposal has a worse (higher) gas per uncompressed byte
                 }
             }
         }
-    }
-
-    /// Updates the best proposal with the current proposal.
-    fn update_best_proposal(
-        &mut self,
-        current_proposal: BundleProposal,
-        gas_per_uncompressed_byte: f64,
-        uncompressed_data_size: usize,
-    ) {
-        self.best_proposal = Some(BestProposal {
-            proposal: current_proposal,
-            gas_per_uncompressed_byte,
-            uncompressed_data_size,
-        });
     }
 }
 
@@ -215,69 +199,76 @@ where
     L1: ports::l1::Api + Send + Sync,
 {
     async fn propose_bundle(&mut self) -> Result<Option<BundleProposal>> {
-        let min_blocks = self.minimum_blocks;
-        if self.blocks.len() < min_blocks.get() {
+        if let Some(proposal) = self.attempt_proposal().await? {
+            return Ok(Some(proposal));
+        }
+
+        Ok(self.best_proposal())
+    }
+}
+
+impl<L1: ports::l1::Api> Bundler<L1> {
+    async fn attempt_proposal(&mut self) -> Result<Option<BundleProposal>> {
+        if self.blocks.len() < self.minimum_blocks.get() {
             info!(
                 "Not enough blocks to meet the minimum requirement: {}",
-                min_blocks
+                self.minimum_blocks
             );
             return Ok(None);
         }
 
-        let max_blocks = NonZeroUsize::try_from(self.blocks.len())
-            .expect("to not be zero since it is not less than the minimum which cannot be zero");
-
-        if self.current_block_count > max_blocks {
-            return self.best_proposal();
+        if self.current_block_count.get() > self.blocks.len() {
+            return Ok(None);
         }
 
-        let bundle_blocks =
-            NonEmptyVec::try_from(self.blocks[..self.current_block_count.get()].to_vec())
-                .expect("cannot be empty");
+        let blocks = self.blocks_for_new_proposal();
 
-        // Extract block heights
-        let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
+        let proposal = self.create_proposal(blocks).await?;
 
-        // Merge block data (uncompressed data)
-        let uncompressed_data = self.merge_block_data(bundle_blocks)?;
+        if self.is_new_proposal_better(&proposal) {
+            self.best_proposal = Some(proposal);
+        }
+
+        self.current_block_count = self.current_block_count.saturating_add(1);
+
+        Ok(None)
+    }
+
+    fn blocks_for_new_proposal(&self) -> NonEmptyVec<ports::storage::FuelBlock> {
+        NonEmptyVec::try_from(
+            self.blocks
+                .iter()
+                .take(self.current_block_count.get())
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
+        .expect("should never be empty")
+    }
+
+    async fn create_proposal(
+        &self,
+        bundle_blocks: NonEmptyVec<ports::storage::FuelBlock>,
+    ) -> Result<Proposal> {
+        let block_heights = self.extract_block_heights(&bundle_blocks);
+        let uncompressed_data = self.merge_block_data(bundle_blocks);
         let uncompressed_data_size = uncompressed_data.len();
 
-        // Compress the merged data for better gas usage
         let compressed_data = self.compressor.compress(uncompressed_data).await?;
 
-        // Calculate compression ratio
-        let compression_ratio =
-            self.calculate_compression_ratio(uncompressed_data_size, compressed_data.len());
-
-        // Split into submittable fragments using the compressed data
         let fragments = self
             .l1_adapter
             .split_into_submittable_fragments(&compressed_data)?;
 
-        // Calculate gas per uncompressed byte ratio (based on the original, uncompressed data size)
         let gas_per_uncompressed_byte = self
             .calculate_gas_per_uncompressed_byte(fragments.gas_estimation, uncompressed_data_size);
 
-        let current_proposal = BundleProposal {
+        Ok(Proposal {
             fragments,
             block_heights,
-            optimal: false,
-            compression_ratio, // Record the compression ratio
-        };
-
-        // Check if the current proposal is better based on gas per uncompressed byte
-        if self.is_current_proposal_better(gas_per_uncompressed_byte, uncompressed_data_size) {
-            self.update_best_proposal(
-                current_proposal,
-                gas_per_uncompressed_byte,
-                uncompressed_data_size,
-            );
-        }
-
-        // Prepare for the next iteration
-        self.current_block_count = self.current_block_count.saturating_add(1);
-
-        self.best_proposal()
+            gas_per_uncompressed_byte,
+            uncompressed_data_size,
+            compressed_data_size: compressed_data.len(),
+        })
     }
 }
 
@@ -286,6 +277,7 @@ pub struct Compressor {
     level: Compression,
 }
 
+#[allow(dead_code)]
 pub enum Level {
     Min,
     Level0,

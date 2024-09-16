@@ -1,6 +1,5 @@
 use std::ops::{Range, RangeInclusive};
 
-use futures::{Stream, StreamExt, TryStreamExt};
 use ports::{
     storage::BundleFragment,
     types::{
@@ -431,7 +430,7 @@ impl Postgres {
         .await?
         .id;
 
-        let mut fragments = Vec::with_capacity(fragment_datas.len());
+        let mut fragments = Vec::with_capacity(fragment_datas.len().get());
         let bundle_id: NonNegative<i32> = bundle_id.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!("invalid bundle id received from db: {e}"))
         })?;

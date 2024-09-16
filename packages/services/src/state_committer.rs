@@ -138,14 +138,15 @@ where
     }
 
     async fn next_fragment_to_submit(&self) -> Result<Option<BundleFragment>> {
-        if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
-            Ok(Some(fragment))
+        let fragment = if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
+            Some(fragment)
         } else {
-            Ok(self
-                .bundle_and_fragment_blocks()
+            self.bundle_and_fragment_blocks()
                 .await?
-                .map(|fragments| fragments.take_first()))
-        }
+                .map(|fragments| fragments.take_first())
+        };
+
+        Ok(fragment)
     }
 }
 
@@ -207,7 +208,7 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (1..2).try_into().unwrap(),
+            1..2,
             Compressor::default(),
         )?;
 
@@ -263,7 +264,7 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (1..2).try_into().unwrap(),
+            1..2,
             Compressor::default(),
         )?;
 
@@ -306,7 +307,7 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
-            (2..3).try_into().unwrap(),
+            2..3,
             Compressor::default(),
         )?;
 
@@ -340,7 +341,7 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (1..2).try_into().unwrap(),
+            1..2,
             Compressor::default(),
         )?;
 
@@ -400,7 +401,7 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (2..3).try_into().unwrap(),
+            2..3,
             Compressor::default(),
         )?;
 
@@ -452,7 +453,7 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (2..3).try_into().unwrap(),
+            2..3,
             Compressor::default(),
         )?;
 
@@ -521,7 +522,7 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (1..2).try_into().unwrap(),
+            1..2,
             Compressor::default(),
         )?;
 

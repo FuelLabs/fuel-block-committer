@@ -1,5 +1,4 @@
 use std::{
-    fmt::Display,
     ops::{Range, RangeInclusive},
     sync::Arc,
 };
