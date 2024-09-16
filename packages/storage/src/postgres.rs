@@ -212,23 +212,22 @@ impl Postgres {
     pub(crate) async fn _last_time_a_fragment_was_finalized(
         &self,
     ) -> crate::error::Result<Option<DateTime<Utc>>> {
-        todo!()
-        // let response = sqlx::query!(
-        //     r#"SELECT
-        //     MAX(l1_transactions.finalized_at) AS last_fragment_time
-        // FROM
-        //     l1_transaction_fragments
-        // JOIN
-        //     l1_transactions ON l1_transactions.id = l1_transaction_fragments.transaction_id
-        // WHERE
-        //     l1_transactions.state = $1;
-        // "#,
-        //     L1SubmissionTxState::FINALIZED_STATE
-        // )
-        // .fetch_optional(&self.connection_pool)
-        // .await?
-        // .and_then(|response| response.last_fragment_time);
-        // Ok(response)
+        let response = sqlx::query!(
+            r#"SELECT
+            MAX(l1_transactions.finalized_at) AS last_fragment_time
+        FROM
+            l1_transaction_fragments
+        JOIN
+            l1_transactions ON l1_transactions.id = l1_transaction_fragments.transaction_id
+        WHERE
+            l1_transactions.state = $1;
+        "#,
+            L1TxState::FINALIZED_STATE
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .and_then(|response| response.last_fragment_time);
+        Ok(response)
     }
 
     pub(crate) async fn _lowest_unbundled_blocks(
