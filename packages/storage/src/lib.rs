@@ -3,13 +3,15 @@ mod mappings;
 #[cfg(feature = "test-helpers")]
 mod test_instance;
 
+use std::ops::{Range, RangeInclusive};
+
 #[cfg(feature = "test-helpers")]
 pub use test_instance::*;
 
 mod error;
 mod postgres;
 use ports::{
-    storage::{BundleFragment, Result, Storage, ValidatedRange},
+    storage::{BundleFragment, Result, Storage},
     types::{BlockSubmission, L1Tx, NonEmptyVec, NonNegative, TransactionState},
 };
 pub use postgres::{DbConfig, Postgres};
@@ -32,7 +34,7 @@ impl Storage for Postgres {
     //     self._all_fragments().await.map_err(Into::into)
     // }
 
-    async fn available_blocks(&self) -> Result<ports::storage::ValidatedRange<u32>> {
+    async fn available_blocks(&self) -> Result<Range<u32>> {
         self._available_blocks().await.map_err(Into::into)
     }
 
@@ -46,7 +48,7 @@ impl Storage for Postgres {
 
     async fn insert_bundle_and_fragments(
         &self,
-        block_range: ValidatedRange<u32>,
+        block_range: RangeInclusive<u32>,
         fragments: NonEmptyVec<NonEmptyVec<u8>>,
     ) -> Result<NonEmptyVec<BundleFragment>> {
         Ok(self

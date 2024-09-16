@@ -1,4 +1,8 @@
-use std::{fmt::Display, ops::Range, sync::Arc};
+use std::{
+    fmt::Display,
+    ops::{Range, RangeInclusive},
+    sync::Arc,
+};
 
 pub use futures::stream::BoxStream;
 
@@ -44,12 +48,12 @@ pub trait Storage: Send + Sync {
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_block(&self, block: FuelBlock) -> Result<()>;
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
-    async fn available_blocks(&self) -> Result<ValidatedRange<u32>>;
+    async fn available_blocks(&self) -> Result<Range<u32>>;
     // async fn all_blocks(&self) -> Result<Vec<FuelBlock>>;
     async fn lowest_unbundled_blocks(&self, limit: usize) -> Result<Vec<FuelBlock>>;
     async fn insert_bundle_and_fragments(
         &self,
-        block_range: ValidatedRange<u32>,
+        block_range: RangeInclusive<u32>,
         fragments: NonEmptyVec<NonEmptyVec<u8>>,
     ) -> Result<NonEmptyVec<BundleFragment>>;
 
@@ -69,87 +73,6 @@ pub trait Storage: Send + Sync {
     // async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidatedRange<NUM> {
-    range: Range<NUM>,
-}
-
-impl<NUM> ValidatedRange<NUM> {
-    pub fn contains(&self, value: NUM) -> bool
-    where
-        NUM: PartialOrd,
-    {
-        self.range.contains(&value)
-    }
-
-    pub fn inner(&self) -> &Range<NUM> {
-        &self.range
-    }
-
-    pub fn into_inner(self) -> Range<NUM> {
-        self.range
-    }
-}
-
-impl<NUM: PartialOrd + Display> TryFrom<Range<NUM>> for ValidatedRange<NUM> {
-    type Error = InvalidRange<NUM>;
-
-    fn try_from(range: Range<NUM>) -> std::result::Result<Self, Self::Error> {
-        if range.start > range.end {
-            return Err(InvalidRange { range });
-        }
-
-        Ok(Self { range })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvalidRange<NUM> {
-    range: Range<NUM>,
-}
-
-impl<NUM: std::fmt::Debug> std::error::Error for InvalidRange<NUM> {}
-
-impl<NUM: std::fmt::Debug> std::fmt::Display for InvalidRange<NUM> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid range: {:?}", self.range)
-    }
-}
-
-// impl BlockRoster {
-//     pub fn try_new(lowest: u32, highest: u32) -> Result<Self> {
-//         if highest < lowest {
-//             return Err(Error::Conversion(format!(
-//                 "invalid block roster: highest({highest}) < lowest({lowest})"
-//             )));
-//         }
-//
-//         Ok(Self { lowest, highest })
-//     }
-//
-//     pub fn missing_block_heights(
-//         &self,
-//         current_height: u32,
-//         must_have_last_n_blocks: u32,
-//     ) -> BTreeSet<u32> {
-//         let mut missing = BTreeSet::from_iter(self.missing.clone());
-//
-//         if let Some((min, max)) = self.min_max_db_height {
-//             missing.extend((max + 1)..=current_height);
-//
-//             if let Some(required_minimum_height) = required_minimum_height {
-//                 missing.extend((required_minimum_height)..=min);
-//             }
-//         } else if let Some(required_minimum_height) = required_minimum_height {
-//             missing.extend(0..required_minimum_height);
-//         }
-//
-//         missing.retain(|&height| height >= lower_cutoff);
-//
-//         missing
-//     }
-// }
 
 // #[cfg(test)]
 // mod tests {

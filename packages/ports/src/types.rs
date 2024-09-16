@@ -8,6 +8,14 @@ pub struct NonEmptyVec<T> {
     vec: Vec<T>,
 }
 
+impl<T> IntoIterator for NonEmptyVec<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.vec.into_iter()
+    }
+}
+
 #[macro_export]
 macro_rules! non_empty_vec {
     ($($x:expr),+) => {
@@ -36,6 +44,14 @@ impl<T> TryFrom<Vec<T>> for NonEmptyVec<T> {
 }
 
 impl<T> NonEmptyVec<T> {
+    pub fn first(&self) -> &T {
+        self.vec.first().expect("vec is not empty")
+    }
+
+    pub fn last(&self) -> &T {
+        self.vec.last().expect("vec is not empty")
+    }
+
     pub fn take_first(self) -> T {
         self.vec.into_iter().next().expect("vec is not empty")
     }

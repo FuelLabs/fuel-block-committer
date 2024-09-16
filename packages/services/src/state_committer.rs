@@ -177,6 +177,7 @@ where
 mod tests {
     use std::sync::Arc;
 
+    use bundler::Compressor;
     use clock::TestClock;
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
@@ -207,6 +208,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
+            Compressor::default(),
         )?;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
@@ -262,6 +264,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
+            Compressor::default(),
         )?;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
@@ -304,6 +307,7 @@ mod tests {
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             (2..3).try_into().unwrap(),
+            Compressor::default(),
         )?;
 
         let mut state_committer =
@@ -337,6 +341,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
+            Compressor::default(),
         )?;
 
         let mut l1_mock_submit = ports::l1::MockApi::new();
@@ -396,6 +401,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (2..3).try_into().unwrap(),
+            Compressor::default(),
         )?;
 
         let l1_mock_submit =
@@ -447,6 +453,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (2..3).try_into().unwrap(),
+            Compressor::default(),
         )?;
 
         let l1_mock_submit =
@@ -515,6 +522,7 @@ mod tests {
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
+            Compressor::default(),
         )?;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
@@ -595,7 +603,8 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (2..5).try_into().unwrap(), // Valid block range: 2 to 4 blocks
+            2..5, // Valid block range: 2 to 4 blocks
+            Compressor::default(),
         )?;
 
         let l1_mock_submit =
@@ -684,7 +693,7 @@ mod tests {
                     fragments: non_empty_vec![non_empty_vec![0]],
                     gas_estimation: 1,
                 },
-                block_heights: (0..1).try_into().unwrap(),
+                block_heights: 0..=0,
                 optimal: false,
                 compression_ratio: 1.0,
             }))
@@ -703,7 +712,7 @@ mod tests {
                     fragments: non_empty_vec![final_fragment.clone()],
                     gas_estimation: 1,
                 },
-                block_heights: (0..1).try_into().unwrap(),
+                block_heights: 0..=0,
                 optimal: false,
                 compression_ratio: 1.0,
             }))
@@ -733,7 +742,8 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
-            (min_acceptable_blocks..3).try_into().unwrap(),
+            min_acceptable_blocks..3,
+            Compressor::default(),
         )?;
 
         let l1_mock = ports::l1::MockApi::new();
@@ -776,7 +786,8 @@ mod tests {
         let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
-            (1..2).try_into().unwrap(),
+            1..2,
+            Compressor::default(),
         )?;
 
         let mut state_committer =

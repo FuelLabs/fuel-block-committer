@@ -1,4 +1,4 @@
-use std::ops::{Range, RangeInclusive};
+use std::ops::Range;
 
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
@@ -12,7 +12,6 @@ use futures::{stream, Stream, StreamExt};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::fuel::BoxStream;
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};

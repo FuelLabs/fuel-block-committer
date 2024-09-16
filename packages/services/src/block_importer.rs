@@ -119,7 +119,7 @@ where
             return Ok(());
         }
 
-        let available_blocks = self.storage.available_blocks().await?.into_inner();
+        let available_blocks = self.storage.available_blocks().await?;
         let db_empty = available_blocks.is_empty();
 
         let latest_block = self.fetch_latest_block().await?;

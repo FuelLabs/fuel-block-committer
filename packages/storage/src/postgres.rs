@@ -1,8 +1,8 @@
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 use futures::{Stream, StreamExt, TryStreamExt};
 use ports::{
-    storage::{BundleFragment, ValidatedRange},
+    storage::BundleFragment,
     types::{
         BlockSubmission, DateTime, NonEmptyVec, NonNegative, StateSubmission, TransactionState, Utc,
     },
@@ -160,9 +160,7 @@ impl Postgres {
         .collect()
     }
 
-    pub(crate) async fn _available_blocks(
-        &self,
-    ) -> crate::error::Result<ports::storage::ValidatedRange<u32>> {
+    pub(crate) async fn _available_blocks(&self) -> crate::error::Result<Range<u32>> {
         let record = sqlx::query!("SELECT MIN(height) AS min, MAX(height) AS max FROM fuel_blocks")
             .fetch_one(&self.connection_pool)
             .await
@@ -244,7 +242,7 @@ impl Postgres {
             tables::FuelBlock,
             r#" SELECT *
                         FROM fuel_blocks fb
-                        WHERE fb.height >= COALESCE((SELECT MAX(b.end_height) FROM bundles b), 0) LIMIT $1;"#,
+                        WHERE fb.height > COALESCE((SELECT MAX(b.end_height) FROM bundles b), -1) LIMIT $1;"#,
             limit
         )
             .fetch_all(&self.connection_pool).await
@@ -415,12 +413,13 @@ impl Postgres {
 
     pub(crate) async fn _insert_bundle_and_fragments(
         &self,
-        block_range: ValidatedRange<u32>,
+        block_range: RangeInclusive<u32>,
         fragment_datas: NonEmptyVec<NonEmptyVec<u8>>,
     ) -> Result<NonEmptyVec<BundleFragment>> {
         let mut tx = self.connection_pool.begin().await?;
 
-        let Range { start, end } = block_range.into_inner();
+        let start = *block_range.start();
+        let end = *block_range.end();
 
         // Insert a new bundle
         let bundle_id = sqlx::query!(
@@ -450,7 +449,11 @@ impl Postgres {
             )
             .fetch_one(&mut *tx)
             .await?;
-            let id = record.id.into();
+            let id = record.id.try_into().map_err(|e| {
+                crate::error::Error::Conversion(format!(
+                    "invalid fragment id received from db: {e}"
+                ))
+            })?;
 
             fragments.push(BundleFragment {
                 id,

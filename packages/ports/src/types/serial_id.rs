@@ -44,9 +44,16 @@ impl From<u32> for NonNegative<i64> {
     }
 }
 
-impl From<i32> for NonNegative<i32> {
-    fn from(val: i32) -> Self {
-        Self { val }
+impl TryFrom<i32> for NonNegative<i32> {
+    type Error = InvalidConversion;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        if value < 0 {
+            return Err(InvalidConversion {
+                message: format!("{value} is negative"),
+            });
+        }
+        Ok(Self { val: value })
     }
 }
 

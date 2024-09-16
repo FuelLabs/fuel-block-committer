@@ -249,8 +249,6 @@ impl WsConnection {
 
 #[cfg(test)]
 mod tests {
-    use alloy::consensus::SidecarCoder;
-
     use super::*;
 
     #[test]

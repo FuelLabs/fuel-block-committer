@@ -1,16 +1,20 @@
 use crate::Result;
 use itertools::Itertools;
-use ports::{l1::SubmittableFragments, storage::ValidatedRange};
+use ports::l1::SubmittableFragments;
 
 use flate2::{write::GzEncoder, Compression};
 use ports::types::NonEmptyVec;
-use std::{io::Write, num::NonZeroUsize, ops::Range};
+use std::{
+    io::Write,
+    num::NonZeroUsize,
+    ops::{Range, RangeInclusive},
+};
 use tracing::info;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BundleProposal {
     pub fragments: SubmittableFragments,
-    pub block_heights: ValidatedRange<u32>,
+    pub block_heights: RangeInclusive<u32>,
     pub optimal: bool,
     pub compression_ratio: f64,
 }
@@ -32,6 +36,7 @@ pub struct Factory<L1, Storage> {
     storage: Storage,
     min_blocks: NonZeroUsize,
     max_blocks: NonZeroUsize,
+    compressor: Compressor,
 }
 
 impl<L1, Storage> Factory<L1, Storage> {
@@ -39,6 +44,7 @@ impl<L1, Storage> Factory<L1, Storage> {
         l1_adapter: L1,
         storage: Storage,
         acceptable_block_range: Range<usize>,
+        compressor: Compressor,
     ) -> Result<Self> {
         let Some((min, max)) = acceptable_block_range.minmax().into_option() else {
             return Err(crate::Error::Other(
@@ -59,6 +65,7 @@ impl<L1, Storage> Factory<L1, Storage> {
             storage,
             min_blocks,
             max_blocks,
+            compressor,
         })
     }
 }
@@ -82,7 +89,7 @@ where
             self.l1_adapter.clone(),
             blocks,
             self.min_blocks,
-            Compressor::default(),
+            self.compressor,
         ))
     }
 }
@@ -120,20 +127,30 @@ impl<L1> Bundler<L1> {
         }
     }
 
-    /// TODO: this should be prevented somehow
-    /// Merges the data from the given blocks into a `Vec<u8>`.
+    /// Checks if all block counts have been tried and returns the best proposal if available.
+    fn best_proposal(&mut self) -> Result<Option<BundleProposal>> {
+        if self.current_block_count.get() > self.blocks.len() {
+            if let Some(mut best_proposal) = self.best_proposal.take().map(|bp| bp.proposal.clone())
+            {
+                best_proposal.optimal = true;
+                return Ok(Some(best_proposal));
+            }
+            return Ok(None);
+        }
+        Ok(self.best_proposal.as_ref().map(|bp| bp.proposal.clone()))
+    }
+
     fn merge_block_data(
         &self,
-        block_slice: &[ports::storage::FuelBlock],
+        blocks: NonEmptyVec<ports::storage::FuelBlock>,
     ) -> Result<NonEmptyVec<u8>> {
-        if block_slice.is_empty() {
-            return Err(crate::Error::Other("no blocks to merge".to_string()));
+        if blocks.is_empty() {
+            return Err(crate::Error::Other(
+                "should never be empty. this is a bug".to_string(),
+            ));
         }
 
-        let bytes = block_slice
-            .iter()
-            .flat_map(|b| b.data.clone().into_inner())
-            .collect_vec();
+        let bytes = blocks.into_iter().flat_map(|b| b.data).collect_vec();
 
         Ok(bytes.try_into().expect("Merged data cannot be empty"))
     }
@@ -141,20 +158,9 @@ impl<L1> Bundler<L1> {
     /// Extracts the block heights from the given blocks as a `ValidatedRange<u32>`.
     fn extract_block_heights(
         &self,
-        block_slice: &[ports::storage::FuelBlock],
-    ) -> ValidatedRange<u32> {
-        let min_height = block_slice
-            .first()
-            .expect("Block slice cannot be empty")
-            .height;
-        let max_height = block_slice
-            .last()
-            .expect("Block slice cannot be empty")
-            .height;
-
-        (min_height..max_height.saturating_add(1))
-            .try_into()
-            .expect("Invalid block height range")
+        blocks: &NonEmptyVec<ports::storage::FuelBlock>,
+    ) -> RangeInclusive<u32> {
+        blocks.first().height..=blocks.last().height
     }
 
     /// Calculates the gas per uncompressed byte ratio for data.
@@ -222,22 +228,18 @@ where
             .expect("to not be zero since it is not less than the minimum which cannot be zero");
 
         if self.current_block_count > max_blocks {
-            // No more block counts to try; return the best proposal.
-            // Mark as optimal if we've tried all possibilities.
-            if let Some(mut best_proposal) =
-                self.best_proposal.as_ref().map(|bp| bp.proposal.clone())
-            {
-                best_proposal.optimal = true;
-                return Ok(Some(best_proposal));
-            } else {
-                return Ok(None);
-            }
+            return self.best_proposal();
         }
 
-        let block_slice = &self.blocks[..self.current_block_count.get()];
+        let bundle_blocks =
+            NonEmptyVec::try_from(self.blocks[..self.current_block_count.get()].to_vec())
+                .expect("cannot be empty");
+
+        // Extract block heights
+        let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
 
         // Merge block data (uncompressed data)
-        let uncompressed_data = self.merge_block_data(block_slice)?;
+        let uncompressed_data = self.merge_block_data(bundle_blocks)?;
 
         // Compress the merged data for better gas usage
         let compressed_data = self.compressor.compress(&uncompressed_data).await?;
@@ -250,9 +252,6 @@ where
         let fragments = self
             .l1_adapter
             .split_into_submittable_fragments(&compressed_data)?;
-
-        // Extract block heights
-        let block_heights = self.extract_block_heights(block_slice);
 
         // Calculate gas per uncompressed byte ratio (based on the original, uncompressed data size)
         let uncompressed_data_size = uncompressed_data.len();
@@ -278,26 +277,11 @@ where
         // Prepare for the next iteration
         self.current_block_count = self.current_block_count.saturating_add(1);
 
-        // TODO: refactor double check
-        if self.current_block_count > max_blocks {
-            // No more block counts to try; return the best proposal.
-            // Mark as optimal if we've tried all possibilities.
-            if let Some(mut best_proposal) =
-                self.best_proposal.as_ref().map(|bp| bp.proposal.clone())
-            {
-                best_proposal.optimal = true;
-                return Ok(Some(best_proposal));
-            } else {
-                return Ok(None);
-            }
-        }
-
-        // Return the best proposal so far
-        Ok(self.best_proposal.as_ref().map(|bp| bp.proposal.clone()))
+        self.best_proposal()
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Compressor {
     level: Compression,
 }
@@ -402,7 +386,7 @@ mod tests {
         // then
         assert_eq!(
             bundle.block_heights,
-            (0..2).try_into().unwrap(),
+            0..=1,
             "Block heights should be in range from 0 to 2"
         );
         assert!(
@@ -523,7 +507,7 @@ mod tests {
         };
 
         // then
-        assert_eq!(best_proposal.block_heights, (0..3).try_into().unwrap());
+        assert_eq!(best_proposal.block_heights, 0..=2);
 
         approx::assert_abs_diff_eq!(best_proposal.compression_ratio, 80.84, epsilon = 0.01);
 
@@ -587,8 +571,8 @@ mod tests {
         // then
         assert_eq!(
             proposal.block_heights,
-            (0..2).try_into().unwrap(),
-            "Block heights should be in range from 0 to 2"
+            0..=1,
+            "Block heights should be in expected range"
         );
 
         Ok(())
