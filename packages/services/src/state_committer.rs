@@ -203,7 +203,7 @@ mod tests {
                 gas_estimation: 1,
             });
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
@@ -258,7 +258,7 @@ mod tests {
                 gas_estimation: 1,
             });
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
@@ -300,7 +300,7 @@ mod tests {
 
         let l1_mock = ports::l1::MockApi::new();
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             (2..3).try_into().unwrap(),
@@ -333,7 +333,7 @@ mod tests {
                 gas_estimation: 1,
             });
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
@@ -385,14 +385,14 @@ mod tests {
         let fragment = test_utils::random_data(100);
 
         let l1_mock_split = test_utils::mocks::l1::will_split_bundles_into_fragments([(
-            test_utils::encode_blocks(&blocks),
+            test_utils::encode_merge_and_compress_blocks(&blocks).await,
             SubmittableFragments {
                 fragments: non_empty_vec![fragment.clone()],
                 gas_estimation: 1,
             },
         )]);
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (2..3).try_into().unwrap(),
@@ -436,14 +436,14 @@ mod tests {
         let fragment = test_utils::random_data(100);
 
         let l1_mock_split = test_utils::mocks::l1::will_split_bundles_into_fragments([(
-            test_utils::encode_blocks(&blocks[0..2]),
+            test_utils::encode_merge_and_compress_blocks(&blocks[0..2]).await,
             SubmittableFragments {
                 fragments: non_empty_vec![fragment.clone()],
                 gas_estimation: 1,
             },
         )]);
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (2..3).try_into().unwrap(),
@@ -488,10 +488,10 @@ mod tests {
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
 
-        let bundle_1 = test_utils::encode_blocks(&blocks[0..=0]);
+        let bundle_1 = test_utils::encode_merge_and_compress_blocks(&blocks[0..=0]).await;
         let bundle_1_fragment = test_utils::random_data(100);
 
-        let bundle_2 = test_utils::encode_blocks(&blocks[1..=1]);
+        let bundle_2 = test_utils::encode_merge_and_compress_blocks(&blocks[1..=1]).await;
         let bundle_2_fragment = test_utils::random_data(100);
 
         let l1_mock_split = test_utils::mocks::l1::will_split_bundles_into_fragments([
@@ -511,7 +511,7 @@ mod tests {
             ),
         ]);
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),
@@ -550,7 +550,7 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             (0..1).try_into().unwrap(),
@@ -589,9 +589,9 @@ mod tests {
             })
             .await;
 
-        let bundle_1 = test_utils::encode_blocks(&blocks[0..=1]); // 2 blocks
-        let bundle_2 = test_utils::encode_blocks(&blocks[0..=2]); // 3 blocks (best gas per byte)
-        let bundle_3 = test_utils::encode_blocks(&blocks[0..=3]); // 4 blocks
+        let bundle_1 = test_utils::encode_merge_and_compress_blocks(&blocks[0..=1]).await; // 2 blocks
+        let bundle_2 = test_utils::encode_merge_and_compress_blocks(&blocks[0..=2]).await; // 3 blocks (best gas per byte)
+        let bundle_3 = test_utils::encode_merge_and_compress_blocks(&blocks[0..=3]).await; // 4 blocks
 
         let optimal_fragment = test_utils::random_data(100);
 
@@ -619,7 +619,7 @@ mod tests {
             ),
         ]);
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (2..5).try_into().unwrap(), // Valid block range: 2 to 4 blocks
@@ -713,6 +713,7 @@ mod tests {
                 },
                 block_heights: (0..1).try_into().unwrap(),
                 optimal: false,
+                compression_ratio: 1.0,
             }))
             .await
             .unwrap();
@@ -731,6 +732,7 @@ mod tests {
                 },
                 block_heights: (0..1).try_into().unwrap(),
                 optimal: false,
+                compression_ratio: 1.0,
             }))
             .await
             .unwrap();
@@ -755,7 +757,7 @@ mod tests {
 
         // Configure the bundler with a minimum acceptable block range greater than the available blocks
         let min_acceptable_blocks = 2;
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(ports::l1::MockApi::new()),
             setup.db(),
             (min_acceptable_blocks..3).try_into().unwrap(),
@@ -798,7 +800,7 @@ mod tests {
                 gas_estimation: 1,
             });
 
-        let bundler_factory = bundler::gas_optimizing::Factory::new(
+        let bundler_factory = bundler::Factory::new(
             Arc::new(l1_mock_split),
             setup.db(),
             (1..2).try_into().unwrap(),

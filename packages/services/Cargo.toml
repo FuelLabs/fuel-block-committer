@@ -23,8 +23,11 @@ hex = { workspace = true }
 validator = { workspace = true }
 mockall = { workspace = true, optional = true }
 flate2 = { workspace = true, features = ["default"] }
+tokio = { workspace = true }
 
 [dev-dependencies]
+# TODO: features
+approx = { workspace = true, features = ["default"] }
 services = { workspace = true, features = ["test-helpers"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 clock = { workspace = true, features = ["test-helpers"] }

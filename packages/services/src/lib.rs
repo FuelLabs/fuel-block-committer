@@ -69,7 +69,24 @@ pub trait Runner: Send + Sync {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    pub fn encode_blocks<'a>(
+    pub(crate) async fn merge_and_compress_blocks(
+        blocks: &[ports::storage::FuelBlock],
+    ) -> NonEmptyVec<u8> {
+        let compressor = Compressor::default();
+        let merged_bytes: Vec<_> = blocks
+            .iter()
+            .flat_map(|b| b.data.inner())
+            .copied()
+            .collect();
+
+        let merged_bytes: NonEmptyVec<u8> = merged_bytes
+            .try_into()
+            .expect("Merged data cannot be empty");
+
+        compressor.compress(&merged_bytes).await.unwrap()
+    }
+
+    pub async fn encode_merge_and_compress_blocks<'a>(
         blocks: impl IntoIterator<Item = &'a ports::fuel::FuelBlock>,
     ) -> NonEmptyVec<u8> {
         let blocks = blocks.into_iter().collect::<Vec<_>>();
@@ -87,7 +104,10 @@ pub(crate) mod test_utils {
             })
             .collect();
 
-        bytes.try_into().unwrap()
+        Compressor::default()
+            .compress(&bytes.try_into().expect("is not empty"))
+            .await
+            .unwrap()
     }
 
     pub fn random_data(size: usize) -> NonEmptyVec<u8> {
@@ -110,7 +130,9 @@ pub(crate) mod test_utils {
     use storage::PostgresProcess;
     use validator::BlockValidator;
 
-    use crate::{block_importer, BlockImporter, StateListener};
+    use crate::{
+        block_importer, state_committer::bundler::Compressor, BlockImporter, StateListener,
+    };
 
     use super::Runner;
 
