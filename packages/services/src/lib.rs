@@ -79,11 +79,11 @@ pub(crate) mod test_utils {
             .copied()
             .collect();
 
-        let merged_bytes: NonEmptyVec<u8> = merged_bytes
+        let merged_bytes = merged_bytes
             .try_into()
             .expect("Merged data cannot be empty");
 
-        compressor.compress(&merged_bytes).await.unwrap()
+        compressor.compress(merged_bytes).await.unwrap()
     }
 
     pub async fn encode_merge_and_compress_blocks<'a>(
@@ -105,7 +105,7 @@ pub(crate) mod test_utils {
             .collect();
 
         Compressor::default()
-            .compress(&bytes.try_into().expect("is not empty"))
+            .compress(bytes.try_into().expect("is not empty"))
             .await
             .unwrap()
     }

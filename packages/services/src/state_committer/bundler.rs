@@ -240,13 +240,14 @@ where
 
         // Merge block data (uncompressed data)
         let uncompressed_data = self.merge_block_data(bundle_blocks)?;
+        let uncompressed_data_size = uncompressed_data.len();
 
         // Compress the merged data for better gas usage
-        let compressed_data = self.compressor.compress(&uncompressed_data).await?;
+        let compressed_data = self.compressor.compress(uncompressed_data).await?;
 
         // Calculate compression ratio
         let compression_ratio =
-            self.calculate_compression_ratio(uncompressed_data.len(), compressed_data.len());
+            self.calculate_compression_ratio(uncompressed_data_size, compressed_data.len());
 
         // Split into submittable fragments using the compressed data
         let fragments = self
@@ -254,7 +255,6 @@ where
             .split_into_submittable_fragments(&compressed_data)?;
 
         // Calculate gas per uncompressed byte ratio (based on the original, uncompressed data size)
-        let uncompressed_data_size = uncompressed_data.len();
         let gas_per_uncompressed_byte = self
             .calculate_gas_per_uncompressed_byte(fragments.gas_estimation, uncompressed_data_size);
 
@@ -327,8 +327,8 @@ impl Compressor {
         Self::new(Level::Level6)
     }
 
-    pub async fn compress(&self, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
-        let mut encoder = GzEncoder::new(Vec::new(), self.level);
+    fn _compress(level: Compression, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
+        let mut encoder = GzEncoder::new(Vec::new(), level);
         encoder
             .write_all(data.inner())
             .map_err(|e| crate::Error::Other(e.to_string()))?;
@@ -338,6 +338,17 @@ impl Compressor {
             .map_err(|e| crate::Error::Other(e.to_string()))?
             .try_into()
             .map_err(|_| crate::Error::Other("compression resulted in no data".to_string()))
+    }
+
+    pub fn compress_blocking(&self, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
+        Self::_compress(self.level, data)
+    }
+
+    pub async fn compress(&self, data: NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
+        let level = self.level;
+        tokio::task::spawn_blocking(move || Self::_compress(level, &data))
+            .await
+            .map_err(|e| crate::Error::Other(e.to_string()))?
     }
 }
 
