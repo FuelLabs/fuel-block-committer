@@ -46,6 +46,10 @@ impl<T> TryFrom<Vec<T>> for NonEmptyVec<T> {
 }
 
 impl<T> NonEmptyVec<T> {
+    pub fn iter(&self) -> std::slice::Iter<T> {
+        self.vec.iter()
+    }
+
     pub fn first(&self) -> &T {
         self.vec.first().expect("vec is not empty")
     }

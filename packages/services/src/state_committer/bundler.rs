@@ -157,6 +157,8 @@ where
     type Bundler = Bundler<L1>;
 
     async fn build(&self) -> Result<Self::Bundler> {
+        // TODO: segfault check against holes
+
         let blocks = self
             .storage
             .lowest_unbundled_blocks(self.max_blocks.get())
@@ -440,4 +442,6 @@ mod tests {
 
         Ok(())
     }
+
+    // TODO: segfault various tests around the logic
 }

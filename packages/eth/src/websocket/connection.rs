@@ -72,15 +72,21 @@ impl EthApi for WsConnection {
         &self,
         data: &NonEmptyVec<u8>,
     ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        todo!()
+        blob_calculations::split_into_submittable_fragments(data)
     }
 
     fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage {
-        todo!()
+        blob_calculations::gas_usage_to_store_data(data)
     }
 
     async fn gas_prices(&self) -> Result<GasPrices> {
-        todo!()
+        let normal_price = self.provider.get_gas_price().await?;
+        let blob_price = self.provider.get_blob_base_fee().await?;
+
+        Ok(GasPrices {
+            storage: blob_price,
+            normal: normal_price,
+        })
     }
 
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
@@ -162,6 +168,153 @@ impl EthApi for WsConnection {
             .await?
             ._0
             .into())
+    }
+}
+
+mod blob_calculations {
+    use alloy::{
+        consensus::{SidecarCoder, SimpleCoder},
+        eips::eip4844::MAX_BLOBS_PER_BLOCK,
+    };
+    use itertools::Itertools;
+    use ports::{l1::GasUsage, types::NonEmptyVec};
+
+    /// How many field elements are stored in a single data blob.
+    const FIELD_ELEMENTS_PER_BLOB: usize = 4096;
+
+    /// Size a single field element in bytes.
+    const FIELD_ELEMENT_BYTES: usize = 32;
+
+    /// Gas consumption of a single data blob.
+    const DATA_GAS_PER_BLOB: usize = FIELD_ELEMENT_BYTES * FIELD_ELEMENTS_PER_BLOB;
+
+    /// Intrinsic gas cost of a eth transaction.
+    const BASE_TX_COST: usize = 21_000;
+
+    pub(crate) fn gas_usage_to_store_data(data: &NonEmptyVec<u8>) -> GasUsage {
+        let coder = SimpleCoder::default();
+        let field_elements_required = coder.required_fe(data.inner());
+
+        // alloy constants not used since they are u64
+
+        let blob_num = field_elements_required.div_ceil(FIELD_ELEMENTS_PER_BLOB);
+
+        let number_of_txs = blob_num.div_ceil(MAX_BLOBS_PER_BLOCK);
+
+        let storage = blob_num.saturating_mul(DATA_GAS_PER_BLOB);
+        let normal = number_of_txs * BASE_TX_COST;
+
+        GasUsage { storage, normal }
+    }
+
+    // 1 whole field element is lost plus a byte for every remaining field element
+    const ENCODABLE_BYTES_PER_TX: usize =
+        (FIELD_ELEMENT_BYTES - 1) * (FIELD_ELEMENTS_PER_BLOB * MAX_BLOBS_PER_BLOCK - 1);
+
+    pub(crate) fn split_into_submittable_fragments(
+        data: &NonEmptyVec<u8>,
+    ) -> crate::error::Result<NonEmptyVec<NonEmptyVec<u8>>> {
+        Ok(data
+            .iter()
+            .chunks(ENCODABLE_BYTES_PER_TX)
+            .into_iter()
+            .fold(Vec::new(), |mut acc, chunk| {
+                let bytes = chunk.copied().collect::<Vec<_>>();
+
+                let non_empty_bytes = NonEmptyVec::try_from(bytes)
+                    .expect("chunk is non-empty since it came from a non-empty vec");
+                acc.push(non_empty_bytes);
+                acc
+            })
+            .try_into()
+            .expect("must have at least one fragment since the input is non-empty"))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use alloy::consensus::SidecarBuilder;
+        use rand::{rngs::SmallRng, Rng, SeedableRng};
+        use test_case::test_case;
+
+        use super::*;
+
+        #[test_case(100, 1, 1; "single eth tx with one blob")]
+        #[test_case(129 * 1024, 1, 2; "single eth tx with two blobs")]
+        #[test_case(257 * 1024, 1, 3; "single eth tx with three blobs")]
+        #[test_case(385 * 1024, 1, 4; "single eth tx with four blobs")]
+        #[test_case(513 * 1024, 1, 5; "single eth tx with five blobs")]
+        #[test_case(740 * 1024, 1, 6; "single eth tx with six blobs")]
+        #[test_case(768 * 1024, 2, 7; "two eth tx with seven blobs")]
+        #[test_case(896 * 1024, 2, 8; "two eth tx with eight blobs")]
+        fn gas_usage_for_data_storage(num_bytes: usize, num_txs: usize, num_blobs: usize) {
+            // given
+            let bytes = vec![0; num_bytes].try_into().unwrap();
+
+            // when
+            let usage = gas_usage_to_store_data(&bytes);
+
+            // then
+            assert_eq!(usage.normal, num_txs * 21_000);
+            assert_eq!(
+                usage.storage as u64,
+                num_blobs as u64 * alloy::eips::eip4844::DATA_GAS_PER_BLOB
+            );
+
+            let mut builder = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 0);
+            builder.ingest(bytes.inner());
+            assert_eq!(builder.build().unwrap().blobs.len(), num_blobs,);
+        }
+
+        #[test_case(100; "one small fragment")]
+        #[test_case(1000000; "one full fragment and one small")]
+        #[test_case(2000000; "two full fragments and one small")]
+        fn splits_into_correct_fragments_that_can_fit_in_a_tx(num_bytes: usize) {
+            // given
+            let mut rng = SmallRng::from_seed([0; 32]);
+            let mut bytes = vec![0; num_bytes];
+            rng.fill(&mut bytes[..]);
+            let original_bytes = bytes.try_into().unwrap();
+
+            // when
+            let fragments = split_into_submittable_fragments(&original_bytes).unwrap();
+
+            // then
+            let reconstructed = fragments
+                .inner()
+                .iter()
+                .flat_map(|f| f.inner())
+                .copied()
+                .collect_vec();
+            assert_eq!(original_bytes.inner(), &reconstructed);
+
+            for (idx, fragment) in fragments.inner().iter().enumerate() {
+                let mut builder =
+                    SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 0);
+                builder.ingest(fragment.inner());
+                let num_blobs = builder.build().unwrap().blobs.len();
+
+                if idx == fragments.len().get() - 1 {
+                    assert!(num_blobs <= 6);
+                } else {
+                    assert_eq!(num_blobs, 6);
+                }
+            }
+        }
+
+        #[test]
+        fn encodable_bytes_per_tx_correctly_calculated() {
+            let max_bytes = [0; ENCODABLE_BYTES_PER_TX];
+            let mut builder = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 6);
+            builder.ingest(&max_bytes);
+
+            assert_eq!(builder.build().unwrap().blobs.len(), 6);
+
+            let one_too_many = [0; ENCODABLE_BYTES_PER_TX + 1];
+            let mut builder = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 6);
+            builder.ingest(&one_too_many);
+
+            assert_eq!(builder.build().unwrap().blobs.len(), 7);
+        }
     }
 }
 
@@ -268,28 +421,5 @@ mod tests {
             WsConnection::calculate_commit_height(10, 3.try_into().unwrap()),
             U256::from(3)
         );
-    }
-
-    #[test]
-    fn sidecarstuff() {
-        let data = vec![1; 6 * 128 * 1024];
-        let mut sidecar = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 6);
-
-        sidecar.ingest(&data);
-
-        let sidecar = sidecar.build().unwrap();
-
-        let recreated_data = sidecar.blobs.concat();
-        assert_eq!(data.len(), recreated_data.len());
-
-        // let coder = SimpleCoder::default();
-        // let required_fe = coder.required_fe(data);
-        // let mut this = SidecarBuilder::from_coder_and_capacity(
-        //     SimpleCoder::default(),
-        //     required_fe.div_ceil(alloy::eips::eip4844::FIELD_ELEMENTS_PER_BLOB as usize),
-        // );
-
-        eprintln!("{}", sidecar.blobs.len());
-        panic!("kray");
     }
 }
