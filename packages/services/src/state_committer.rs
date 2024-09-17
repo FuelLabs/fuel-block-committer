@@ -12,13 +12,6 @@ use crate::{Error, Result, Runner};
 
 pub mod bundler;
 
-/// Configuration for bundle generation.
-#[derive(Debug, Clone, Copy)]
-pub struct BundleGenerationConfig {
-    /// Duration after which optimization attempts should stop.
-    pub stop_optimization_attempts_after: Duration,
-}
-
 /// The `StateCommitter` is responsible for committing state fragments to L1.
 /// It bundles blocks, fragments them, and submits the fragments to the L1 adapter.
 pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
@@ -27,7 +20,7 @@ pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
     clock: Clock,
     component_created_at: DateTime<Utc>,
     bundler_factory: BundlerFactory,
-    bundle_generation_config: BundleGenerationConfig,
+    optimization_time_limit: Duration,
 }
 
 impl<L1, Storage, C, BF> StateCommitter<L1, Storage, C, BF>
@@ -40,7 +33,7 @@ where
         storage: Storage,
         clock: C,
         bundler_factory: BF,
-        bundle_generation_config: BundleGenerationConfig,
+        optimization_time_limit: Duration,
     ) -> Self {
         let now = clock.now();
 
@@ -50,7 +43,7 @@ where
             clock,
             component_created_at: now,
             bundler_factory,
-            bundle_generation_config,
+            optimization_time_limit,
         }
     }
 }
@@ -91,7 +84,7 @@ where
         while bundler.advance().await? {
             let elapsed = self.elapsed_time_since_last_finalized().await?;
 
-            if self.should_stop_optimizing(elapsed) {
+            if elapsed >= self.optimization_time_limit {
                 break;
             }
         }
@@ -113,14 +106,6 @@ where
         now.signed_duration_since(last_finalized_time)
             .to_std()
             .map_err(|e| Error::Other(format!("could not calculate elapsed time: {:?}", e)))
-    }
-
-    /// Determines whether to stop optimizing based on the elapsed time.
-    fn should_stop_optimizing(&self, elapsed: Duration) -> bool {
-        elapsed
-            >= self
-                .bundle_generation_config
-                .stop_optimization_attempts_after
     }
 
     /// Submits a fragment to the L1 adapter and records the tx in storage.

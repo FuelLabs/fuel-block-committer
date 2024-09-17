@@ -31,8 +31,8 @@ pub trait Contract: Send + Sync {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GasUsage {
-    pub storage: usize,
-    pub normal: usize,
+    pub storage: u64,
+    pub normal: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

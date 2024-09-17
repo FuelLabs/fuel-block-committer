@@ -273,8 +273,8 @@ where
         uncompressed_size: &NonZeroUsize,
         gas_prices: &GasPrices,
     ) -> f64 {
-        let storage_fee = gas_usage.storage.saturating_mul(gas_prices.storage);
-        let normal_fee = gas_usage.normal.saturating_mul(gas_prices.normal);
+        let storage_fee = u128::from(gas_usage.storage).saturating_mul(gas_prices.storage);
+        let normal_fee = u128::from(gas_usage.normal).saturating_mul(gas_prices.normal);
 
         let total_fee = storage_fee.saturating_add(normal_fee);
 

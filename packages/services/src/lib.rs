@@ -11,7 +11,9 @@ pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
-pub use state_committer::StateCommitter;
+pub use state_committer::{
+    bundler::Compressor, bundler::Factory as BundlerFactory, StateCommitter,
+};
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
 pub use wallet_balance_tracker::WalletBalanceTracker;

@@ -45,7 +45,9 @@ where
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_api.latest_block().await?;
 
-        self.block_validator.validate(&latest_block)?;
+        if latest_block.header.height != 0 {
+            self.block_validator.validate(&latest_block)?;
+        }
 
         Ok(latest_block)
     }
@@ -92,14 +94,13 @@ where
 
 /// Encodes the block data into a `NonEmptyVec<u8>`.
 pub(crate) fn encode_block_data(block: &FuelBlock) -> Result<NonEmptyVec<u8>> {
-    let tx_bytes: Vec<u8> = block
-        .transactions
-        .iter()
-        .flat_map(|tx| tx.iter())
-        .cloned()
-        .collect();
+    // added this because genesis block has no transactions and we must have some
+    let mut encoded = block.transactions.len().to_be_bytes().to_vec();
 
-    let data = NonEmptyVec::try_from(tx_bytes)
+    let tx_bytes = block.transactions.iter().flat_map(|tx| tx.iter()).cloned();
+    encoded.extend(tx_bytes);
+
+    let data = NonEmptyVec::try_from(encoded)
         .map_err(|e| Error::Other(format!("Couldn't encode block (id:{}): {}", block.id, e)))?;
 
     Ok(data)

@@ -174,32 +174,28 @@ impl EthApi for WsConnection {
 mod blob_calculations {
     use alloy::{
         consensus::{SidecarCoder, SimpleCoder},
-        eips::eip4844::MAX_BLOBS_PER_BLOCK,
+        eips::eip4844::{
+            DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES, MAX_BLOBS_PER_BLOCK,
+        },
     };
     use itertools::Itertools;
     use ports::{l1::GasUsage, types::NonEmptyVec};
 
-    /// How many field elements are stored in a single data blob.
-    const FIELD_ELEMENTS_PER_BLOB: usize = 4096;
-
-    /// Size a single field element in bytes.
-    const FIELD_ELEMENT_BYTES: usize = 32;
-
-    /// Gas consumption of a single data blob.
-    const DATA_GAS_PER_BLOB: usize = FIELD_ELEMENT_BYTES * FIELD_ELEMENTS_PER_BLOB;
-
     /// Intrinsic gas cost of a eth transaction.
-    const BASE_TX_COST: usize = 21_000;
+    const BASE_TX_COST: u64 = 21_000;
 
     pub(crate) fn gas_usage_to_store_data(data: &NonEmptyVec<u8>) -> GasUsage {
         let coder = SimpleCoder::default();
-        let field_elements_required = coder.required_fe(data.inner());
+        let field_elements_required =
+            u64::try_from(coder.required_fe(data.inner())).expect("definitely less than u64::MAX");
 
         // alloy constants not used since they are u64
-
         let blob_num = field_elements_required.div_ceil(FIELD_ELEMENTS_PER_BLOB);
 
-        let number_of_txs = blob_num.div_ceil(MAX_BLOBS_PER_BLOCK);
+        let number_of_txs = blob_num.div_ceil(
+            u64::try_from(MAX_BLOBS_PER_BLOCK)
+                .expect("never going to be able to fit more than u64::MAX blobs in a tx"),
+        );
 
         let storage = blob_num.saturating_mul(DATA_GAS_PER_BLOB);
         let normal = number_of_txs * BASE_TX_COST;
@@ -208,8 +204,8 @@ mod blob_calculations {
     }
 
     // 1 whole field element is lost plus a byte for every remaining field element
-    const ENCODABLE_BYTES_PER_TX: usize =
-        (FIELD_ELEMENT_BYTES - 1) * (FIELD_ELEMENTS_PER_BLOB * MAX_BLOBS_PER_BLOCK - 1);
+    const ENCODABLE_BYTES_PER_TX: usize = (FIELD_ELEMENT_BYTES as usize - 1)
+        * (FIELD_ELEMENTS_PER_BLOB as usize * MAX_BLOBS_PER_BLOCK - 1);
 
     pub(crate) fn split_into_submittable_fragments(
         data: &NonEmptyVec<u8>,

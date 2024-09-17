@@ -73,15 +73,26 @@ pub fn block_committer(
 
 pub fn state_committer(
     l1: L1,
-    storage: impl Storage + 'static,
+    storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
+    // TODO: segfault propagate the configurations
+
+    let bundler_factory = services::BundlerFactory::new(
+        l1.clone(),
+        storage.clone(),
+        1..100,
+        services::Compressor::default(),
+    )
+    .unwrap();
+
     let state_committer = services::StateCommitter::new(
         l1,
         storage,
         SystemClock,
-        config.app.state_accumulation_timeout,
+        bundler_factory,
+        Duration::from_secs(1000),
     );
 
     schedule_polling(
@@ -99,7 +110,7 @@ pub fn state_importer(
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
-    let state_importer = services::BlockImporter::new(storage, fuel, validator);
+    let state_importer = services::BlockImporter::new(storage, fuel, validator, 1);
 
     schedule_polling(
         config.app.block_check_interval,
