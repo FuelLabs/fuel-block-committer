@@ -178,7 +178,7 @@ mod tests {
     use mockall::predicate::{self, eq};
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
-        l1::{Contract, EventStreamer, GasPrices, GasUsage, MockContract, SubmittableFragments},
+        l1::{Contract, EventStreamer, GasPrices, GasUsage, MockContract},
         types::{L1Height, NonEmptyVec, TransactionResponse, U256},
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -216,18 +216,18 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ports::l1::Api for MockL1 {
-        async fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
+        fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
             self.api.gas_usage_to_store_data(data)
         }
 
-        async fn gas_prices(&self) -> Result<GasPrices> {
+        async fn gas_prices(&self) -> ports::l1::Result<GasPrices> {
             self.api.gas_prices().await
         }
 
         fn split_into_submittable_fragments(
             &self,
             data: &NonEmptyVec<u8>,
-        ) -> ports::l1::Result<SubmittableFragments> {
+        ) -> ports::l1::Result<NonEmptyVec<NonEmptyVec<u8>>> {
             self.api.split_into_submittable_fragments(data)
         }
         async fn submit_l2_state(

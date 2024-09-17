@@ -58,10 +58,7 @@ impl WebsocketClient {
         Ok(self.inner.gas_prices().await?)
     }
 
-    pub(crate) async fn _gas_usage_to_store_data(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> ports::l1::GasUsage {
+    pub(crate) fn _gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage {
         self.inner.gas_usage_to_store_data(data)
     }
 

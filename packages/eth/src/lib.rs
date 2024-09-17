@@ -44,8 +44,8 @@ impl Api for WebsocketClient {
         self._split_into_submittable_fragments(data)
     }
 
-    async fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
-        self._gas_usage_to_store_data(data).await
+    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
+        self._gas_usage_to_store_data(data)
     }
     async fn gas_prices(&self) -> Result<GasPrices> {
         self._gas_prices().await

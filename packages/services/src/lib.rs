@@ -144,7 +144,10 @@ pub(crate) mod test_utils {
     pub mod mocks {
         pub mod l1 {
             use mockall::{predicate::eq, Sequence};
-            use ports::types::{L1Height, NonEmptyVec, TransactionResponse};
+            use ports::{
+                l1::Api,
+                types::{L1Height, NonEmptyVec, TransactionResponse},
+            };
 
             pub enum TxStatus {
                 Success,
@@ -169,10 +172,33 @@ pub(crate) mod test_utils {
                 l1_mock
             }
 
-            pub fn will_split_bundle_into_fragments(
+            pub fn will_ask_to_split_bundle_into_fragments(
+                bundle: Option<NonEmptyVec<u8>>,
                 fragments: NonEmptyVec<NonEmptyVec<u8>>,
             ) -> ports::l1::MockApi {
                 let mut l1_mock = ports::l1::MockApi::new();
+
+                l1_mock
+                    .expect_gas_usage_to_store_data()
+                    .once()
+                    .withf(move |arg| {
+                        if let Some(bundle) = bundle.as_ref() {
+                            arg == bundle
+                        } else {
+                            true
+                        }
+                    })
+                    .return_once(|data| ports::l1::GasUsage {
+                        storage: (data.len().get() * 10) as u128,
+                        normal: 21000,
+                    });
+
+                l1_mock.expect_gas_prices().once().return_once(|| {
+                    Ok(ports::l1::GasPrices {
+                        storage: 10,
+                        normal: 1,
+                    })
+                });
 
                 l1_mock
                     .expect_split_into_submittable_fragments()
@@ -181,19 +207,63 @@ pub(crate) mod test_utils {
 
                 l1_mock
             }
-            pub fn will_split_bundles_into_fragments(
-                expectations: impl IntoIterator<Item = (NonEmptyVec<u8>, NonEmptyVec<NonEmptyVec<u8>>)>,
+
+            pub fn will_ask_to_split_bundles_into_fragments(
+                expectations: impl IntoIterator<
+                    Item = (Option<NonEmptyVec<u8>>, NonEmptyVec<NonEmptyVec<u8>>),
+                >,
             ) -> ports::l1::MockApi {
                 let mut l1_mock = ports::l1::MockApi::new();
                 let mut sequence = Sequence::new();
+
+                l1_mock.expect_gas_prices().returning(|| {
+                    Ok(ports::l1::GasPrices {
+                        storage: 10,
+                        normal: 1,
+                    })
+                });
+
                 for (bundle, fragments) in expectations {
+                    {
+                        let bundle = bundle.clone();
+                        l1_mock
+                            .expect_gas_usage_to_store_data()
+                            .once()
+                            .withf(move |arg| {
+                                if let Some(bundle) = bundle.as_ref() {
+                                    arg == bundle
+                                } else {
+                                    true
+                                }
+                            })
+                            .return_once(|data| ports::l1::GasUsage {
+                                storage: (data.len().get() * 10) as u128,
+                                normal: 21000,
+                            })
+                            .in_sequence(&mut sequence);
+                    }
+
                     l1_mock
                         .expect_split_into_submittable_fragments()
-                        .with(eq(bundle))
                         .once()
+                        .withf(move |arg| {
+                            if let Some(bundle) = bundle.as_ref() {
+                                arg == bundle
+                            } else {
+                                true
+                            }
+                        })
                         .return_once(move |_| Ok(fragments))
                         .in_sequence(&mut sequence);
                 }
+
+                l1_mock.expect_gas_prices().returning(|| {
+                    Ok(ports::l1::GasPrices {
+                        storage: 10,
+                        normal: 1,
+                    })
+                });
+
                 l1_mock
             }
 
@@ -383,10 +453,10 @@ pub(crate) mod test_utils {
             clock.set_time(finalization_time);
 
             let data = random_data(100);
-            let l1_mock = mocks::l1::will_split_bundle_into_fragments(SubmittableFragments {
-                fragments: non_empty_vec!(data.clone()),
-                gas_estimation: 1,
-            });
+            let l1_mock = mocks::l1::will_ask_to_split_bundle_into_fragments(
+                None,
+                non_empty_vec!(data.clone()),
+            );
             let factory =
                 bundler::Factory::new(Arc::new(l1_mock), self.db(), 1..2, Compressor::default())
                     .unwrap();
