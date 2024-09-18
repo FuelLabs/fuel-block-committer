@@ -1,8 +1,7 @@
 use std::pin::Pin;
 
 use crate::types::{
-    FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, TransactionResponse,
-    ValidatedFuelBlock, U256,
+    BlockSubmissionTx, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, TransactionResponse, ValidatedFuelBlock, U256
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -24,7 +23,7 @@ impl From<InvalidL1Height> for Error {
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 #[async_trait::async_trait]
 pub trait Contract: Send + Sync {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]>;
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<BlockSubmissionTx>;
     fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
     fn commit_interval(&self) -> std::num::NonZeroU32;
 }

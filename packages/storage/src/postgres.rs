@@ -1,5 +1,5 @@
 use ports::types::{
-    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+    BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission, SubmissionTx, TransactionState
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -90,34 +90,94 @@ impl Postgres {
 
     pub(crate) async fn _record_block_submission(
         &self,
-        tx_hash: [u8; 32],
+        submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
     ) -> crate::error::Result<()> {
-        let mut transaction = self.connection_pool.begin().await?;
-
-        let tx_id = sqlx::query!(
-            "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
-            tx_hash.as_slice(),
-            TransactionState::Pending.into_i16(),
-        )
-        .fetch_one(&mut *transaction)
-        .await?
-        .id;
+        let mut transaction = self.connection_pool.begin().await?; 
 
         let row = tables::L1FuelBlockSubmission::from(submission);
         sqlx::query!(
-            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, tx_id, submittal_height) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, final_tx_id, submittal_height) VALUES ($1, $2, $3, $4)",
             row.fuel_block_hash,
             row.fuel_block_height,
             tx_id,
             row.submittal_height
         )
-        .execute(&mut *transaction)
+        .execute(&self.connection_pool)
         .await?;
 
+        sqlx::query!(
+            "INSERT INTO l1_transaction (hash, nonce, max_fee, priority_fee, block_hash) VALUES ($1, $2, $3, $4, $5)",
+            submission_tx.hash.as_slice(),
+            submission_tx.nonce,
+            submission_tx.max_fee,
+            submission_tx.priority_fee,
+            submission_tx.block_hash.as_slice()
+        )
+        .execute(&self.connection_pool)
+        .await?;
+    
         transaction.commit().await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn _get_pending_block_submission_txs(&self) -> Result<Vec<BlockSubmissionTx>> {
+        sqlx::query_as!(
+            tables::L1SubmissionTx,
+            "SELECT * FROM l1_transaction WHERE state = $1",
+            TransactionState::Pending.into_i16()
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(BlockSubmissionTx::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _update_block_submission_tx_state(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> Result<FuelBlockHeight> {
+        // tx shouldn't go back to pending
+        assert_ne!(state, TransactionState::Pending);
+
+        let mut transaction = self.connection_pool.begin().await?;
+
+        let result = sqlx::query!(
+            "UPDATE l1_transaction SET state = $1 WHERE hash = $2 RETURNING block_hash, id",
+            state.into_i16(),
+            hash.as_slice(),
+        )
+        .fetch_one(&mut *transaction)
+        .await?;
+        let (block_hash, tx_id) = (result.block_hash, result.id);
+
+        // update submission with final tx id and return the submittal height
+        let block_height = sqlx::query!(
+            "UPDATE l1_fuel_block_submission SET final_tx_id = $1 WHERE fuel_block_hash = $2 RETURNING submittal_height",
+            tx_id,
+            block_hash
+        )
+        .fetch_one(&mut *transaction)
+        .await?
+        .submittal_height;
+
+        transaction.commit().await?;
+
+        Ok(block_height)
+    }
+
+    pub(crate) async fn _transction_exists_for_block(&self, block_hash: [u8; 32]) -> Result<bool> {
+        Ok(sqlx::query!(
+            "SELECT EXISTS (SELECT 1 FROM l1_transaction WHERE block_hash = $1)",
+            block_hash.as_slice()
+        )
+        .fetch_one(&self.connection_pool)
+        .await?
+        .exists
+        .unwrap_or(false))
     }
 
     pub(crate) async fn _submission_w_latest_block(
@@ -132,24 +192,6 @@ impl Postgres {
         .map(BlockSubmission::try_from)
         .transpose()
     }
-
-    // pub(crate) async fn _set_submission_completed(
-    //     &self,
-    //     fuel_block_hash: [u8; 32],
-    // ) -> Result<BlockSubmission> {
-    //     let updated_row = sqlx::query_as!(
-    //         tables::L1FuelBlockSubmission,
-    //         "UPDATE l1_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
-    //         fuel_block_hash.as_slice(),
-    //     ).fetch_optional(&self.connection_pool).await?;
-
-    //     if let Some(row) = updated_row {
-    //         Ok(row.try_into()?)
-    //     } else {
-    //         let hash = hex::encode(fuel_block_hash);
-    //         Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
-    //     }
-    // }
 
     pub(crate) async fn _insert_state_submission(
         &self,
@@ -209,8 +251,8 @@ impl Postgres {
                 SELECT l1_fragments.id
                 FROM l1_fragments
                 JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id
-                JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id
-                WHERE l1_transactions.state IN ($1, $2)
+                JOIN l1_blob_transaction ON l1_transaction_fragments.transaction_id = l1_blob_transaction.id
+                WHERE l1_blob_transaction.state IN ($1, $2)
             )
             ORDER BY l1_fragments.created_at
             LIMIT $3;",
@@ -234,7 +276,7 @@ impl Postgres {
         let mut transaction = self.connection_pool.begin().await?;
 
         let transaction_id = sqlx::query!(
-            "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
+            "INSERT INTO l1_blob_transaction (hash, state) VALUES ($1, $2) RETURNING id",
             tx_hash.as_slice(),
             TransactionState::Pending.into_i16(),
         )
@@ -263,8 +305,8 @@ impl Postgres {
                 SELECT 1
                 FROM l1_fragments
                 JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id
-                JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id
-                WHERE l1_transactions.state = $1
+                JOIN l1_blob_transaction ON l1_transaction_fragments.transaction_id = l1_blob_transaction.id
+                WHERE l1_blob_transaction.state = $1
             ) AS has_pending_fragments;",
             TransactionState::Pending.into_i16())
             .fetch_one(&self.connection_pool)
@@ -274,7 +316,7 @@ impl Postgres {
     pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<SubmissionTx>> {
         sqlx::query_as!(
             tables::L1SubmissionTx,
-            "SELECT * FROM l1_transactions WHERE state = $1",
+            "SELECT * FROM l1_blob_transaction WHERE state = $1",
             TransactionState::Pending.into_i16()
         )
         .fetch_all(&self.connection_pool)
@@ -303,7 +345,7 @@ impl Postgres {
         state: TransactionState,
     ) -> Result<()> {
         sqlx::query!(
-            "UPDATE l1_transactions SET state = $1 WHERE hash = $2",
+            "UPDATE l1_blob_transaction SET state = $1 WHERE hash = $2",
             state.into_i16(),
             hash.as_slice(),
         )

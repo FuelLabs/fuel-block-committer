@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{TransactionResponse, ValidatedFuelBlock, U256};
+use ports::types::{BlockSubmissionTx, TransactionResponse, ValidatedFuelBlock, U256};
 
 use crate::{
     error::{Error, Result},
@@ -14,7 +14,7 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]>;
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<BlockSubmissionTx>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
@@ -76,7 +76,7 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]> {
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<BlockSubmissionTx> {
         let response = self.adapter.submit(block).await;
         self.note_network_status(&response);
         response

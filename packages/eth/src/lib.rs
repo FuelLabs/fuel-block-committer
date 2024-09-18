@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, Result},
-    types::{FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock},
+    types::{BlockSubmissionTx, FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock},
 };
 use websocket::EthEventStreamer;
 
@@ -22,7 +22,7 @@ pub use websocket::WebsocketClient;
 
 #[async_trait]
 impl Contract for WebsocketClient {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<[u8; 32]> {
+    async fn submit(&self, block: ValidatedFuelBlock) -> Result<BlockSubmissionTx> {
         self.submit(block).await
     }
 

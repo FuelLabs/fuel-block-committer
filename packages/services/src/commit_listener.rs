@@ -1,29 +1,28 @@
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
 use ports::{
     storage::Storage,
-    types::{FuelBlockCommittedOnL1, L1Height},
+    types::{FuelBlockCommittedOnL1, L1Height, TransactionState},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use super::Runner;
 
-pub struct CommitListener<C, Db> {
-    contract: C,
+pub struct CommitListener<L1, Db> {
+    l1_adapter: L1,
     storage: Db,
     metrics: Metrics,
     cancel_token: CancellationToken,
 }
 
-impl<C, Db> CommitListener<C, Db> {
-    pub fn new(contract: C, storage: Db, cancel_token: CancellationToken) -> Self {
+impl<L1, Db> CommitListener<L1, Db> {
+    pub fn new(l1_adapter: L1, storage: Db, cancel_token: CancellationToken) -> Self {
         Self {
-            contract,
+            l1_adapter,
             storage,
             metrics: Metrics::default(),
             cancel_token,
@@ -31,9 +30,9 @@ impl<C, Db> CommitListener<C, Db> {
     }
 }
 
-impl<C, Db> CommitListener<C, Db>
+impl<L1, Db> CommitListener<L1, Db>
 where
-    C: ports::l1::Contract,
+    L1: ports::l1::Api,
     Db: Storage,
 {
     async fn determine_starting_l1_height(&mut self) -> crate::Result<L1Height> {
@@ -70,23 +69,50 @@ where
 }
 
 #[async_trait]
-impl<C, Db> Runner for CommitListener<C, Db>
+impl<L1, Db> Runner for CommitListener<L1, Db>
 where
-    C: ports::l1::Contract,
+    L1: ports::l1::Api + Send + Sync,
     Db: Storage,
 {
     async fn run(&mut self) -> crate::Result<()> {
-        let height = self.determine_starting_l1_height().await?;
+        let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
+        let transactions = self.storage.get_pending_contracts_txs().await?;
 
-        self.contract
-            .event_streamer(height)
-            .establish_stream()
-            .await?
-            .map_err(Into::into)
-            .and_then(|event| self.handle_block_committed(event))
-            .take_until(self.cancel_token.cancelled())
-            .for_each(|response| async { Self::log_if_error(response) })
-            .await;
+        for tx in transactions {
+            let tx_hash = tx.hash;
+            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx_hash).await? else {
+                continue; // not included
+            };
+
+            if !tx_response.succeeded() {
+                self.storage
+                    .update_submission_tx_state(tx_hash, TransactionState::Failed)
+                    .await?;
+
+                info!("failed contract commit tx {}", hex::encode(tx_hash));
+                continue;
+            }
+
+            if !tx_response.confirmations(current_block_number) < 10//TODO: self.num_blocks_to_finalize
+            {
+                continue; // not finalized
+            }
+
+            self.storage
+                .update_block_submission_tx_state(tx_hash, TransactionState::Finalized)
+                .await?;
+
+            info!("finalized contract commit tx {}", hex::encode(tx_hash));
+
+            let submission = self
+                .storage
+                .set_submission_completed(committed_on_l1.fuel_block_hash)
+                .await?;
+
+            self.metrics
+                .latest_committed_block
+                .set(i64::from(submission.block_height));
+        }
 
         Ok(())
     }

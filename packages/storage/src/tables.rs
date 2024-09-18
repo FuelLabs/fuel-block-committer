@@ -1,6 +1,5 @@
 use ports::types::{
     BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
-    TransactionType,
 };
 use sqlx::types::chrono;
 
@@ -14,7 +13,7 @@ macro_rules! bail {
 pub struct L1FuelBlockSubmission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
-    pub tx_id: Option<i32>,
+    pub final_tx_id: Option<i32>,
     pub submittal_height: i64,
 }
 
@@ -39,12 +38,12 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
             bail!("`submittal_height` as read from the db cannot fit in a `u64` as expected. Got: {} from db", value.submittal_height);
         };
 
-        let tx_id = value.tx_id.map(|id| id as u32);
+        let tx_id = value.final_tx_id.map(|id| id as u32);
 
         Ok(Self {
             block_hash,
             block_height,
-            tx_id,
+            final_tx_id: tx_id,
             submittal_height,
         })
     }
@@ -55,7 +54,7 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
         Self {
             fuel_block_hash: value.block_hash.to_vec(),
             fuel_block_height: i64::from(value.block_height),
-            tx_id: value.tx_id.map(|id| id as i32),
+            final_tx_id: value.final_tx_id.map(|id| id as i32),
             submittal_height: value.submittal_height.into(),
         }
     }
@@ -146,7 +145,6 @@ pub struct L1SubmissionTx {
     pub id: i64,
     pub hash: Vec<u8>,
     pub state: i16,
-    pub tx_type: i16,
 }
 
 impl TryFrom<L1SubmissionTx> for SubmissionTx {
@@ -165,18 +163,10 @@ impl TryFrom<L1SubmissionTx> for SubmissionTx {
             );
         };
 
-        let Some(tx_type) = TransactionType::from_i16(value.tx_type) else {
-            bail!(
-                "tx_type: {:?} is not a valid variant of `TransactionType`",
-                value.tx_type
-            );
-        };
-
         Ok(SubmissionTx {
             id: Some(value.id as u32),
             hash,
             state,
-            tx_type,
         })
     }
 }
@@ -188,7 +178,6 @@ impl From<SubmissionTx> for L1SubmissionTx {
             id: value.id.unwrap_or_default() as i64,
             hash: value.hash.to_vec(),
             state: value.state.into_i16(),
-            tx_type: value.tx_type.into_i16(),
         }
     }
 }

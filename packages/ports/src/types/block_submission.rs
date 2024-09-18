@@ -1,13 +1,10 @@
-use crate::types::L1Height;
+pub type FuelBlockHeight = u32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {
     pub block_hash: [u8; 32],
-    pub block_height: u32,
-    pub tx_id: Option<u32>,
-    // L1 block height moments before submitting the fuel block. Used to filter stale events in
-    // the commit listener.
-    pub submittal_height: L1Height,
+    pub block_height: FuelBlockHeight,
+    pub final_tx_id: Option<u32>,
 }
 
 #[cfg(feature = "test-helpers")]
@@ -16,8 +13,7 @@ impl rand::distributions::Distribution<BlockSubmission> for rand::distributions:
         BlockSubmission {
             block_hash: rng.gen(),
             block_height: rng.gen(),
-            tx_id: rng.gen(),
-            submittal_height: rng.gen(),
+            final_tx_id: rng.gen(),
         }
     }
 }

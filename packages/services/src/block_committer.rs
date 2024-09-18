@@ -7,7 +7,7 @@ use metrics::{
 };
 use ports::{
     storage::Storage,
-    types::{BlockSubmission, ValidatedFuelBlock},
+    types::{BlockSubmission, TransactionState, ValidatedFuelBlock},
 };
 use tracing::info;
 use validator::Validator;
@@ -26,13 +26,14 @@ pub struct BlockCommitter<L1, Db, Fuel, BlockValidator> {
 
 struct Metrics {
     latest_fuel_block: IntGauge,
+    latest_committed_block: IntGauge,
 }
 
 impl<L1, Db, Fuel, BlockValidator> RegistersMetrics
     for BlockCommitter<L1, Db, Fuel, BlockValidator>
 {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.metrics.latest_fuel_block.clone())]
+        vec![Box::new(self.metrics.latest_fuel_block.clone()), Box::new(self.metrics.latest_committed_block.clone())]
     }
 }
 
@@ -44,7 +45,14 @@ impl Default for Metrics {
         ))
         .expect("fuel_network_errors metric to be correctly configured");
 
-        Self { latest_fuel_block }
+        let latest_committed_block = IntGauge::with_opts(Opts::new(
+            "latest_committed_block",
+            "The height of the latest fuel block committed on Ethereum.",
+        ))
+        .expect("latest_committed_block metric to be correctly configured");
+
+
+        Self { latest_fuel_block, latest_committed_block }
     }
 }
 
@@ -81,15 +89,12 @@ where
             block_hash: fuel_block.hash(),
             block_height: fuel_block.height(),
             submittal_height,
-            tx_id: None,
+            final_tx_id: None,
         };
 
-        let tx_hash = self.l1_adapter.submit(fuel_block).await?;
-
-        self.storage
-            .record_block_submission(tx_hash, submission)
-            .await?;
-
+        let tx = self.l1_adapter.submit(fuel_block).await?;
+        self.storage.record_block_submission(tx, submission).await?;
+        
         Ok(())
     }
 
@@ -148,6 +153,48 @@ where
     BlockValidator: Validator,
 {
     async fn run(&mut self) -> Result<()> {
+        let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
+        let transactions = self.storage.get_pending_block_submission_txs().await?;
+
+        for tx in transactions {
+            let tx_hash = tx.hash;
+            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx_hash).await? else {
+                continue; // not included
+            };
+
+            if !tx_response.succeeded() {
+                let block_height = self.storage
+                    .update_block_submission_tx_state(tx_hash, TransactionState::Failed)
+                    .await?;
+
+                info!("failed submission for block: {block_height} with tx: {}", hex::encode(tx_hash));
+                continue;
+            }
+
+            if !tx_response.confirmations(current_block_number) < 10//TODO: self.num_blocks_to_finalize
+            {
+                continue; // not finalized
+            }
+
+            let block_height = self.storage
+                .update_block_submission_tx_state(tx_hash, TransactionState::Finalized)
+                .await?;
+
+            info!("finalized submission for block: {block_height} with tx: {}", hex::encode(tx_hash));
+
+            self.metrics
+                .latest_committed_block
+                .set(i64::from(block_height));
+        }
+
+        // TODO this needs to ignore txs that have been bumped
+        let has_pending_tx = !self.storage.get_pending_block_submission_txs().await?.is_empty();
+        if has_pending_tx
+        {
+            // submission in progress, skip
+            return Ok(());
+        }
+
         let current_block = self.fetch_latest_block().await?;
         let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
 
