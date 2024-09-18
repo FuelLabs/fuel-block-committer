@@ -107,12 +107,13 @@ impl FuelNodeProcess {
         HttpClient::new(&self.url, 5)
     }
 
-    pub async fn produce_transaction(&self) -> anyhow::Result<()> {
+    pub async fn produce_transaction(&self, wallet_idx: usize) -> anyhow::Result<()> {
         let mut tx = TransactionBuilder::script(vec![], vec![]);
 
         tx.script_gas_limit(1_000_000);
 
-        let secret = TESTNET_WALLET_SECRETS[0];
+        assert!(wallet_idx < TESTNET_WALLET_SECRETS.len());
+        let secret = TESTNET_WALLET_SECRETS[wallet_idx];
         let secret_key = FuelKey::from_str(secret).expect("valid secret key");
         let address = Input::owner(&secret_key.public_key());
 

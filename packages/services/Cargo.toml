@@ -26,6 +26,7 @@ flate2 = { workspace = true, features = ["default"] }
 tokio = { workspace = true }
 
 [dev-dependencies]
+pretty_assertions = { workspace = true, features = ["std"] }
 # TODO: features
 approx = { workspace = true, features = ["default"] }
 services = { workspace = true, features = ["test-helpers"] }

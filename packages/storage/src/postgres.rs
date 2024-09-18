@@ -1,7 +1,7 @@
 use std::ops::{Range, RangeInclusive};
 
 use ports::{
-    storage::BundleFragment,
+    storage::{BundleFragment, SequentialFuelBlocks},
     types::{
         BlockSubmission, DateTime, NonEmptyVec, NonNegative, StateSubmission, TransactionState, Utc,
     },
@@ -9,7 +9,7 @@ use ports::{
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
-use crate::mappings::tables::{self, L1TxState};
+use crate::mappings::tables::{self, FuelBlock, L1TxState};
 
 #[derive(Clone)]
 pub struct Postgres {
@@ -230,23 +230,42 @@ impl Postgres {
 
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
-        starting_height: u32,
+        lookback_window: u32,
         limit: usize,
-    ) -> Result<Vec<ports::storage::FuelBlock>> {
+    ) -> Result<Option<SequentialFuelBlocks>> {
         // TODO: segfault error msg
         let limit = i64::try_from(limit).map_err(|e| Error::Conversion(format!("{e}")))?;
         let response = sqlx::query_as!(
             tables::FuelBlock,
-            r#" SELECT *
-                        FROM fuel_blocks fb
-                        WHERE fb.height >= $1 AND fb.height > COALESCE((SELECT MAX(b.end_height) FROM bundles b), -1) ORDER BY fb.height ASC LIMIT $2;"#,
-            i64::from(starting_height),
+            r#"WITH max_height_cte AS (SELECT MAX(height) AS max_height FROM fuel_blocks)
+            SELECT fb.*
+            FROM fuel_blocks fb, max_height_cte mh
+            WHERE fb.height >= (mh.max_height - $1)
+            AND fb.height > COALESCE(
+                (SELECT MAX(b.end_height) FROM bundles b), 
+                -1
+            )
+            ORDER BY fb.height ASC
+            LIMIT $2;"#,
+            i64::from(lookback_window),
             limit
         )
-            .fetch_all(&self.connection_pool).await
-            .map_err(Error::from)?;
+        .fetch_all(&self.connection_pool)
+        .await
+        .map_err(Error::from)?;
 
-        response.into_iter().map(TryFrom::try_from).collect()
+        if response.is_empty() {
+            return Ok(None);
+        }
+
+        let fuel_blocks = response
+            .into_iter()
+            .map(|b| b.try_into())
+            .collect::<Result<Vec<ports::storage::FuelBlock>>>()?;
+
+        Ok(Some(SequentialFuelBlocks::from_first_sequence(
+            NonEmptyVec::try_from(fuel_blocks).expect("checked for emptyness"),
+        )))
     }
 
     pub(crate) async fn _set_submission_completed(

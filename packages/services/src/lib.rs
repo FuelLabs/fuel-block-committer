@@ -482,7 +482,7 @@ pub(crate) mod test_utils {
                     optimization_time_limit: Duration::from_secs(100),
                     block_accumulation_time_limit: Duration::from_secs(100),
                     num_blocks_to_accumulate: 1.try_into().unwrap(),
-                    starting_height: 0,
+                    lookback_window: 100,
                 },
             );
             committer.run().await.unwrap();

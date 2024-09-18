@@ -278,14 +278,13 @@ mod blob_calculations {
 
             // then
             let reconstructed = fragments
-                .inner()
                 .iter()
                 .flat_map(|f| f.inner())
                 .copied()
                 .collect_vec();
             assert_eq!(original_bytes.inner(), &reconstructed);
 
-            for (idx, fragment) in fragments.inner().iter().enumerate() {
+            for (idx, fragment) in fragments.iter().enumerate() {
                 let mut builder =
                     SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 0);
                 builder.ingest(fragment.inner());

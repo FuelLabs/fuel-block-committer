@@ -4,6 +4,7 @@ use itertools::Itertools;
 use flate2::{write::GzEncoder, Compression};
 use ports::{
     l1::{GasPrices, GasUsage},
+    storage::SequentialFuelBlocks,
     types::NonEmptyVec,
 };
 use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive};
@@ -107,7 +108,7 @@ pub trait Bundle {
 #[async_trait::async_trait]
 pub trait BundlerFactory {
     type Bundler: Bundle + Send + Sync;
-    async fn build(&self, blocks: Vec<ports::storage::FuelBlock>) -> Result<Self::Bundler>;
+    async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler;
 }
 
 pub struct Factory<L1> {
@@ -131,12 +132,8 @@ where
 {
     type Bundler = Bundler<L1>;
 
-    async fn build(&self, blocks: Vec<ports::storage::FuelBlock>) -> Result<Self::Bundler> {
-        Ok(Bundler::new(
-            self.l1_adapter.clone(),
-            blocks,
-            self.compressor,
-        ))
+    async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler {
+        Bundler::new(self.l1_adapter.clone(), blocks, self.compressor)
     }
 }
 
@@ -151,7 +148,7 @@ pub struct Proposal {
 
 pub struct Bundler<L1> {
     l1_adapter: L1,
-    blocks: Vec<ports::storage::FuelBlock>,
+    blocks: NonEmptyVec<ports::storage::FuelBlock>,
     gas_usages: Vec<Proposal>, // Track all proposals
     current_block_count: NonZeroUsize,
     compressor: Compressor,
@@ -161,17 +158,10 @@ impl<L1> Bundler<L1>
 where
     L1: ports::l1::Api + Send + Sync,
 {
-    pub fn new(
-        l1_adapter: L1,
-        blocks: Vec<ports::storage::FuelBlock>,
-        compressor: Compressor,
-    ) -> Self {
-        let mut blocks = blocks;
-        blocks.sort_unstable_by_key(|b| b.height);
-        // TODO: segfault fail if there are holes
+    pub fn new(l1_adapter: L1, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
         Self {
             l1_adapter,
-            blocks,
+            blocks: blocks.into_inner(),
             gas_usages: Vec::new(),
             current_block_count: 1.try_into().expect("not zero"),
             compressor,
@@ -202,7 +192,7 @@ where
 
     /// Calculates the block heights range based on the number of blocks.
     fn calculate_block_heights(&self, num_blocks: NonZeroUsize) -> Result<RangeInclusive<u32>> {
-        if num_blocks.get() > self.blocks.len() {
+        if num_blocks > self.blocks.len() {
             return Err(crate::Error::Other(
                 "Invalid number of blocks for proposal".to_string(),
             ));
@@ -304,10 +294,6 @@ where
     ///
     /// Returns `true` if there are more configurations to process, or `false` otherwise.
     async fn advance(&mut self) -> Result<bool> {
-        if self.blocks.is_empty() {
-            return Ok(false);
-        }
-
         let bundle_blocks = self.blocks_for_new_proposal();
 
         let proposal = self.create_proposal(bundle_blocks).await?;
@@ -317,7 +303,7 @@ where
         self.current_block_count = self.current_block_count.saturating_add(1);
 
         // Return whether there are more configurations to process
-        Ok(self.current_block_count.get() <= self.blocks.len())
+        Ok(self.current_block_count <= self.blocks.len())
     }
 
     /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
@@ -353,7 +339,7 @@ where
         );
 
         // Determine if all configurations have been tried
-        let all_proposals_tried = self.current_block_count.get() > self.blocks.len();
+        let all_proposals_tried = self.current_block_count > self.blocks.len();
 
         let fragments = compressed_data
             .into_iter()
@@ -379,11 +365,11 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use ports::storage::FuelBlock;
+    use ports::{non_empty_vec, storage::FuelBlock};
 
     use crate::{
         state_committer::bundler::{Bundle, BundlerFactory, Compressor, Factory},
-        test_utils, Result,
+        Result,
     };
 
     #[tokio::test]
@@ -391,13 +377,15 @@ mod tests {
         // given
         let factory = Factory::new(Arc::new(ports::l1::MockApi::new()), Compressor::default());
 
-        let bundler = factory
-            .build(vec![FuelBlock {
-                hash: [0; 32],
-                height: 1,
-                data: [0; 32].to_vec().try_into().unwrap(),
-            }])
-            .await?;
+        let sequence = non_empty_vec![FuelBlock {
+            hash: [0; 32],
+            height: 1,
+            data: [0; 32].to_vec().try_into().unwrap(),
+        }]
+        .try_into()
+        .unwrap();
+
+        let bundler = factory.build(sequence).await;
 
         // when
         let bundle = bundler.finish().await?;

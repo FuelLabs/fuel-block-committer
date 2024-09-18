@@ -18,7 +18,7 @@ pub struct Config {
     pub optimization_time_limit: Duration,
     pub block_accumulation_time_limit: Duration,
     pub num_blocks_to_accumulate: NonZeroUsize,
-    pub starting_height: u32,
+    pub lookback_window: u32,
 }
 
 #[cfg(test)]
@@ -28,7 +28,7 @@ impl Default for Config {
             optimization_time_limit: Duration::from_secs(100),
             block_accumulation_time_limit: Duration::from_secs(100),
             num_blocks_to_accumulate: NonZeroUsize::new(1).unwrap(),
-            starting_height: 0,
+            lookback_window: 100,
         }
     }
 }
@@ -77,21 +77,30 @@ where
     BF: BundlerFactory,
 {
     async fn bundle_and_fragment_blocks(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
-        let blocks = self
+        let Some(blocks) = self
             .storage
             .lowest_unbundled_blocks(
-                self.config.starting_height,
+                self.config.lookback_window,
                 self.config.num_blocks_to_accumulate.get(),
             )
-            .await?;
+            .await?
+        else {
+            return Ok(None);
+        };
 
-        if blocks.len() < self.config.num_blocks_to_accumulate.get()
+        if blocks.len() < self.config.num_blocks_to_accumulate
             && self.still_time_to_accumulate_more().await?
         {
+            info!(
+                "Not enough blocks ({} < {}) to bundle. Waiting for more to accumulate.",
+                blocks.len(),
+                self.config.num_blocks_to_accumulate.get()
+            );
+
             return Ok(None);
         }
 
-        let bundler = self.bundler_factory.build(blocks).await?;
+        let bundler = self.bundler_factory.build(blocks).await;
 
         let proposal = self.find_optimal_bundle(bundler).await?;
 
@@ -116,7 +125,6 @@ where
         &self,
         mut bundler: B,
     ) -> Result<Option<BundleProposal>> {
-        eprintln!("Optimizing bundle...");
         let optimization_start = self.clock.now();
 
         while bundler.advance().await? {
@@ -231,7 +239,8 @@ mod tests {
     use crate::{test_utils, Runner, StateCommitter};
     use bundler::Compressor;
     use clock::TestClock;
-    use ports::{non_empty_vec, types::NonEmptyVec};
+    use ports::non_empty_vec;
+    use ports::storage::SequentialFuelBlocks;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
     use tokio::sync::Mutex;
 
@@ -299,8 +308,8 @@ mod tests {
     impl BundlerFactory for ControllableBundlerFactory {
         type Bundler = ControllableBundler;
 
-        async fn build(&self, _: Vec<ports::storage::FuelBlock>) -> Result<Self::Bundler> {
-            Ok(self.bundler.lock().await.take().unwrap())
+        async fn build(&self, _: SequentialFuelBlocks) -> Self::Bundler {
+            self.bundler.lock().await.take().unwrap()
         }
     }
 

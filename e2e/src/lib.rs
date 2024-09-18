@@ -61,14 +61,14 @@ mod tests {
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
 
         // when
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.produce_transaction().await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.produce_transaction(0).await?;
 
         stack.fuel_node.client().produce_blocks(1).await?;
 

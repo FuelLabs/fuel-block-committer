@@ -11,7 +11,7 @@ pub use test_instance::*;
 mod error;
 mod postgres;
 use ports::{
-    storage::{BundleFragment, Result, Storage},
+    storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{BlockSubmission, DateTime, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc},
 };
 pub use postgres::{DbConfig, Postgres};
@@ -62,11 +62,11 @@ impl Storage for Postgres {
 
     async fn lowest_unbundled_blocks(
         &self,
-        starting_height: u32,
+        lookback_window: u32,
         limit: usize,
-    ) -> Result<Vec<ports::storage::FuelBlock>> {
+    ) -> Result<Option<SequentialFuelBlocks>> {
         Ok(self
-            ._lowest_unbundled_blocks(starting_height, limit)
+            ._lowest_unbundled_blocks(lookback_window, limit)
             .await?)
     }
 

@@ -1,5 +1,7 @@
 use std::{
-    ops::{Range, RangeInclusive},
+    fmt::{Display, Formatter},
+    num::NonZeroUsize,
+    ops::{Deref, Range, RangeInclusive},
     sync::Arc,
 };
 
@@ -38,6 +40,92 @@ pub struct BundleFragment {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SequentialFuelBlocks {
+    blocks: NonEmptyVec<FuelBlock>,
+}
+
+impl Deref for SequentialFuelBlocks {
+    type Target = NonEmptyVec<FuelBlock>;
+    fn deref(&self) -> &Self::Target {
+        &self.blocks
+    }
+}
+
+impl SequentialFuelBlocks {
+    pub fn into_inner(self) -> NonEmptyVec<FuelBlock> {
+        self.blocks
+    }
+
+    pub fn from_first_sequence(blocks: NonEmptyVec<FuelBlock>) -> Self {
+        let blocks: Vec<_> = blocks
+            .into_iter()
+            .scan(None, |prev, block| match prev {
+                Some(height) if *height + 1 == block.height => {
+                    *prev = Some(block.height);
+                    Some(block)
+                }
+                None => {
+                    *prev = Some(block.height);
+                    Some(block)
+                }
+                _ => None,
+            })
+            .collect();
+
+        let non_empty_blocks = NonEmptyVec::try_from(blocks).expect("at least the first block");
+
+        non_empty_blocks.try_into().expect("blocks are sequential")
+    }
+
+    pub fn len(&self) -> NonZeroUsize {
+        self.blocks.len()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidSequence {
+    reason: String,
+}
+
+impl InvalidSequence {
+    pub fn new(reason: String) -> Self {
+        Self { reason }
+    }
+}
+
+impl Display for InvalidSequence {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "invalid sequence: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidSequence {}
+
+impl TryFrom<NonEmptyVec<FuelBlock>> for SequentialFuelBlocks {
+    type Error = InvalidSequence;
+
+    fn try_from(blocks: NonEmptyVec<FuelBlock>) -> std::result::Result<Self, Self::Error> {
+        let vec = blocks.inner();
+
+        let is_sorted = vec.windows(2).all(|w| w[0].height < w[1].height);
+        if !is_sorted {
+            return Err(InvalidSequence::new(
+                "blocks are not sorted by height".to_string(),
+            ));
+        }
+
+        let is_sequential = vec.windows(2).all(|w| w[0].height + 1 == w[1].height);
+        if !is_sequential {
+            return Err(InvalidSequence::new(
+                "blocks are not sequential by height".to_string(),
+            ));
+        }
+
+        Ok(Self { blocks })
+    }
+}
+
 #[async_trait::async_trait]
 #[impl_tools::autoimpl(for<T: trait> &T, &mut T, Arc<T>, Box<T>)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -48,13 +136,11 @@ pub trait Storage: Send + Sync {
     async fn insert_block(&self, block: FuelBlock) -> Result<()>;
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
     async fn available_blocks(&self) -> Result<Range<u32>>;
-    // async fn all_blocks(&self) -> Result<Vec<FuelBlock>>;
-    // TODO: segfault add a limit that can be set to whatever the import depth is
     async fn lowest_unbundled_blocks(
         &self,
-        starting_height: u32,
+        lookback_window: u32,
         limit: usize,
-    ) -> Result<Vec<FuelBlock>>;
+    ) -> Result<Option<SequentialFuelBlocks>>;
     async fn insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,

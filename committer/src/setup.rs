@@ -91,9 +91,9 @@ pub fn state_committer(
         bundler_factory,
         StateCommitterConfig {
             optimization_time_limit: Duration::from_secs(500),
-            block_accumulation_time_limit: Duration::from_secs(1000),
-            num_blocks_to_accumulate: 100.try_into().unwrap(),
-            starting_height: 0,
+            block_accumulation_time_limit: Duration::from_secs(2),
+            num_blocks_to_accumulate: 10.try_into().unwrap(),
+            lookback_window: 100,
         },
     );
 

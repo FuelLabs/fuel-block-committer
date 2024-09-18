@@ -1,4 +1,7 @@
-use std::num::NonZeroUsize;
+use std::{
+    num::NonZeroUsize,
+    ops::{Deref, Index},
+};
 
 #[cfg(feature = "l1")]
 pub use alloy::primitives::{Address, U256};
@@ -8,6 +11,20 @@ pub use futures::Stream;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonEmptyVec<T> {
     vec: Vec<T>,
+}
+
+impl<T> Deref for NonEmptyVec<T> {
+    type Target = Vec<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.vec
+    }
+}
+
+impl<T> Index<usize> for NonEmptyVec<T> {
+    type Output = T;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.vec[index]
+    }
 }
 
 impl<T> IntoIterator for NonEmptyVec<T> {
@@ -21,7 +38,7 @@ impl<T> IntoIterator for NonEmptyVec<T> {
 #[macro_export]
 macro_rules! non_empty_vec {
     ($($x:expr),+) => {
-        NonEmptyVec::try_from(vec![$($x),+]).unwrap()
+        $crate::types::NonEmptyVec::try_from(vec![$($x),+]).unwrap()
     };
 }
 
