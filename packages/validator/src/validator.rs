@@ -5,7 +5,7 @@ use fuel_core_client::client::types::{
     },
     primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32},
 };
-use fuel_crypto::{Hasher, Message};
+use fuel_crypto::{Hasher, Message, PublicKey};
 
 use crate::{block::ValidatedFuelBlock, Error, Result, Validator};
 
@@ -26,6 +26,14 @@ impl BlockValidator {
     }
 
     fn _validate(&self, fuel_block: &FuelBlock) -> Result<ValidatedFuelBlock> {
+        // Genesis block is a special case. It does not have a producer address or a signature.
+        if let FuelConsensus::Genesis(_) = fuel_block.consensus {
+            return Ok(ValidatedFuelBlock {
+                hash: *fuel_block.id,
+                height: fuel_block.header.height,
+            });
+        }
+
         self.validate_producer_addr(fuel_block)?;
         Self::validate_block_id(fuel_block)?;
         self.validate_block_signature(fuel_block)?;
@@ -43,7 +51,13 @@ impl BlockValidator {
             ));
         };
 
-        if *producer_addr != self.producer_addr {
+        let expected_producer_addr = if fuel_block.header.height == 0 {
+            *PublicKey::default().hash()
+        } else {
+            self.producer_addr
+        };
+
+        if *producer_addr != expected_producer_addr {
             return Err(Error::BlockValidation(format!(
                 "producer addr '{}' does not match expected addr '{}'. block: {fuel_block:?}",
                 hex::encode(producer_addr),
@@ -144,8 +158,10 @@ impl BlockValidator {
 
 #[cfg(test)]
 mod tests {
-    use fuel_crypto::{SecretKey, Signature};
+    use fuel_core_client::client::types::block::Genesis;
+    use fuel_crypto::{fuel_types::Bytes64, PublicKey, SecretKey, Signature};
     use rand::{rngs::StdRng, SeedableRng};
+    use tai64::Tai64;
 
     use super::*;
 
@@ -221,6 +237,80 @@ mod tests {
         validator.validate(&fuel_block).unwrap();
     }
 
+    #[test]
+    fn treats_genesis_block_differently() {
+        let zeroed_producer_pubkey: PublicKey = Default::default();
+        let block = FuelBlock {
+            id: "0xdd87728ce9c2539af61d6c5326c234c5cb0722b14a8c059f5126ca2a8ca3b4e2"
+                .parse()
+                .unwrap(),
+            header: FuelHeader {
+                id: "0xdd87728ce9c2539af61d6c5326c234c5cb0722b14a8c059f5126ca2a8ca3b4e2"
+                    .parse()
+                    .unwrap(),
+                da_height: 5827607,
+                consensus_parameters_version: 0,
+                state_transition_bytecode_version: 0,
+                transactions_count: 0,
+                message_receipt_count: 0,
+                transactions_root:
+                    "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                        .parse()
+                        .unwrap(),
+                message_outbox_root:
+                    "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                        .parse()
+                        .unwrap(),
+                event_inbox_root:
+                    "0x0000000000000000000000000000000000000000000000000000000000000000"
+                        .parse()
+                        .unwrap(),
+                height: 0,
+                prev_root: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    .parse()
+                    .unwrap(),
+                time: Tai64(4611686018427387914),
+                application_hash:
+                    "0x7cb9d322996c4efb45f92aa67a0cb351530bc320eb2db91758a8f4b23f8428c5"
+                        .parse()
+                        .unwrap(),
+            },
+            consensus: FuelConsensus::Genesis(Genesis {
+                chain_config_hash:
+                    "0xd0df79ce0a5e69a88735306dcc9259d9c1d6b060f14cabe4df2b8afdeea8693b"
+                        .parse()
+                        .unwrap(),
+                coins_root: "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    .parse()
+                    .unwrap(),
+                contracts_root:
+                    "0x70e4e3384ffe470a3802f0c1ff5fbb59fcea42329ef5bb9ef439d1db8853f438"
+                        .parse()
+                        .unwrap(),
+                messages_root: "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    .parse()
+                    .unwrap(),
+                transactions_root:
+                    "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                        .parse()
+                        .unwrap(),
+            }),
+            transactions: vec![],
+            block_producer: Some(zeroed_producer_pubkey),
+        };
+
+        let actual_producer_address = [8; 32];
+        assert_ne!(actual_producer_address, *zeroed_producer_pubkey.hash());
+
+        let validator = BlockValidator::new(actual_producer_address);
+
+        // when
+        let res = validator.validate(&block);
+
+        // then
+        res.unwrap();
+    }
+
     fn given_secret_key() -> SecretKey {
         let mut rng = StdRng::seed_from_u64(42);
 
@@ -229,7 +319,7 @@ mod tests {
 
     fn given_a_block(secret_key: Option<SecretKey>) -> FuelBlock {
         let header = given_header();
-        let id: FuelBytes32 = "0x57131ec6e99caafc08803aa946093e02c4303a305e5cc959ad84b775e668a5c3"
+        let id: FuelBytes32 = "0ae93c231f7f348f803d5f2d1fc4d7b6ada596e72c06f8c6c2387c32735969f7"
             .parse()
             .unwrap();
 
@@ -270,7 +360,7 @@ mod tests {
             transactions_root: Default::default(),
             message_outbox_root: Default::default(),
             event_inbox_root: Default::default(),
-            height: Default::default(),
+            height: 1,
             prev_root: Default::default(),
             time: tai64::Tai64(0),
             application_hash,

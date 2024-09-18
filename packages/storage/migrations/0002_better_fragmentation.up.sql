@@ -1,22 +1,11 @@
 BEGIN;
 
--- Rename 'l1_fuel_block_submission' to 'fuel_blocks' to represent the fuel block only
-ALTER TABLE l1_fuel_block_submission
-RENAME TO fuel_blocks;
-
--- Rename 'fuel_block_height' to 'height'
-ALTER TABLE fuel_blocks
-RENAME COLUMN fuel_block_height TO height;
-
--- Rename 'fuel_block_hash' to 'hash'
-ALTER TABLE fuel_blocks
-RENAME COLUMN fuel_block_hash TO hash;
-
--- Drop 'completed' and 'submittal_height' columns
-ALTER TABLE fuel_blocks
-DROP COLUMN completed,
-DROP COLUMN submittal_height,
-ADD COLUMN data BYTEA NOT NULL;
+CREATE TABLE IF NOT EXISTS fuel_blocks (
+    hash     BYTEA PRIMARY KEY NOT NULL,
+    height   BIGINT NOT NULL UNIQUE CHECK (height >= 0),
+    CHECK (octet_length(hash) = 32),
+    data BYTEA NOT NULL
+);
 
 -- Create new 'bundles' table to represent groups of blocks
 CREATE TABLE IF NOT EXISTS bundles (

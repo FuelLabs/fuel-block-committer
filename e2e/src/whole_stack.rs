@@ -34,7 +34,7 @@ impl WholeStack {
         let (db_process, db) = start_db().await?;
 
         let committer = start_committer(
-            logs,
+            true,
             blob_support,
             db,
             &eth_node,

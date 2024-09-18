@@ -60,10 +60,6 @@ impl Storage for Postgres {
         Ok(self._set_submission_completed(fuel_block_hash).await?)
     }
 
-    // async fn insert_state_submission(&self, submission: StateSubmission) -> Result<()> {
-    //     Ok(self._insert_state_submission(submission).await?)
-    // }
-
     async fn lowest_unbundled_blocks(
         &self,
         limit: usize,
@@ -86,10 +82,6 @@ impl Storage for Postgres {
     async fn has_pending_txs(&self) -> Result<bool> {
         Ok(self._has_pending_txs().await?)
     }
-
-    // async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>> {
-    //     Ok(self._state_submission_w_latest_block().await?)
-    // }
 
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()> {
         Ok(self._update_tx_state(hash, state).await?)

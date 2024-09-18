@@ -39,15 +39,11 @@ where
     C: Clock,
 {
     async fn check_pending_txs(&mut self, pending_txs: Vec<L1Tx>) -> crate::Result<()> {
-        println!("StateListener::check_pending_txs");
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
         for tx in pending_txs {
-            println!("StateListener::check_pending_txs tx: {:?}", tx);
-
             let tx_hash = tx.hash;
             let Some(tx_response) = self.l1_adapter.get_transaction_response(tx_hash).await? else {
-                println!("StateListener::check_pending_txs tx_response is None");
                 continue; // not committed
             };
 
@@ -89,9 +85,7 @@ where
     C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> crate::Result<()> {
-        println!("StateListener::run");
         let pending_txs = self.storage.get_pending_txs().await?;
-        println!("StateListener::run pending_txs: {:?}", pending_txs);
 
         if pending_txs.is_empty() {
             return Ok(());

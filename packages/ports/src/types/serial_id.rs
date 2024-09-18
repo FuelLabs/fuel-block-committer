@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Debug, Clone)]
 pub struct InvalidConversion {
     pub message: String,
@@ -14,6 +16,12 @@ impl std::error::Error for InvalidConversion {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NonNegative<NUM> {
     val: NUM,
+}
+
+impl<NUM: Display> Display for NonNegative<NUM> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.val.fmt(f)
+    }
 }
 
 impl NonNegative<i32> {

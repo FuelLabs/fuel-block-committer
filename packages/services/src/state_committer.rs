@@ -7,6 +7,7 @@ use ports::{
     storage::{BundleFragment, Storage},
     types::{DateTime, NonEmptyVec, Utc},
 };
+use tracing::info;
 
 use crate::{Error, Result, Runner};
 
@@ -81,10 +82,17 @@ where
         &self,
         mut bundler: B,
     ) -> Result<Option<BundleProposal>> {
-        while bundler.advance().await? {
-            let elapsed = self.elapsed_time_since_last_finalized().await?;
+        let last_finalized_time = self
+            .storage
+            .last_time_a_fragment_was_finalized()
+            .await?
+            .unwrap_or_else(||{
+                info!("No finalized fragments found in storage. Using component creation time ({}) as last finalized time.", self.component_created_at);
+                self.component_created_at
+            });
 
-            if elapsed >= self.optimization_time_limit {
+        while bundler.advance().await? {
+            if self.should_stop_optimizing(last_finalized_time)? {
                 break;
             }
         }
@@ -92,20 +100,14 @@ where
         bundler.finish().await
     }
 
-    /// Calculates the elapsed time since the last finalized fragment or component creation.
-    async fn elapsed_time_since_last_finalized(&self) -> Result<Duration> {
-        let last_finalized_time = self
-            .storage
-            .last_time_a_fragment_was_finalized()
-            .await?
-            .unwrap_or_else(|| {
-                eprintln!("No finalized fragment found; using component creation time.");
-                self.component_created_at
-            });
+    fn should_stop_optimizing(&self, last_finalization: DateTime<Utc>) -> Result<bool> {
         let now = self.clock.now();
-        now.signed_duration_since(last_finalized_time)
+        let elapsed = now
+            .signed_duration_since(last_finalization)
             .to_std()
-            .map_err(|e| Error::Other(format!("could not calculate elapsed time: {:?}", e)))
+            .map_err(|e| Error::Other(format!("could not calculate elapsed time: {e}")))?;
+
+        Ok(elapsed >= self.optimization_time_limit)
     }
 
     /// Submits a fragment to the L1 adapter and records the tx in storage.
@@ -113,11 +115,15 @@ where
         match self.l1_adapter.submit_l2_state(fragment.data.clone()).await {
             Ok(tx_hash) => {
                 self.storage.record_pending_tx(tx_hash, fragment.id).await?;
-                tracing::info!("Submitted fragment {:?} with tx {:?}", fragment.id, tx_hash);
+                tracing::info!(
+                    "Submitted fragment {} with tx {}",
+                    fragment.id,
+                    hex::encode(tx_hash)
+                );
                 Ok(())
             }
             Err(e) => {
-                tracing::error!("Failed to submit fragment {:?}: {:?}", fragment.id, e);
+                tracing::error!("Failed to submit fragment {}: {e}", fragment.id);
                 Err(e.into())
             }
         }
