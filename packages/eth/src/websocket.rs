@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::primitives::Address;
@@ -58,8 +58,12 @@ impl WebsocketClient {
         Ok(self.inner.gas_prices().await?)
     }
 
-    pub(crate) fn _gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage {
-        self.inner.gas_usage_to_store_data(data)
+    pub(crate) fn _max_bytes_per_submission(&self) -> NonZeroUsize {
+        self.inner.max_bytes_per_submission()
+    }
+
+    pub(crate) fn _gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> ports::l1::GasUsage {
+        self.inner.gas_usage_to_store_data(num_bytes)
     }
 
     pub(crate) fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
@@ -91,13 +95,6 @@ impl WebsocketClient {
 
     pub async fn _submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
         Ok(self.inner.submit_l2_state(tx).await?)
-    }
-
-    pub(crate) fn _split_into_submittable_fragments(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        Ok(self.inner.split_into_submittable_fragments(data)?)
     }
 
     #[cfg(feature = "test-helpers")]

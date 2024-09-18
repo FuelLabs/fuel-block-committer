@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc};
+use std::{num::NonZeroUsize, pin::Pin, sync::Arc};
 
 use crate::types::{
     FuelBlockCommittedOnL1, InvalidL1Height, L1Height, NonEmptyVec, Stream, TransactionResponse,
@@ -44,11 +44,8 @@ pub struct GasPrices {
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 #[async_trait::async_trait]
 pub trait Api {
-    fn split_into_submittable_fragments(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
-    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage;
+    fn max_bytes_per_submission(&self) -> NonZeroUsize;
+    fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> GasUsage;
     async fn gas_prices(&self) -> Result<GasPrices>;
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
     async fn get_block_number(&self) -> Result<L1Height>;
@@ -61,19 +58,15 @@ pub trait Api {
 
 #[async_trait::async_trait]
 impl<T: Api + Send + Sync> Api for Arc<T> {
-    fn split_into_submittable_fragments(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        (**self).split_into_submittable_fragments(data)
+    fn max_bytes_per_submission(&self) -> NonZeroUsize {
+        (**self).max_bytes_per_submission()
+    }
+    fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> GasUsage {
+        (**self).gas_usage_to_store_data(num_bytes)
     }
 
     async fn gas_prices(&self) -> Result<GasPrices> {
         (**self).gas_prices().await
-    }
-
-    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
-        (**self).gas_usage_to_store_data(data)
     }
 
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {

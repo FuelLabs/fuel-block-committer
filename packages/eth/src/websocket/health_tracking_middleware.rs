@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
@@ -17,11 +17,8 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    fn split_into_submittable_fragments(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
-    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage;
+    fn max_bytes_per_submission(&self) -> std::num::NonZeroUsize;
+    fn gas_usage_to_store_data(&self, num_bytes: std::num::NonZeroUsize) -> ports::l1::GasUsage;
     async fn gas_prices(&self) -> Result<GasPrices>;
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
@@ -85,21 +82,16 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
-    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage {
-        self.adapter.gas_usage_to_store_data(data)
+    fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> ports::l1::GasUsage {
+        self.adapter.gas_usage_to_store_data(num_bytes)
+    }
+
+    fn max_bytes_per_submission(&self) -> std::num::NonZeroUsize {
+        self.adapter.max_bytes_per_submission()
     }
 
     async fn gas_prices(&self) -> Result<GasPrices> {
         let response = self.adapter.gas_prices().await;
-        self.note_network_status(&response);
-        response
-    }
-
-    fn split_into_submittable_fragments(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        let response = self.adapter.split_into_submittable_fragments(data);
         self.note_network_status(&response);
         response
     }

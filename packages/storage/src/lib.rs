@@ -62,9 +62,12 @@ impl Storage for Postgres {
 
     async fn lowest_unbundled_blocks(
         &self,
+        starting_height: u32,
         limit: usize,
     ) -> Result<Vec<ports::storage::FuelBlock>> {
-        Ok(self._lowest_unbundled_blocks(limit).await?)
+        Ok(self
+            ._lowest_unbundled_blocks(starting_height, limit)
+            .await?)
     }
 
     async fn record_pending_tx(

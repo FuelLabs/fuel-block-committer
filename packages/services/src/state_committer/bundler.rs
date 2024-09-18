@@ -7,7 +7,6 @@ use ports::{
     types::NonEmptyVec,
 };
 use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive};
-use tracing::info;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Compressor {
@@ -31,6 +30,12 @@ pub enum Level {
     Max,
 }
 
+impl Default for Compressor {
+    fn default() -> Self {
+        Self::new(Level::Level6)
+    }
+}
+
 impl Compressor {
     pub fn new(level: Level) -> Self {
         let level = match level {
@@ -50,10 +55,6 @@ impl Compressor {
         Self {
             level: Compression::new(level),
         }
-    }
-
-    pub fn default() -> Self {
-        Self::new(Level::Level6)
     }
 
     fn _compress(level: Compression, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
@@ -106,70 +107,35 @@ pub trait Bundle {
 #[async_trait::async_trait]
 pub trait BundlerFactory {
     type Bundler: Bundle + Send + Sync;
-    async fn build(&self) -> Result<Self::Bundler>;
+    async fn build(&self, blocks: Vec<ports::storage::FuelBlock>) -> Result<Self::Bundler>;
 }
 
-pub struct Factory<L1, Storage> {
+pub struct Factory<L1> {
     l1_adapter: L1,
-    storage: Storage,
-    min_blocks: NonZeroUsize,
-    max_blocks: NonZeroUsize,
     compressor: Compressor,
 }
 
-impl<L1, Storage> Factory<L1, Storage> {
-    pub fn new(
-        l1_adapter: L1,
-        storage: Storage,
-        acceptable_block_range: std::ops::Range<usize>,
-        compressor: Compressor,
-    ) -> Result<Self> {
-        let Some((min, max)) = acceptable_block_range.minmax().into_option() else {
-            return Err(crate::Error::Other(
-                "acceptable block range must not be empty".to_string(),
-            ));
-        };
-
-        let min_blocks = NonZeroUsize::new(min).ok_or_else(|| {
-            crate::Error::Other("minimum block count must be non-zero".to_string())
-        })?;
-
-        let max_blocks = NonZeroUsize::new(max).ok_or_else(|| {
-            crate::Error::Other("maximum block count must be non-zero".to_string())
-        })?;
-
+impl<L1> Factory<L1> {
+    pub fn new(l1_adapter: L1, compressor: Compressor) -> Result<Self> {
         Ok(Self {
             l1_adapter,
-            storage,
-            min_blocks,
-            max_blocks,
             compressor,
         })
     }
 }
 
 #[async_trait::async_trait]
-impl<L1, Storage> BundlerFactory for Factory<L1, Storage>
+impl<L1> BundlerFactory for Factory<L1>
 where
-    Storage: ports::storage::Storage + Send + Sync + 'static,
     L1: ports::l1::Api + Clone + Send + Sync + 'static,
 {
     type Bundler = Bundler<L1>;
 
-    async fn build(&self) -> Result<Self::Bundler> {
-        // TODO: segfault check against holes
-
-        let blocks = self
-            .storage
-            .lowest_unbundled_blocks(self.max_blocks.get())
-            .await?;
-
+    async fn build(&self, blocks: Vec<ports::storage::FuelBlock>) -> Result<Self::Bundler> {
         Ok(Bundler::new(
             self.l1_adapter.clone(),
             blocks,
-            self.min_blocks,
             self.compressor,
-            self.max_blocks, // Pass maximum blocks
         ))
     }
 }
@@ -186,8 +152,6 @@ pub struct Proposal {
 pub struct Bundler<L1> {
     l1_adapter: L1,
     blocks: Vec<ports::storage::FuelBlock>,
-    minimum_blocks: NonZeroUsize,
-    maximum_blocks: NonZeroUsize,
     gas_usages: Vec<Proposal>, // Track all proposals
     current_block_count: NonZeroUsize,
     compressor: Compressor,
@@ -200,19 +164,16 @@ where
     pub fn new(
         l1_adapter: L1,
         blocks: Vec<ports::storage::FuelBlock>,
-        minimum_blocks: NonZeroUsize,
         compressor: Compressor,
-        maximum_blocks: NonZeroUsize,
     ) -> Self {
         let mut blocks = blocks;
         blocks.sort_unstable_by_key(|b| b.height);
+        // TODO: segfault fail if there are holes
         Self {
             l1_adapter,
             blocks,
-            minimum_blocks,
-            maximum_blocks,
             gas_usages: Vec::new(),
-            current_block_count: minimum_blocks,
+            current_block_count: 1.try_into().expect("not zero"),
             compressor,
         }
     }
@@ -321,7 +282,9 @@ where
         let compressed_size = compressed_data.len();
 
         // Estimate gas usage based on compressed data
-        let gas_usage = self.l1_adapter.gas_usage_to_store_data(&compressed_data);
+        let gas_usage = self
+            .l1_adapter
+            .gas_usage_to_store_data(compressed_data.len());
 
         Ok(Proposal {
             num_blocks: self.current_block_count,
@@ -341,16 +304,7 @@ where
     ///
     /// Returns `true` if there are more configurations to process, or `false` otherwise.
     async fn advance(&mut self) -> Result<bool> {
-        if self.blocks.len() < self.minimum_blocks.get() {
-            info!(
-                "Not enough blocks to meet the minimum requirement: {}",
-                self.minimum_blocks
-            );
-            return Ok(false);
-        }
-
-        if self.current_block_count.get() > self.maximum_blocks.get() {
-            // Reached the maximum bundle size
+        if self.blocks.is_empty() {
             return Ok(false);
         }
 
@@ -363,7 +317,7 @@ where
         self.current_block_count = self.current_block_count.saturating_add(1);
 
         // Return whether there are more configurations to process
-        Ok(self.current_block_count.get() <= self.maximum_blocks.get())
+        Ok(self.current_block_count.get() <= self.blocks.len())
     }
 
     /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
@@ -389,9 +343,8 @@ where
             .await?;
 
         // Split into submittable fragments
-        let fragments = self
-            .l1_adapter
-            .split_into_submittable_fragments(&compressed_data)?;
+        let max_data_per_fragment = self.l1_adapter.max_bytes_per_submission();
+        eprintln!("max_data_per_fragment: {:?}", max_data_per_fragment);
 
         // Calculate compression ratio
         let compression_ratio = self.calculate_compression_ratio(
@@ -400,7 +353,18 @@ where
         );
 
         // Determine if all configurations have been tried
-        let all_proposals_tried = self.current_block_count.get() > self.maximum_blocks.get();
+        let all_proposals_tried = self.current_block_count.get() > self.blocks.len();
+
+        let fragments = compressed_data
+            .into_iter()
+            .chunks(max_data_per_fragment.get())
+            .into_iter()
+            .map(|chunk| NonEmptyVec::try_from(chunk.collect_vec()).expect("should never be empty"))
+            .collect_vec();
+
+        eprintln!("fragments: {:?}", fragments);
+
+        let fragments = NonEmptyVec::try_from(fragments).expect("should never be empty");
 
         Ok(Some(BundleProposal {
             fragments,
@@ -415,6 +379,8 @@ where
 mod tests {
     use std::sync::Arc;
 
+    use ports::storage::FuelBlock;
+
     use crate::{
         state_committer::bundler::{Bundle, BundlerFactory, Compressor, Factory},
         test_utils, Result,
@@ -423,16 +389,15 @@ mod tests {
     #[tokio::test]
     async fn not_calling_advance_gives_no_bundle() -> Result<()> {
         // given
-        let setup = test_utils::Setup::init().await;
+        let factory = Factory::new(Arc::new(ports::l1::MockApi::new()), Compressor::default())?;
 
-        let factory = Factory::new(
-            Arc::new(ports::l1::MockApi::new()),
-            setup.db(),
-            1..2,
-            Compressor::default(),
-        )?;
-
-        let bundler = factory.build().await?;
+        let bundler = factory
+            .build(vec![FuelBlock {
+                hash: [0; 32],
+                height: 1,
+                data: [0; 32].to_vec().try_into().unwrap(),
+            }])
+            .await?;
 
         // when
         let bundle = bundler.finish().await?;

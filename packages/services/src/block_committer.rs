@@ -185,76 +185,12 @@ mod tests {
     use storage::{Postgres, PostgresProcess};
     use validator::BlockValidator;
 
+    use crate::test_utils::mocks::l1::FullL1Mock;
+
     use super::*;
 
-    struct MockL1 {
-        api: ports::l1::MockApi,
-        contract: MockContract,
-    }
-    impl MockL1 {
-        fn new() -> Self {
-            Self {
-                api: ports::l1::MockApi::new(),
-                contract: MockContract::new(),
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl Contract for MockL1 {
-        async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<()> {
-            self.contract.submit(block).await
-        }
-        fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
-            self.contract.event_streamer(height)
-        }
-
-        fn commit_interval(&self) -> NonZeroU32 {
-            self.contract.commit_interval()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl ports::l1::Api for MockL1 {
-        fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
-            self.api.gas_usage_to_store_data(data)
-        }
-
-        async fn gas_prices(&self) -> ports::l1::Result<GasPrices> {
-            self.api.gas_prices().await
-        }
-
-        fn split_into_submittable_fragments(
-            &self,
-            data: &NonEmptyVec<u8>,
-        ) -> ports::l1::Result<NonEmptyVec<NonEmptyVec<u8>>> {
-            self.api.split_into_submittable_fragments(data)
-        }
-        async fn submit_l2_state(
-            &self,
-            state_data: NonEmptyVec<u8>,
-        ) -> ports::l1::Result<[u8; 32]> {
-            self.api.submit_l2_state(state_data).await
-        }
-
-        async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
-            self.api.get_block_number().await
-        }
-
-        async fn balance(&self) -> ports::l1::Result<U256> {
-            self.api.balance().await
-        }
-
-        async fn get_transaction_response(
-            &self,
-            _tx_hash: [u8; 32],
-        ) -> ports::l1::Result<Option<TransactionResponse>> {
-            Ok(None)
-        }
-    }
-
-    fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> MockL1 {
-        let mut l1 = MockL1::new();
+    fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> FullL1Mock {
+        let mut l1 = FullL1Mock::default();
 
         l1.contract
             .expect_submit()
@@ -303,7 +239,7 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2, 4]).await;
 
-        let mut l1 = MockL1::new();
+        let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
 
         let mut block_committer =
@@ -327,7 +263,7 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2, 4, 6]).await;
 
-        let mut l1 = MockL1::new();
+        let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
 
         let mut block_committer =
@@ -372,7 +308,7 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = db_with_submissions(&process, vec![0, 2, 4]).await;
 
-        let mut l1 = MockL1::new();
+        let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
 
         let mut block_committer =

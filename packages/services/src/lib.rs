@@ -12,7 +12,8 @@ pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{
-    bundler::Compressor, bundler::Factory as BundlerFactory, StateCommitter,
+    bundler::Compressor, bundler::Factory as BundlerFactory, Config as StateCommitterConfig,
+    StateCommitter,
 };
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
@@ -112,7 +113,8 @@ pub(crate) mod test_utils {
             .unwrap()
     }
 
-    pub fn random_data(size: usize) -> NonEmptyVec<u8> {
+    pub fn random_data(size: impl Into<usize>) -> NonEmptyVec<u8> {
+        let size = size.into();
         if size == 0 {
             panic!("random data size must be greater than 0");
         }
@@ -145,11 +147,110 @@ pub(crate) mod test_utils {
 
     pub mod mocks {
         pub mod l1 {
+            use std::num::NonZeroUsize;
+
             use mockall::{predicate::eq, Sequence};
             use ports::{
-                l1::Api,
-                types::{L1Height, NonEmptyVec, TransactionResponse},
+                l1::{Api, GasPrices, GasUsage},
+                types::{L1Height, NonEmptyVec, TransactionResponse, U256},
             };
+
+            pub struct FullL1Mock {
+                pub api: ports::l1::MockApi,
+                pub contract: ports::l1::MockContract,
+            }
+
+            impl Default for FullL1Mock {
+                fn default() -> Self {
+                    Self::new(1000usize.try_into().unwrap())
+                }
+            }
+
+            impl FullL1Mock {
+                pub fn new(max_bytes_per_submission: NonZeroUsize) -> Self {
+                    let mut obj = Self {
+                        api: ports::l1::MockApi::new(),
+                        contract: ports::l1::MockContract::new(),
+                    };
+
+                    obj.api
+                        .expect_gas_usage_to_store_data()
+                        .returning(|num_bytes| GasUsage {
+                            storage: num_bytes.get() as u64 * 10,
+                            normal: 21_000,
+                        });
+
+                    obj.api.expect_gas_prices().returning(|| {
+                        Ok(GasPrices {
+                            storage: 10,
+                            normal: 1,
+                        })
+                    });
+
+                    obj.api
+                        .expect_max_bytes_per_submission()
+                        .returning(move || max_bytes_per_submission);
+
+                    obj
+                }
+            }
+
+            #[async_trait::async_trait]
+            impl ports::l1::Contract for FullL1Mock {
+                async fn submit(
+                    &self,
+                    block: ports::types::ValidatedFuelBlock,
+                ) -> ports::l1::Result<()> {
+                    self.contract.submit(block).await
+                }
+                fn event_streamer(
+                    &self,
+                    height: L1Height,
+                ) -> Box<dyn ports::l1::EventStreamer + Send + Sync> {
+                    self.contract.event_streamer(height)
+                }
+
+                fn commit_interval(&self) -> std::num::NonZeroU32 {
+                    self.contract.commit_interval()
+                }
+            }
+
+            #[async_trait::async_trait]
+            impl ports::l1::Api for FullL1Mock {
+                fn max_bytes_per_submission(&self) -> NonZeroUsize {
+                    self.api.max_bytes_per_submission()
+                }
+
+                fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> GasUsage {
+                    self.api.gas_usage_to_store_data(num_bytes)
+                }
+
+                async fn gas_prices(&self) -> ports::l1::Result<GasPrices> {
+                    self.api.gas_prices().await
+                }
+
+                async fn submit_l2_state(
+                    &self,
+                    state_data: NonEmptyVec<u8>,
+                ) -> ports::l1::Result<[u8; 32]> {
+                    self.api.submit_l2_state(state_data).await
+                }
+
+                async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
+                    self.api.get_block_number().await
+                }
+
+                async fn balance(&self) -> ports::l1::Result<U256> {
+                    self.api.balance().await
+                }
+
+                async fn get_transaction_response(
+                    &self,
+                    tx_hash: [u8; 32],
+                ) -> ports::l1::Result<Option<TransactionResponse>> {
+                    self.api.get_transaction_response(tx_hash).await
+                }
+            }
 
             pub enum TxStatus {
                 Success,
@@ -170,101 +271,6 @@ pub(crate) mod test_utils {
                         .return_once(move |_| Ok(tx_id))
                         .in_sequence(&mut sequence);
                 }
-
-                l1_mock
-            }
-
-            pub fn will_ask_to_split_bundle_into_fragments(
-                bundle: Option<NonEmptyVec<u8>>,
-                fragments: NonEmptyVec<NonEmptyVec<u8>>,
-            ) -> ports::l1::MockApi {
-                let mut l1_mock = ports::l1::MockApi::new();
-
-                l1_mock
-                    .expect_gas_usage_to_store_data()
-                    .once()
-                    .withf(move |arg| {
-                        if let Some(bundle) = bundle.as_ref() {
-                            arg == bundle
-                        } else {
-                            true
-                        }
-                    })
-                    .return_once(|data| ports::l1::GasUsage {
-                        storage: (data.len().get() * 10) as u128,
-                        normal: 21000,
-                    });
-
-                l1_mock.expect_gas_prices().once().return_once(|| {
-                    Ok(ports::l1::GasPrices {
-                        storage: 10,
-                        normal: 1,
-                    })
-                });
-
-                l1_mock
-                    .expect_split_into_submittable_fragments()
-                    .once()
-                    .return_once(move |_| Ok(fragments));
-
-                l1_mock
-            }
-
-            pub fn will_ask_to_split_bundles_into_fragments(
-                expectations: impl IntoIterator<
-                    Item = (Option<NonEmptyVec<u8>>, NonEmptyVec<NonEmptyVec<u8>>),
-                >,
-            ) -> ports::l1::MockApi {
-                let mut l1_mock = ports::l1::MockApi::new();
-                let mut sequence = Sequence::new();
-
-                l1_mock.expect_gas_prices().returning(|| {
-                    Ok(ports::l1::GasPrices {
-                        storage: 10,
-                        normal: 1,
-                    })
-                });
-
-                for (bundle, fragments) in expectations {
-                    {
-                        let bundle = bundle.clone();
-                        l1_mock
-                            .expect_gas_usage_to_store_data()
-                            .once()
-                            .withf(move |arg| {
-                                if let Some(bundle) = bundle.as_ref() {
-                                    arg == bundle
-                                } else {
-                                    true
-                                }
-                            })
-                            .return_once(|data| ports::l1::GasUsage {
-                                storage: (data.len().get() * 10) as u128,
-                                normal: 21000,
-                            })
-                            .in_sequence(&mut sequence);
-                    }
-
-                    l1_mock
-                        .expect_split_into_submittable_fragments()
-                        .once()
-                        .withf(move |arg| {
-                            if let Some(bundle) = bundle.as_ref() {
-                                arg == bundle
-                            } else {
-                                true
-                            }
-                        })
-                        .return_once(move |_| Ok(fragments))
-                        .in_sequence(&mut sequence);
-                }
-
-                l1_mock.expect_gas_prices().returning(|| {
-                    Ok(ports::l1::GasPrices {
-                        storage: 10,
-                        normal: 1,
-                    })
-                });
 
                 l1_mock
             }
@@ -429,6 +435,12 @@ pub(crate) mod test_utils {
         }
     }
 
+    #[derive(Debug)]
+    pub struct ImportedBlocks {
+        pub blocks: Vec<ports::fuel::FuelBlock>,
+        pub secret_key: SecretKey,
+    }
+
     pub struct Setup {
         _db_process: Arc<PostgresProcess>,
         db: storage::Postgres,
@@ -449,30 +461,28 @@ pub(crate) mod test_utils {
         }
 
         pub async fn commit_single_block_bundle(&self, finalization_time: DateTime<Utc>) {
-            self.import_blocks(Blocks::WithHeights(0..1)).await;
+            let ImportedBlocks { blocks, .. } = self.import_blocks(Blocks::WithHeights(0..1)).await;
+            let bundle = encode_merge_and_compress_blocks(blocks.iter()).await;
 
             let clock = TestClock::default();
             clock.set_time(finalization_time);
 
-            let data = random_data(100);
-            let l1_mock = mocks::l1::will_ask_to_split_bundle_into_fragments(
-                None,
-                non_empty_vec!(data.clone()),
-            );
-            let factory =
-                bundler::Factory::new(Arc::new(l1_mock), self.db(), 1..2, Compressor::default())
-                    .unwrap();
+            let l1_mock = mocks::l1::FullL1Mock::default();
+            let factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default()).unwrap();
 
             let tx = [2u8; 32];
 
-            let l1_mock = mocks::l1::expects_state_submissions(vec![(data, tx)]);
+            let l1_mock = mocks::l1::expects_state_submissions(vec![(bundle, tx)]);
             let mut committer = StateCommitter::new(
                 l1_mock,
                 self.db(),
                 clock.clone(),
                 factory,
-                crate::state_committer::BundleGenerationConfig {
-                    stop_optimization_attempts_after: Duration::from_secs(100),
+                crate::state_committer::Config {
+                    optimization_time_limit: Duration::from_secs(100),
+                    block_accumulation_time_limit: Duration::from_secs(100),
+                    num_blocks_to_accumulate: 1.try_into().unwrap(),
+                    starting_height: 0,
                 },
             );
             committer.run().await.unwrap();
@@ -485,8 +495,12 @@ pub(crate) mod test_utils {
                 .unwrap();
         }
 
-        pub async fn import_blocks(&self, blocks: Blocks) {
-            self.block_importer(blocks).run().await.unwrap()
+        pub async fn import_blocks(&self, blocks: Blocks) -> ImportedBlocks {
+            let (mut block_importer, blocks) = self.block_importer(blocks);
+
+            block_importer.run().await.unwrap();
+
+            blocks
         }
 
         pub async fn report_txs_finished(
@@ -504,7 +518,10 @@ pub(crate) mod test_utils {
         pub fn block_importer(
             &self,
             blocks: Blocks,
-        ) -> BlockImporter<storage::Postgres, ports::fuel::MockApi, BlockValidator> {
+        ) -> (
+            BlockImporter<storage::Postgres, ports::fuel::MockApi, BlockValidator>,
+            ImportedBlocks,
+        ) {
             let amount = blocks.len();
 
             match blocks {
@@ -512,15 +529,26 @@ pub(crate) mod test_utils {
                     let secret_key = SecretKey::random(&mut rand::thread_rng());
 
                     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-                    let mock = mocks::fuel::blocks_exists(secret_key, range);
 
-                    BlockImporter::new(self.db(), mock, block_validator, amount as u32)
+                    let blocks = range
+                        .map(|height| mocks::fuel::generate_block(height, &secret_key))
+                        .collect::<Vec<_>>();
+
+                    let mock = mocks::fuel::these_blocks_exist(blocks.clone());
+
+                    (
+                        BlockImporter::new(self.db(), mock, block_validator, amount as u32),
+                        ImportedBlocks { blocks, secret_key },
+                    )
                 }
                 Blocks::Blocks { blocks, secret_key } => {
                     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-                    let mock = mocks::fuel::these_blocks_exist(blocks);
+                    let mock = mocks::fuel::these_blocks_exist(blocks.clone());
 
-                    BlockImporter::new(self.db(), mock, block_validator, amount as u32)
+                    (
+                        BlockImporter::new(self.db(), mock, block_validator, amount as u32),
+                        ImportedBlocks { blocks, secret_key },
+                    )
                 }
             }
         }

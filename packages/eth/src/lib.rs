@@ -1,4 +1,7 @@
-use std::{num::NonZeroU32, pin::Pin};
+use std::{
+    num::{NonZeroU32, NonZeroUsize},
+    pin::Pin,
+};
 
 use alloy::primitives::U256;
 use async_trait::async_trait;
@@ -37,16 +40,14 @@ impl Contract for WebsocketClient {
 
 #[async_trait]
 impl Api for WebsocketClient {
-    fn split_into_submittable_fragments(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        self._split_into_submittable_fragments(data)
+    fn max_bytes_per_submission(&self) -> NonZeroUsize {
+        self._max_bytes_per_submission()
     }
 
-    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> GasUsage {
-        self._gas_usage_to_store_data(data)
+    fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> GasUsage {
+        self._gas_usage_to_store_data(num_bytes)
     }
+
     async fn gas_prices(&self) -> Result<GasPrices> {
         self._gas_prices().await
     }

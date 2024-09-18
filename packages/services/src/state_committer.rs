@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{num::NonZeroUsize, time::Duration};
 
 use async_trait::async_trait;
 use bundler::{Bundle, BundleProposal, BundlerFactory};
@@ -13,6 +13,26 @@ use crate::{Error, Result, Runner};
 
 pub mod bundler;
 
+#[derive(Debug, Clone, Copy)]
+pub struct Config {
+    pub optimization_time_limit: Duration,
+    pub block_accumulation_time_limit: Duration,
+    pub num_blocks_to_accumulate: NonZeroUsize,
+    pub starting_height: u32,
+}
+
+#[cfg(test)]
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            optimization_time_limit: Duration::from_secs(100),
+            block_accumulation_time_limit: Duration::from_secs(100),
+            num_blocks_to_accumulate: NonZeroUsize::new(1).unwrap(),
+            starting_height: 0,
+        }
+    }
+}
+
 /// The `StateCommitter` is responsible for committing state fragments to L1.
 /// It bundles blocks, fragments them, and submits the fragments to the L1 adapter.
 pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
@@ -21,7 +41,7 @@ pub struct StateCommitter<L1, Storage, Clock, BundlerFactory> {
     clock: Clock,
     component_created_at: DateTime<Utc>,
     bundler_factory: BundlerFactory,
-    optimization_time_limit: Duration,
+    config: Config,
 }
 
 impl<L1, Storage, C, BF> StateCommitter<L1, Storage, C, BF>
@@ -34,7 +54,7 @@ where
         storage: Storage,
         clock: C,
         bundler_factory: BF,
-        optimization_time_limit: Duration,
+        config: Config,
     ) -> Self {
         let now = clock.now();
 
@@ -44,7 +64,7 @@ where
             clock,
             component_created_at: now,
             bundler_factory,
-            optimization_time_limit,
+            config,
         }
     }
 }
@@ -57,7 +77,21 @@ where
     BF: BundlerFactory,
 {
     async fn bundle_and_fragment_blocks(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
-        let bundler = self.bundler_factory.build().await?;
+        let blocks = self
+            .storage
+            .lowest_unbundled_blocks(
+                self.config.starting_height,
+                self.config.num_blocks_to_accumulate.get(),
+            )
+            .await?;
+
+        if blocks.len() < self.config.num_blocks_to_accumulate.get()
+            && self.still_time_to_accumulate_more().await?
+        {
+            return Ok(None);
+        }
+
+        let bundler = self.bundler_factory.build(blocks).await?;
 
         let proposal = self.find_optimal_bundle(bundler).await?;
 
@@ -82,17 +116,11 @@ where
         &self,
         mut bundler: B,
     ) -> Result<Option<BundleProposal>> {
-        let last_finalized_time = self
-            .storage
-            .last_time_a_fragment_was_finalized()
-            .await?
-            .unwrap_or_else(||{
-                info!("No finalized fragments found in storage. Using component creation time ({}) as last finalized time.", self.component_created_at);
-                self.component_created_at
-            });
+        eprintln!("Optimizing bundle...");
+        let optimization_start = self.clock.now();
 
         while bundler.advance().await? {
-            if self.should_stop_optimizing(last_finalized_time)? {
+            if self.should_stop_optimizing(optimization_start)? {
                 break;
             }
         }
@@ -100,14 +128,37 @@ where
         bundler.finish().await
     }
 
-    fn should_stop_optimizing(&self, last_finalization: DateTime<Utc>) -> Result<bool> {
+    async fn still_time_to_accumulate_more(&self) -> Result<bool> {
+        let last_finalized_time = self
+            .storage
+            .last_time_a_fragment_was_finalized()
+            .await?
+            .unwrap_or_else(||{
+                eprintln!("No finalized fragments found in storage. Using component creation time ({}) as last finalized time.", self.component_created_at);
+                info!("No finalized fragments found in storage. Using component creation time ({}) as last finalized time.", self.component_created_at);
+                self.component_created_at
+            });
+
+        let elapsed = self.elapsed(last_finalized_time)?;
+
+        Ok(elapsed < self.config.block_accumulation_time_limit)
+    }
+
+    fn elapsed(&self, point: DateTime<Utc>) -> Result<Duration> {
         let now = self.clock.now();
+        eprintln!("Current time: {now:?}");
         let elapsed = now
-            .signed_duration_since(last_finalization)
+            .signed_duration_since(point)
             .to_std()
             .map_err(|e| Error::Other(format!("could not calculate elapsed time: {e}")))?;
+        Ok(elapsed)
+    }
 
-        Ok(elapsed >= self.optimization_time_limit)
+    fn should_stop_optimizing(&self, start_of_optimization: DateTime<Utc>) -> Result<bool> {
+        let elapsed = self.elapsed(start_of_optimization)?;
+        eprintln!("Elapsed time: {elapsed:?}");
+
+        Ok(elapsed >= self.config.optimization_time_limit)
     }
 
     /// Submits a fragment to the L1 adapter and records the tx in storage.
@@ -176,12 +227,13 @@ mod tests {
 
     use super::*;
     use crate::test_utils::mocks::l1::TxStatus;
-    use crate::test_utils::Blocks;
+    use crate::test_utils::{Blocks, ImportedBlocks};
     use crate::{test_utils, Runner, StateCommitter};
     use bundler::Compressor;
     use clock::TestClock;
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
+    use ports::l1::Api;
     use ports::{non_empty_vec, types::NonEmptyVec};
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
     use tokio::sync::Mutex;
@@ -250,36 +302,43 @@ mod tests {
     impl BundlerFactory for ControllableBundlerFactory {
         type Bundler = ControllableBundler;
 
-        async fn build(&self) -> Result<Self::Bundler> {
+        async fn build(&self, _: Vec<ports::storage::FuelBlock>) -> Result<Self::Bundler> {
             Ok(self.bundler.lock().await.take().unwrap())
         }
     }
 
     #[tokio::test]
-    async fn sends_fragments_in_order() -> Result<()> {
+    async fn fragments_correctly_and_sends_fragments_in_order() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
+        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..1)).await;
+
+        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks)
+            .await
+            .into_inner();
+        let max_fragment_size = bundle_data.len().div_ceil(2);
+
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::new(max_fragment_size.try_into().unwrap());
+
+        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
+
         let fragment_tx_ids = [[0; 32], [1; 32]];
-
-        let fragment_0 = test_utils::random_data(100);
-        let fragment_1 = test_utils::random_data(100);
-
-        let l1_mock_split = test_utils::mocks::l1::will_ask_to_split_bundle_into_fragments(
-            None,
-            non_empty_vec![fragment_0.clone(), fragment_1.clone()],
-        );
-
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(l1_mock_split),
-            setup.db(),
-            1..2,
-            Compressor::default(),
-        )?;
-
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (fragment_0.clone(), fragment_tx_ids[0]),
-            (fragment_1.clone(), fragment_tx_ids[1]),
+            (
+                bundle_data[..max_fragment_size]
+                    .to_vec()
+                    .try_into()
+                    .unwrap(),
+                fragment_tx_ids[0],
+            ),
+            (
+                bundle_data[max_fragment_size..]
+                    .to_vec()
+                    .try_into()
+                    .unwrap(),
+                fragment_tx_ids[1],
+            ),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -287,12 +346,8 @@ mod tests {
             setup.db(),
             TestClock::default(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
-            },
+            Config::default(),
         );
-
-        setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
         // when
         // Send the first fragment
@@ -315,29 +370,20 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
 
         let original_tx = [0; 32];
         let retry_tx = [1; 32];
 
-        let fragment_0 = test_utils::random_data(100);
-        let fragment_1 = test_utils::random_data(100);
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
 
-        let l1_mock_split = test_utils::mocks::l1::will_ask_to_split_bundle_into_fragments(
-            None,
-            non_empty_vec![fragment_0.clone(), fragment_1],
-        );
+        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
 
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(l1_mock_split),
-            setup.db(),
-            1..2,
-            Compressor::default(),
-        )?;
-
+        // the whole bundle goes into one fragment
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (fragment_0.clone(), original_tx),
-            (fragment_0.clone(), retry_tx),
+            (bundle_data.clone(), original_tx),
+            (bundle_data, retry_tx),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -345,9 +391,7 @@ mod tests {
             setup.db(),
             TestClock::default(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
-            },
+            Config::default(),
         );
 
         // when
@@ -372,14 +416,9 @@ mod tests {
         let setup = test_utils::Setup::init().await;
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
-        // Configure the bundler with a minimum acceptable block range greater than the available blocks
-        let min_acceptable_blocks = 2;
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(ports::l1::MockApi::new()),
-            setup.db(),
-            min_acceptable_blocks..3,
-            Compressor::default(),
-        )?;
+        let num_blocks_to_accumulate = 2.try_into().unwrap();
+        let bundler_factory =
+            bundler::Factory::new(Arc::new(ports::l1::MockApi::new()), Compressor::default())?;
 
         let l1_mock = ports::l1::MockApi::new();
 
@@ -388,8 +427,9 @@ mod tests {
             setup.db(),
             TestClock::default(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
+            Config {
+                num_blocks_to_accumulate,
+                ..Config::default()
             },
         );
 
@@ -409,19 +449,9 @@ mod tests {
 
         setup.import_blocks(Blocks::WithHeights(0..2)).await;
 
-        let fragment = test_utils::random_data(100);
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
 
-        let l1_mock_split = test_utils::mocks::l1::will_ask_to_split_bundle_into_fragments(
-            None,
-            non_empty_vec![fragment.clone()],
-        );
-
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(l1_mock_split),
-            setup.db(),
-            1..2,
-            Compressor::default(),
-        )?;
+        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
 
         let mut l1_mock_submit = ports::l1::MockApi::new();
         l1_mock_submit
@@ -434,9 +464,7 @@ mod tests {
             setup.db(),
             TestClock::default(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
-            },
+            Config::default(),
         );
 
         // when
@@ -453,46 +481,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bundles_minimum_acceptable_if_no_more_blocks_available() -> Result<()> {
+    async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_creation(
+    ) -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = (0..2)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
+        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
 
-        setup
-            .import_blocks(Blocks::Blocks {
-                blocks: blocks.clone(),
-                secret_key,
-            })
-            .await;
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
 
-        let fragment = test_utils::random_data(100);
-
-        let l1_mock_split = test_utils::mocks::l1::will_ask_to_split_bundle_into_fragments(
-            Some(test_utils::encode_merge_and_compress_blocks(&blocks).await),
-            non_empty_vec![fragment.clone()],
-        );
-
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(l1_mock_split),
-            setup.db(),
-            2..3,
-            Compressor::default(),
-        )?;
+        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
 
         let l1_mock_submit =
-            test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
+            test_utils::mocks::l1::expects_state_submissions([(bundle_data, [1; 32])]);
+
+        let clock = TestClock::default();
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            setup.db(),
+            clock.clone(),
+            bundler_factory,
+            Config {
+                block_accumulation_time_limit: Duration::from_secs(1),
+                num_blocks_to_accumulate: 2.try_into().unwrap(),
+                ..Default::default()
+            },
+        );
+
+        clock.advance_time(Duration::from_secs(2));
+
+        // when
+        state_committer.run().await?;
+
+        // then
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_finalized() -> Result<()>
+    {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        let clock = TestClock::default();
+        setup.commit_single_block_bundle(clock.now()).await;
+        clock.advance_time(Duration::from_secs(10));
+
+        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(1..2)).await;
+        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
+
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
+        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
+
+        let l1_mock_submit =
+            test_utils::mocks::l1::expects_state_submissions([(bundle_data, [1; 32])]);
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             setup.db(),
-            TestClock::default(),
+            clock.clone(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
+            Config {
+                block_accumulation_time_limit: Duration::from_secs(10),
+                num_blocks_to_accumulate: 2.try_into().unwrap(),
+                ..Default::default()
             },
         );
 
@@ -500,51 +554,34 @@ mod tests {
         state_committer.run().await?;
 
         // then
-        // Mocks validate that the bundle was comprised of two blocks.
+        // we will bundle and fragment because the time limit (10s) is measured from the last finalized fragment
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn doesnt_bundle_more_than_maximum_blocks() -> Result<()> {
+    async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = (0..3)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
 
-        setup
-            .import_blocks(Blocks::Blocks {
-                blocks: blocks.clone(),
-                secret_key,
-            })
-            .await;
+        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..3)).await;
 
-        let fragment = test_utils::random_data(100);
+        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks[..2]).await;
 
-        let l1_mock_split = test_utils::mocks::l1::will_ask_to_split_bundle_into_fragments(
-            Some(test_utils::encode_merge_and_compress_blocks(&blocks[0..2]).await),
-            non_empty_vec![fragment.clone()],
-        );
-
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(l1_mock_split),
-            setup.db(),
-            2..3,
-            Compressor::default(),
-        )?;
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
+        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
 
         let l1_mock_submit =
-            test_utils::mocks::l1::expects_state_submissions([(fragment.clone(), [1; 32])]);
+            test_utils::mocks::l1::expects_state_submissions([(bundle_data.clone(), [1; 32])]);
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             setup.db(),
             TestClock::default(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
+            Config {
+                num_blocks_to_accumulate: 2.try_into().unwrap(),
+                ..Default::default()
             },
         );
 
@@ -561,49 +598,23 @@ mod tests {
     async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
 
-        let blocks = (0..=1)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
-
-        setup
-            .import_blocks(Blocks::Blocks {
-                blocks: blocks.clone(),
-                secret_key,
-            })
-            .await;
+        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..2)).await;
 
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
 
         let bundle_1 = test_utils::encode_merge_and_compress_blocks(&blocks[0..=0]).await;
-        let bundle_1_fragment = test_utils::random_data(100);
 
         let bundle_2 = test_utils::encode_merge_and_compress_blocks(&blocks[1..=1]).await;
-        let bundle_2_fragment = test_utils::random_data(100);
 
-        let l1_mock_split = test_utils::mocks::l1::will_ask_to_split_bundles_into_fragments([
-            (
-                Some(bundle_1.clone()),
-                non_empty_vec![bundle_1_fragment.clone()],
-            ),
-            (
-                Some(bundle_2.clone()),
-                non_empty_vec![bundle_2_fragment.clone()],
-            ),
-        ]);
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
 
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(l1_mock_split),
-            setup.db(),
-            1..2,
-            Compressor::default(),
-        )?;
+        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (bundle_1_fragment.clone(), bundle_1_tx),
-            (bundle_2_fragment.clone(), bundle_2_tx),
+            (bundle_1.clone(), bundle_1_tx),
+            (bundle_2.clone(), bundle_2_tx),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -611,8 +622,9 @@ mod tests {
             setup.db(),
             TestClock::default(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
+            Config {
+                num_blocks_to_accumulate: 1.try_into().unwrap(),
+                ..Default::default()
             },
         );
 
@@ -633,12 +645,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stops_advancing_if_time_since_last_finalized_exceeds_threshold() -> Result<()> {
+    async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
+        setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
         let fragment_tx_id = [2; 32];
-        let unoptimal_fragment = test_utils::random_data(100);
+        let unoptimal_fragment = test_utils::random_data(100usize);
 
         let unoptimal_bundle = BundleProposal {
             fragments: non_empty_vec![unoptimal_fragment.clone()],
@@ -657,13 +670,15 @@ mod tests {
 
         let test_clock = TestClock::default();
 
+        let optimization_timeout = Duration::from_secs(1);
         let mut state_committer = StateCommitter::new(
             l1_mock,
             setup.db(),
             test_clock.clone(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
+            Config {
+                optimization_time_limit: optimization_timeout,
+                ..Config::default()
             },
         );
 
@@ -678,7 +693,7 @@ mod tests {
         notify_has_advanced.recv().await.unwrap();
 
         // Advance the clock to exceed the optimization time limit
-        test_clock.advance_time(Duration::from_secs(2));
+        test_clock.advance_time(Duration::from_secs(1));
 
         // Submit the final (unoptimal) bundle proposal
 
@@ -688,33 +703,31 @@ mod tests {
         // Wait for the StateCommitter task to complete
         state_committer_handle.await.unwrap();
 
-        // Verify that both fragments were submitted
-        // Since l1_mock_submit expects two submissions, the test will fail if they weren't called
-
         Ok(())
     }
 
     #[tokio::test]
-    async fn doesnt_stop_advancing_if_there_is_still_time() -> Result<()> {
+    async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
+        setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
-        let fragment_tx_id = [3; 32];
-
-        let (bundler_factory, send_can_advance, mut notify_advanced) =
+        let (bundler_factory, send_can_advance, _notify_advanced) =
             ControllableBundlerFactory::setup(None);
 
         // Create a TestClock
         let test_clock = TestClock::default();
 
         // Create the StateCommitter
+        let optimization_timeout = Duration::from_secs(1);
         let mut state_committer = StateCommitter::new(
             ports::l1::MockApi::new(),
             setup.db(),
             test_clock.clone(),
             bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
+            Config {
+                optimization_time_limit: optimization_timeout,
+                ..Config::default()
             },
         );
 
@@ -731,107 +744,9 @@ mod tests {
             send_can_advance.send(()).unwrap();
         }
         // then
-        let res = tokio::time::timeout(Duration::from_millis(100), state_committer_handle).await;
+        let res = tokio::time::timeout(Duration::from_millis(500), state_committer_handle).await;
 
         assert!(res.is_err(), "expected a timeout");
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn stops_optimizing_bundle_if_last_finalized_fragment_happened_too_long_ago() -> Result<()>
-    {
-        // given
-        let setup = test_utils::Setup::init().await;
-
-        let last_finalization_time = Utc::now();
-        setup
-            .commit_single_block_bundle(last_finalization_time)
-            .await;
-
-        let fragment_tx_id = [3; 32];
-        let unoptimal_fragment = test_utils::random_data(100);
-
-        let (bundler_factory, unblock_bundler_advance, mut notify_advanced) =
-            ControllableBundlerFactory::setup(Some(BundleProposal {
-                fragments: non_empty_vec![unoptimal_fragment.clone()],
-                block_heights: 1..=1,
-                optimal: false,
-                compression_ratio: 1.0,
-            }));
-
-        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
-            unoptimal_fragment.clone(),
-            fragment_tx_id,
-        )]);
-
-        let test_clock = TestClock::default();
-        let optimization_timeout = Duration::from_secs(1);
-        test_clock.set_time(last_finalization_time + optimization_timeout);
-
-        // Create the StateCommitter
-        let mut state_committer = StateCommitter::new(
-            l1_mock_submit,
-            setup.db(),
-            test_clock.clone(),
-            bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: optimization_timeout,
-            },
-        );
-
-        // Spawn the StateCommitter run method in a separate task
-        let state_committer_handle = tokio::spawn(async move {
-            state_committer.run().await.unwrap();
-        });
-
-        // when
-
-        // Send the unoptimal bundle proposal
-        unblock_bundler_advance.send(()).unwrap();
-
-        notify_advanced.recv().await.unwrap();
-
-        // then
-        state_committer_handle.await.unwrap();
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn handles_no_bundle_proposals_due_to_insufficient_blocks() -> Result<()> {
-        // given
-        let setup = test_utils::Setup::init().await;
-
-        // Import fewer blocks than the minimum acceptable amount
-        setup.import_blocks(Blocks::WithHeights(0..1)).await;
-
-        // Configure the bundler with a minimum acceptable block range greater than the available blocks
-        let min_acceptable_blocks = 2;
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(ports::l1::MockApi::new()),
-            setup.db(),
-            min_acceptable_blocks..3,
-            Compressor::default(),
-        )?;
-
-        let l1_mock = ports::l1::MockApi::new();
-
-        let mut state_committer = StateCommitter::new(
-            l1_mock,
-            setup.db(),
-            TestClock::default(),
-            bundler_factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
-            },
-        );
-
-        // when
-        state_committer.run().await?;
-
-        // then
-        // No fragments should have been submitted, and no errors should occur.
 
         Ok(())
     }
@@ -844,18 +759,9 @@ mod tests {
         // Import enough blocks to create a bundle
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
-        let fragment = test_utils::random_data(100);
-        let fragment_tx_id = [4; 32];
+        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
 
-        let db = setup.db();
-
-        let l1_mock = test_utils::mocks::l1::will_ask_to_split_bundle_into_fragments(
-            None,
-            non_empty_vec!(fragment.clone()),
-        );
-
-        let factory =
-            bundler::Factory::new(Arc::new(l1_mock), db.clone(), 1..2, Compressor::default())?;
+        let factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
 
         // Configure the L1 adapter to fail on submission
         let mut l1_mock = ports::l1::MockApi::new();
@@ -865,12 +771,10 @@ mod tests {
 
         let mut state_committer = StateCommitter::new(
             l1_mock,
-            db,
+            setup.db(),
             TestClock::default(),
             factory,
-            BundleGenerationConfig {
-                stop_optimization_attempts_after: Duration::from_secs(1),
-            },
+            Config::default(),
         );
 
         // when

@@ -230,6 +230,7 @@ impl Postgres {
 
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
+        starting_height: u32,
         limit: usize,
     ) -> Result<Vec<ports::storage::FuelBlock>> {
         // TODO: segfault error msg
@@ -238,7 +239,8 @@ impl Postgres {
             tables::FuelBlock,
             r#" SELECT *
                         FROM fuel_blocks fb
-                        WHERE fb.height > COALESCE((SELECT MAX(b.end_height) FROM bundles b), -1) LIMIT $1;"#,
+                        WHERE fb.height >= $1 AND fb.height > COALESCE((SELECT MAX(b.end_height) FROM bundles b), -1) ORDER BY fb.height ASC LIMIT $2;"#,
+            i64::from(starting_height),
             limit
         )
             .fetch_all(&self.connection_pool).await

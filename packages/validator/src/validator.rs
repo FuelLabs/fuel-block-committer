@@ -51,13 +51,7 @@ impl BlockValidator {
             ));
         };
 
-        let expected_producer_addr = if fuel_block.header.height == 0 {
-            *PublicKey::default().hash()
-        } else {
-            self.producer_addr
-        };
-
-        if *producer_addr != expected_producer_addr {
+        if *producer_addr != self.producer_addr {
             return Err(Error::BlockValidation(format!(
                 "producer addr '{}' does not match expected addr '{}'. block: {fuel_block:?}",
                 hex::encode(producer_addr),

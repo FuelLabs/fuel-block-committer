@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 use alloy::{
     consensus::{SidecarBuilder, SimpleCoder},
@@ -68,15 +68,13 @@ pub struct WsConnection {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    fn split_into_submittable_fragments(
-        &self,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        blob_calculations::split_into_submittable_fragments(data)
+    fn max_bytes_per_submission(&self) -> std::num::NonZeroUsize {
+        blob_calculations::ENCODABLE_BYTES_PER_TX
+            .try_into()
+            .expect("always positive")
     }
-
-    fn gas_usage_to_store_data(&self, data: &NonEmptyVec<u8>) -> ports::l1::GasUsage {
-        blob_calculations::gas_usage_to_store_data(data)
+    fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> ports::l1::GasUsage {
+        blob_calculations::gas_usage_to_store_data(num_bytes)
     }
 
     async fn gas_prices(&self) -> Result<GasPrices> {
@@ -172,11 +170,11 @@ impl EthApi for WsConnection {
 }
 
 mod blob_calculations {
-    use alloy::{
-        consensus::{SidecarCoder, SimpleCoder},
-        eips::eip4844::{
-            DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES, MAX_BLOBS_PER_BLOCK,
-        },
+    use std::num::NonZeroUsize;
+
+    use alloy::eips::eip4844::{
+        DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES, MAX_BLOBS_PER_BLOCK,
+        MAX_DATA_GAS_PER_BLOCK,
     };
     use itertools::Itertools;
     use ports::{l1::GasUsage, types::NonEmptyVec};
@@ -184,18 +182,18 @@ mod blob_calculations {
     /// Intrinsic gas cost of a eth transaction.
     const BASE_TX_COST: u64 = 21_000;
 
-    pub(crate) fn gas_usage_to_store_data(data: &NonEmptyVec<u8>) -> GasUsage {
-        let coder = SimpleCoder::default();
-        let field_elements_required =
-            u64::try_from(coder.required_fe(data.inner())).expect("definitely less than u64::MAX");
+    pub(crate) fn gas_usage_to_store_data(num_bytes: NonZeroUsize) -> GasUsage {
+        let num_bytes =
+            u64::try_from(num_bytes.get()).expect("to not have more than u64::MAX of storage data");
+
+        // Taken from the SimpleCoder impl
+        let required_fe = num_bytes.div_ceil(31).saturating_add(1);
 
         // alloy constants not used since they are u64
-        let blob_num = field_elements_required.div_ceil(FIELD_ELEMENTS_PER_BLOB);
+        let blob_num = required_fe.div_ceil(FIELD_ELEMENTS_PER_BLOB);
 
-        let number_of_txs = blob_num.div_ceil(
-            u64::try_from(MAX_BLOBS_PER_BLOCK)
-                .expect("never going to be able to fit more than u64::MAX blobs in a tx"),
-        );
+        const MAX_BLOBS_PER_BLOCK: u64 = MAX_DATA_GAS_PER_BLOCK / DATA_GAS_PER_BLOB;
+        let number_of_txs = blob_num.div_ceil(MAX_BLOBS_PER_BLOCK);
 
         let storage = blob_num.saturating_mul(DATA_GAS_PER_BLOB);
         let normal = number_of_txs * BASE_TX_COST;
@@ -204,7 +202,7 @@ mod blob_calculations {
     }
 
     // 1 whole field element is lost plus a byte for every remaining field element
-    const ENCODABLE_BYTES_PER_TX: usize = (FIELD_ELEMENT_BYTES as usize - 1)
+    pub(crate) const ENCODABLE_BYTES_PER_TX: usize = (FIELD_ELEMENT_BYTES as usize - 1)
         * (FIELD_ELEMENTS_PER_BLOB as usize * MAX_BLOBS_PER_BLOCK - 1);
 
     pub(crate) fn split_into_submittable_fragments(
@@ -228,7 +226,7 @@ mod blob_calculations {
 
     #[cfg(test)]
     mod tests {
-        use alloy::consensus::SidecarBuilder;
+        use alloy::consensus::{SidecarBuilder, SimpleCoder};
         use rand::{rngs::SmallRng, Rng, SeedableRng};
         use test_case::test_case;
 
@@ -244,20 +242,24 @@ mod blob_calculations {
         #[test_case(896 * 1024, 2, 8; "two eth tx with eight blobs")]
         fn gas_usage_for_data_storage(num_bytes: usize, num_txs: usize, num_blobs: usize) {
             // given
-            let bytes = vec![0; num_bytes].try_into().unwrap();
 
             // when
-            let usage = gas_usage_to_store_data(&bytes);
+            let usage = gas_usage_to_store_data(num_bytes.try_into().unwrap());
 
             // then
-            assert_eq!(usage.normal, num_txs * 21_000);
+            assert_eq!(usage.normal as usize, num_txs * 21_000);
             assert_eq!(
                 usage.storage as u64,
                 num_blobs as u64 * alloy::eips::eip4844::DATA_GAS_PER_BLOB
             );
 
+            let mut rng = SmallRng::from_seed([0; 32]);
+            let mut data = vec![0; num_bytes];
+            rng.fill(&mut data[..]);
+
             let mut builder = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 0);
-            builder.ingest(bytes.inner());
+            builder.ingest(&data);
+
             assert_eq!(builder.build().unwrap().blobs.len(), num_blobs,);
         }
 
@@ -299,13 +301,17 @@ mod blob_calculations {
 
         #[test]
         fn encodable_bytes_per_tx_correctly_calculated() {
-            let max_bytes = [0; ENCODABLE_BYTES_PER_TX];
+            let mut rand_gen = SmallRng::from_seed([0; 32]);
+            let mut max_bytes = [0; ENCODABLE_BYTES_PER_TX];
+            rand_gen.fill(&mut max_bytes[..]);
+
             let mut builder = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 6);
             builder.ingest(&max_bytes);
 
             assert_eq!(builder.build().unwrap().blobs.len(), 6);
 
-            let one_too_many = [0; ENCODABLE_BYTES_PER_TX + 1];
+            let mut one_too_many = [0; ENCODABLE_BYTES_PER_TX + 1];
+            rand_gen.fill(&mut one_too_many[..]);
             let mut builder = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 6);
             builder.ingest(&one_too_many);
 

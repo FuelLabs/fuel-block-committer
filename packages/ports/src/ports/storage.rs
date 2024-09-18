@@ -50,7 +50,11 @@ pub trait Storage: Send + Sync {
     async fn available_blocks(&self) -> Result<Range<u32>>;
     // async fn all_blocks(&self) -> Result<Vec<FuelBlock>>;
     // TODO: segfault add a limit that can be set to whatever the import depth is
-    async fn lowest_unbundled_blocks(&self, limit: usize) -> Result<Vec<FuelBlock>>;
+    async fn lowest_unbundled_blocks(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<FuelBlock>>;
     async fn insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,

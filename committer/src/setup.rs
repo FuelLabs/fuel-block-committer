@@ -4,7 +4,9 @@ use clock::SystemClock;
 use eth::AwsConfig;
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
-use services::{BlockCommitter, CommitListener, Runner, WalletBalanceTracker};
+use services::{
+    BlockCommitter, CommitListener, Runner, StateCommitterConfig, WalletBalanceTracker,
+};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -79,20 +81,20 @@ pub fn state_committer(
 ) -> tokio::task::JoinHandle<()> {
     // TODO: segfault propagate the configurations
 
-    let bundler_factory = services::BundlerFactory::new(
-        l1.clone(),
-        storage.clone(),
-        1..100,
-        services::Compressor::default(),
-    )
-    .unwrap();
+    let bundler_factory =
+        services::BundlerFactory::new(l1.clone(), services::Compressor::default()).unwrap();
 
     let state_committer = services::StateCommitter::new(
         l1,
         storage,
         SystemClock,
         bundler_factory,
-        Duration::from_secs(1000),
+        StateCommitterConfig {
+            optimization_time_limit: Duration::from_secs(500),
+            block_accumulation_time_limit: Duration::from_secs(1000),
+            num_blocks_to_accumulate: 100.try_into().unwrap(),
+            starting_height: 0,
+        },
     );
 
     schedule_polling(

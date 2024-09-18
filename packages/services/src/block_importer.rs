@@ -179,7 +179,7 @@ mod tests {
     use validator::BlockValidator;
 
     use crate::{
-        test_utils::{self, Blocks},
+        test_utils::{self, Blocks, ImportedBlocks},
         Error,
     };
 
@@ -207,7 +207,7 @@ mod tests {
         importer.run().await?;
 
         // Then
-        let all_blocks = setup.db().lowest_unbundled_blocks(10).await?;
+        let all_blocks = setup.db().lowest_unbundled_blocks(0, 10).await?;
 
         let expected_block = ports::storage::FuelBlock {
             height: 0,
@@ -224,28 +224,16 @@ mod tests {
     async fn does_not_reimport_blocks_already_in_db() -> Result<()> {
         // Given
         let setup = test_utils::Setup::init().await;
-        let secret_key = given_secret_key();
 
-        let existing_blocks = (0..=2)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
+        let ImportedBlocks {
+            blocks: existing_blocks,
+            secret_key,
+        } = setup.import_blocks(Blocks::WithHeights(0..3)).await;
 
-        setup
-            .import_blocks(Blocks::Blocks {
-                blocks: existing_blocks.clone(),
-                secret_key,
-            })
-            .await;
+        let new_blocks =
+            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key));
 
-        let new_blocks = (3..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
-
-        let all_blocks = existing_blocks
-            .iter()
-            .chain(new_blocks.iter())
-            .cloned()
-            .collect_vec();
+        let all_blocks = existing_blocks.into_iter().chain(new_blocks).collect_vec();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(all_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -256,7 +244,7 @@ mod tests {
         importer.run().await?;
 
         // Then
-        let stored_blocks = setup.db().lowest_unbundled_blocks(100).await?;
+        let stored_blocks = setup.db().lowest_unbundled_blocks(0, 100).await?;
         let expected_blocks = all_blocks
             .iter()
             .map(|block| ports::storage::FuelBlock {
@@ -287,7 +275,7 @@ mod tests {
 
         // Then
         // No blocks should have been imported
-        let stored_blocks = setup.db().lowest_unbundled_blocks(10).await?;
+        let stored_blocks = setup.db().lowest_unbundled_blocks(0, 10).await?;
         assert!(stored_blocks.is_empty());
 
         Ok(())
@@ -298,18 +286,10 @@ mod tests {
         // Given
         let setup = test_utils::Setup::init().await;
 
-        let secret_key = given_secret_key();
-
-        let db_blocks = (0..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
-
-        setup
-            .import_blocks(Blocks::Blocks {
-                blocks: db_blocks,
-                secret_key,
-            })
-            .await;
+        let secret_key = setup
+            .import_blocks(Blocks::WithHeights(0..6))
+            .await
+            .secret_key;
 
         let chain_blocks = (0..=2)
             .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
@@ -338,27 +318,15 @@ mod tests {
         // Given
         let setup = test_utils::Setup::init().await;
 
-        let secret_key = given_secret_key();
-        let db_blocks = (0..=2)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
+        let ImportedBlocks {
+            blocks: db_blocks,
+            secret_key,
+        } = setup.import_blocks(Blocks::WithHeights(0..3)).await;
 
-        setup
-            .import_blocks(Blocks::Blocks {
-                blocks: db_blocks.clone(),
-                secret_key,
-            })
-            .await;
+        let chain_blocks =
+            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key));
 
-        let chain_blocks = (3..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
-
-        let all_blocks = db_blocks
-            .iter()
-            .chain(chain_blocks.iter())
-            .cloned()
-            .collect_vec();
+        let all_blocks = db_blocks.into_iter().chain(chain_blocks).collect_vec();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(all_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -369,7 +337,7 @@ mod tests {
         importer.run().await?;
 
         // Then
-        let stored_blocks = setup.db().lowest_unbundled_blocks(100).await?;
+        let stored_blocks = setup.db().lowest_unbundled_blocks(0, 100).await?;
         let expected_blocks = all_blocks
             .iter()
             .map(|block| ports::storage::FuelBlock {
@@ -389,17 +357,8 @@ mod tests {
         // Given
         let setup = test_utils::Setup::init().await;
 
-        let secret_key = given_secret_key();
-        let blocks = (0..=2)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
-            .collect_vec();
-
-        setup
-            .import_blocks(Blocks::Blocks {
-                blocks: blocks.clone(),
-                secret_key,
-            })
-            .await;
+        let ImportedBlocks { blocks, secret_key } =
+            setup.import_blocks(Blocks::WithHeights(0..3)).await;
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -411,7 +370,7 @@ mod tests {
 
         // Then
         // Database should remain unchanged
-        let stored_blocks = setup.db().lowest_unbundled_blocks(10).await?;
+        let stored_blocks = setup.db().lowest_unbundled_blocks(0, 10).await?;
         let expected_blocks = blocks
             .iter()
             .map(|block| ports::storage::FuelBlock {
@@ -446,7 +405,7 @@ mod tests {
         importer.run().await?;
 
         // Then
-        let stored_blocks = setup.db().lowest_unbundled_blocks(10).await?;
+        let stored_blocks = setup.db().lowest_unbundled_blocks(0, 10).await?;
         let expected_blocks = blocks
             .iter()
             .map(|block| ports::storage::FuelBlock {
