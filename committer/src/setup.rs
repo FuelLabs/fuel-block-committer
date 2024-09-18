@@ -82,7 +82,7 @@ pub fn state_committer(
     // TODO: segfault propagate the configurations
 
     let bundler_factory =
-        services::BundlerFactory::new(l1.clone(), services::Compressor::default()).unwrap();
+        services::BundlerFactory::new(l1.clone(), services::Compressor::default());
 
     let state_committer = services::StateCommitter::new(
         l1,

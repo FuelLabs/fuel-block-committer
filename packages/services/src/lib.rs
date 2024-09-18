@@ -468,7 +468,7 @@ pub(crate) mod test_utils {
             clock.set_time(finalization_time);
 
             let l1_mock = mocks::l1::FullL1Mock::default();
-            let factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default()).unwrap();
+            let factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default());
 
             let tx = [2u8; 32];
 

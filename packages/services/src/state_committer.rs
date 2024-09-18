@@ -226,14 +226,11 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::test_utils::mocks::l1::TxStatus;
+    use crate::test_utils::mocks::l1::{FullL1Mock, TxStatus};
     use crate::test_utils::{Blocks, ImportedBlocks};
     use crate::{test_utils, Runner, StateCommitter};
     use bundler::Compressor;
     use clock::TestClock;
-    use fuel_crypto::SecretKey;
-    use itertools::Itertools;
-    use ports::l1::Api;
     use ports::{non_empty_vec, types::NonEmptyVec};
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
     use tokio::sync::Mutex;
@@ -319,10 +316,6 @@ mod tests {
             .into_inner();
         let max_fragment_size = bundle_data.len().div_ceil(2);
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::new(max_fragment_size.try_into().unwrap());
-
-        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         let fragment_tx_ids = [[0; 32], [1; 32]];
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (
@@ -341,6 +334,10 @@ mod tests {
             ),
         ]);
 
+        let bundler_factory = bundler::Factory::new(
+            Arc::new(FullL1Mock::new(max_fragment_size.try_into().unwrap())),
+            Compressor::default(),
+        );
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             setup.db(),
@@ -376,10 +373,6 @@ mod tests {
         let original_tx = [0; 32];
         let retry_tx = [1; 32];
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
-
-        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         // the whole bundle goes into one fragment
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (bundle_data.clone(), original_tx),
@@ -390,7 +383,7 @@ mod tests {
             l1_mock_submit,
             setup.db(),
             TestClock::default(),
-            bundler_factory,
+            default_bundler_factory(),
             Config::default(),
         );
 
@@ -417,8 +410,6 @@ mod tests {
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
         let num_blocks_to_accumulate = 2.try_into().unwrap();
-        let bundler_factory =
-            bundler::Factory::new(Arc::new(ports::l1::MockApi::new()), Compressor::default())?;
 
         let l1_mock = ports::l1::MockApi::new();
 
@@ -426,7 +417,7 @@ mod tests {
             l1_mock,
             setup.db(),
             TestClock::default(),
-            bundler_factory,
+            default_bundler_factory(),
             Config {
                 num_blocks_to_accumulate,
                 ..Config::default()
@@ -449,10 +440,6 @@ mod tests {
 
         setup.import_blocks(Blocks::WithHeights(0..2)).await;
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
-
-        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         let mut l1_mock_submit = ports::l1::MockApi::new();
         l1_mock_submit
             .expect_submit_l2_state()
@@ -463,7 +450,7 @@ mod tests {
             l1_mock_submit,
             setup.db(),
             TestClock::default(),
-            bundler_factory,
+            default_bundler_factory(),
             Config::default(),
         );
 
@@ -489,10 +476,6 @@ mod tests {
         let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..1)).await;
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
-
-        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(bundle_data, [1; 32])]);
 
@@ -501,7 +484,7 @@ mod tests {
             l1_mock_submit,
             setup.db(),
             clock.clone(),
-            bundler_factory,
+            default_bundler_factory(),
             Config {
                 block_accumulation_time_limit: Duration::from_secs(1),
                 num_blocks_to_accumulate: 2.try_into().unwrap(),
@@ -532,9 +515,6 @@ mod tests {
         let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(1..2)).await;
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
-        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(bundle_data, [1; 32])]);
 
@@ -542,7 +522,7 @@ mod tests {
             l1_mock_submit,
             setup.db(),
             clock.clone(),
-            bundler_factory,
+            default_bundler_factory(),
             Config {
                 block_accumulation_time_limit: Duration::from_secs(10),
                 num_blocks_to_accumulate: 2.try_into().unwrap(),
@@ -568,9 +548,6 @@ mod tests {
 
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks[..2]).await;
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
-        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(bundle_data.clone(), [1; 32])]);
 
@@ -578,7 +555,7 @@ mod tests {
             l1_mock_submit,
             setup.db(),
             TestClock::default(),
-            bundler_factory,
+            default_bundler_factory(),
             Config {
                 num_blocks_to_accumulate: 2.try_into().unwrap(),
                 ..Default::default()
@@ -608,10 +585,6 @@ mod tests {
 
         let bundle_2 = test_utils::encode_merge_and_compress_blocks(&blocks[1..=1]).await;
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
-
-        let bundler_factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (bundle_1.clone(), bundle_1_tx),
             (bundle_2.clone(), bundle_2_tx),
@@ -621,7 +594,7 @@ mod tests {
             l1_mock_submit,
             setup.db(),
             TestClock::default(),
-            bundler_factory,
+            default_bundler_factory(),
             Config {
                 num_blocks_to_accumulate: 1.try_into().unwrap(),
                 ..Default::default()
@@ -759,10 +732,6 @@ mod tests {
         // Import enough blocks to create a bundle
         setup.import_blocks(Blocks::WithHeights(0..1)).await;
 
-        let l1_mock = test_utils::mocks::l1::FullL1Mock::default();
-
-        let factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default())?;
-
         // Configure the L1 adapter to fail on submission
         let mut l1_mock = ports::l1::MockApi::new();
         l1_mock
@@ -773,7 +742,7 @@ mod tests {
             l1_mock,
             setup.db(),
             TestClock::default(),
-            factory,
+            default_bundler_factory(),
             Config::default(),
         );
 
@@ -784,5 +753,9 @@ mod tests {
         assert!(result.is_err());
 
         Ok(())
+    }
+
+    fn default_bundler_factory() -> bundler::Factory<Arc<FullL1Mock>> {
+        bundler::Factory::new(Arc::new(FullL1Mock::default()), Compressor::default())
     }
 }

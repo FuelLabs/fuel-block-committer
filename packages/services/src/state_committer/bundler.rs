@@ -116,11 +116,11 @@ pub struct Factory<L1> {
 }
 
 impl<L1> Factory<L1> {
-    pub fn new(l1_adapter: L1, compressor: Compressor) -> Result<Self> {
-        Ok(Self {
+    pub fn new(l1_adapter: L1, compressor: Compressor) -> Self {
+        Self {
             l1_adapter,
             compressor,
-        })
+        }
     }
 }
 
@@ -389,7 +389,7 @@ mod tests {
     #[tokio::test]
     async fn not_calling_advance_gives_no_bundle() -> Result<()> {
         // given
-        let factory = Factory::new(Arc::new(ports::l1::MockApi::new()), Compressor::default())?;
+        let factory = Factory::new(Arc::new(ports::l1::MockApi::new()), Compressor::default());
 
         let bundler = factory
             .build(vec![FuelBlock {
