@@ -5,7 +5,7 @@ use eth::AwsConfig;
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{
-    BlockCommitter, CommitListener, Runner, StateCommitterConfig, WalletBalanceTracker,
+    BlockCommitter, CommitListener, Level, Runner, StateCommitterConfig, WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -81,8 +81,9 @@ pub fn state_committer(
 ) -> tokio::task::JoinHandle<()> {
     // TODO: segfault propagate the configurations
 
+    // TODO: give namespaces to these symbols
     let bundler_factory =
-        services::BundlerFactory::new(l1.clone(), services::Compressor::default());
+        services::BundlerFactory::new(l1.clone(), services::Compressor::new(Level::Max));
 
     let state_committer = services::StateCommitter::new(
         l1,

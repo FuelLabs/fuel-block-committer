@@ -62,15 +62,25 @@ mod tests {
 
         // when
         stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.produce_transaction(0).await?;
+        eprintln!("Produced transaction 0");
+        stack.fuel_node.client().produce_blocks(10).await?;
 
-        stack.fuel_node.client().produce_blocks(1).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        eprintln!("Produced transaction 1");
+        stack.fuel_node.client().produce_blocks(10).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        eprintln!("Produced transaction 2");
+        stack.fuel_node.client().produce_blocks(10).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.client().produce_blocks(10).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.client().produce_blocks(10).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.client().produce_blocks(10).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.client().produce_blocks(10).await?;
+        stack.fuel_node.produce_transaction(0).await?;
+        stack.fuel_node.client().produce_blocks(10).await?;
 
         // then
         stack.committer.wait_for_committed_blob().await?;

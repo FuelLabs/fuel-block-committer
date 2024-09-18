@@ -64,12 +64,9 @@ where
 
             self.storage.insert_block(db_block).await?;
 
-            info!("Imported block: height: {}, id: {}", block_height, block_id);
+            info!("Imported block: height: {block_height}, id: {block_id}");
         } else {
-            info!(
-                "Block already available: height: {}, id: {}",
-                block_height, block_id
-            );
+            info!("Block already available: height: {block_height}, id: {block_id}",);
         }
         Ok(())
     }
@@ -114,7 +111,7 @@ where
     /// Runs the block importer, fetching and importing blocks as needed.
     async fn run(&mut self) -> Result<()> {
         if self.lookback_window == 0 {
-            info!("Import depth is zero; skipping import.");
+            info!("lookback_window is zero; skipping import.");
             return Ok(());
         }
 
@@ -130,7 +127,6 @@ where
             Some(available_blocks.end.saturating_sub(1))
         };
 
-        // Check if database height is greater than chain height
         if let Some(db_height) = db_height {
             if db_height > chain_height {
                 let err_msg = format!(
@@ -142,7 +138,9 @@ where
             }
 
             if db_height == chain_height {
-                info!("Database is up to date with the chain; no import necessary.");
+                info!(
+                    "Database is up to date with the chain({chain_height}); no import necessary."
+                );
                 return Ok(());
             }
         }

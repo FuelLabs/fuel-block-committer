@@ -330,7 +330,6 @@ where
 
         // Split into submittable fragments
         let max_data_per_fragment = self.l1_adapter.max_bytes_per_submission();
-        eprintln!("max_data_per_fragment: {:?}", max_data_per_fragment);
 
         // Calculate compression ratio
         let compression_ratio = self.calculate_compression_ratio(
@@ -347,8 +346,6 @@ where
             .into_iter()
             .map(|chunk| NonEmptyVec::try_from(chunk.collect_vec()).expect("should never be empty"))
             .collect_vec();
-
-        eprintln!("fragments: {:?}", fragments);
 
         let fragments = NonEmptyVec::try_from(fragments).expect("should never be empty");
 

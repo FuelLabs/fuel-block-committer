@@ -88,9 +88,8 @@ where
             return Ok(None);
         };
 
-        if blocks.len() < self.config.num_blocks_to_accumulate
-            && self.still_time_to_accumulate_more().await?
-        {
+        let still_time_to_accumulate_more = self.still_time_to_accumulate_more().await?;
+        if blocks.len() < self.config.num_blocks_to_accumulate && still_time_to_accumulate_more {
             info!(
                 "Not enough blocks ({} < {}) to bundle. Waiting for more to accumulate.",
                 blocks.len(),
@@ -100,6 +99,13 @@ where
             return Ok(None);
         }
 
+        if !still_time_to_accumulate_more {
+            info!(
+                "Accumulation time limit reached. Giving {} blocks to the bundler.",
+                blocks.len()
+            );
+        }
+
         let bundler = self.bundler_factory.build(blocks).await;
 
         let proposal = self.find_optimal_bundle(bundler).await?;
@@ -107,9 +113,11 @@ where
         if let Some(BundleProposal {
             fragments,
             block_heights,
-            ..
+            optimal,
+            compression_ratio,
         }) = proposal
         {
+            info!("Bundler proposed: optimal={optimal}, compression_ratio={compression_ratio}, heights={block_heights:?}, num_fragments={}", fragments.len());
             let fragments = self
                 .storage
                 .insert_bundle_and_fragments(block_heights, fragments)
@@ -142,7 +150,6 @@ where
             .last_time_a_fragment_was_finalized()
             .await?
             .unwrap_or_else(||{
-                eprintln!("No finalized fragments found in storage. Using component creation time ({}) as last finalized time.", self.component_created_at);
                 info!("No finalized fragments found in storage. Using component creation time ({}) as last finalized time.", self.component_created_at);
                 self.component_created_at
             });
@@ -154,7 +161,6 @@ where
 
     fn elapsed(&self, point: DateTime<Utc>) -> Result<Duration> {
         let now = self.clock.now();
-        eprintln!("Current time: {now:?}");
         let elapsed = now
             .signed_duration_since(point)
             .to_std()
@@ -164,7 +170,6 @@ where
 
     fn should_stop_optimizing(&self, start_of_optimization: DateTime<Utc>) -> Result<bool> {
         let elapsed = self.elapsed(start_of_optimization)?;
-        eprintln!("Elapsed time: {elapsed:?}");
 
         Ok(elapsed >= self.config.optimization_time_limit)
     }
