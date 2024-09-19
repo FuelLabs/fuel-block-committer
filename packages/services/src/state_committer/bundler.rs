@@ -17,7 +17,6 @@ pub struct Compressor {
 #[allow(dead_code)]
 pub enum Level {
     Min,
-    Level0,
     Level1,
     Level2,
     Level3,
@@ -27,7 +26,6 @@ pub enum Level {
     Level7,
     Level8,
     Level9,
-    Level10,
     Max,
 }
 
@@ -40,7 +38,7 @@ impl Default for Compressor {
 impl Compressor {
     pub fn new(level: Level) -> Self {
         let level = match level {
-            Level::Level0 | Level::Min => 0,
+            Level::Min => 0,
             Level::Level1 => 1,
             Level::Level2 => 2,
             Level::Level3 => 3,
@@ -50,7 +48,7 @@ impl Compressor {
             Level::Level7 => 7,
             Level::Level8 => 8,
             Level::Level9 => 9,
-            Level::Level10 | Level::Max => 10,
+            Level::Max => 10,
         };
 
         Self {
@@ -360,19 +358,77 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{num::NonZeroUsize, sync::Arc};
 
-    use ports::{non_empty_vec, storage::FuelBlock};
+    use itertools::Itertools;
+    use ports::{
+        l1::{Api as L1Api, GasPrices, GasUsage},
+        non_empty_vec,
+        storage::FuelBlock,
+        types::{L1Height, NonEmptyVec, TransactionResponse, U256},
+    };
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     use crate::{
         state_committer::bundler::{Bundle, BundlerFactory, Compressor, Factory},
         Result,
     };
 
+    // Mock L1 Adapter to control gas prices and usage during tests
+    struct MockL1Adapter {
+        gas_prices: GasPrices,
+        gas_usage_per_byte: u64,
+        max_bytes_per_submission: NonZeroUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl L1Api for MockL1Adapter {
+        async fn gas_prices(&self) -> ports::l1::Result<GasPrices> {
+            Ok(self.gas_prices)
+        }
+
+        fn gas_usage_to_store_data(&self, data_size: NonZeroUsize) -> GasUsage {
+            GasUsage {
+                storage: (data_size.get() as u64) * self.gas_usage_per_byte,
+                normal: 0,
+            }
+        }
+
+        fn max_bytes_per_submission(&self) -> NonZeroUsize {
+            self.max_bytes_per_submission
+        }
+
+        async fn submit_l2_state(&self, _: NonEmptyVec<u8>) -> ports::l1::Result<[u8; 32]> {
+            unimplemented!()
+        }
+
+        async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
+            unimplemented!()
+        }
+
+        async fn balance(&self) -> ports::l1::Result<U256> {
+            unimplemented!()
+        }
+        async fn get_transaction_response(
+            &self,
+            _: [u8; 32],
+        ) -> ports::l1::Result<Option<TransactionResponse>> {
+            unimplemented!()
+        }
+    }
+
     #[tokio::test]
     async fn not_calling_advance_gives_no_bundle() -> Result<()> {
-        // given
-        let factory = Factory::new(Arc::new(ports::l1::MockApi::new()), Compressor::default());
+        // Given
+        let l1_adapter = MockL1Adapter {
+            gas_prices: GasPrices {
+                storage: 1,
+                normal: 1,
+            },
+            gas_usage_per_byte: 1,
+            max_bytes_per_submission: NonZeroUsize::new(1000).unwrap(),
+        };
+        let factory = Factory::new(Arc::new(l1_adapter), Compressor::default());
 
         let sequence = non_empty_vec![FuelBlock {
             hash: [0; 32],
@@ -384,14 +440,298 @@ mod tests {
 
         let bundler = factory.build(sequence).await;
 
-        // when
+        // When
         let bundle = bundler.finish().await?;
 
-        // then
+        // Then
         assert!(bundle.is_none());
 
         Ok(())
     }
 
-    // TODO: segfault various tests around the logic
+    #[tokio::test]
+    async fn calling_advance_once_with_one_block_gives_a_bundle() -> Result<()> {
+        // Given
+        let l1_adapter = MockL1Adapter {
+            gas_prices: GasPrices {
+                storage: 1,
+                normal: 1,
+            },
+            gas_usage_per_byte: 1,
+            max_bytes_per_submission: NonZeroUsize::new(1000).unwrap(),
+        };
+        let factory = Factory::new(Arc::new(l1_adapter), Compressor::default());
+
+        let sequence = non_empty_vec![FuelBlock {
+            hash: [0; 32],
+            height: 1,
+            data: [0; 32].to_vec().try_into().unwrap(),
+        }]
+        .try_into()
+        .unwrap();
+
+        let mut bundler = factory.build(sequence).await;
+
+        // When
+        let has_more = bundler.advance().await?;
+        let bundle = bundler.finish().await?;
+
+        // Then
+        assert!(!has_more); // Since there is only one block
+        assert!(bundle.is_some());
+
+        // Also, check that the bundle contains the correct data
+        let bundle = bundle.unwrap();
+        assert_eq!(bundle.block_heights, 1..=1);
+        assert!(bundle.optimal);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn calling_advance_multiple_times_with_multiple_blocks_gives_optimal_bundle() -> Result<()>
+    {
+        // Given
+        let l1_adapter = MockL1Adapter {
+            gas_prices: GasPrices {
+                storage: 1,
+                normal: 1,
+            },
+            gas_usage_per_byte: 1,
+            max_bytes_per_submission: NonZeroUsize::new(1000).unwrap(),
+        };
+        let factory = Factory::new(Arc::new(l1_adapter), Compressor::default());
+
+        let sequence = non_empty_vec![
+            FuelBlock {
+                hash: [0; 32],
+                height: 1,
+                data: [1; 32].to_vec().try_into().unwrap(),
+            },
+            FuelBlock {
+                hash: [1; 32],
+                height: 2,
+                data: [2; 32].to_vec().try_into().unwrap(),
+            },
+            FuelBlock {
+                hash: [2; 32],
+                height: 3,
+                data: [3; 32].to_vec().try_into().unwrap(),
+            }
+        ]
+        .try_into()
+        .unwrap();
+
+        let mut bundler = factory.build(sequence).await;
+
+        // When
+        while bundler.advance().await? {}
+        let bundle = bundler.finish().await?;
+
+        // Then
+        assert!(bundle.is_some());
+        let bundle = bundle.unwrap();
+        assert_eq!(bundle.block_heights, 1..=3);
+        assert!(bundle.optimal);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn calling_advance_few_times_with_multiple_blocks_gives_non_optimal_bundle() -> Result<()>
+    {
+        // Given
+        let l1_adapter = MockL1Adapter {
+            gas_prices: GasPrices {
+                storage: 1,
+                normal: 1,
+            },
+            gas_usage_per_byte: 1,
+            max_bytes_per_submission: NonZeroUsize::new(1000).unwrap(),
+        };
+        let factory = Factory::new(Arc::new(l1_adapter), Compressor::default());
+
+        let sequence = non_empty_vec![
+            FuelBlock {
+                hash: [0; 32],
+                height: 1,
+                data: [1; 32].to_vec().try_into().unwrap(),
+            },
+            FuelBlock {
+                hash: [1; 32],
+                height: 2,
+                data: [2; 32].to_vec().try_into().unwrap(),
+            },
+            FuelBlock {
+                hash: [2; 32],
+                height: 3,
+                data: [3; 32].to_vec().try_into().unwrap(),
+            }
+        ]
+        .try_into()
+        .unwrap();
+
+        let mut bundler = factory.build(sequence).await;
+
+        // When
+        let has_more = bundler.advance().await?; // Call advance only once
+        let bundle = bundler.finish().await?;
+
+        // Then
+        assert!(has_more); // There should be more configurations to process
+        assert!(bundle.is_some());
+        let bundle = bundle.unwrap();
+        assert_eq!(bundle.block_heights, 1..=1); // Should only include the first block
+        assert!(!bundle.optimal); // Not all configurations were tried
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn bundler_selects_best_proposal_based_on_gas_prices() -> Result<()> {
+        // Given different gas prices to affect the selection
+        let gas_prices = GasPrices {
+            storage: 10,
+            normal: 1,
+        };
+
+        let l1_adapter = MockL1Adapter {
+            gas_prices,
+            gas_usage_per_byte: 1,
+            max_bytes_per_submission: NonZeroUsize::new(1000).unwrap(),
+        };
+
+        let factory = Factory::new(Arc::new(l1_adapter), Compressor::default());
+
+        // Blocks with varying data sizes
+        let sequence = non_empty_vec![
+            FuelBlock {
+                hash: [0; 32],
+                height: 1,
+                data: vec![0; 100].try_into().unwrap(),
+            },
+            FuelBlock {
+                hash: [1; 32],
+                height: 2,
+                data: vec![1; 200].try_into().unwrap(),
+            },
+            FuelBlock {
+                hash: [2; 32],
+                height: 3,
+                data: vec![2; 300].try_into().unwrap(),
+            }
+        ]
+        .try_into()
+        .unwrap();
+
+        let mut bundler = factory.build(sequence).await;
+
+        // When
+        while bundler.advance().await? {}
+        let bundle = bundler.finish().await?;
+
+        // Then
+        assert!(bundle.is_some());
+        let bundle = bundle.unwrap();
+
+        // With higher storage gas price, the bundler should select the proposal with the smallest data size per fee
+        assert_eq!(bundle.block_heights, 1..=1);
+        assert!(bundle.optimal);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn compressor_compresses_data_correctly() -> Result<()> {
+        // Given
+        let compressor = Compressor::default();
+        let data = vec![0u8; 1000];
+        let data = NonEmptyVec::try_from(data).unwrap();
+
+        // When
+        let compressed_data = compressor.compress(data.clone()).await?;
+
+        // Then
+        assert!(compressed_data.len() < data.len());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn bundler_handles_single_block_correctly() -> Result<()> {
+        // Given
+        let l1_adapter = MockL1Adapter {
+            gas_prices: GasPrices {
+                storage: 1,
+                normal: 1,
+            },
+            gas_usage_per_byte: 1,
+            max_bytes_per_submission: NonZeroUsize::new(1000).unwrap(),
+        };
+        let factory = Factory::new(Arc::new(l1_adapter), Compressor::default());
+
+        let sequence = non_empty_vec![FuelBlock {
+            hash: [0; 32],
+            height: 42,
+            data: vec![0; 100].try_into().unwrap(),
+        }]
+        .try_into()
+        .unwrap();
+
+        let mut bundler = factory.build(sequence).await;
+
+        // When
+        bundler.advance().await?;
+        let bundle = bundler.finish().await?;
+
+        // Then
+        assert!(bundle.is_some());
+        let bundle = bundle.unwrap();
+        assert_eq!(bundle.block_heights, 42..=42);
+        assert!(bundle.optimal);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn bundler_splits_data_into_fragments_correctly() -> Result<()> {
+        // Given
+        let l1_adapter = MockL1Adapter {
+            gas_prices: GasPrices {
+                storage: 1,
+                normal: 1,
+            },
+            gas_usage_per_byte: 1,
+            max_bytes_per_submission: NonZeroUsize::new(50).unwrap(),
+        };
+        let factory = Factory::new(Arc::new(l1_adapter), Compressor::default());
+
+        let mut data = vec![0; 200];
+        let mut rng = SmallRng::from_seed([0; 32]);
+        rng.fill(&mut data[..]);
+
+        let sequence = non_empty_vec![FuelBlock {
+            hash: [0; 32],
+            height: 1,
+            data: data.try_into().unwrap(),
+        }]
+        .try_into()
+        .unwrap();
+
+        let mut bundler = factory.build(sequence).await;
+
+        // When
+        bundler.advance().await?;
+        let bundle = bundler.finish().await?;
+
+        // Then
+        assert!(bundle.is_some());
+        let bundle = bundle.unwrap();
+        assert!(bundle.fragments.len().get() > 1);
+        assert!(bundle
+            .fragments
+            .iter()
+            .all(|fragment| fragment.len().get() <= 50));
+
+        Ok(())
+    }
 }
