@@ -88,12 +88,9 @@ where
     Fuel: ports::fuel::Api,
 {
     async fn submit_block(&self, fuel_block: ValidatedFuelBlock) -> Result<()> {
-        let submittal_height = self.l1_adapter.get_block_number().await?;
-
         let submission = BlockSubmission {
             block_hash: fuel_block.hash(),
             block_height: fuel_block.height(),
-            submittal_height,
             final_tx_id: None,
         };
 

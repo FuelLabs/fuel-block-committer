@@ -1,5 +1,6 @@
 use ports::types::{
-    BlockSubmission, StateFragment, StateSubmission, SubmissionTx, TransactionState,
+    BlockSubmission, BlockSubmissionTx, StateFragment, StateSubmission, SubmissionTx,
+    TransactionState,
 };
 use sqlx::types::chrono;
 
@@ -14,7 +15,6 @@ pub struct L1FuelBlockSubmission {
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
     pub final_tx_id: Option<i32>,
-    pub submittal_height: i64,
 }
 
 impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
@@ -34,17 +34,12 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
             );
         };
 
-        let Ok(submittal_height) = value.submittal_height.try_into() else {
-            bail!("`submittal_height` as read from the db cannot fit in a `u64` as expected. Got: {} from db", value.submittal_height);
-        };
-
         let tx_id = value.final_tx_id.map(|id| id as u32);
 
         Ok(Self {
             block_hash,
             block_height,
             final_tx_id: tx_id,
-            submittal_height,
         })
     }
 }
@@ -55,7 +50,76 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
             fuel_block_hash: value.block_hash.to_vec(),
             fuel_block_height: i64::from(value.block_height),
             final_tx_id: value.final_tx_id.map(|id| id as i32),
-            submittal_height: value.submittal_height.into(),
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct L1FuelBlockSubmissionTx {
+    pub hash: Vec<u8>,
+    pub nonce: i64, // TODO: think about overflow
+    pub max_fee: i64,
+    pub priority_fee: i64,
+    pub block_hash: Vec<u8>,
+    pub block_height: i64,
+}
+
+impl TryFrom<L1FuelBlockSubmissionTx> for BlockSubmissionTx {
+    type Error = crate::error::Error;
+
+    fn try_from(value: L1FuelBlockSubmissionTx) -> Result<Self, Self::Error> {
+        let hash = value.hash.as_slice();
+        let Ok(hash) = hash.try_into() else {
+            bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
+        };
+
+        let Ok(nonce) = value.nonce.try_into() else {
+            bail!(
+                "`nonce` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
+                value.nonce
+            );
+        };
+
+        let Ok(max_fee) = value.max_fee.try_into() else {
+            bail!("`max_fee` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db", value.max_fee);
+        };
+
+        let Ok(priority_fee) = value.priority_fee.try_into() else {
+            bail!("`priority_fee` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db", value.priority_fee);
+        };
+
+        let block_hash = value.block_hash.as_slice();
+        let Ok(block_hash) = block_hash.try_into() else {
+            bail!("Expected 32 bytes for `block_hash`, but got: {block_hash:?} from db",);
+        };
+
+        let Ok(block_height) = value.block_height.try_into() else {
+            bail!(
+                "`block_height` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
+                value.block_height
+            );
+        };
+
+        Ok(Self {
+            hash,
+            nonce,
+            max_fee,
+            priority_fee,
+            block_hash,
+            block_height,
+        })
+    }
+}
+
+impl From<BlockSubmissionTx> for L1FuelBlockSubmissionTx {
+    fn from(value: BlockSubmissionTx) -> Self {
+        Self {
+            hash: value.hash.to_vec(),
+            nonce: value.nonce as i64,
+            max_fee: value.max_fee as i64,
+            priority_fee: value.priority_fee as i64,
+            block_hash: value.block_hash.to_vec(),
+            block_height: i64::from(value.block_height),
         }
     }
 }

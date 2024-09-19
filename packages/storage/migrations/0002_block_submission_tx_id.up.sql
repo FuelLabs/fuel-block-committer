@@ -16,5 +16,6 @@ CREATE TABLE IF NOT EXISTS l1_transaction (
 
 ALTER TABLE l1_fuel_block_submission
     DROP COLUMN IF EXISTS completed,
+    DROP COLUMN IF EXISTS submittal_height,
     ADD COLUMN final_tx_id INTEGER REFERENCES l1_contract_transaction(id) ON DELETE SET NULL;
 

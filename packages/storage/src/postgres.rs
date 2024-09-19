@@ -107,13 +107,15 @@ impl Postgres {
         .execute(&self.connection_pool)
         .await?;
 
+        let row: tables::L1FuelBlockSubmissionTx =
+            tables::L1FuelBlockSubmissionTx::from(submission_tx);
         sqlx::query!(
             "INSERT INTO l1_transaction (hash, nonce, max_fee, priority_fee, block_hash) VALUES ($1, $2, $3, $4, $5)",
-            submission_tx.hash.as_slice(),
-            submission_tx.nonce,
-            submission_tx.max_fee,
-            submission_tx.priority_fee,
-            submission_tx.block_hash.as_slice()
+            row.hash,
+            row.nonce,
+            row.max_fee,
+            row.priority_fee,
+            row.block_hash
         )
         .execute(&self.connection_pool)
         .await?;
