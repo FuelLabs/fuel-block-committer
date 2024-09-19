@@ -1,7 +1,8 @@
 use std::pin::Pin;
 
 use crate::types::{
-    BlockSubmissionTx, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream, TransactionResponse, ValidatedFuelBlock, U256
+    BlockSubmissionTx, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, Stream,
+    TransactionResponse, ValidatedFuelBlock, U256,
 };
 
 #[derive(Debug, thiserror::Error)]

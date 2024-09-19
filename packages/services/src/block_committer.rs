@@ -33,7 +33,10 @@ impl<L1, Db, Fuel, BlockValidator> RegistersMetrics
     for BlockCommitter<L1, Db, Fuel, BlockValidator>
 {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.metrics.latest_fuel_block.clone()), Box::new(self.metrics.latest_committed_block.clone())]
+        vec![
+            Box::new(self.metrics.latest_fuel_block.clone()),
+            Box::new(self.metrics.latest_committed_block.clone()),
+        ]
     }
 }
 
@@ -51,8 +54,10 @@ impl Default for Metrics {
         ))
         .expect("latest_committed_block metric to be correctly configured");
 
-
-        Self { latest_fuel_block, latest_committed_block }
+        Self {
+            latest_fuel_block,
+            latest_committed_block,
+        }
     }
 }
 
@@ -94,7 +99,7 @@ where
 
         let tx = self.l1_adapter.submit(fuel_block).await?;
         self.storage.record_block_submission(tx, submission).await?;
-        
+
         Ok(())
     }
 
@@ -163,24 +168,33 @@ where
             };
 
             if !tx_response.succeeded() {
-                let block_height = self.storage
+                let block_height = self
+                    .storage
                     .update_block_submission_tx_state(tx_hash, TransactionState::Failed)
                     .await?;
 
-                info!("failed submission for block: {block_height} with tx: {}", hex::encode(tx_hash));
+                info!(
+                    "failed submission for block: {block_height} with tx: {}",
+                    hex::encode(tx_hash)
+                );
                 continue;
             }
 
-            if !tx_response.confirmations(current_block_number) < 10//TODO: self.num_blocks_to_finalize
+            if !tx_response.confirmations(current_block_number) < 10
+            //TODO: self.num_blocks_to_finalize
             {
                 continue; // not finalized
             }
 
-            let block_height = self.storage
+            let block_height = self
+                .storage
                 .update_block_submission_tx_state(tx_hash, TransactionState::Finalized)
                 .await?;
 
-            info!("finalized submission for block: {block_height} with tx: {}", hex::encode(tx_hash));
+            info!(
+                "finalized submission for block: {block_height} with tx: {}",
+                hex::encode(tx_hash)
+            );
 
             self.metrics
                 .latest_committed_block
@@ -188,9 +202,12 @@ where
         }
 
         // TODO this needs to ignore txs that have been bumped
-        let has_pending_tx = !self.storage.get_pending_block_submission_txs().await?.is_empty();
-        if has_pending_tx
-        {
+        let has_pending_tx = !self
+            .storage
+            .get_pending_block_submission_txs()
+            .await?
+            .is_empty();
+        if has_pending_tx {
             // submission in progress, skip
             return Ok(());
         }
@@ -434,7 +451,9 @@ mod tests {
         let db = process.create_random_db().await.unwrap();
         for height in pending_submissions {
             let tx_hash = [height as u8; 32];
-            db.record_block_submission(tx_hash, given_a_pending_submission(height)).await.unwrap();
+            db.record_block_submission(tx_hash, given_a_pending_submission(height))
+                .await
+                .unwrap();
         }
 
         db

@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, Result},
-    types::{BlockSubmissionTx, FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock},
+    types::{
+        BlockSubmissionTx, FuelBlockCommittedOnL1, L1Height, TransactionResponse,
+        ValidatedFuelBlock,
+    },
 };
 use websocket::EthEventStreamer;
 

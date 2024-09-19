@@ -5,7 +5,9 @@ use alloy::{
     network::{Ethereum, EthereumWallet, TransactionBuilder, TxSigner},
     primitives::{Address, U256},
     providers::{
-        fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller}, utils::Eip1559Estimation, Identity, Provider, ProviderBuilder, RootProvider, WsConnect
+        fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
+        utils::Eip1559Estimation,
+        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
     },
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
@@ -70,9 +72,15 @@ impl EthApi for WsConnection {
         let contract_call = self.contract.commit(block.hash().into(), commit_height);
         let tx_request = contract_call.into_transaction_request();
 
-        let Eip1559Estimation { max_fee_per_gas, max_priority_fee_per_gas } = self.provider.estimate_eip1559_fees(None).await?;
+        let Eip1559Estimation {
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+        } = self.provider.estimate_eip1559_fees(None).await?;
         let nonce = self.provider.get_transaction_count(self.address).await?;
-        let tx_request = tx_request.max_fee_per_gas(max_fee_per_gas).max_priority_fee_per_gas(max_priority_fee_per_gas).nonce(nonce);
+        let tx_request = tx_request
+            .max_fee_per_gas(max_fee_per_gas)
+            .max_priority_fee_per_gas(max_priority_fee_per_gas)
+            .nonce(nonce);
 
         let tx = self.provider.send_transaction(tx_request).await?;
         tracing::info!("tx: {} submitted", tx.tx_hash());
@@ -81,9 +89,9 @@ impl EthApi for WsConnection {
             hash: tx.tx_hash().0,
             block_hash: block.hash(),
             block_height: block.height(),
-            nonce, 
+            nonce,
             max_fee: max_fee_per_gas as u64, // TODO conversion
-            priority_fee: max_priority_fee_per_gas as u64
+            priority_fee: max_priority_fee_per_gas as u64,
         };
 
         Ok(submission_tx)

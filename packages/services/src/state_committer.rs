@@ -54,7 +54,10 @@ where
     }
 
     async fn has_pending_submission(&self) -> Result<bool> {
-        self.storage.has_pending_state_submission().await.map_err(|e| e.into())
+        self.storage
+            .has_pending_state_submission()
+            .await
+            .map_err(|e| e.into())
     }
 }
 

@@ -1,5 +1,6 @@
 use ports::types::{
-    BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission, SubmissionTx, TransactionState
+    BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission,
+    SubmissionTx, TransactionState,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -93,7 +94,7 @@ impl Postgres {
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
     ) -> crate::error::Result<()> {
-        let mut transaction = self.connection_pool.begin().await?; 
+        let mut transaction = self.connection_pool.begin().await?;
 
         let row = tables::L1FuelBlockSubmission::from(submission);
         sqlx::query!(
@@ -116,7 +117,7 @@ impl Postgres {
         )
         .execute(&self.connection_pool)
         .await?;
-    
+
         transaction.commit().await?;
 
         Ok(())

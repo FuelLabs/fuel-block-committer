@@ -1,5 +1,14 @@
 pub use sqlx::types::chrono::{DateTime, Utc};
 
+use super::TransactionState;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmissionTx {
+    pub id: Option<u32>,
+    pub hash: [u8; 32],
+    pub state: TransactionState,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateSubmission {
     pub id: Option<u32>,

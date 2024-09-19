@@ -63,10 +63,7 @@ async fn main() -> Result<()> {
         cancel_token.clone(),
     );
 
-    let mut handles = vec![
-        wallet_balance_tracker_handle,
-        committer_handle,
-    ];
+    let mut handles = vec![wallet_balance_tracker_handle, committer_handle];
 
     // If the blob pool wallet key is set, we need to start
     // the state committer and state importer

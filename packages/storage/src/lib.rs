@@ -9,7 +9,10 @@ mod error;
 mod postgres;
 use ports::{
     storage::{Result, Storage},
-    types::{BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission, SubmissionTx, TransactionState},
+    types::{
+        BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission,
+        SubmissionTx, TransactionState,
+    },
 };
 pub use postgres::{DbConfig, Postgres};
 
@@ -20,7 +23,9 @@ impl Storage for Postgres {
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
     ) -> Result<()> {
-        Ok(self._record_block_submission(submission_tx, submission).await?)
+        Ok(self
+            ._record_block_submission(submission_tx, submission)
+            .await?)
     }
 
     async fn get_pending_block_submission_txs(&self) -> Result<Vec<BlockSubmissionTx>> {
