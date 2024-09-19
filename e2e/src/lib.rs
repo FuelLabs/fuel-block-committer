@@ -62,25 +62,10 @@ mod tests {
 
         // when
         stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
-
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10).await?;
+        stack.fuel_node.client().produce_blocks(10_000).await?;
 
         // then
-        stack.committer.wait_for_committed_blob().await?;
+        stack.committer.wait_for_blob_eth_height(1).await?;
 
         Ok(())
     }

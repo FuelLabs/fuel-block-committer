@@ -111,7 +111,7 @@ where
         let BundleProposal {
             fragments,
             block_heights,
-            optimal,
+            known_to_be_optimal: optimal,
             compression_ratio,
             gas_usage,
         } = self.find_optimal_bundle(bundler).await?;
@@ -132,6 +132,7 @@ where
 
         while bundler.advance().await? {
             if self.should_stop_optimizing(optimization_start)? {
+                info!("Optimization time limit reached! Finishing bundling.");
                 break;
             }
         }
@@ -709,7 +710,7 @@ mod tests {
         let unoptimal_bundle = BundleProposal {
             fragments: non_empty_vec![unoptimal_fragment.clone()],
             block_heights: 0..=0,
-            optimal: false,
+            known_to_be_optimal: false,
             compression_ratio: 1.0,
             gas_usage: GasUsage {
                 storage: 100,

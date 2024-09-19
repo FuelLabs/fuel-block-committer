@@ -158,10 +158,10 @@ impl CommitterProcess {
         Ok(())
     }
 
-    pub async fn wait_for_committed_blob(&self) -> anyhow::Result<()> {
+    pub async fn wait_for_blob_eth_height(&self, height: u64) -> anyhow::Result<()> {
         loop {
             match self.fetch_latest_blob_block().await {
-                Ok(value) if value != 0 => {
+                Ok(value) if value == height => {
                     break;
                 }
                 _ => {

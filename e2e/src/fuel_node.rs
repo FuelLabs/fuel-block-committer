@@ -60,6 +60,12 @@ impl FuelNode {
         let snapshot_dir = tempfile::tempdir()?;
         Self::create_state_config(snapshot_dir.path(), &public_key)?;
 
+        // This ensures forward compatibility when running against a newer node with a different native executor version.
+        // If the node detects our older version in the chain configuration, it defaults to using the wasm executor.
+        // However, since we don't include a wasm executor, this would lead to code loading failure and a node crash.
+        // To prevent this, we force the node to use our version number to refer to its native executor.
+        let executor_version = fuel_core_types::blockchain::header::LATEST_STATE_TRANSITION_VERSION;
+
         cmd.arg("run")
             .arg("--port")
             .arg(unused_port.to_string())
@@ -68,6 +74,7 @@ impl FuelNode {
             .arg("--db-path")
             .arg(db_dir.path())
             .arg("--debug")
+            .arg(format!("--native-executor-version={executor_version}"))
             .env("CONSENSUS_KEY_SECRET", format!("{}", secret_key))
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null());
