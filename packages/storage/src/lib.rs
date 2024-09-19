@@ -40,10 +40,6 @@ impl Storage for Postgres {
         Ok(self._update_block_submission_tx_state(hash, state).await?)
     }
 
-    async fn transction_exists_for_block(&self, block_hash: [u8; 32]) -> Result<bool> {
-        Ok(self._transction_exists_for_block(block_hash).await?)
-    }
-
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
         Ok(self._submission_w_latest_block().await?)
     }

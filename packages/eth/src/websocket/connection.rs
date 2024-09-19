@@ -1,4 +1,4 @@
-use std::{hash::Hash, num::NonZeroU32};
+use std::num::NonZeroU32;
 
 use alloy::{
     consensus::{SidecarBuilder, SimpleCoder},
@@ -87,11 +87,10 @@ impl EthApi for WsConnection {
 
         let submission_tx = BlockSubmissionTx {
             hash: tx.tx_hash().0,
-            block_hash: block.hash(),
-            block_height: block.height(),
-            nonce,
-            max_fee: max_fee_per_gas as u64, // TODO conversion
-            priority_fee: max_priority_fee_per_gas as u64,
+            nonce: nonce as u32, // TODO: conversion
+            max_fee: max_fee_per_gas,
+            priority_fee: max_priority_fee_per_gas,
+            ..Default::default()
         };
 
         Ok(submission_tx)

@@ -1,8 +1,9 @@
+use num_bigint::BigInt;
 use ports::types::{
-    BlockSubmission, BlockSubmissionTx, StateFragment, StateSubmission, SubmissionTx,
-    TransactionState,
+    BlockSubmission, BlockSubmissionTx, DateTime, StateFragment, StateSubmission, SubmissionTx,
+    TransactionState, Utc,
 };
-use sqlx::types::chrono;
+use sqlx::types::{chrono, BigDecimal};
 
 macro_rules! bail {
     ($msg: literal, $($args: expr),*) => {
@@ -12,6 +13,7 @@ macro_rules! bail {
 
 #[derive(sqlx::FromRow)]
 pub struct L1FuelBlockSubmission {
+    pub id: i64,
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
     pub final_tx_id: Option<i32>,
@@ -37,6 +39,7 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
         let tx_id = value.final_tx_id.map(|id| id as u32);
 
         Ok(Self {
+            id: Some(value.id as u32),
             block_hash,
             block_height,
             final_tx_id: tx_id,
@@ -47,6 +50,7 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
 impl From<BlockSubmission> for L1FuelBlockSubmission {
     fn from(value: BlockSubmission) -> Self {
         Self {
+            id: value.id.unwrap_or_default() as i64,
             fuel_block_hash: value.block_hash.to_vec(),
             fuel_block_height: i64::from(value.block_height),
             final_tx_id: value.final_tx_id.map(|id| id as i32),
@@ -56,12 +60,29 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
 
 #[derive(sqlx::FromRow)]
 pub struct L1FuelBlockSubmissionTx {
+    pub id: i64,
+    pub submission_id: i64,
     pub hash: Vec<u8>,
-    pub nonce: i64, // TODO: think about overflow
-    pub max_fee: i64,
-    pub priority_fee: i64,
-    pub block_hash: Vec<u8>,
-    pub block_height: i64,
+    pub nonce: i64,
+    pub max_fee: BigDecimal,
+    pub priority_fee: BigDecimal,
+    pub state: i16,
+    pub created_at: DateTime<Utc>,
+}
+
+// Assumes that the BigDecimal is non-negative and has no fractional part
+fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128, crate::error::Error> {
+    let (digits, _scale) = value.into_bigint_and_exponent();
+    let result: u128 = digits
+        .try_into()
+        .map_err(|_| crate::error::Error::Conversion("Digits exceed u128 range".to_string()))?;
+
+    Ok(result)
+}
+
+fn u128_to_bigdecimal(value: u128) -> BigDecimal {
+    let digits = BigInt::from(value);
+    BigDecimal::new(digits, 0)
 }
 
 impl TryFrom<L1FuelBlockSubmissionTx> for BlockSubmissionTx {
@@ -73,53 +94,40 @@ impl TryFrom<L1FuelBlockSubmissionTx> for BlockSubmissionTx {
             bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
         };
 
-        let Ok(nonce) = value.nonce.try_into() else {
+        let Some(state) = TransactionState::from_i16(value.state) else {
             bail!(
-                "`nonce` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
-                value.nonce
-            );
-        };
-
-        let Ok(max_fee) = value.max_fee.try_into() else {
-            bail!("`max_fee` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db", value.max_fee);
-        };
-
-        let Ok(priority_fee) = value.priority_fee.try_into() else {
-            bail!("`priority_fee` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db", value.priority_fee);
-        };
-
-        let block_hash = value.block_hash.as_slice();
-        let Ok(block_hash) = block_hash.try_into() else {
-            bail!("Expected 32 bytes for `block_hash`, but got: {block_hash:?} from db",);
-        };
-
-        let Ok(block_height) = value.block_height.try_into() else {
-            bail!(
-                "`block_height` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
-                value.block_height
+                "state: {:?} is not a valid variant of `TransactionState`",
+                value.state
             );
         };
 
         Ok(Self {
+            id: Some(value.id as u32),
+            submission_id: Some(value.submission_id as u32),
             hash,
-            nonce,
-            max_fee,
-            priority_fee,
-            block_hash,
-            block_height,
+            nonce: value.nonce as u32,
+            max_fee: bigdecimal_to_u128(value.max_fee)?,
+            priority_fee: bigdecimal_to_u128(value.priority_fee)?,
+            state,
+            created_at: value.created_at,
         })
     }
 }
 
 impl From<BlockSubmissionTx> for L1FuelBlockSubmissionTx {
     fn from(value: BlockSubmissionTx) -> Self {
+        let max_fee = u128_to_bigdecimal(value.max_fee);
+        let priority_fee = u128_to_bigdecimal(value.priority_fee);
+
         Self {
+            id: value.id.unwrap_or_default() as i64,
+            submission_id: value.submission_id.unwrap_or_default() as i64,
             hash: value.hash.to_vec(),
             nonce: value.nonce as i64,
-            max_fee: value.max_fee as i64,
-            priority_fee: value.priority_fee as i64,
-            block_hash: value.block_hash.to_vec(),
-            block_height: i64::from(value.block_height),
+            max_fee,
+            priority_fee,
+            state: value.state.into_i16(),
+            created_at: value.created_at,
         }
     }
 }

@@ -11,10 +11,12 @@ rust-version = { workspace = true }
 
 [dependencies]
 async-trait = { workspace = true }
+num-bigint = { workspace = true }
 ports = { workspace = true, features = ["storage"] }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 sqlx = { workspace = true, features = [
+  "bigdecimal",
   "postgres",
   "runtime-tokio",
   "migrate",

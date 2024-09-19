@@ -53,6 +53,7 @@ humantime = { version = "2.1", default-features = false }
 impl-tools = { version = "0.10.0", default-features = false }
 itertools = { version = "0.13", default-features = false }
 mockall = { version = "0.12", default-features = false }
+num-bigint = { version = "0.4.6", default-features = false}
 portpicker = { version = "0.1", default-features = false }
 prometheus = { version = "0.13", default-features = false }
 rand = { version = "0.8", default-features = false }

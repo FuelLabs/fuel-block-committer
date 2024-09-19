@@ -33,7 +33,7 @@ where
             .storage
             .submission_w_latest_block()
             .await?
-            .map(|submission| submission.completed);
+            .map(|submission| submission.final_tx_id.is_some());
 
         let status = if last_submission_completed == Some(false) {
             Status::Committing
@@ -49,7 +49,7 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use ports::types::BlockSubmission;
+    use ports::types::{BlockSubmission, BlockSubmissionTx};
     use rand::Rng;
     use storage::PostgresProcess;
 
@@ -67,10 +67,10 @@ mod tests {
 
                 if let Some(is_completed) = submission_status {
                     let latest_submission = BlockSubmission {
-                        completed: is_completed,
+                        final_tx_id: if is_completed { Some(1) } else { None },
                         ..rng.gen()
                     };
-                    db.insert(latest_submission).await.unwrap();
+                    db.record_block_submission(BlockSubmissionTx::default(), latest_submission).await.unwrap();
                 }
 
                 let status_reporter = StatusReporter::new(db);

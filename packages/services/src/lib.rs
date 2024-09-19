@@ -1,16 +1,13 @@
 #![deny(unused_crate_dependencies)]
 mod block_committer;
-mod commit_listener;
 mod health_reporter;
 mod state_committer;
 mod state_importer;
 mod state_listener;
 mod status_reporter;
-mod tx_manager;
 mod wallet_balance_tracker;
 
 pub use block_committer::BlockCommitter;
-pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::StateCommitter;
 pub use state_importer::StateImporter;

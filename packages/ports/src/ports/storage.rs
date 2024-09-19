@@ -30,7 +30,6 @@ pub trait Storage: Send + Sync {
         hash: [u8; 32],
         state: TransactionState,
     ) -> Result<FuelBlockHeight>;
-    async fn transction_exists_for_block(&self, block_hash: [u8; 32]) -> Result<bool>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
 
     async fn insert_state_submission(
