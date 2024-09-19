@@ -141,7 +141,8 @@ where
             }
         }
 
-        bundler.finish().await
+        let gas_prices = self.l1_adapter.gas_prices().await?;
+        bundler.finish(gas_prices).await
     }
 
     async fn still_time_to_accumulate_more(&self) -> Result<bool> {
@@ -244,6 +245,8 @@ mod tests {
     use crate::{test_utils, Runner, StateCommitter};
     use bundler::Compressor;
     use clock::TestClock;
+    use eth::Eip4844GasUsage;
+    use ports::l1::{GasPrices, StorageCostCalculator};
     use ports::non_empty_vec;
     use ports::storage::SequentialFuelBlocks;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -282,7 +285,7 @@ mod tests {
             Ok(true)
         }
 
-        async fn finish(self) -> Result<Option<BundleProposal>> {
+        async fn finish(self, _: GasPrices) -> Result<Option<BundleProposal>> {
             Ok(Some(self.proposal.expect(
                 "proposal to be set inside controllable bundler if it ever was meant to finish",
             )))
@@ -323,14 +326,22 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        let max_fragment_size = Eip4844GasUsage.max_bytes_per_submission().get();
+        let ImportedBlocks { blocks, .. } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..1,
+                // blocks are currently comprised only of tx ids which are random and not
+                // compressible, so we can expect at least a 1.0 compression_ratio ratio
+                tx_per_block: (max_fragment_size + 10) / 32,
+            })
+            .await;
 
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks)
             .await
             .into_inner();
-        let max_fragment_size = bundle_data.len().div_ceil(2);
 
         let fragment_tx_ids = [[0; 32], [1; 32]];
+
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (
                 bundle_data[..max_fragment_size]
@@ -348,10 +359,7 @@ mod tests {
             ),
         ]);
 
-        let bundler_factory = bundler::Factory::new(
-            Arc::new(FullL1Mock::new(max_fragment_size.try_into().unwrap())),
-            Compressor::default(),
-        );
+        let bundler_factory = bundler::Factory::new(Eip4844GasUsage, Compressor::default());
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             setup.db(),
@@ -381,7 +389,12 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        let ImportedBlocks { blocks, .. } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..1,
+                tx_per_block: 1,
+            })
+            .await;
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
 
         let original_tx = [0; 32];
@@ -421,7 +434,12 @@ mod tests {
     async fn does_nothing_if_not_enough_blocks() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
-        setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..1,
+                tx_per_block: 1,
+            })
+            .await;
 
         let num_blocks_to_accumulate = 2.try_into().unwrap();
 
@@ -452,9 +470,20 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        setup.import_blocks(Blocks::WithHeights(0..2)).await;
+        setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..2,
+                tx_per_block: 1,
+            })
+            .await;
 
         let mut l1_mock_submit = ports::l1::MockApi::new();
+        l1_mock_submit.expect_gas_prices().once().return_once(|| {
+            Ok(GasPrices {
+                storage: 10,
+                normal: 1,
+            })
+        });
         l1_mock_submit
             .expect_submit_l2_state()
             .once()
@@ -487,7 +516,12 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        let ImportedBlocks { blocks, .. } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..1,
+                tx_per_block: 1,
+            })
+            .await;
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
 
         let l1_mock_submit =
@@ -526,7 +560,12 @@ mod tests {
         setup.commit_single_block_bundle(clock.now()).await;
         clock.advance_time(Duration::from_secs(10));
 
-        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(1..2)).await;
+        let ImportedBlocks { blocks, .. } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 1..2,
+                tx_per_block: 1,
+            })
+            .await;
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
 
         let l1_mock_submit =
@@ -558,7 +597,12 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..3)).await;
+        let ImportedBlocks { blocks, .. } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..3,
+                tx_per_block: 1,
+            })
+            .await;
 
         let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks[..2]).await;
 
@@ -590,7 +634,12 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup.import_blocks(Blocks::WithHeights(0..2)).await;
+        let ImportedBlocks { blocks, .. } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..2,
+                tx_per_block: 1,
+            })
+            .await;
 
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
@@ -635,7 +684,12 @@ mod tests {
     async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
-        setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..1,
+                tx_per_block: 1,
+            })
+            .await;
 
         let fragment_tx_id = [2; 32];
         let unoptimal_fragment = test_utils::random_data(100usize);
@@ -697,7 +751,12 @@ mod tests {
     async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
-        setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..1,
+                tx_per_block: 1,
+            })
+            .await;
 
         let (bundler_factory, send_can_advance, _notify_advanced) =
             ControllableBundlerFactory::setup(None);
@@ -744,10 +803,21 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         // Import enough blocks to create a bundle
-        setup.import_blocks(Blocks::WithHeights(0..1)).await;
+        setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..1,
+                tx_per_block: 1,
+            })
+            .await;
 
         // Configure the L1 adapter to fail on submission
         let mut l1_mock = ports::l1::MockApi::new();
+        l1_mock.expect_gas_prices().once().return_once(|| {
+            Ok(GasPrices {
+                storage: 10,
+                normal: 1,
+            })
+        });
         l1_mock
             .expect_submit_l2_state()
             .return_once(|_| Err(ports::l1::Error::Other("Submission failed".into())));
@@ -769,7 +839,7 @@ mod tests {
         Ok(())
     }
 
-    fn default_bundler_factory() -> bundler::Factory<Arc<FullL1Mock>> {
-        bundler::Factory::new(Arc::new(FullL1Mock::default()), Compressor::default())
+    fn default_bundler_factory() -> bundler::Factory<Eip4844GasUsage> {
+        bundler::Factory::new(Eip4844GasUsage, Compressor::default())
     }
 }

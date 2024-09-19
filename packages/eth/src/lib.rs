@@ -1,13 +1,10 @@
-use std::{
-    num::{NonZeroU32, NonZeroUsize},
-    pin::Pin,
-};
+use std::{num::NonZeroU32, pin::Pin};
 
 use alloy::primitives::U256;
 use async_trait::async_trait;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
-    l1::{Api, Contract, EventStreamer, GasPrices, GasUsage, Result},
+    l1::{Api, Contract, EventStreamer, GasPrices, Result},
     types::{
         FuelBlockCommittedOnL1, L1Height, NonEmptyVec, TransactionResponse, ValidatedFuelBlock,
     },
@@ -38,16 +35,11 @@ impl Contract for WebsocketClient {
     }
 }
 
+mod storage_gas_usage;
+pub use storage_gas_usage::Eip4844GasUsage;
+
 #[async_trait]
 impl Api for WebsocketClient {
-    fn max_bytes_per_submission(&self) -> NonZeroUsize {
-        self._max_bytes_per_submission()
-    }
-
-    fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> GasUsage {
-        self._gas_usage_to_store_data(num_bytes)
-    }
-
     async fn gas_prices(&self) -> Result<GasPrices> {
         self._gas_prices().await
     }

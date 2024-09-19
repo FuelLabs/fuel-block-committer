@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eth::AwsConfig;
+use eth::{AwsConfig, Eip4844GasUsage};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{
@@ -83,7 +83,7 @@ pub fn state_committer(
 
     // TODO: give namespaces to these symbols
     let bundler_factory =
-        services::BundlerFactory::new(l1.clone(), services::Compressor::new(Level::Max));
+        services::BundlerFactory::new(Eip4844GasUsage, services::Compressor::new(Level::Max));
 
     let state_committer = services::StateCommitter::new(
         l1,

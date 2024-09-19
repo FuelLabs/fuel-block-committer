@@ -129,12 +129,10 @@ pub(crate) mod test_utils {
     use std::{ops::Range, sync::Arc, time::Duration};
 
     use clock::TestClock;
+    use eth::Eip4844GasUsage;
     use fuel_crypto::SecretKey;
     use mocks::l1::TxStatus;
-    use ports::{
-        non_empty_vec,
-        types::{DateTime, NonEmptyVec, Utc},
-    };
+    use ports::types::{DateTime, NonEmptyVec, Utc};
     use storage::PostgresProcess;
     use validator::BlockValidator;
 
@@ -174,23 +172,12 @@ pub(crate) mod test_utils {
                         contract: ports::l1::MockContract::new(),
                     };
 
-                    obj.api
-                        .expect_gas_usage_to_store_data()
-                        .returning(|num_bytes| GasUsage {
-                            storage: num_bytes.get() as u64 * 10,
-                            normal: 21_000,
-                        });
-
                     obj.api.expect_gas_prices().returning(|| {
                         Ok(GasPrices {
                             storage: 10,
                             normal: 1,
                         })
                     });
-
-                    obj.api
-                        .expect_max_bytes_per_submission()
-                        .returning(move || max_bytes_per_submission);
 
                     obj
                 }
@@ -218,14 +205,6 @@ pub(crate) mod test_utils {
 
             #[async_trait::async_trait]
             impl ports::l1::Api for FullL1Mock {
-                fn max_bytes_per_submission(&self) -> NonZeroUsize {
-                    self.api.max_bytes_per_submission()
-                }
-
-                fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> GasUsage {
-                    self.api.gas_usage_to_store_data(num_bytes)
-                }
-
                 async fn gas_prices(&self) -> ports::l1::Result<GasPrices> {
                     self.api.gas_prices().await
                 }
@@ -264,6 +243,13 @@ pub(crate) mod test_utils {
                 let mut sequence = Sequence::new();
 
                 let mut l1_mock = ports::l1::MockApi::new();
+                l1_mock.expect_gas_prices().returning(|| {
+                    Ok(GasPrices {
+                        storage: 10,
+                        normal: 1,
+                    })
+                });
+
                 for (fragment, tx_id) in expectations {
                     l1_mock
                         .expect_submit_l2_state()
@@ -305,7 +291,7 @@ pub(crate) mod test_utils {
 
         pub mod fuel {
 
-            use std::ops::Range;
+            use std::{iter, ops::Range};
 
             use fuel_crypto::{Message, SecretKey, Signature};
             use futures::{stream, StreamExt};
@@ -313,10 +299,15 @@ pub(crate) mod test_utils {
             use ports::fuel::{
                 FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus,
             };
+            use rand::{Rng, SeedableRng};
 
             use crate::block_importer;
 
-            pub fn generate_block(height: u32, secret_key: &SecretKey) -> ports::fuel::FuelBlock {
+            pub fn generate_block(
+                height: u32,
+                secret_key: &SecretKey,
+                num_tx: usize,
+            ) -> ports::fuel::FuelBlock {
                 let header = given_header(height);
 
                 let mut hasher = fuel_crypto::Hasher::default();
@@ -329,11 +320,16 @@ pub(crate) mod test_utils {
                 let id_message = Message::from_bytes(*id);
                 let signature = Signature::sign(secret_key, &id_message);
 
+                let mut small_rng = rand::rngs::SmallRng::from_seed([0; 32]);
+                let transactions = std::iter::repeat_with(|| small_rng.gen())
+                    .take(num_tx)
+                    .collect::<Vec<_>>();
+
                 FuelBlock {
                     id,
                     header,
                     consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
-                    transactions: vec![[2u8; 32].into()],
+                    transactions,
                     block_producer: Some(secret_key.public_key()),
                 }
             }
@@ -342,7 +338,7 @@ pub(crate) mod test_utils {
                 height: u32,
                 secret_key: &SecretKey,
             ) -> ports::storage::FuelBlock {
-                let block = generate_block(height, secret_key);
+                let block = generate_block(height, secret_key, 1);
                 ports::storage::FuelBlock {
                     hash: *block.id,
                     height: block.header.height,
@@ -378,7 +374,7 @@ pub(crate) mod test_utils {
                 heights: Range<u32>,
             ) -> ports::fuel::MockApi {
                 let blocks = heights
-                    .map(|height| generate_block(height, &secret_key))
+                    .map(|height| generate_block(height, &secret_key, 1))
                     .collect::<Vec<_>>();
 
                 these_blocks_exist(blocks)
@@ -462,14 +458,18 @@ pub(crate) mod test_utils {
         }
 
         pub async fn commit_single_block_bundle(&self, finalization_time: DateTime<Utc>) {
-            let ImportedBlocks { blocks, .. } = self.import_blocks(Blocks::WithHeights(0..1)).await;
+            let ImportedBlocks { blocks, .. } = self
+                .import_blocks(Blocks::WithHeights {
+                    range: 0..1,
+                    tx_per_block: 1,
+                })
+                .await;
             let bundle = encode_merge_and_compress_blocks(blocks.iter()).await;
 
             let clock = TestClock::default();
             clock.set_time(finalization_time);
 
-            let l1_mock = mocks::l1::FullL1Mock::default();
-            let factory = bundler::Factory::new(Arc::new(l1_mock), Compressor::default());
+            let factory = bundler::Factory::new(Eip4844GasUsage, Compressor::default());
 
             let tx = [2u8; 32];
 
@@ -490,7 +490,7 @@ pub(crate) mod test_utils {
 
             let l1_mock = mocks::l1::txs_finished([(tx, TxStatus::Success)]);
 
-            StateListener::new(Arc::new(l1_mock), self.db(), 0, clock.clone())
+            StateListener::new(l1_mock, self.db(), 0, clock.clone())
                 .run()
                 .await
                 .unwrap();
@@ -510,7 +510,7 @@ pub(crate) mod test_utils {
         ) {
             let l1_mock = mocks::l1::txs_finished(statuses);
 
-            StateListener::new(Arc::new(l1_mock), self.db(), 0, TestClock::default())
+            StateListener::new(l1_mock, self.db(), 0, TestClock::default())
                 .run()
                 .await
                 .unwrap()
@@ -526,13 +526,18 @@ pub(crate) mod test_utils {
             let amount = blocks.len();
 
             match blocks {
-                Blocks::WithHeights(range) => {
+                Blocks::WithHeights {
+                    range,
+                    tx_per_block,
+                } => {
                     let secret_key = SecretKey::random(&mut rand::thread_rng());
 
                     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
                     let blocks = range
-                        .map(|height| mocks::fuel::generate_block(height, &secret_key))
+                        .map(|height| {
+                            mocks::fuel::generate_block(height, &secret_key, tx_per_block)
+                        })
                         .collect::<Vec<_>>();
 
                     let mock = mocks::fuel::these_blocks_exist(blocks.clone());
@@ -556,7 +561,10 @@ pub(crate) mod test_utils {
     }
 
     pub enum Blocks {
-        WithHeights(Range<u32>),
+        WithHeights {
+            range: Range<u32>,
+            tx_per_block: usize,
+        },
         Blocks {
             blocks: Vec<ports::fuel::FuelBlock>,
             secret_key: SecretKey,
@@ -566,7 +574,7 @@ pub(crate) mod test_utils {
     impl Blocks {
         pub fn len(&self) -> usize {
             match self {
-                Self::WithHeights(range) => range.len(),
+                Self::WithHeights { range, .. } => range.len(),
                 Self::Blocks { blocks, .. } => blocks.len(),
             }
         }

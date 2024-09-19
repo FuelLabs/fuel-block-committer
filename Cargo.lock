@@ -5450,6 +5450,7 @@ dependencies = [
  "approx",
  "async-trait",
  "clock",
+ "eth",
  "flate2",
  "fuel-crypto",
  "futures",

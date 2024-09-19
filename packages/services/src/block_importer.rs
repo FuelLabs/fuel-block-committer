@@ -194,7 +194,7 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         let secret_key = given_secret_key();
-        let block = test_utils::mocks::fuel::generate_block(0, &secret_key);
+        let block = test_utils::mocks::fuel::generate_block(0, &secret_key, 1);
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -226,10 +226,15 @@ mod tests {
         let ImportedBlocks {
             blocks: existing_blocks,
             secret_key,
-        } = setup.import_blocks(Blocks::WithHeights(0..3)).await;
+        } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..3,
+                tx_per_block: 1,
+            })
+            .await;
 
         let new_blocks =
-            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key));
+            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1));
 
         let all_blocks = existing_blocks.into_iter().chain(new_blocks).collect_vec();
 
@@ -285,12 +290,15 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         let secret_key = setup
-            .import_blocks(Blocks::WithHeights(0..6))
+            .import_blocks(Blocks::WithHeights {
+                range: 0..6,
+                tx_per_block: 1,
+            })
             .await
             .secret_key;
 
         let chain_blocks = (0..=2)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1))
             .collect_vec();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(chain_blocks.clone());
@@ -319,10 +327,15 @@ mod tests {
         let ImportedBlocks {
             blocks: db_blocks,
             secret_key,
-        } = setup.import_blocks(Blocks::WithHeights(0..3)).await;
+        } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..3,
+                tx_per_block: 1,
+            })
+            .await;
 
         let chain_blocks =
-            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key));
+            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1));
 
         let all_blocks = db_blocks.into_iter().chain(chain_blocks).collect_vec();
 
@@ -355,8 +368,12 @@ mod tests {
         // Given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, secret_key } =
-            setup.import_blocks(Blocks::WithHeights(0..3)).await;
+        let ImportedBlocks { blocks, secret_key } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..3,
+                tx_per_block: 1,
+            })
+            .await;
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -390,7 +407,7 @@ mod tests {
 
         let secret_key = given_secret_key();
         let blocks = (0..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1))
             .collect_vec();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks.clone());
