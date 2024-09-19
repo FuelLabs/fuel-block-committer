@@ -56,11 +56,7 @@ where
         let block_height = block.header.height;
 
         if !self.storage.is_block_available(&block_id).await? {
-            let db_block = ports::storage::FuelBlock {
-                hash: *block_id,
-                height: block_height,
-                data: encode_block_data(&block)?,
-            };
+            let db_block = encode_block(&block)?;
 
             self.storage.insert_block(db_block).await?;
 
@@ -87,8 +83,16 @@ where
     }
 }
 
-/// Encodes the block data into a `NonEmptyVec<u8>`.
-pub(crate) fn encode_block_data(block: &FuelBlock) -> Result<NonEmptyVec<u8>> {
+pub(crate) fn encode_block(block: &FuelBlock) -> Result<ports::storage::FuelBlock> {
+    let data = encode_block_data(block)?;
+    Ok(ports::storage::FuelBlock {
+        hash: *block.id,
+        height: block.header.height,
+        data,
+    })
+}
+
+fn encode_block_data(block: &FuelBlock) -> Result<NonEmptyVec<u8>> {
     // added this because genesis block has no transactions and we must have some
     let mut encoded = block.transactions.len().to_be_bytes().to_vec();
 
@@ -207,11 +211,7 @@ mod tests {
         // Then
         let all_blocks = setup.db().lowest_unbundled_blocks(10, 10).await?.unwrap();
 
-        let expected_block = ports::storage::FuelBlock {
-            height: 0,
-            hash: *block.id,
-            data: encode_block_data(&block)?,
-        };
+        let expected_block = encode_block(&block)?;
 
         assert_eq!(**all_blocks, vec![expected_block]);
 
@@ -224,8 +224,9 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         let ImportedBlocks {
-            blocks: existing_blocks,
+            fuel_blocks: existing_blocks,
             secret_key,
+            ..
         } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..3,
@@ -250,11 +251,7 @@ mod tests {
         let stored_blocks = setup.db().lowest_unbundled_blocks(100, 100).await?.unwrap();
         let expected_blocks = all_blocks
             .iter()
-            .map(|block| ports::storage::FuelBlock {
-                height: block.header.height,
-                hash: *block.id,
-                data: encode_block_data(block).unwrap(),
-            })
+            .map(|block| encode_block(block).unwrap())
             .collect_vec();
 
         pretty_assertions::assert_eq!(**stored_blocks, expected_blocks);
@@ -325,8 +322,9 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         let ImportedBlocks {
-            blocks: db_blocks,
+            fuel_blocks: db_blocks,
             secret_key,
+            ..
         } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..3,
@@ -351,11 +349,7 @@ mod tests {
         let stored_blocks = setup.db().lowest_unbundled_blocks(10, 100).await?.unwrap();
         let expected_blocks = all_blocks
             .iter()
-            .map(|block| ports::storage::FuelBlock {
-                height: block.header.height,
-                hash: *block.id,
-                data: encode_block_data(block).unwrap(),
-            })
+            .map(|block| encode_block(block).unwrap())
             .collect_vec();
 
         assert_eq!(**stored_blocks, expected_blocks);
@@ -368,14 +362,19 @@ mod tests {
         // Given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, secret_key } = setup
+        let ImportedBlocks {
+            fuel_blocks,
+            storage_blocks,
+            secret_key,
+            ..
+        } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..3,
                 tx_per_block: 1,
             })
             .await;
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks.clone());
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 10);
@@ -386,16 +385,8 @@ mod tests {
         // Then
         // Database should remain unchanged
         let stored_blocks = setup.db().lowest_unbundled_blocks(10, 10).await?.unwrap();
-        let expected_blocks = blocks
-            .into_iter()
-            .map(|block| ports::storage::FuelBlock {
-                height: block.header.height,
-                hash: *block.id,
-                data: encode_block_data(&block).unwrap(),
-            })
-            .collect_vec();
 
-        assert_eq!(**stored_blocks, expected_blocks);
+        assert_eq!(**stored_blocks, storage_blocks);
 
         Ok(())
     }
@@ -423,11 +414,7 @@ mod tests {
         let stored_blocks = setup.db().lowest_unbundled_blocks(10, 10).await?.unwrap();
         let expected_blocks = blocks
             .iter()
-            .map(|block| ports::storage::FuelBlock {
-                height: block.header.height,
-                hash: *block.id,
-                data: encode_block_data(block).unwrap(),
-            })
+            .map(|block| encode_block(block).unwrap())
             .collect_vec();
 
         assert_eq!(**stored_blocks, expected_blocks);

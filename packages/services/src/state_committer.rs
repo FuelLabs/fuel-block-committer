@@ -108,31 +108,26 @@ where
 
         let bundler = self.bundler_factory.build(blocks).await;
 
-        let proposal = self.find_optimal_bundle(bundler).await?;
-
-        if let Some(BundleProposal {
+        let BundleProposal {
             fragments,
             block_heights,
             optimal,
             compression_ratio,
-        }) = proposal
-        {
-            info!("Bundler proposed: optimal={optimal}, compression_ratio={compression_ratio}, heights={block_heights:?}, num_fragments={}", fragments.len());
-            let fragments = self
-                .storage
-                .insert_bundle_and_fragments(block_heights, fragments)
-                .await?;
-            Ok(Some(fragments))
-        } else {
-            Ok(None)
-        }
+            gas_usage,
+        } = self.find_optimal_bundle(bundler).await?;
+
+        info!("Bundler proposed: optimal={optimal}, compression_ratio={compression_ratio}, heights={block_heights:?}, num_fragments={}, gas_usage={gas_usage:?}", fragments.len());
+
+        let fragments = self
+            .storage
+            .insert_bundle_and_fragments(block_heights, fragments)
+            .await?;
+
+        Ok(Some(fragments))
     }
 
     /// Finds the optimal bundle based on the current state and time constraints.
-    async fn find_optimal_bundle<B: Bundle>(
-        &self,
-        mut bundler: B,
-    ) -> Result<Option<BundleProposal>> {
+    async fn find_optimal_bundle<B: Bundle>(&self, mut bundler: B) -> Result<BundleProposal> {
         let optimization_start = self.clock.now();
 
         while bundler.advance().await? {
@@ -246,7 +241,7 @@ mod tests {
     use bundler::Compressor;
     use clock::TestClock;
     use eth::Eip4844GasUsage;
-    use ports::l1::{GasPrices, StorageCostCalculator};
+    use ports::l1::{GasPrices, GasUsage, StorageCostCalculator};
     use ports::non_empty_vec;
     use ports::storage::SequentialFuelBlocks;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -285,10 +280,10 @@ mod tests {
             Ok(true)
         }
 
-        async fn finish(self, _: GasPrices) -> Result<Option<BundleProposal>> {
-            Ok(Some(self.proposal.expect(
+        async fn finish(self, _: GasPrices) -> Result<BundleProposal> {
+            Ok(self.proposal.expect(
                 "proposal to be set inside controllable bundler if it ever was meant to finish",
-            )))
+            ))
         }
     }
 
@@ -327,44 +322,46 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         let max_fragment_size = Eip4844GasUsage.max_bytes_per_submission().get();
-        let ImportedBlocks { blocks, .. } = setup
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..1,
-                // blocks are currently comprised only of tx ids which are random and not
-                // compressible, so we can expect at least a 1.0 compression_ratio ratio
-                tx_per_block: (max_fragment_size + 10) / 32,
+                tx_per_block: max_fragment_size.div_ceil(32),
             })
             .await;
 
-        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks)
-            .await
-            .into_inner();
+        let bundle_data = test_utils::encode_and_merge(&blocks).await.into_inner();
 
         let fragment_tx_ids = [[0; 32], [1; 32]];
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (
-                bundle_data[..max_fragment_size]
-                    .to_vec()
-                    .try_into()
-                    .unwrap(),
+                Some(
+                    bundle_data[..max_fragment_size]
+                        .to_vec()
+                        .try_into()
+                        .unwrap(),
+                ),
                 fragment_tx_ids[0],
             ),
             (
-                bundle_data[max_fragment_size..]
-                    .to_vec()
-                    .try_into()
-                    .unwrap(),
+                Some(
+                    bundle_data[max_fragment_size..]
+                        .to_vec()
+                        .try_into()
+                        .unwrap(),
+                ),
                 fragment_tx_ids[1],
             ),
         ]);
 
-        let bundler_factory = bundler::Factory::new(Eip4844GasUsage, Compressor::default());
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             setup.db(),
             TestClock::default(),
-            bundler_factory,
+            default_bundler_factory(),
             Config::default(),
         );
 
@@ -389,21 +386,24 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..1,
                 tx_per_block: 1,
             })
             .await;
-        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
+        let bundle_data = test_utils::encode_and_merge(&blocks).await;
 
         let original_tx = [0; 32];
         let retry_tx = [1; 32];
 
         // the whole bundle goes into one fragment
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (bundle_data.clone(), original_tx),
-            (bundle_data, retry_tx),
+            (Some(bundle_data.clone()), original_tx),
+            (Some(bundle_data), retry_tx),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -516,16 +516,19 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..1,
                 tx_per_block: 1,
             })
             .await;
-        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
+        let bundle_data = test_utils::encode_and_merge(&blocks).await;
 
         let l1_mock_submit =
-            test_utils::mocks::l1::expects_state_submissions([(bundle_data, [1; 32])]);
+            test_utils::mocks::l1::expects_state_submissions([(Some(bundle_data), [1; 32])]);
 
         let clock = TestClock::default();
         let mut state_committer = StateCommitter::new(
@@ -560,16 +563,19 @@ mod tests {
         setup.commit_single_block_bundle(clock.now()).await;
         clock.advance_time(Duration::from_secs(10));
 
-        let ImportedBlocks { blocks, .. } = setup
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 1..2,
                 tx_per_block: 1,
             })
             .await;
-        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks).await;
+        let bundle_data = test_utils::encode_and_merge(&blocks).await;
 
         let l1_mock_submit =
-            test_utils::mocks::l1::expects_state_submissions([(bundle_data, [1; 32])]);
+            test_utils::mocks::l1::expects_state_submissions([(Some(bundle_data), [1; 32])]);
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
@@ -597,17 +603,22 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..3,
                 tx_per_block: 1,
             })
             .await;
 
-        let bundle_data = test_utils::encode_merge_and_compress_blocks(&blocks[..2]).await;
+        let bundle_data = test_utils::encode_and_merge(&blocks[..2]).await;
 
-        let l1_mock_submit =
-            test_utils::mocks::l1::expects_state_submissions([(bundle_data.clone(), [1; 32])]);
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
+            Some(bundle_data.clone()),
+            [1; 32],
+        )]);
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
@@ -634,7 +645,10 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { blocks, .. } = setup
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..2,
                 tx_per_block: 1,
@@ -644,13 +658,13 @@ mod tests {
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
 
-        let bundle_1 = test_utils::encode_merge_and_compress_blocks(&blocks[0..=0]).await;
+        let bundle_1 = test_utils::encode_and_merge(&blocks[0..=0]).await;
 
-        let bundle_2 = test_utils::encode_merge_and_compress_blocks(&blocks[1..=1]).await;
+        let bundle_2 = test_utils::encode_and_merge(&blocks[1..=1]).await;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (bundle_1.clone(), bundle_1_tx),
-            (bundle_2.clone(), bundle_2_tx),
+            (Some(bundle_1.clone()), bundle_1_tx),
+            (Some(bundle_2.clone()), bundle_2_tx),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -699,13 +713,17 @@ mod tests {
             block_heights: 0..=0,
             optimal: false,
             compression_ratio: 1.0,
+            gas_usage: GasUsage {
+                storage: 100,
+                normal: 1,
+            },
         };
 
         let (bundler_factory, send_can_advance_permission, mut notify_has_advanced) =
             ControllableBundlerFactory::setup(Some(unoptimal_bundle));
 
         let l1_mock = test_utils::mocks::l1::expects_state_submissions([(
-            unoptimal_fragment.clone(),
+            Some(unoptimal_fragment.clone()),
             fragment_tx_id,
         )]);
 
@@ -840,6 +858,6 @@ mod tests {
     }
 
     fn default_bundler_factory() -> bundler::Factory<Eip4844GasUsage> {
-        bundler::Factory::new(Eip4844GasUsage, Compressor::default())
+        bundler::Factory::new(Eip4844GasUsage, Compressor::no_compression())
     }
 }

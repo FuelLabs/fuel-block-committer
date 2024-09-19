@@ -11,11 +11,12 @@ use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Compressor {
-    level: Compression,
+    compression: Option<Compression>,
 }
 
 #[allow(dead_code)]
 pub enum Level {
+    Disabled,
     Min,
     Level1,
     Level2,
@@ -29,6 +30,25 @@ pub enum Level {
     Max,
 }
 
+impl Level {
+    pub fn levels() -> Vec<Self> {
+        vec![
+            Self::Disabled,
+            Self::Min,
+            Self::Level1,
+            Self::Level2,
+            Self::Level3,
+            Self::Level4,
+            Self::Level5,
+            Self::Level6,
+            Self::Level7,
+            Self::Level8,
+            Self::Level9,
+            Self::Max,
+        ]
+    }
+}
+
 impl Default for Compressor {
     fn default() -> Self {
         Self::new(Level::Level6)
@@ -36,27 +56,39 @@ impl Default for Compressor {
 }
 
 impl Compressor {
+    pub fn no_compression() -> Self {
+        Self::new(Level::Disabled)
+    }
+
     pub fn new(level: Level) -> Self {
         let level = match level {
-            Level::Min => 0,
-            Level::Level1 => 1,
-            Level::Level2 => 2,
-            Level::Level3 => 3,
-            Level::Level4 => 4,
-            Level::Level5 => 5,
-            Level::Level6 => 6,
-            Level::Level7 => 7,
-            Level::Level8 => 8,
-            Level::Level9 => 9,
-            Level::Max => 10,
+            Level::Disabled => None,
+            Level::Min => Some(0),
+            Level::Level1 => Some(1),
+            Level::Level2 => Some(2),
+            Level::Level3 => Some(3),
+            Level::Level4 => Some(4),
+            Level::Level5 => Some(5),
+            Level::Level6 => Some(6),
+            Level::Level7 => Some(7),
+            Level::Level8 => Some(8),
+            Level::Level9 => Some(9),
+            Level::Max => Some(10),
         };
 
         Self {
-            level: Compression::new(level),
+            compression: level.map(Compression::new),
         }
     }
 
-    fn _compress(level: Compression, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
+    fn _compress(
+        compression: Option<Compression>,
+        data: &NonEmptyVec<u8>,
+    ) -> Result<NonEmptyVec<u8>> {
+        let Some(level) = compression else {
+            return Ok(data.clone());
+        };
+
         let mut encoder = GzEncoder::new(Vec::new(), level);
         encoder
             .write_all(data.inner())
@@ -70,11 +102,11 @@ impl Compressor {
     }
 
     pub fn compress_blocking(&self, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
-        Self::_compress(self.level, data)
+        Self::_compress(self.compression, data)
     }
 
     pub async fn compress(&self, data: NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
-        let level = self.level;
+        let level = self.compression;
         tokio::task::spawn_blocking(move || Self::_compress(level, &data))
             .await
             .map_err(|e| crate::Error::Other(e.to_string()))?
@@ -87,6 +119,7 @@ pub struct BundleProposal {
     pub block_heights: RangeInclusive<u32>,
     pub optimal: bool,
     pub compression_ratio: f64,
+    pub gas_usage: GasUsage,
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -100,7 +133,7 @@ pub trait Bundle {
     /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
     ///
     /// Consumes the bundler.
-    async fn finish(self, gas_prices: GasPrices) -> Result<Option<BundleProposal>>;
+    async fn finish(self, gas_prices: GasPrices) -> Result<BundleProposal>;
 }
 
 #[async_trait::async_trait]
@@ -137,15 +170,15 @@ where
 
 /// Represents a bundle configuration and its associated gas usage.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Proposal {
-    pub num_blocks: NonZeroUsize,
-    pub uncompressed_data_size: NonZeroUsize,
-    pub compressed_data_size: NonZeroUsize,
-    pub gas_usage: GasUsage,
+struct Proposal {
+    num_blocks: NonZeroUsize,
+    uncompressed_data_size: NonZeroUsize,
+    compressed_data_size: NonZeroUsize,
+    gas_usage: GasUsage,
 }
 
-pub struct Bundler<T> {
-    cost_calculator: T,
+pub struct Bundler<CostCalc> {
+    cost_calculator: CostCalc,
     blocks: NonEmptyVec<ports::storage::FuelBlock>,
     gas_usages: Vec<Proposal>, // Track all proposals
     current_block_count: NonZeroUsize,
@@ -156,9 +189,9 @@ impl<T> Bundler<T>
 where
     T: ports::l1::StorageCostCalculator + Send + Sync,
 {
-    pub fn new(l1_adapter: T, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
+    pub fn new(cost_calculator: T, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
         Self {
-            cost_calculator: l1_adapter,
+            cost_calculator,
             blocks: blocks.into_inner(),
             gas_usages: Vec::new(),
             current_block_count: 1.try_into().expect("not zero"),
@@ -307,9 +340,9 @@ where
     /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
     ///
     /// Consumes the bundler.
-    async fn finish(self, gas_prices: GasPrices) -> Result<Option<BundleProposal>> {
+    async fn finish(mut self, gas_prices: GasPrices) -> Result<BundleProposal> {
         if self.gas_usages.is_empty() {
-            return Ok(None);
+            self.advance().await?;
         }
 
         // Select the best proposal based on current gas prices
@@ -344,12 +377,147 @@ where
 
         let fragments = NonEmptyVec::try_from(fragments).expect("should never be empty");
 
-        Ok(Some(BundleProposal {
+        Ok(BundleProposal {
             fragments,
             block_heights,
             optimal: all_proposals_tried,
             compression_ratio,
-        }))
+            gas_usage: best_proposal.gas_usage,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use eth::Eip4844GasUsage;
+    use flate2::Compress;
+    use fuel_crypto::{Message, SecretKey, Signature};
+    use ports::l1::StorageCostCalculator;
+    use ports::non_empty_vec;
+
+    use crate::test_utils::{self, mocks::fuel::generate_storage_block_sequence};
+
+    use super::*;
+
+    #[test]
+    fn can_disable_compression() {
+        // given
+        let compressor = Compressor::new(Level::Disabled);
+        let data = non_empty_vec!(1, 2, 3);
+
+        // when
+        let compressed = compressor.compress_blocking(&data).unwrap();
+
+        // then
+        assert_eq!(data, compressed);
+    }
+
+    #[test]
+    fn all_compression_levels_work() {
+        let data = non_empty_vec!(1, 2, 3);
+        for level in Level::levels() {
+            let compressor = Compressor::new(level);
+            compressor.compress_blocking(&data).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn finishing_will_advance_if_not_called_at_least_once() {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+        let blocks = generate_storage_block_sequence(0..=0, &secret_key, 10);
+
+        let bundler = Bundler::new(
+            Eip4844GasUsage,
+            blocks.clone(),
+            Compressor::no_compression(),
+        );
+
+        // when
+        let bundle = bundler
+            .finish(GasPrices {
+                storage: 10,
+                normal: 1,
+            })
+            .await
+            .unwrap();
+
+        // then
+        let expected_fragment = blocks[0].data.clone();
+        assert!(bundle.optimal);
+        assert_eq!(bundle.block_heights, 0..=0);
+        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment]);
+    }
+
+    #[tokio::test]
+    async fn will_provide_a_suboptimal_bundle_if_not_advanced_enough() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+        let blocks = generate_storage_block_sequence(0..=3, &secret_key, 10);
+
+        let mut bundler = Bundler::new(
+            Eip4844GasUsage,
+            blocks.clone(),
+            Compressor::no_compression(),
+        );
+        bundler.advance().await?;
+
+        // when
+        let bundle = bundler
+            .finish(GasPrices {
+                storage: 10,
+                normal: 1,
+            })
+            .await?;
+
+        // then
+        let expected_fragment = blocks[0].data.clone();
+        assert!(!bundle.optimal);
+        assert_eq!(bundle.block_heights, 0..=0);
+        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn will_expand_bundle_because_there_was_still_room_in_the_same_blob() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+        let blocks = generate_storage_block_sequence(0..=1, &secret_key, 10);
+
+        let mut bundler = Bundler::new(
+            Eip4844GasUsage,
+            blocks.clone(),
+            Compressor::no_compression(),
+        );
+
+        bundler.advance().await?;
+        bundler.advance().await?;
+
+        // when
+        let bundle = bundler
+            .finish(GasPrices {
+                storage: 10,
+                normal: 1,
+            })
+            .await?;
+
+        // then
+        let expected_fragment: NonEmptyVec<u8> = blocks
+            .into_iter()
+            .flat_map(|b| b.data)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        assert!(expected_fragment.len() < Eip4844GasUsage.max_bytes_per_submission());
+
+        assert!(bundle.optimal);
+        assert_eq!(bundle.block_heights, 0..=1);
+        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment]);
+
+        Ok(())
     }
 }
 

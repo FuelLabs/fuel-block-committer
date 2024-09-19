@@ -45,6 +45,14 @@ pub struct SequentialFuelBlocks {
     blocks: NonEmptyVec<FuelBlock>,
 }
 
+impl IntoIterator for SequentialFuelBlocks {
+    type Item = FuelBlock;
+    type IntoIter = <NonEmptyVec<FuelBlock> as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        self.blocks.into_iter()
+    }
+}
+
 impl Deref for SequentialFuelBlocks {
     type Target = NonEmptyVec<FuelBlock>;
     fn deref(&self) -> &Self::Target {
