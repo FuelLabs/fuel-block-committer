@@ -232,8 +232,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
     use crate::test_utils::mocks::l1::{FullL1Mock, TxStatus};
     use crate::test_utils::{Blocks, ImportedBlocks};

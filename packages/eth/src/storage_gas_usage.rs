@@ -4,7 +4,7 @@ use ports::l1::GasUsage;
 
 use alloy::eips::eip4844::{
     DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES, MAX_BLOBS_PER_BLOCK,
-    MAX_DATA_GAS_PER_BLOCK,
+    MAX_DATA_GAS_PER_BLOCK, USABLE_BYTES_PER_BLOB,
 };
 use itertools::Itertools;
 use ports::types::NonEmptyVec;

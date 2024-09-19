@@ -177,6 +177,7 @@ struct Proposal {
     gas_usage: GasUsage,
 }
 
+#[derive(Debug, Clone)]
 pub struct Bundler<CostCalc> {
     cost_calculator: CostCalc,
     blocks: NonEmptyVec<ports::storage::FuelBlock>,
@@ -396,7 +397,10 @@ mod tests {
     use ports::l1::StorageCostCalculator;
     use ports::non_empty_vec;
 
-    use crate::test_utils::{self, mocks::fuel::generate_storage_block_sequence};
+    use crate::test_utils::{
+        self,
+        mocks::fuel::{generate_storage_block, generate_storage_block_sequence},
+    };
 
     use super::*;
 
@@ -480,8 +484,17 @@ mod tests {
         Ok(())
     }
 
+    async fn proposal_if_finalized_now(
+        bundler: &Bundler<Eip4844GasUsage>,
+        price: GasPrices,
+    ) -> BundleProposal {
+        bundler.clone().finish(price).await.unwrap()
+    }
+
+    // This can happen when you've already paying for a blob but are not utilizing it. Adding
+    // more data is going to increase the bytes per gas but keep the storage price the same.
     #[tokio::test]
-    async fn will_expand_bundle_because_there_was_still_room_in_the_same_blob() -> Result<()> {
+    async fn will_expand_bundle_because_storage_gas_remained_unchanged() -> Result<()> {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
         let blocks = generate_storage_block_sequence(0..=1, &secret_key, 10);
@@ -489,6 +502,63 @@ mod tests {
         let mut bundler = Bundler::new(
             Eip4844GasUsage,
             blocks.clone(),
+            Compressor::no_compression(),
+        );
+
+        let price = GasPrices {
+            storage: 10,
+            normal: 1,
+        };
+        bundler.advance().await?;
+        let single_block_proposal = proposal_if_finalized_now(&bundler, price).await;
+
+        bundler.advance().await?;
+        // when
+        let bundle = bundler.finish(price).await?;
+
+        // then
+        let expected_fragment: NonEmptyVec<u8> = blocks
+            .into_iter()
+            .flat_map(|b| b.data)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        assert!(expected_fragment.len() < Eip4844GasUsage.max_bytes_per_submission());
+
+        assert!(bundle.optimal);
+        assert_eq!(bundle.block_heights, 0..=1);
+        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment]);
+
+        assert_eq!(single_block_proposal.block_heights, 0..=0);
+        assert_eq!(single_block_proposal.gas_usage, bundle.gas_usage);
+
+        Ok(())
+    }
+
+    fn enough_txs_to_almost_fill_a_blob() -> usize {
+        let encoding_overhead = 40;
+        let blobs_per_block = 6;
+        let tx_size = 32;
+        let max_bytes_per_tx = Eip4844GasUsage.max_bytes_per_submission().get();
+        (max_bytes_per_tx / blobs_per_block - encoding_overhead) / tx_size
+    }
+
+    // When, for example, you need to pay for a new blob but dont have that much extra data
+    #[tokio::test]
+    async fn adding_a_block_will_worsen_storage_gas_usage() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+
+        let enough_tx_to_spill_into_second_blob = 1;
+        let blocks = non_empty_vec![
+            generate_storage_block(0, &secret_key, enough_txs_to_almost_fill_a_blob()),
+            generate_storage_block(1, &secret_key, enough_tx_to_spill_into_second_blob)
+        ];
+
+        let mut bundler = Bundler::new(
+            Eip4844GasUsage,
+            blocks.clone().try_into().unwrap(),
             Compressor::no_compression(),
         );
 
@@ -504,18 +574,115 @@ mod tests {
             .await?;
 
         // then
-        let expected_fragment: NonEmptyVec<u8> = blocks
-            .into_iter()
-            .flat_map(|b| b.data)
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-
-        assert!(expected_fragment.len() < Eip4844GasUsage.max_bytes_per_submission());
+        let expected_fragment = &blocks.first().data;
 
         assert!(bundle.optimal);
+        assert_eq!(bundle.block_heights, 0..=0);
+        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment.clone()]);
+
+        Ok(())
+    }
+
+    fn enough_txs_to_almost_fill_entire_l1_tx() -> usize {
+        let encoding_overhead = 20;
+        let tx_size = 32;
+        let max_bytes_per_tx = Eip4844GasUsage.max_bytes_per_submission().get();
+        (max_bytes_per_tx - encoding_overhead) / tx_size
+    }
+
+    // When, for example, you might have enough data to fill a new blob but the cost of the extra
+    // l1 tx outweights the benefit
+    #[tokio::test]
+    async fn adding_a_block_results_in_worse_gas_due_to_extra_tx() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+
+        let enough_tx_to_spill_into_second_tx = 1;
+        let blocks = non_empty_vec![
+            generate_storage_block(0, &secret_key, enough_txs_to_almost_fill_entire_l1_tx()),
+            generate_storage_block(1, &secret_key, enough_tx_to_spill_into_second_tx)
+        ];
+
+        let mut bundler = Bundler::new(
+            Eip4844GasUsage,
+            blocks.clone().try_into().unwrap(),
+            Compressor::no_compression(),
+        );
+
+        while bundler.advance().await? {}
+
+        // when
+        let bundle = bundler
+            .finish(GasPrices {
+                storage: 10,
+                normal: 1,
+            })
+            .await?;
+
+        // then
+        let expected_fragment = &blocks.first().data;
+
+        assert!(bundle.optimal);
+        assert_eq!(bundle.block_heights, 0..=0);
+        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment.clone()]);
+
+        Ok(())
+    }
+
+    // When, for example, adding new blocks to the bundle will cause a second l1 tx but the overall
+    // compression will make up for the extra cost
+    #[tokio::test]
+    async fn adding_a_block_results_in_a_new_tx_but_better_compression() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+
+        let enough_tx_to_make_up_for_the_extra_cost = 100000;
+        // we lose some space since the first block is not compressible
+        let compression_overhead = 4;
+        let non_compressable_block = generate_storage_block(
+            0,
+            &secret_key,
+            enough_txs_to_almost_fill_entire_l1_tx() - compression_overhead,
+        );
+
+        let compressable_block = {
+            let mut block =
+                generate_storage_block(1, &secret_key, enough_tx_to_make_up_for_the_extra_cost);
+            block.data.fill(0);
+            block
+        };
+
+        let blocks = non_empty_vec![non_compressable_block, compressable_block];
+
+        let mut bundler = Bundler::new(
+            Eip4844GasUsage,
+            blocks.clone().try_into().unwrap(),
+            Compressor::default(),
+        );
+
+        bundler.advance().await?;
+        let price = GasPrices {
+            storage: 10,
+            normal: 1,
+        };
+        let single_block_proposal = proposal_if_finalized_now(&bundler, price).await;
+        bundler.advance().await?;
+
+        // when
+        let bundle = bundler
+            .finish(GasPrices {
+                storage: 10,
+                normal: 1,
+            })
+            .await?;
+
+        // then
+        assert!(bundle.optimal);
         assert_eq!(bundle.block_heights, 0..=1);
-        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment]);
+        assert_eq!(
+            bundle.gas_usage.normal,
+            2 * single_block_proposal.gas_usage.normal
+        );
 
         Ok(())
     }

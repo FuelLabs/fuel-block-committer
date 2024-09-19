@@ -1,6 +1,6 @@
 use std::{
     num::NonZeroUsize,
-    ops::{Deref, Index},
+    ops::{Deref, DerefMut, Index},
 };
 
 #[cfg(feature = "l1")]
@@ -11,6 +11,12 @@ pub use futures::Stream;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonEmptyVec<T> {
     vec: Vec<T>,
+}
+
+impl<T> DerefMut for NonEmptyVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.vec
+    }
 }
 
 impl<T> Deref for NonEmptyVec<T> {
