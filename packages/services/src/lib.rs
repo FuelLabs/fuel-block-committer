@@ -109,7 +109,7 @@ pub(crate) mod test_utils {
     use fuel_crypto::SecretKey;
     use mocks::l1::TxStatus;
     use ports::types::{DateTime, NonEmptyVec, Utc};
-    use storage::PostgresProcess;
+    use storage::{DbWithProcess, PostgresProcess};
     use validator::BlockValidator;
 
     use crate::{
@@ -434,21 +434,21 @@ pub(crate) mod test_utils {
     }
 
     pub struct Setup {
-        _db_process: Arc<PostgresProcess>,
-        db: storage::Postgres,
+        db: DbWithProcess,
     }
 
     impl Setup {
         pub async fn init() -> Self {
-            let db_process = PostgresProcess::shared().await.unwrap();
-            let db = db_process.create_random_db().await.unwrap();
-            Self {
-                _db_process: db_process,
-                db,
-            }
+            let db = PostgresProcess::shared()
+                .await
+                .unwrap()
+                .create_random_db()
+                .await
+                .unwrap();
+            Self { db }
         }
 
-        pub fn db(&self) -> storage::Postgres {
+        pub fn db(&self) -> DbWithProcess {
             self.db.clone()
         }
 
@@ -508,11 +508,9 @@ pub(crate) mod test_utils {
             &self,
             blocks: Blocks,
         ) -> (
-            BlockImporter<storage::Postgres, ports::fuel::MockApi, BlockValidator>,
+            BlockImporter<DbWithProcess, ports::fuel::MockApi, BlockValidator>,
             ImportedBlocks,
         ) {
-            let amount = blocks.len();
-
             match blocks {
                 Blocks::WithHeights {
                     range,

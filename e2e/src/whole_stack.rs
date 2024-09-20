@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use storage::{Postgres, PostgresProcess};
+use storage::{DbWithProcess, Postgres, PostgresProcess};
 
 use crate::{
     committer::{Committer, CommitterProcess},
@@ -14,7 +14,7 @@ pub struct WholeStack {
     pub eth_node: EthNodeProcess,
     pub fuel_node: FuelNodeProcess,
     pub committer: CommitterProcess,
-    pub db_process: Arc<PostgresProcess>,
+    pub db: DbWithProcess,
     pub deployed_contract: DeployedContract,
     pub contract_args: ContractArgs,
     pub kms: KmsProcess,
@@ -31,12 +31,12 @@ impl WholeStack {
 
         let fuel_node = start_fuel_node(logs).await?;
 
-        let (db_process, db) = start_db().await?;
+        let db = start_db().await?;
 
         let committer = start_committer(
             logs,
             blob_support,
-            db,
+            db.clone(),
             &eth_node,
             &fuel_node,
             &deployed_contract,
@@ -49,7 +49,7 @@ impl WholeStack {
             eth_node,
             fuel_node,
             committer,
-            db_process,
+            db,
             deployed_contract,
             contract_args,
             kms,
@@ -101,18 +101,19 @@ async fn start_fuel_node(logs: bool) -> anyhow::Result<FuelNodeProcess> {
     FuelNode::default().with_show_logs(logs).start().await
 }
 
-async fn start_db() -> anyhow::Result<(Arc<PostgresProcess>, Postgres)> {
-    let db_process = storage::PostgresProcess::shared().await?;
-    let random_db = db_process.create_random_db().await?;
-
-    Ok((db_process, random_db))
+async fn start_db() -> anyhow::Result<DbWithProcess> {
+    storage::PostgresProcess::shared()
+        .await?
+        .create_random_db()
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn start_committer(
     logs: bool,
     blob_support: bool,
-    random_db: Postgres,
+    random_db: DbWithProcess,
     eth_node: &EthNodeProcess,
     fuel_node: &FuelNodeProcess,
     deployed_contract: &DeployedContract,

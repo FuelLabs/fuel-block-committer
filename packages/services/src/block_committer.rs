@@ -182,7 +182,7 @@ mod tests {
         types::{L1Height, NonEmptyVec, TransactionResponse, U256},
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
-    use storage::{Postgres, PostgresProcess};
+    use storage::{DbWithProcess, Postgres, PostgresProcess};
     use validator::BlockValidator;
 
     use crate::test_utils::mocks::l1::FullL1Mock;
@@ -215,8 +215,7 @@ mod tests {
 
         let validated_missed_block = ValidatedFuelBlock::new(*missed_block.id, 4);
         let l1 = given_l1_that_expects_submission(validated_missed_block);
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2]).await;
+        let db = db_with_submissions(vec![0, 2]).await;
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
 
@@ -236,8 +235,7 @@ mod tests {
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2, 4]).await;
+        let db = db_with_submissions(vec![0, 2, 4]).await;
 
         let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
@@ -260,8 +258,7 @@ mod tests {
         let latest_block = given_a_block(6, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2, 4, 6]).await;
+        let db = db_with_submissions(vec![0, 2, 4, 6]).await;
 
         let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
@@ -284,8 +281,7 @@ mod tests {
         let block = given_a_block(4, &secret_key);
         let fuel_adapter = given_fetcher(vec![block.clone()]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2]).await;
+        let db = db_with_submissions(vec![0, 2]).await;
         let l1 = given_l1_that_expects_submission(ValidatedFuelBlock::new(*block.id, 4));
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
@@ -305,8 +301,7 @@ mod tests {
         let block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![block]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2, 4]).await;
+        let db = db_with_submissions(vec![0, 2, 4]).await;
 
         let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
@@ -332,11 +327,13 @@ mod tests {
         assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
-    async fn db_with_submissions(
-        process: &Arc<PostgresProcess>,
-        pending_submissions: Vec<u32>,
-    ) -> Postgres {
-        let db = process.create_random_db().await.unwrap();
+    async fn db_with_submissions(pending_submissions: Vec<u32>) -> DbWithProcess {
+        let db = PostgresProcess::shared()
+            .await
+            .unwrap()
+            .create_random_db()
+            .await
+            .unwrap();
         for height in pending_submissions {
             db.insert(given_a_pending_submission(height)).await.unwrap();
         }

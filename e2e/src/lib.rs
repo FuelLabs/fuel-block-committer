@@ -66,9 +66,7 @@ mod tests {
         stack.fuel_node.client().produce_blocks(num_blocks).await?;
 
         // then
-        let db = stack.committer.db_instance().await;
-
-        while let Some(sequence) = db.lowest_sequence_of_unbundled_blocks(0, 1).await? {
+        while let Some(sequence) = stack.db.lowest_sequence_of_unbundled_blocks(0, 1).await? {
             let reached_height = sequence.into_inner().first().height;
             eprintln!("bundled up to height: {reached_height}/{num_blocks}");
 

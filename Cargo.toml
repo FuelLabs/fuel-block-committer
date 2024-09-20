@@ -34,6 +34,8 @@ validator = { path = "./packages/validator", default-features = false }
 clock = { path = "./packages/clock", default-features = false }
 
 test-case = { version = "3.3", default-features = false }
+delegate = { version = "0.13", default-features = false }
+trait-variant = { version = "0.1", default-features = false }
 actix-web = { version = "4", default-features = false }
 pretty_assertions = { version = "1.4", default-features = false }
 alloy = { version = "0.2.1", default-features = false }

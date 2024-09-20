@@ -124,8 +124,6 @@ impl Committer {
         Ok(CommitterProcess {
             _child: child,
             port: unused_port,
-            db_port,
-            db_name,
         })
     }
 
@@ -208,25 +206,9 @@ impl Committer {
 pub struct CommitterProcess {
     _child: tokio::process::Child,
     port: u16,
-    db_port: u16,
-    db_name: String,
 }
 
 impl CommitterProcess {
-    pub async fn db_instance(&self) -> Postgres {
-        Postgres::connect(&DbConfig {
-            host: "localhost".to_string(),
-            port: self.db_port,
-            username: "username".to_owned(),
-            password: "password".to_owned(),
-            database: self.db_name.clone(),
-            max_connections: 5,
-            use_ssl: false,
-        })
-        .await
-        .unwrap()
-    }
-
     pub async fn wait_for_committed_block(&self, height: u64) -> anyhow::Result<()> {
         loop {
             match self.fetch_latest_committed_block().await {

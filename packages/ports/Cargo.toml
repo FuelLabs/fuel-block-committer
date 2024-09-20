@@ -10,6 +10,8 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+delegate = { workspace = true, optional = true }
+trait-variant = { workspace = true, optional = true }
 alloy = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
@@ -39,6 +41,13 @@ fuel = [
   "dep:validator",
   "dep:futures",
 ]
-storage = ["dep:impl-tools", "dep:thiserror", "dep:async-trait", "dep:futures"]
+storage = [
+  "dep:trait-variant",
+  "dep:impl-tools",
+  "dep:thiserror",
+  "dep:async-trait",
+  "dep:futures",
+  "dep:delegate",
+]
 clock = []
 full = ["l1", "fuel", "storage", "clock"]

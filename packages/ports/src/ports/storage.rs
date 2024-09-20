@@ -1,3 +1,4 @@
+use delegate::delegate;
 use std::{
     fmt::{Display, Formatter},
     num::NonZeroUsize,
@@ -110,6 +111,7 @@ impl Display for InvalidSequence {
 
 impl std::error::Error for InvalidSequence {}
 
+// TODO: segfault needs testing
 impl TryFrom<NonEmptyVec<FuelBlock>> for SequentialFuelBlocks {
     type Error = InvalidSequence;
 
@@ -134,8 +136,8 @@ impl TryFrom<NonEmptyVec<FuelBlock>> for SequentialFuelBlocks {
     }
 }
 
-#[async_trait::async_trait]
-#[impl_tools::autoimpl(for<T: trait> &T, &mut T, Arc<T>, Box<T>)]
+#[allow(async_fn_in_trait)]
+#[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
@@ -167,99 +169,36 @@ pub trait Storage: Send + Sync {
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use fuel_core_client::client::schema::schema::__fields::Header::height;
-//
-//     use super::*;
-//
-//     macro_rules! set {
-//         ( $( $x:expr ),* ) => {
-//             {
-//             let mut set = std::collections::BTreeSet::new();
-//             $(
-//                 set.insert($x);
-//             )*
-//             set
-//             }
-//         };
-//     }
-//
-//     #[test]
-//     fn lowest_cannot_be_higher_than_highest() {
-//         // given
-//         let highest = 10u32;
-//         let lowest = 11u32;
-//         let missing = vec![];
-//
-//         // when
-//         let err =
-//             BlockRoster::try_new(missing, Some((lowest, highest))).expect_err("should have failed");
-//
-//         // then
-//         let Error::Conversion(err) = err else {
-//             panic!("unexpected error: {}", err);
-//         };
-//         assert_eq!(err, "invalid block roster: highest(10) < lowest(11)");
-//     }
-//
-//     #[test]
-//     fn reports_no_missing_blocks() {
-//         // given
-//         let roster = BlockRoster::try_new(0, 10).unwrap();
-//
-//         // when
-//         let missing = roster.missing_block_heights(10, 0, None);
-//
-//         // then
-//         assert!(missing.is_empty());
-//     }
-//
-//     #[test]
-//     fn reports_what_the_db_gave() {
-//         // given
-//         let roster = BlockRoster::try_new(vec![1, 2, 3], Some((0, 10))).unwrap();
-//
-//         // when
-//         let missing = roster.missing_block_heights(10, 0, None);
-//
-//         // then
-//         assert_eq!(missing, set![1, 2, 3]);
-//     }
-//
-//     #[test]
-//     fn reports_missing_blocks_if_latest_height_doest_match_with_highest_db_block() {
-//         // given
-//         let roster = BlockRoster::try_new(vec![1, 2, 3], Some((0, 10))).unwrap();
-//
-//         // when
-//         let missing = roster.missing_block_heights(12, 0, None);
-//
-//         // then
-//         assert_eq!(missing, set![1, 2, 3, 11, 12]);
-//     }
-//
-//     #[test]
-//     fn wont_report_below_cutoff() {
-//         // given
-//         let roster = BlockRoster::try_new(vec![1, 2, 3], Some((0, 10))).unwrap();
-//
-//         // when
-//         let missing = roster.missing_block_heights(12, 10, None);
-//
-//         // then
-//         assert_eq!(missing, set![11, 12]);
-//     }
-//
-//     #[test]
-//     fn no_block_was_imported_ie_initial_db_state() {
-//         // given
-//         let roster = BlockRoster::try_new(vec![], None).unwrap();
-//
-//         // when
-//         let missing = roster.missing_block_heights(10, 3, Some(4));
-//
-//         // then
-//         assert_eq!(missing, set![4, 5, 6, 7, 8, 9, 10]);
-//     }
-// }
+impl<T: Storage + Send + Sync> Storage for Arc<T> {
+    delegate! {
+        to (self.as_ref()) {
+            async fn insert(&self, submission: BlockSubmission) -> Result<()>;
+                async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
+                async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
+                async fn insert_block(&self, block: FuelBlock) -> Result<()>;
+                async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
+                async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
+                async fn lowest_sequence_of_unbundled_blocks(
+                    &self,
+                    starting_height: u32,
+                    limit: usize,
+                ) -> Result<Option<SequentialFuelBlocks>>;
+                async fn insert_bundle_and_fragments(
+                    &self,
+                    block_range: RangeInclusive<u32>,
+                    fragments: NonEmptyVec<NonEmptyVec<u8>>,
+                ) -> Result<NonEmptyVec<BundleFragment>>;
+
+                async fn record_pending_tx(
+                    &self,
+                    tx_hash: [u8; 32],
+                    fragment_id: NonNegative<i32>,
+                ) -> Result<()>;
+                async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+                async fn has_pending_txs(&self) -> Result<bool>;
+                async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
+                async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
+                async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
+        }
+    }
+}

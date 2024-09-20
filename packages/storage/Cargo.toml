@@ -31,6 +31,7 @@ testcontainers = { workspace = true, optional = true, features = [
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 futures = { workspace = true }
+delegate = { workspace = true, optional = true }
 
 [dev-dependencies]
 ports = { workspace = true, features = ["storage"] }
@@ -43,5 +44,6 @@ test-helpers = [
   "dep:testcontainers",
   "tokio/sync",
   "dep:rand",
+  "dep:delegate",
   "ports/test-helpers",
 ]
