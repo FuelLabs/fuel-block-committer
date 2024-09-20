@@ -1,9 +1,9 @@
-use std::cmp::{max, min};
+use std::cmp::max;
 
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use ports::{fuel::FuelBlock, storage::Storage, types::NonEmptyVec};
-use tracing::{error, info};
+use tracing::info;
 use validator::Validator;
 
 use crate::{Error, Result, Runner};

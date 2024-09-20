@@ -1,7 +1,7 @@
 use std::{
     fmt::{Display, Formatter},
     num::NonZeroUsize,
-    ops::{Deref, Range, RangeInclusive},
+    ops::{Deref, RangeInclusive},
     sync::Arc,
 };
 

@@ -126,7 +126,7 @@ pub(crate) mod test_utils {
 
             use mockall::{predicate::eq, Sequence};
             use ports::{
-                l1::{Api, GasPrices, GasUsage},
+                l1::{Api, GasPrices},
                 types::{L1Height, NonEmptyVec, TransactionResponse, U256},
             };
 
@@ -335,7 +335,7 @@ pub(crate) mod test_utils {
 
                 non_empty_blocks
                     .try_into()
-                    .expect("genereated from a range, guaranteed sequence of heights")
+                    .expect("generated from a range, guaranteed sequence of heights")
             }
 
             pub fn generate_storage_block(
@@ -370,7 +370,7 @@ pub(crate) mod test_utils {
                 }
             }
 
-            pub fn blocks_exists(
+            pub fn blocks_exists( 
                 secret_key: SecretKey,
                 heights: Range<u32>,
             ) -> ports::fuel::MockApi {

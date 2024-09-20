@@ -234,7 +234,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::mocks::l1::{FullL1Mock, TxStatus};
+    use crate::test_utils::mocks::l1::TxStatus;
     use crate::test_utils::{Blocks, ImportedBlocks};
     use crate::{test_utils, CompressionLevel, Runner, StateCommitter};
     use clock::TestClock;

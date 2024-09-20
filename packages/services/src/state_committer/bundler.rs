@@ -445,13 +445,12 @@ where
 mod tests {
 
     use eth::Eip4844GasUsage;
-    use flate2::Compress;
-    use fuel_crypto::{Message, SecretKey, Signature};
+    
+    use fuel_crypto::SecretKey;
     use ports::l1::StorageCostCalculator;
     use ports::non_empty_vec;
 
     use crate::test_utils::{
-        self,
         mocks::fuel::{generate_storage_block, generate_storage_block_sequence},
     };
 

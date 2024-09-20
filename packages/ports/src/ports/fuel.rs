@@ -1,4 +1,4 @@
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 pub use fuel_core_client::client::types::{
     block::{

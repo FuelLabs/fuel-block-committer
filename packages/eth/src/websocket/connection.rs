@@ -1,4 +1,4 @@
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroU32;
 
 use alloy::{
     consensus::{SidecarBuilder, SimpleCoder},

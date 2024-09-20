@@ -5,7 +5,7 @@ use fuel_core_client::client::types::{
     },
     primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32},
 };
-use fuel_crypto::{Hasher, Message, PublicKey};
+use fuel_crypto::{Hasher, Message};
 
 use crate::{block::ValidatedFuelBlock, Error, Result, Validator};
 
@@ -153,7 +153,7 @@ impl BlockValidator {
 #[cfg(test)]
 mod tests {
     use fuel_core_client::client::types::block::Genesis;
-    use fuel_crypto::{fuel_types::Bytes64, PublicKey, SecretKey, Signature};
+    use fuel_crypto::{PublicKey, SecretKey, Signature};
     use rand::{rngs::StdRng, SeedableRng};
     use tai64::Tai64;
 

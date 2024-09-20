@@ -176,11 +176,7 @@ mod tests {
     use fuel_crypto::{Message, SecretKey, Signature};
     use metrics::prometheus::{proto::Metric, Registry};
     use mockall::predicate::{self, eq};
-    use ports::{
-        fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
-        l1::{Contract, EventStreamer, GasPrices, GasUsage, MockContract},
-        types::{L1Height, NonEmptyVec, TransactionResponse, U256},
-    };
+    use ports::fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus};
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{Postgres, PostgresProcess};
     use validator::BlockValidator;

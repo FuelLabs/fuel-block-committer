@@ -1,5 +1,5 @@
 #![deny(unused_crate_dependencies)]
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 use futures::StreamExt;
 use ports::fuel::{BoxStream, FuelBlock};
@@ -35,7 +35,6 @@ mod tests {
         prometheus::{proto::Metric, Registry},
         RegistersMetrics,
     };
-    use ports::fuel::Api;
     use url::Url;
 
     use super::*;

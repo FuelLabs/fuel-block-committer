@@ -3,7 +3,7 @@ mod mappings;
 #[cfg(feature = "test-helpers")]
 mod test_instance;
 
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 #[cfg(feature = "test-helpers")]
 pub use test_instance::*;

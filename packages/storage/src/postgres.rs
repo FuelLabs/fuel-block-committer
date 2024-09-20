@@ -1,15 +1,15 @@
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 use ports::{
     storage::{BundleFragment, SequentialFuelBlocks},
     types::{
-        BlockSubmission, DateTime, NonEmptyVec, NonNegative, StateSubmission, TransactionState, Utc,
+        BlockSubmission, DateTime, NonEmptyVec, NonNegative, TransactionState, Utc,
     },
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
 use super::error::{Error, Result};
-use crate::mappings::tables::{self, FuelBlock, L1TxState};
+use crate::mappings::tables::{self, L1TxState};
 
 #[derive(Clone)]
 pub struct Postgres {

@@ -8,6 +8,7 @@ repository = { workspace = true }
 version = { workspace = true }
 publish = { workspace = true }
 rust-version = { workspace = true }
+build = "build.rs"
 
 [dependencies]
 async-trait = { workspace = true }
@@ -21,5 +22,9 @@ futures = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }
 
+[build-dependencies]
+fuel-core-client = { workspace = true }
+
 [features]
 test-helpers = ["fuel-core-types"]
+

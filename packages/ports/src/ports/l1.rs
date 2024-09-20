@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, pin::Pin, sync::Arc};
+use std::{num::NonZeroUsize, pin::Pin};
 
 use crate::types::{
     FuelBlockCommittedOnL1, InvalidL1Height, L1Height, NonEmptyVec, Stream, TransactionResponse,
