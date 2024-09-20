@@ -20,8 +20,8 @@ alloy = { workspace = true, features = [
   "rpc-types",
   "reqwest-rustls-tls",
 ] }
-async-trait = { workspace = true }
 aws-config = { workspace = true, features = ["default"] }
+async-trait = { workspace = true }
 aws-sdk-kms = { workspace = true, features = ["default"] }
 c-kzg = { workspace = true }
 futures = { workspace = true }

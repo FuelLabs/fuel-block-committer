@@ -138,7 +138,6 @@ impl TryFrom<NonEmptyVec<FuelBlock>> for SequentialFuelBlocks {
 
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
-#[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;

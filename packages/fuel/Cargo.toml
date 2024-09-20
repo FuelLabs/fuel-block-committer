@@ -10,7 +10,6 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-async-trait = { workspace = true }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
 fuel-core-types = { workspace = true, optional = true }
 metrics = { workspace = true }

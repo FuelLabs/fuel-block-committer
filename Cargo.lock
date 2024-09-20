@@ -1700,7 +1700,6 @@ checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
 name = "clock"
 version = "0.6.0"
 dependencies = [
- "async-trait",
  "ports",
  "tokio",
 ]
@@ -2669,7 +2668,6 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 name = "fuel"
 version = "0.6.0"
 dependencies = [
- "async-trait",
  "fuel-core-client",
  "fuel-core-types",
  "futures",
@@ -5451,8 +5449,8 @@ dependencies = [
 name = "services"
 version = "0.6.0"
 dependencies = [
- "async-trait",
  "clock",
+ "delegate",
  "eth",
  "flate2",
  "fuel-crypto",
@@ -5473,6 +5471,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "trait-variant",
  "validator",
 ]
 
@@ -5855,7 +5854,6 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "storage"
 version = "0.6.0"
 dependencies = [
- "async-trait",
  "delegate",
  "futures",
  "hex",

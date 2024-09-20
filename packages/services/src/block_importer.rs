@@ -1,6 +1,5 @@
 use std::cmp::{max, min};
 
-use async_trait::async_trait;
 use futures::TryStreamExt;
 use ports::{fuel::FuelBlock, storage::Storage, types::NonEmptyVec};
 use tracing::{error, info};
@@ -90,7 +89,6 @@ fn encode_block_data(block: &FuelBlock) -> Result<NonEmptyVec<u8>> {
     Ok(data)
 }
 
-#[async_trait]
 impl<Db, FuelApi, BlockValidator> Runner for BlockImporter<Db, FuelApi, BlockValidator>
 where
     Db: Storage + Send + Sync,

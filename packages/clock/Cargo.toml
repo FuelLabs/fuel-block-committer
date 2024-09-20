@@ -11,7 +11,6 @@ rust-version = { workspace = true }
 
 [dependencies]
 ports = { workspace = true, features = ["clock"] }
-async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"], optional = true }
 
 [dev-dependencies]

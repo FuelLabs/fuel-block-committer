@@ -44,7 +44,6 @@ mod test_helpers {
         }
     }
 
-    #[async_trait::async_trait]
     impl Clock for TestClock {
         fn now(&self) -> ports::types::DateTime<ports::types::Utc> {
             DateTime::<Utc>::from_timestamp_millis(

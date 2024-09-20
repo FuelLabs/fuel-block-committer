@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
@@ -77,7 +76,6 @@ where
     }
 }
 
-#[async_trait]
 impl<L1, Db, C> Runner for StateListener<L1, Db, C>
 where
     L1: ports::l1::Api + Send + Sync,

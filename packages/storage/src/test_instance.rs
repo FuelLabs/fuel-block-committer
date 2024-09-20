@@ -153,7 +153,6 @@ impl DbWithProcess {
     }
 }
 
-#[async_trait::async_trait]
 impl Storage for DbWithProcess {
     delegate! {
         to self.db {

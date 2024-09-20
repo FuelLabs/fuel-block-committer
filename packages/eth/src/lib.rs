@@ -1,7 +1,6 @@
 use std::{num::NonZeroU32, pin::Pin};
 
 use alloy::primitives::U256;
-use async_trait::async_trait;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, GasPrices, Result},
@@ -20,7 +19,6 @@ pub use alloy::primitives::Address;
 pub use aws::*;
 pub use websocket::WebsocketClient;
 
-#[async_trait]
 impl Contract for WebsocketClient {
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
         self.submit(block).await
@@ -38,18 +36,17 @@ impl Contract for WebsocketClient {
 mod storage_gas_usage;
 pub use storage_gas_usage::Eip4844GasUsage;
 
-#[async_trait]
 impl Api for WebsocketClient {
     async fn gas_prices(&self) -> Result<GasPrices> {
         self._gas_prices().await
     }
 
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {
-        Ok(self._submit_l2_state(state_data).await?)
+        self._submit_l2_state(state_data).await
     }
 
     async fn balance(&self) -> Result<U256> {
-        Ok(self._balance().await?)
+        self._balance().await
     }
 
     async fn get_block_number(&self) -> Result<L1Height> {
@@ -63,7 +60,7 @@ impl Api for WebsocketClient {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
-        Ok(self._get_transaction_response(tx_hash).await?)
+        self._get_transaction_response(tx_hash).await
     }
 }
 

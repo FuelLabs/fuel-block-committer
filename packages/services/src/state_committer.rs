@@ -1,6 +1,5 @@
 use std::{num::NonZeroUsize, time::Duration};
 
-use async_trait::async_trait;
 use bundler::{Bundle, BundleProposal, BundlerFactory};
 use ports::{
     clock::Clock,
@@ -207,7 +206,6 @@ where
     }
 }
 
-#[async_trait]
 impl<L1, Db, C, BF> Runner for StateCommitter<L1, Db, C, BF>
 where
     L1: ports::l1::Api + Send + Sync,
@@ -270,7 +268,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl Bundle for ControllableBundler {
         async fn advance(&mut self) -> Result<bool> {
             self.can_advance.recv().await.unwrap();
@@ -305,7 +302,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl BundlerFactory for ControllableBundlerFactory {
         type Bundler = ControllableBundler;
 
@@ -477,15 +473,17 @@ mod tests {
 
         let mut l1_mock_submit = ports::l1::MockApi::new();
         l1_mock_submit.expect_gas_prices().once().return_once(|| {
-            Ok(GasPrices {
-                storage: 10,
-                normal: 1,
+            Box::pin(async {
+                Ok(GasPrices {
+                    storage: 10,
+                    normal: 1,
+                })
             })
         });
         l1_mock_submit
             .expect_submit_l2_state()
             .once()
-            .return_once(|_| Ok([1; 32]));
+            .return_once(|_| Box::pin(async { Ok([1; 32]) }));
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
@@ -829,14 +827,16 @@ mod tests {
         // Configure the L1 adapter to fail on submission
         let mut l1_mock = ports::l1::MockApi::new();
         l1_mock.expect_gas_prices().once().return_once(|| {
-            Ok(GasPrices {
-                storage: 10,
-                normal: 1,
+            Box::pin(async {
+                Ok(GasPrices {
+                    storage: 10,
+                    normal: 1,
+                })
             })
         });
-        l1_mock
-            .expect_submit_l2_state()
-            .return_once(|_| Err(ports::l1::Error::Other("Submission failed".into())));
+        l1_mock.expect_submit_l2_state().return_once(|_| {
+            Box::pin(async { Err(ports::l1::Error::Other("Submission failed".into())) })
+        });
 
         let mut state_committer = StateCommitter::new(
             l1_mock,

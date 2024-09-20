@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
@@ -69,7 +68,6 @@ where
     }
 }
 
-#[async_trait]
 impl<C, Db> Runner for CommitListener<C, Db>
 where
     C: ports::l1::Contract,

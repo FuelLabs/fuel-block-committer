@@ -21,13 +21,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 // TODO: segfault
 // https://github.com/FuelLabs/fuel-core-client-ext/blob/master/src/lib.rs
+#[allow(async_fn_in_trait)]
+#[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
-#[async_trait::async_trait]
 pub trait Api: Send + Sync {
     async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
     fn blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<Result<FuelBlock>, '_>;
+    ) -> BoxStream<'_, Result<FuelBlock>>;
     async fn latest_block(&self) -> Result<FuelBlock>;
 }

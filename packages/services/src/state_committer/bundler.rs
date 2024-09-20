@@ -159,8 +159,8 @@ pub struct BundleProposal {
     pub gas_usage: GasUsage,
 }
 
+#[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
-#[async_trait::async_trait]
 pub trait Bundle {
     /// Attempts to advance the bundler by trying out a new bundle configuration.
     ///
@@ -173,7 +173,7 @@ pub trait Bundle {
     async fn finish(self, gas_prices: GasPrices) -> Result<BundleProposal>;
 }
 
-#[async_trait::async_trait]
+#[trait_variant::make(Send)]
 pub trait BundlerFactory {
     type Bundler: Bundle + Send + Sync;
     async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler;
@@ -193,7 +193,6 @@ impl<L1> Factory<L1> {
     }
 }
 
-#[async_trait::async_trait]
 impl<GasCalculator> BundlerFactory for Factory<GasCalculator>
 where
     GasCalculator: ports::l1::StorageCostCalculator + Clone + Send + Sync + 'static,
@@ -361,7 +360,6 @@ where
     }
 }
 
-#[async_trait::async_trait]
 impl<T> Bundle for Bundler<T>
 where
     T: ports::l1::StorageCostCalculator + Send + Sync,

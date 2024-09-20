@@ -65,7 +65,7 @@ impl From<ports::storage::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[async_trait::async_trait]
+#[trait_variant::make(Send)]
 pub trait Runner: Send + Sync {
     async fn run(&mut self) -> Result<()>;
 }
@@ -124,6 +124,7 @@ pub(crate) mod test_utils {
         pub mod l1 {
             use std::num::NonZeroUsize;
 
+            use delegate::delegate;
             use mockall::{predicate::eq, Sequence};
             use ports::{
                 l1::{Api, GasPrices, GasUsage},
@@ -137,21 +138,23 @@ pub(crate) mod test_utils {
 
             impl Default for FullL1Mock {
                 fn default() -> Self {
-                    Self::new(1000usize.try_into().unwrap())
+                    Self::new()
                 }
             }
 
             impl FullL1Mock {
-                pub fn new(max_bytes_per_submission: NonZeroUsize) -> Self {
+                pub fn new() -> Self {
                     let mut obj = Self {
                         api: ports::l1::MockApi::new(),
                         contract: ports::l1::MockContract::new(),
                     };
 
                     obj.api.expect_gas_prices().returning(|| {
-                        Ok(GasPrices {
-                            storage: 10,
-                            normal: 1,
+                        Box::pin(async {
+                            Ok(GasPrices {
+                                storage: 10,
+                                normal: 1,
+                            })
                         })
                     });
 
@@ -159,52 +162,25 @@ pub(crate) mod test_utils {
                 }
             }
 
-            #[async_trait::async_trait]
             impl ports::l1::Contract for FullL1Mock {
-                async fn submit(
-                    &self,
-                    block: ports::types::ValidatedFuelBlock,
-                ) -> ports::l1::Result<()> {
-                    self.contract.submit(block).await
-                }
-                fn event_streamer(
-                    &self,
-                    height: L1Height,
-                ) -> Box<dyn ports::l1::EventStreamer + Send + Sync> {
-                    self.contract.event_streamer(height)
-                }
-
-                fn commit_interval(&self) -> std::num::NonZeroU32 {
-                    self.contract.commit_interval()
+                delegate! {
+                    to self.contract {
+                        async fn submit(&self, block: ports::types::ValidatedFuelBlock) -> ports::l1::Result<()>;
+                        fn event_streamer(&self, height: L1Height) -> Box<dyn ports::l1::EventStreamer + Send + Sync>;
+                        fn commit_interval(&self) -> std::num::NonZeroU32;
+                    }
                 }
             }
 
-            #[async_trait::async_trait]
             impl ports::l1::Api for FullL1Mock {
-                async fn gas_prices(&self) -> ports::l1::Result<GasPrices> {
-                    self.api.gas_prices().await
-                }
-
-                async fn submit_l2_state(
-                    &self,
-                    state_data: NonEmptyVec<u8>,
-                ) -> ports::l1::Result<[u8; 32]> {
-                    self.api.submit_l2_state(state_data).await
-                }
-
-                async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
-                    self.api.get_block_number().await
-                }
-
-                async fn balance(&self) -> ports::l1::Result<U256> {
-                    self.api.balance().await
-                }
-
-                async fn get_transaction_response(
-                    &self,
-                    tx_hash: [u8; 32],
-                ) -> ports::l1::Result<Option<TransactionResponse>> {
-                    self.api.get_transaction_response(tx_hash).await
+                delegate! {
+                    to self.api {
+                        async fn gas_prices(&self) -> ports::l1::Result<GasPrices>;
+                        async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> ports::l1::Result<[u8; 32]>;
+                        async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
+                        async fn balance(&self) -> ports::l1::Result<U256>;
+                        async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> ports::l1::Result<Option<TransactionResponse>>;
+                    }
                 }
             }
 
@@ -220,9 +196,11 @@ pub(crate) mod test_utils {
 
                 let mut l1_mock = ports::l1::MockApi::new();
                 l1_mock.expect_gas_prices().returning(|| {
-                    Ok(GasPrices {
-                        storage: 10,
-                        normal: 1,
+                    Box::pin(async {
+                        Ok(GasPrices {
+                            storage: 10,
+                            normal: 1,
+                        })
                     })
                 });
 
@@ -237,7 +215,7 @@ pub(crate) mod test_utils {
                             }
                         })
                         .once()
-                        .return_once(move |_| Ok(tx_id))
+                        .return_once(move |_| Box::pin(async move { Ok(tx_id) }))
                         .in_sequence(&mut sequence);
                 }
 
@@ -252,7 +230,7 @@ pub(crate) mod test_utils {
                 let height = L1Height::from(0);
                 l1_mock
                     .expect_get_block_number()
-                    .returning(move || Ok(height));
+                    .returning(move || Box::pin(async move { Ok(height) }));
 
                 for expectation in statuses {
                     let (tx_id, status) = expectation;
@@ -261,10 +239,12 @@ pub(crate) mod test_utils {
                         .expect_get_transaction_response()
                         .with(eq(tx_id))
                         .return_once(move |_| {
-                            Ok(Some(TransactionResponse::new(
-                                height.into(),
-                                matches!(status, TxStatus::Success),
-                            )))
+                            Box::pin(async move {
+                                Ok(Some(TransactionResponse::new(
+                                    height.into(),
+                                    matches!(status, TxStatus::Success),
+                                )))
+                            })
                         });
                 }
                 l1_mock
@@ -402,7 +382,7 @@ pub(crate) mod test_utils {
 
                 fuel_mock
                     .expect_latest_block()
-                    .return_once(|| Ok(latest_block));
+                    .return_once(|| Box::pin(async move { Ok(latest_block) }));
 
                 fuel_mock
                     .expect_blocks_in_height_range()

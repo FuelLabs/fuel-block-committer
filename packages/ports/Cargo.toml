@@ -13,7 +13,6 @@ rust-version = { workspace = true }
 delegate = { workspace = true, optional = true }
 trait-variant = { workspace = true, optional = true }
 alloy = { workspace = true, optional = true }
-async-trait = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 impl-tools = { workspace = true, optional = true }
@@ -24,28 +23,23 @@ sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
 validator = { workspace = true, optional = true }
 hex = { workspace = true }
+async-trait = { workspace = true, optional = true }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand", "validator?/test-helpers"]
 l1 = [
+  "dep:async-trait",
   "dep:alloy",
   "dep:futures",
   "dep:thiserror",
-  "dep:async-trait",
   "dep:validator",
+  "dep:trait-variant",
 ]
-fuel = [
-  "dep:thiserror",
-  "dep:async-trait",
-  "dep:fuel-core-client",
-  "dep:validator",
-  "dep:futures",
-]
+fuel = ["dep:thiserror", "dep:fuel-core-client", "dep:validator", "dep:futures"]
 storage = [
   "dep:trait-variant",
   "dep:impl-tools",
   "dep:thiserror",
-  "dep:async-trait",
   "dep:futures",
   "dep:delegate",
 ]

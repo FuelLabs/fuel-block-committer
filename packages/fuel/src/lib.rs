@@ -11,7 +11,6 @@ pub use client::*;
 type Error = ports::fuel::Error;
 type Result<T> = ports::fuel::Result<T>;
 
-#[async_trait::async_trait]
 impl ports::fuel::Api for client::HttpClient {
     async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>> {
         self._block_at_height(height).await
@@ -20,7 +19,7 @@ impl ports::fuel::Api for client::HttpClient {
     fn blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<Result<FuelBlock>, '_> {
+    ) -> BoxStream<'_, Result<FuelBlock>> {
         self._block_in_height_range(range).boxed()
     }
 

@@ -1,6 +1,5 @@
 use std::num::NonZeroU32;
 
-use async_trait::async_trait;
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
@@ -138,7 +137,6 @@ where
     }
 }
 
-#[async_trait]
 impl<L1, Db, Fuel, BlockValidator> Runner for BlockCommitter<L1, Db, Fuel, BlockValidator>
 where
     L1: ports::l1::Contract + ports::l1::Api,
@@ -195,11 +193,11 @@ mod tests {
         l1.contract
             .expect_submit()
             .with(predicate::eq(block))
-            .return_once(move |_| Ok(()));
+            .return_once(move |_| Box::pin(async { Ok(()) }));
 
         l1.api
             .expect_get_block_number()
-            .return_once(move || Ok(0u32.into()));
+            .return_once(move || Box::pin(async { Ok(0u32.into()) }));
 
         l1
     }
@@ -347,15 +345,19 @@ mod tests {
             fetcher
                 .expect_block_at_height()
                 .with(eq(block.header.height))
-                .returning(move |_| Ok(Some(block.clone())));
+                .returning(move |_| {
+                    let block = block.clone();
+                    Box::pin(async move { Ok(Some(block)) })
+                });
         }
         if let Some(block) = available_blocks
             .into_iter()
             .max_by_key(|el| el.header.height)
         {
-            fetcher
-                .expect_latest_block()
-                .returning(move || Ok(block.clone()));
+            fetcher.expect_latest_block().returning(move || {
+                let block = block.clone();
+                Box::pin(async { Ok(block) })
+            });
         }
 
         fetcher
