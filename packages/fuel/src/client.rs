@@ -108,7 +108,7 @@ impl HttpClient {
             .filter_map(|result| async move { result.transpose() })
     }
 
-    pub(crate) async fn _latest_block(&self) -> Result<Block> {
+    pub async fn latest_block(&self) -> Result<Block> {
         match self.client.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();

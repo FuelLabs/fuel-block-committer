@@ -25,7 +25,7 @@ impl ports::fuel::Api for client::HttpClient {
     }
 
     async fn latest_block(&self) -> ports::fuel::Result<FuelBlock> {
-        self._latest_block().await
+        self.latest_block().await
     }
 }
 

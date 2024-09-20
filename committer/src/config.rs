@@ -1,8 +1,9 @@
-use std::{net::Ipv4Addr, path::PathBuf, str::FromStr, time::Duration};
+use std::{net::Ipv4Addr, num::NonZeroUsize, path::PathBuf, str::FromStr, time::Duration};
 
 use clap::{command, Parser};
 use eth::Address;
 use serde::Deserialize;
+use services::CompressionLevel;
 use storage::DbConfig;
 use url::Url;
 
@@ -74,24 +75,47 @@ pub struct App {
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
     ///// Contains configs relating to block state posting to l1
-    //pub bundle: BundleConfig,
+    pub bundle: BundleConfig,
 }
 
+/// Configuration settings for managing fuel block bundling operations.
+///
+/// This struct encapsulates various timeouts and window settings that govern
+/// how fuel blocks are accumulated, optimized, and submitted to Layer 1 (L1).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BundleConfig {
-    /// How long to wait for additional fuel blocks before bundling, as measured from the time the last blob tx was
-    /// finalized
+    /// Duration to wait for additional fuel blocks before initiating the bundling process.
+    ///
+    /// This timeout is measured from the moment the last blob transaction was finalized, or, if
+    /// missing, from the application startup time.
+    ///
+    /// If no new fuel blocks are received within this period, the current set of accumulated
+    /// blocks will be bundled.
     #[serde(deserialize_with = "human_readable_duration")]
     pub accumulation_timeout: Duration,
 
-    /// At most how long to spend on finding the ideal bundle size
+    /// The number of fuel blocks to accumulate before initiating the bundling process.
+    ///
+    /// If the system successfully accumulates this number of blocks before the `accumulation_timeout` is reached,
+    /// the bundling process will start immediately. Otherwise, the bundling process will be triggered when the
+    /// `accumulation_timeout` fires, regardless of the number of blocks accumulated.
+    pub blocks_to_accumulate: NonZeroUsize,
+
+    /// Maximum duration allocated for determining the optimal bundle size.
+    ///
+    /// This timeout limits the amount of time the system can spend searching for the ideal
+    /// number of fuel blocks to include in a bundle. Once this duration is reached, the
+    /// bundling process will proceed with the best configuration found within the allotted time.
     #[serde(deserialize_with = "human_readable_duration")]
     pub optimization_timeout: Duration,
 
-    /// How many blocks back we care about ending up as submitted. E.g. if we've been down and 20k
-    /// new blocks appear, if we set the lookback_window to 10k we're going to ignore the first
-    /// half of the missing blocks.
-    pub lookback_window: Duration,
+    /// At startup, the current block height is determined and `block_height_lookback` is subtracted from it to set the
+    /// minimum block height. From this point forward, only blocks with a height equal to or greater than the resulting
+    /// value will be considered for importing, bundling, fragmenting, and submitting to L1.
+    pub block_height_lookback: u32,
+
+    /// Valid values: "disabled", "min", "1" to "9", "max"
+    pub compression_level: CompressionLevel,
 }
 
 fn human_readable_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>

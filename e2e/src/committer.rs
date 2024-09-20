@@ -16,7 +16,11 @@ pub struct Committer {
     db_port: Option<u16>,
     db_name: Option<String>,
     kms_url: Option<String>,
-    state_accumulation_timeout: Option<String>,
+    bundle_accumulation_timeout: Option<String>,
+    bundle_blocks_to_accumulate: Option<String>,
+    bundle_optimization_timeout: Option<String>,
+    bundle_block_height_lookback: Option<String>,
+    bundle_compression_level: Option<String>,
 }
 
 impl Committer {
@@ -57,15 +61,46 @@ impl Committer {
             .env("COMMITTER__APP__DB__PORT", get_field!(db_port).to_string())
             .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
             .env("COMMITTER__APP__PORT", unused_port.to_string())
-            .env(
-                "COMMITTER__APP__STATE_ACCUMULATION_TIMEOUT",
-                get_field!(state_accumulation_timeout),
-            )
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
         if let Some(blob_wallet_key_arn) = self.blob_key_arn {
             cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ARN", blob_wallet_key_arn);
+        }
+
+        if let Some(accumulation_timeout) = self.bundle_accumulation_timeout {
+            cmd.env(
+                "COMMITTER__APP__BUNDLE__ACCUMULATION_TIMEOUT",
+                accumulation_timeout,
+            );
+        }
+
+        if let Some(blocks_to_accumulate) = self.bundle_blocks_to_accumulate {
+            cmd.env(
+                "COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE",
+                blocks_to_accumulate,
+            );
+        }
+
+        if let Some(optimization_timeout) = self.bundle_optimization_timeout {
+            cmd.env(
+                "COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT",
+                optimization_timeout,
+            );
+        }
+
+        if let Some(block_height_lookback) = self.bundle_block_height_lookback {
+            cmd.env(
+                "COMMITTER__APP__BUNDLE__BLOCK_HEIGHT_LOOKBACK",
+                block_height_lookback,
+            );
+        }
+
+        if let Some(compression_level) = self.bundle_compression_level {
+            cmd.env(
+                "COMMITTER__APP__BUNDLE__COMPRESSION_LEVEL",
+                compression_level,
+            );
         }
 
         let sink = if self.show_logs {
@@ -81,6 +116,31 @@ impl Committer {
             _child: child,
             port: unused_port,
         })
+    }
+
+    pub fn with_bundle_accumulation_timeout(mut self, timeout: String) -> Self {
+        self.bundle_accumulation_timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_bundle_blocks_to_accumulate(mut self, blocks: String) -> Self {
+        self.bundle_blocks_to_accumulate = Some(blocks);
+        self
+    }
+
+    pub fn with_bundle_optimization_timeout(mut self, timeout: String) -> Self {
+        self.bundle_optimization_timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_bundle_block_height_lookback(mut self, lookback: String) -> Self {
+        self.bundle_block_height_lookback = Some(lookback);
+        self
+    }
+
+    pub fn with_bundle_compression_level(mut self, level: String) -> Self {
+        self.bundle_compression_level = Some(level);
+        self
     }
 
     pub fn with_main_key_arn(mut self, wallet_arn: String) -> Self {
@@ -130,11 +190,6 @@ impl Committer {
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
         self.show_logs = show_logs;
-        self
-    }
-
-    pub fn with_state_accumulation_timeout(mut self, timeout: String) -> Self {
-        self.state_accumulation_timeout = Some(timeout);
         self
     }
 }

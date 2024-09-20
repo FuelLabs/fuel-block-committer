@@ -236,8 +236,7 @@ mod tests {
     use super::*;
     use crate::test_utils::mocks::l1::{FullL1Mock, TxStatus};
     use crate::test_utils::{Blocks, ImportedBlocks};
-    use crate::{test_utils, Runner, StateCommitter};
-    use bundler::Compressor;
+    use crate::{test_utils, CompressionLevel, Runner, StateCommitter};
     use clock::TestClock;
     use eth::Eip4844GasUsage;
     use ports::l1::{GasPrices, GasUsage, StorageCostCalculator};
@@ -857,6 +856,6 @@ mod tests {
     }
 
     fn default_bundler_factory() -> bundler::Factory<Eip4844GasUsage> {
-        bundler::Factory::new(Eip4844GasUsage, Compressor::no_compression())
+        bundler::Factory::new(Eip4844GasUsage, CompressionLevel::Disabled)
     }
 }

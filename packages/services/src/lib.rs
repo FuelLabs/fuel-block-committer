@@ -12,9 +12,8 @@ pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{
-    bundler::Factory as BundlerFactory,
-    bundler::{Compressor, Level},
-    Config as StateCommitterConfig, StateCommitter,
+    bundler::CompressionLevel, bundler::Factory as BundlerFactory, Config as StateCommitterConfig,
+    StateCommitter,
 };
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
@@ -73,22 +72,6 @@ pub trait Runner: Send + Sync {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    pub(crate) async fn merge_and_compress_blocks(
-        blocks: &[ports::storage::FuelBlock],
-    ) -> NonEmptyVec<u8> {
-        let compressor = Compressor::default();
-        let merged_bytes: Vec<_> = blocks
-            .iter()
-            .flat_map(|b| b.data.inner())
-            .copied()
-            .collect();
-
-        let merged_bytes = merged_bytes
-            .try_into()
-            .expect("Merged data cannot be empty");
-
-        compressor.compress(merged_bytes).await.unwrap()
-    }
 
     pub async fn encode_and_merge<'a>(
         blocks: impl IntoIterator<Item = &'a ports::fuel::FuelBlock>,
@@ -119,7 +102,7 @@ pub(crate) mod test_utils {
         data.try_into().expect("is not empty due to check")
     }
 
-    use std::{ops::Range, sync::Arc, time::Duration};
+    use std::{ops::Range, sync::Arc};
 
     use clock::TestClock;
     use eth::Eip4844GasUsage;
@@ -131,7 +114,7 @@ pub(crate) mod test_utils {
 
     use crate::{
         block_importer::{self},
-        state_committer::bundler::{self, Compressor},
+        state_committer::bundler::{self},
         BlockImporter, StateCommitter, StateCommitterConfig, StateListener,
     };
 
@@ -479,7 +462,7 @@ pub(crate) mod test_utils {
             let clock = TestClock::default();
             clock.set_time(finalization_time);
 
-            let factory = bundler::Factory::new(Eip4844GasUsage, Compressor::no_compression());
+            let factory = bundler::Factory::new(Eip4844GasUsage, crate::CompressionLevel::Level6);
 
             let tx = [2u8; 32];
 

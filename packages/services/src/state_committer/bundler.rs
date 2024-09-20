@@ -7,15 +7,16 @@ use ports::{
     storage::SequentialFuelBlocks,
     types::NonEmptyVec,
 };
-use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive};
+use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive, str::FromStr};
 
 #[derive(Debug, Clone, Copy)]
-pub struct Compressor {
+struct Compressor {
     compression: Option<Compression>,
 }
 
+#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
-pub enum Level {
+pub enum CompressionLevel {
     Disabled,
     Min,
     Level1,
@@ -30,7 +31,43 @@ pub enum Level {
     Max,
 }
 
-impl Level {
+impl<'a> serde::Deserialize<'a> for CompressionLevel {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let as_string = String::deserialize(deserializer)?;
+
+        CompressionLevel::from_str(&as_string)
+            .map_err(|e| serde::de::Error::custom(format!("Invalid compression level: {e}")))
+    }
+}
+
+impl FromStr for CompressionLevel {
+    type Err = crate::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "disabled" => Ok(Self::Disabled),
+            "min" => Ok(Self::Min),
+            "level1" => Ok(Self::Level1),
+            "level2" => Ok(Self::Level2),
+            "level3" => Ok(Self::Level3),
+            "level4" => Ok(Self::Level4),
+            "level5" => Ok(Self::Level5),
+            "level6" => Ok(Self::Level6),
+            "level7" => Ok(Self::Level7),
+            "level8" => Ok(Self::Level8),
+            "level9" => Ok(Self::Level9),
+            "max" => Ok(Self::Max),
+            _ => Err(crate::Error::Other(format!(
+                "Invalid compression level: {s}"
+            ))),
+        }
+    }
+}
+
+impl CompressionLevel {
     pub fn levels() -> Vec<Self> {
         vec![
             Self::Disabled,
@@ -51,29 +88,29 @@ impl Level {
 
 impl Default for Compressor {
     fn default() -> Self {
-        Self::new(Level::Level6)
+        Self::new(CompressionLevel::Level6)
     }
 }
 
 impl Compressor {
     pub fn no_compression() -> Self {
-        Self::new(Level::Disabled)
+        Self::new(CompressionLevel::Disabled)
     }
 
-    pub fn new(level: Level) -> Self {
+    pub fn new(level: CompressionLevel) -> Self {
         let level = match level {
-            Level::Disabled => None,
-            Level::Min => Some(0),
-            Level::Level1 => Some(1),
-            Level::Level2 => Some(2),
-            Level::Level3 => Some(3),
-            Level::Level4 => Some(4),
-            Level::Level5 => Some(5),
-            Level::Level6 => Some(6),
-            Level::Level7 => Some(7),
-            Level::Level8 => Some(8),
-            Level::Level9 => Some(9),
-            Level::Max => Some(10),
+            CompressionLevel::Disabled => None,
+            CompressionLevel::Min => Some(0),
+            CompressionLevel::Level1 => Some(1),
+            CompressionLevel::Level2 => Some(2),
+            CompressionLevel::Level3 => Some(3),
+            CompressionLevel::Level4 => Some(4),
+            CompressionLevel::Level5 => Some(5),
+            CompressionLevel::Level6 => Some(6),
+            CompressionLevel::Level7 => Some(7),
+            CompressionLevel::Level8 => Some(8),
+            CompressionLevel::Level9 => Some(9),
+            CompressionLevel::Max => Some(10),
         };
 
         Self {
@@ -144,14 +181,14 @@ pub trait BundlerFactory {
 
 pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
-    compressor: Compressor,
+    compression_level: CompressionLevel,
 }
 
 impl<L1> Factory<L1> {
-    pub fn new(gas_calc: L1, compressor: Compressor) -> Self {
+    pub fn new(gas_calc: L1, compression_level: CompressionLevel) -> Self {
         Self {
             gas_calc,
-            compressor,
+            compression_level,
         }
     }
 }
@@ -164,7 +201,11 @@ where
     type Bundler = Bundler<GasCalculator>;
 
     async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler {
-        Bundler::new(self.gas_calc.clone(), blocks, self.compressor)
+        Bundler::new(
+            self.gas_calc.clone(),
+            blocks,
+            Compressor::new(self.compression_level),
+        )
     }
 }
 
@@ -419,7 +460,7 @@ mod tests {
     #[test]
     fn can_disable_compression() {
         // given
-        let compressor = Compressor::new(Level::Disabled);
+        let compressor = Compressor::new(CompressionLevel::Disabled);
         let data = non_empty_vec!(1, 2, 3);
 
         // when
@@ -432,7 +473,7 @@ mod tests {
     #[test]
     fn all_compression_levels_work() {
         let data = non_empty_vec!(1, 2, 3);
-        for level in Level::levels() {
+        for level in CompressionLevel::levels() {
             let compressor = Compressor::new(level);
             compressor.compress_blocking(&data).unwrap();
         }

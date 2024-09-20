@@ -5,7 +5,8 @@ use eth::{AwsConfig, Eip4844GasUsage};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{
-    BlockCommitter, CommitListener, Level, Runner, StateCommitterConfig, WalletBalanceTracker,
+    BlockCommitter, CommitListener, CompressionLevel, Runner, StateCommitterConfig,
+    WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -78,12 +79,10 @@ pub fn state_committer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
+    starting_fuel_height: u32,
 ) -> tokio::task::JoinHandle<()> {
-    // TODO: segfault propagate the configurations
-
-    // TODO: give namespaces to these symbols
     let bundler_factory =
-        services::BundlerFactory::new(Eip4844GasUsage, services::Compressor::new(Level::Max));
+        services::BundlerFactory::new(Eip4844GasUsage, config.app.bundle.compression_level);
 
     let state_committer = services::StateCommitter::new(
         l1,
@@ -91,10 +90,10 @@ pub fn state_committer(
         SystemClock,
         bundler_factory,
         StateCommitterConfig {
-            optimization_time_limit: Duration::from_secs(20),
-            block_accumulation_time_limit: Duration::from_secs(10),
-            num_blocks_to_accumulate: 20000.try_into().unwrap(),
-            starting_fuel_height: 0,
+            optimization_time_limit: config.app.bundle.optimization_timeout,
+            block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            starting_fuel_height,
         },
     );
 
@@ -111,9 +110,11 @@ pub fn state_importer(
     storage: impl Storage + 'static,
     cancel_token: CancellationToken,
     config: &config::Config,
+    starting_fuel_height: u32,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
-    let state_importer = services::BlockImporter::new(storage, fuel, validator, 0);
+    let state_importer =
+        services::BlockImporter::new(storage, fuel, validator, starting_fuel_height);
 
     schedule_polling(
         config.app.block_check_interval,

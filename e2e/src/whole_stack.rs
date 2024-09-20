@@ -121,7 +121,6 @@ async fn start_committer(
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
         .with_show_logs(logs)
-        .with_state_accumulation_timeout("3s".to_string())
         .with_eth_rpc((eth_node).ws_url().clone())
         .with_fuel_rpc(fuel_node.url().clone())
         .with_db_port(random_db.port())
@@ -129,7 +128,12 @@ async fn start_committer(
         .with_state_contract_address(deployed_contract.address())
         .with_fuel_block_producer_addr(*fuel_node.consensus_pub_key().hash())
         .with_main_key_arn(main_key.id.clone())
-        .with_kms_url(main_key.url.clone());
+        .with_kms_url(main_key.url.clone())
+        .with_bundle_accumulation_timeout("5s".to_owned())
+        .with_bundle_blocks_to_accumulate("5000".to_string())
+        .with_bundle_optimization_timeout("10s".to_owned())
+        .with_bundle_block_height_lookback("20000".to_owned())
+        .with_bundle_compression_level("level6".to_owned());
 
     let committer = if blob_support {
         committer_builder.with_blob_key_arn(secondary_key.id.clone())
