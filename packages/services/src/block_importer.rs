@@ -1,8 +1,8 @@
-use std::cmp::{max, min};
+use std::cmp::max;
 
 use futures::TryStreamExt;
 use ports::{fuel::FuelBlock, storage::Storage, types::NonEmptyVec};
-use tracing::{error, info};
+use tracing::info;
 use validator::Validator;
 
 use crate::{Error, Result, Runner};
@@ -128,8 +128,11 @@ where
         self.fuel_api
             .blocks_in_height_range(start_request_range..=chain_height)
             .map_err(crate::Error::from)
-            .try_for_each(|block| async {
-                self.import_block(block).await?;
+            .try_for_each(|blocks_batch| async {
+                for block in blocks_batch {
+                    self.import_block(block).await?;
+                }
+
                 Ok(())
             })
             .await?;

@@ -127,7 +127,7 @@ pub(crate) mod test_utils {
             use delegate::delegate;
             use mockall::{predicate::eq, Sequence};
             use ports::{
-                l1::{Api, GasPrices, GasUsage},
+                l1::{Api, GasPrices},
                 types::{L1Height, NonEmptyVec, TransactionResponse, U256},
             };
 
@@ -315,7 +315,7 @@ pub(crate) mod test_utils {
 
                 non_empty_blocks
                     .try_into()
-                    .expect("genereated from a range, guaranteed sequence of heights")
+                    .expect("generated from a range, guaranteed sequence of heights")
             }
 
             pub fn generate_storage_block(
@@ -350,7 +350,7 @@ pub(crate) mod test_utils {
                 }
             }
 
-            pub fn blocks_exists(
+            pub fn blocks_exists( 
                 secret_key: SecretKey,
                 heights: Range<u32>,
             ) -> ports::fuel::MockApi {
@@ -392,13 +392,13 @@ pub(crate) mod test_utils {
                             panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
-                        let blocks = blocks
+                        let blocks_batch = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
                             .cloned()
-                            .map(Ok)
                             .collect_vec();
-                        stream::iter(blocks).boxed()
+                        
+                        stream::iter(iter::once(Ok(blocks_batch))).boxed()
                     });
 
                 fuel_mock

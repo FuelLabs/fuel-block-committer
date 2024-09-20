@@ -1,5 +1,5 @@
 #![deny(unused_crate_dependencies)]
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 use futures::StreamExt;
 use ports::fuel::{BoxStream, FuelBlock};
@@ -19,7 +19,7 @@ impl ports::fuel::Api for client::HttpClient {
     fn blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<FuelBlock>> {
+    ) -> BoxStream<'_, Result<Vec<FuelBlock>>> {
         self._block_in_height_range(range).boxed()
     }
 
@@ -34,7 +34,6 @@ mod tests {
         prometheus::{proto::Metric, Registry},
         RegistersMetrics,
     };
-    use ports::fuel::Api;
     use url::Url;
 
     use super::*;

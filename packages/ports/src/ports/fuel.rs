@@ -1,4 +1,4 @@
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 pub use fuel_core_client::client::types::{
     block::{
@@ -29,6 +29,6 @@ pub trait Api: Send + Sync {
     fn blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<FuelBlock>>;
+    ) -> BoxStream<'_, Result<Vec<FuelBlock>>>;
     async fn latest_block(&self) -> Result<FuelBlock>;
 }

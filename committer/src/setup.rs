@@ -5,7 +5,7 @@ use eth::{AwsConfig, Eip4844GasUsage};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{
-    BlockCommitter, CommitListener, CompressionLevel, Runner, StateCommitterConfig,
+    BlockCommitter, CommitListener, Runner, StateCommitterConfig,
     WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
