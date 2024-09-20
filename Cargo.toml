@@ -33,7 +33,6 @@ services = { path = "./packages/services", default-features = false }
 validator = { path = "./packages/validator", default-features = false }
 clock = { path = "./packages/clock", default-features = false }
 
-approx = { version = "0.5", default-features = false }
 test-case = { version = "3.3", default-features = false }
 actix-web = { version = "4", default-features = false }
 pretty_assertions = { version = "1.4", default-features = false }
