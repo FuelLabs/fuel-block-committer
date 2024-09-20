@@ -14,7 +14,7 @@ build = "build.rs"
 async-trait = { workspace = true }
 cynic = { version = "2.2", features = ["http-reqwest"] }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
-fuel-core-types = { workspace = true, optional = true }
+fuel-core-types = { workspace = true }
 futures = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["fuel"] }
@@ -27,5 +27,5 @@ tokio = { workspace = true, features = ["macros"] }
 fuel-core-client = { workspace = true }
 
 [features]
-test-helpers = ["fuel-core-types"]
+test-helpers = []
 

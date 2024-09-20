@@ -20,6 +20,8 @@ use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
 
+mod block_ext;
+
 #[derive(Clone)]
 pub struct HttpClient {
     client: GqlClient,
