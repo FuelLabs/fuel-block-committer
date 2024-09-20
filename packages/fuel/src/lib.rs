@@ -20,7 +20,7 @@ impl ports::fuel::Api for client::HttpClient {
     fn blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<Result<FuelBlock>, '_> {
+    ) -> BoxStream<Result<Vec<FuelBlock>>, '_> {
         self._block_in_height_range(range).boxed()
     }
 

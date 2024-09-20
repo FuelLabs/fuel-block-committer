@@ -28,6 +28,6 @@ pub trait Api: Send + Sync {
     fn blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<Result<FuelBlock>, '_>;
+    ) -> BoxStream<Result<Vec<FuelBlock>>, '_>;
     async fn latest_block(&self) -> Result<FuelBlock>;
 }

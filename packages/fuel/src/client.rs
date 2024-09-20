@@ -5,7 +5,11 @@ use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
     Coin, CoinType,
 };
-use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
+use fuel_core_client::client::{
+    pagination::{PageDirection, PaginationRequest},
+    types::Block,
+    FuelClient as GqlClient,
+};
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
 use futures::{stream, Stream, StreamExt};
@@ -84,6 +88,7 @@ impl HttpClient {
         }
     }
 
+    // TODO: check if this method can be removed
     pub(crate) async fn _block_at_height(&self, height: u32) -> Result<Option<Block>> {
         match self.client.block_by_height(height.into()).await {
             Ok(maybe_block) => {
@@ -97,15 +102,45 @@ impl HttpClient {
         }
     }
 
+    fn create_blocks_request(range: RangeInclusive<u32>) -> Result<PaginationRequest<String>> {
+        let start = range.start().saturating_sub(1);
+        let results = range
+            .end()
+            .saturating_sub(*range.start())
+            .try_into()
+            .map_err(|_| {
+                Error::Other(
+                    "could not convert `u32` to `i32` when calculating blocks request range"
+                        .to_string(),
+                )
+            })?;
+
+        Ok(PaginationRequest {
+            cursor: Some(start.to_string()),
+            results,
+            direction: PageDirection::Forward,
+        })
+    }
+
     pub(crate) fn _block_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> impl Stream<Item = Result<Block>> + '_ {
-        // TODO: segfault make 5 configurable
-        stream::iter(range)
-            .map(move |height| self._block_at_height(height))
-            .buffered(5)
-            .filter_map(|result| async move { result.transpose() })
+    ) -> impl Stream<Item = Result<Vec<Block>>> + '_ {
+        let num_blocks_in_request = 100; // TODO: @hal3e make this configurable
+        let windowed_range = WindowRangeInclusive::new(range, num_blocks_in_request);
+
+        stream::iter(windowed_range)
+            .map(move |range| async move {
+                let request = Self::create_blocks_request(range)?;
+
+                Ok(self
+                    .client
+                    .blocks(request)
+                    .await
+                    .map_err(|e| Error::Network(e.to_string()))?
+                    .results)
+            })
+            .buffered(2) // TODO: @segfault make this configurable
     }
 
     pub async fn latest_block(&self) -> Result<Block> {
@@ -139,5 +174,43 @@ impl HttpClient {
 impl RegistersMetrics for HttpClient {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.metrics.metrics()
+    }
+}
+
+/// An iterator that yields windows of a specified size over a given range.
+struct WindowRangeInclusive {
+    current: u32,
+    end: u32,
+    window_size: u32,
+}
+
+impl WindowRangeInclusive {
+    pub fn new(range: RangeInclusive<u32>, window_size: u32) -> Self {
+        Self {
+            current: *range.start(),
+            end: *range.end(),
+            window_size,
+        }
+    }
+}
+
+impl Iterator for WindowRangeInclusive {
+    type Item = RangeInclusive<u32>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current > self.end {
+            return None;
+        }
+
+        let window_end = self.current + self.window_size - 1;
+        let window_end = if window_end > self.end {
+            self.end
+        } else {
+            window_end
+        };
+
+        let result = self.current..=window_end;
+        self.current = window_end + 1;
+        Some(result)
     }
 }

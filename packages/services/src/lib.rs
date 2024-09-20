@@ -412,13 +412,13 @@ pub(crate) mod test_utils {
                             panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
-                        let blocks = blocks
+                        let blocks_batch = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
                             .cloned()
-                            .map(Ok)
                             .collect_vec();
-                        stream::iter(blocks).boxed()
+                        
+                        stream::iter(iter::once(Ok(blocks_batch))).boxed()
                     });
 
                 fuel_mock
