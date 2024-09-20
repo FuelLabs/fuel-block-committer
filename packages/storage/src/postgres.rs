@@ -158,14 +158,17 @@ impl Postgres {
         .collect()
     }
 
-    pub(crate) async fn _available_blocks(&self) -> crate::error::Result<Range<u32>> {
+    pub(crate) async fn _available_blocks(
+        &self,
+    ) -> crate::error::Result<Option<RangeInclusive<u32>>> {
         let record = sqlx::query!("SELECT MIN(height) AS min, MAX(height) AS max FROM fuel_blocks")
             .fetch_one(&self.connection_pool)
             .await
             .map_err(Error::from)?;
 
-        let min = record.min.unwrap_or(0);
-        let max = record.max.map(|max| max + 1).unwrap_or(0);
+        let Some((min, max)) = record.min.zip(record.max) else {
+            return Ok(None);
+        };
 
         let min = u32::try_from(min)
             .map_err(|_| Error::Conversion(format!("cannot convert height into u32: {min} ")))?;
@@ -173,12 +176,7 @@ impl Postgres {
         let max = u32::try_from(max)
             .map_err(|_| Error::Conversion(format!("cannot convert height into u32: {max} ")))?;
 
-        Range {
-            start: min,
-            end: max,
-        }
-        .try_into()
-        .map_err(|e| Error::Conversion(format!("{e}")))
+        Ok(Some(min..=max))
     }
 
     pub(crate) async fn _insert_block(&self, block: ports::storage::FuelBlock) -> Result<()> {
@@ -230,25 +228,24 @@ impl Postgres {
 
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
-        lookback_window: u32,
+        starting_height: u32,
         limit: usize,
     ) -> Result<Option<SequentialFuelBlocks>> {
         // TODO: segfault error msg
         let limit = i64::try_from(limit).map_err(|e| Error::Conversion(format!("{e}")))?;
         let response = sqlx::query_as!(
             tables::FuelBlock,
-            r#"WITH max_height_cte AS (SELECT MAX(height) AS max_height FROM fuel_blocks)
+            r#"
             SELECT fb.*
-            FROM fuel_blocks fb, max_height_cte mh
-            WHERE fb.height >= (mh.max_height - $1)
-            AND fb.height > COALESCE(
-                (SELECT MAX(b.end_height) FROM bundles b), 
-                -1
+            FROM fuel_blocks fb WHERE fb.height >= $1
+            AND NOT EXISTS (
+                SELECT 1
+                FROM bundles b
+                WHERE fb.height BETWEEN b.start_height AND b.end_height
             )
-            ORDER BY fb.height ASC
-            LIMIT $2;"#,
-            i64::from(lookback_window),
-            limit
+            ORDER BY fb.height LIMIT $2"#,
+            i64::from(starting_height), // Parameter $1
+            limit                       // Parameter $2
         )
         .fetch_all(&self.connection_pool)
         .await

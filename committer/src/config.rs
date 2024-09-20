@@ -73,9 +73,25 @@ pub struct App {
     pub block_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
-    /// How long to wait in order to improve blob space utilization
+    ///// Contains configs relating to block state posting to l1
+    //pub bundle: BundleConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BundleConfig {
+    /// How long to wait for additional fuel blocks before bundling, as measured from the time the last blob tx was
+    /// finalized
     #[serde(deserialize_with = "human_readable_duration")]
-    pub state_accumulation_timeout: Duration,
+    pub accumulation_timeout: Duration,
+
+    /// At most how long to spend on finding the ideal bundle size
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub optimization_timeout: Duration,
+
+    /// How many blocks back we care about ending up as submitted. E.g. if we've been down and 20k
+    /// new blocks appear, if we set the lookback_window to 10k we're going to ignore the first
+    /// half of the missing blocks.
+    pub lookback_window: Duration,
 }
 
 fn human_readable_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>

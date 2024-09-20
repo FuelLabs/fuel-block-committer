@@ -143,10 +143,10 @@ pub trait Storage: Send + Sync {
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_block(&self, block: FuelBlock) -> Result<()>;
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
-    async fn available_blocks(&self) -> Result<Range<u32>>;
-    async fn lowest_unbundled_blocks(
+    async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
+    async fn lowest_sequence_of_unbundled_blocks(
         &self,
-        lookback_window: u32,
+        starting_height: u32,
         limit: usize,
     ) -> Result<Option<SequentialFuelBlocks>>;
     async fn insert_bundle_and_fragments(

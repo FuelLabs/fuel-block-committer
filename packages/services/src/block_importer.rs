@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::cmp::{max, min};
 
 use async_trait::async_trait;
 use futures::TryStreamExt;
@@ -15,7 +15,7 @@ pub struct BlockImporter<Db, FuelApi, BlockValidator> {
     storage: Db,
     fuel_api: FuelApi,
     block_validator: BlockValidator,
-    lookback_window: u32,
+    starting_height: u32,
 }
 
 impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator> {
@@ -24,13 +24,13 @@ impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator> {
         storage: Db,
         fuel_api: FuelApi,
         block_validator: BlockValidator,
-        lookback_window: u32,
+        starting_height: u32,
     ) -> Self {
         Self {
             storage,
             fuel_api,
             block_validator,
-            lookback_window,
+            starting_height,
         }
     }
 }
@@ -66,21 +66,6 @@ where
         }
         Ok(())
     }
-
-    /// Calculates the import range based on the chain height and database state.
-    fn calculate_import_range(&self, chain_height: u32, db_height: Option<u32>) -> (u32, u32) {
-        let import_end = chain_height;
-
-        let import_start = match db_height {
-            Some(db_height) => max(
-                chain_height.saturating_sub(self.lookback_window) + 1,
-                db_height + 1,
-            ),
-            None => chain_height.saturating_sub(self.lookback_window),
-        };
-
-        (import_start, import_end)
-    }
 }
 
 pub(crate) fn encode_block(block: &FuelBlock) -> Result<ports::storage::FuelBlock> {
@@ -114,34 +99,22 @@ where
 {
     /// Runs the block importer, fetching and importing blocks as needed.
     async fn run(&mut self) -> Result<()> {
-        if self.lookback_window == 0 {
-            info!("lookback_window is zero; skipping import.");
-            return Ok(());
-        }
-
         let available_blocks = self.storage.available_blocks().await?;
-        let db_empty = available_blocks.is_empty();
 
         let latest_block = self.fetch_latest_block().await?;
 
         let chain_height = latest_block.header.height;
-        let db_height = if db_empty {
-            None
-        } else {
-            Some(available_blocks.end.saturating_sub(1))
-        };
 
-        if let Some(db_height) = db_height {
-            if db_height > chain_height {
+        if let Some(db_height_range) = &available_blocks {
+            let latest_db_block = *db_height_range.end();
+            if latest_db_block > chain_height {
                 let err_msg = format!(
-                    "Database height ({}) is greater than chain height ({})",
-                    db_height, chain_height
+                    "Latest database block ({latest_db_block}) is has a height greater than the current chain height ({chain_height})",
                 );
-                error!("{}", err_msg);
                 return Err(Error::Other(err_msg));
             }
 
-            if db_height == chain_height {
+            if latest_db_block == chain_height {
                 info!(
                     "Database is up to date with the chain({chain_height}); no import necessary."
                 );
@@ -149,25 +122,19 @@ where
             }
         }
 
-        let (import_start, import_end) = self.calculate_import_range(chain_height, db_height);
+        let start_request_range = match available_blocks {
+            Some(db_height) => max(self.starting_height, db_height.end().saturating_add(1)),
+            None => self.starting_height,
+        };
 
-        // We don't include the latest block in the range because we will import it separately.
-        if import_start <= import_end {
-            self.fuel_api
-                .blocks_in_height_range(import_start..import_end)
-                .map_err(crate::Error::from)
-                .try_for_each(|block| async {
-                    self.import_block(block).await?;
-                    Ok(())
-                })
-                .await?;
-        }
-
-        // Import the latest block if it's missing or the DB is empty.
-        let latest_block_missing = db_height.map_or(true, |db_height| db_height != chain_height);
-        if latest_block_missing {
-            self.import_block(latest_block).await?;
-        }
+        self.fuel_api
+            .blocks_in_height_range(start_request_range..=chain_height)
+            .map_err(crate::Error::from)
+            .try_for_each(|block| async {
+                self.import_block(block).await?;
+                Ok(())
+            })
+            .await?;
 
         Ok(())
     }
@@ -203,13 +170,17 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 10);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
         // When
         importer.run().await?;
 
         // Then
-        let all_blocks = setup.db().lowest_unbundled_blocks(10, 10).await?.unwrap();
+        let all_blocks = setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(0, 10)
+            .await?
+            .unwrap();
 
         let expected_block = encode_block(&block)?;
 
@@ -219,7 +190,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn does_not_reimport_blocks_already_in_db() -> Result<()> {
+    async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
         // Given
         let setup = test_utils::Setup::init().await;
 
@@ -237,36 +208,13 @@ mod tests {
         let new_blocks =
             (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1));
 
-        let all_blocks = existing_blocks.into_iter().chain(new_blocks).collect_vec();
-
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(all_blocks.clone());
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 10);
-
-        // When
-        importer.run().await?;
-
-        // Then
-        let stored_blocks = setup.db().lowest_unbundled_blocks(100, 100).await?.unwrap();
-        let expected_blocks = all_blocks
-            .iter()
-            .map(|block| encode_block(block).unwrap())
+        let all_blocks = existing_blocks
+            .into_iter()
+            .chain(new_blocks.clone())
             .collect_vec();
 
-        pretty_assertions::assert_eq!(**stored_blocks, expected_blocks);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn does_nothing_if_import_depth_is_zero() -> Result<()> {
-        // Given
-        let setup = test_utils::Setup::init().await;
-        let secret_key = given_secret_key();
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
-        let fuel_mock = ports::fuel::MockApi::new();
 
         let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
@@ -274,9 +222,17 @@ mod tests {
         importer.run().await?;
 
         // Then
-        // No blocks should have been imported
-        let stored_blocks = setup.db().lowest_unbundled_blocks(10, 10).await?;
-        assert!(stored_blocks.is_none());
+        let stored_blocks = setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(0, 100)
+            .await?
+            .unwrap();
+        let expected_blocks = all_blocks
+            .iter()
+            .map(|block| encode_block(block).unwrap())
+            .collect_vec();
+
+        pretty_assertions::assert_eq!(**stored_blocks, expected_blocks);
 
         Ok(())
     }
@@ -301,14 +257,14 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(chain_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 10);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
         // When
         let result = importer.run().await;
 
         // Then
         if let Err(Error::Other(err)) = result {
-            assert_eq!(err, "Database height (5) is greater than chain height (2)");
+            assert_eq!(err, "Latest database block (5) is has a height greater than the current chain height (2)");
         } else {
             panic!("Expected an Error::Other due to db height being greater than chain height");
         }
@@ -317,42 +273,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn imports_blocks_when_db_is_stale() -> Result<()> {
+    async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
         // Given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks {
-            fuel_blocks: db_blocks,
-            secret_key,
-            ..
-        } = setup
+        let ImportedBlocks { secret_key, .. } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..3,
                 tx_per_block: 1,
             })
             .await;
 
-        let chain_blocks =
-            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1));
+        let starting_height = 8;
+        let new_blocks = (starting_height..=13)
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1))
+            .collect_vec();
 
-        let all_blocks = db_blocks.into_iter().chain(chain_blocks).collect_vec();
-
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(all_blocks.clone());
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 10);
+        let mut importer =
+            BlockImporter::new(setup.db(), fuel_mock, block_validator, starting_height);
 
         // When
         importer.run().await?;
 
         // Then
-        let stored_blocks = setup.db().lowest_unbundled_blocks(10, 100).await?.unwrap();
-        let expected_blocks = all_blocks
+        let stored_new_blocks = setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(starting_height, 100)
+            .await?
+            .unwrap();
+        let expected_blocks = new_blocks
             .iter()
             .map(|block| encode_block(block).unwrap())
             .collect_vec();
 
-        assert_eq!(**stored_blocks, expected_blocks);
+        pretty_assertions::assert_eq!(**stored_new_blocks, expected_blocks);
 
         Ok(())
     }
@@ -377,47 +334,20 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 10);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
         // When
         importer.run().await?;
 
         // Then
         // Database should remain unchanged
-        let stored_blocks = setup.db().lowest_unbundled_blocks(10, 10).await?.unwrap();
+        let stored_blocks = setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(0, 10)
+            .await?
+            .unwrap();
 
         assert_eq!(**stored_blocks, storage_blocks);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn imports_full_range_when_db_is_empty_and_depth_exceeds_chain_height() -> Result<()> {
-        // Given
-        let setup = test_utils::Setup::init().await;
-
-        let secret_key = given_secret_key();
-        let blocks = (0..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1))
-            .collect_vec();
-
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks.clone());
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
-        // Set import_depth greater than chain height
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 10);
-
-        // When
-        importer.run().await?;
-
-        // Then
-        let stored_blocks = setup.db().lowest_unbundled_blocks(10, 10).await?.unwrap();
-        let expected_blocks = blocks
-            .iter()
-            .map(|block| encode_block(block).unwrap())
-            .collect_vec();
-
-        assert_eq!(**stored_blocks, expected_blocks);
 
         Ok(())
     }

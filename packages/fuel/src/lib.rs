@@ -1,5 +1,5 @@
 #![deny(unused_crate_dependencies)]
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 use futures::StreamExt;
 use ports::fuel::{BoxStream, FuelBlock};
@@ -17,7 +17,10 @@ impl ports::fuel::Api for client::HttpClient {
         self._block_at_height(height).await
     }
 
-    fn blocks_in_height_range(&self, range: Range<u32>) -> BoxStream<Result<FuelBlock>, '_> {
+    fn blocks_in_height_range(
+        &self,
+        range: RangeInclusive<u32>,
+    ) -> BoxStream<Result<FuelBlock>, '_> {
         self._block_in_height_range(range).boxed()
     }
 

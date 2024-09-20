@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 pub use fuel_core_client::client::types::{
     block::{
@@ -25,6 +25,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[async_trait::async_trait]
 pub trait Api: Send + Sync {
     async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
-    fn blocks_in_height_range(&self, range: Range<u32>) -> BoxStream<Result<FuelBlock>, '_>;
+    fn blocks_in_height_range(
+        &self,
+        range: RangeInclusive<u32>,
+    ) -> BoxStream<Result<FuelBlock>, '_>;
     async fn latest_block(&self) -> Result<FuelBlock>;
 }

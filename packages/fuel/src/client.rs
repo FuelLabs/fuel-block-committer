@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
@@ -99,7 +99,7 @@ impl HttpClient {
 
     pub(crate) fn _block_in_height_range(
         &self,
-        range: Range<u32>,
+        range: RangeInclusive<u32>,
     ) -> impl Stream<Item = Result<Block>> + '_ {
         // TODO: segfault make 5 configurable
         stream::iter(range)

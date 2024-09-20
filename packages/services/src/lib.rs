@@ -132,7 +132,7 @@ pub(crate) mod test_utils {
     use crate::{
         block_importer::{self},
         state_committer::bundler::{self, Compressor},
-        BlockImporter, StateCommitter, StateListener,
+        BlockImporter, StateCommitter, StateCommitterConfig, StateListener,
     };
 
     use super::Runner;
@@ -424,16 +424,9 @@ pub(crate) mod test_utils {
                 fuel_mock
                     .expect_blocks_in_height_range()
                     .returning(move |range| {
-                        if let Some(lowest) = range.clone().min() {
-                            if lowest < lowest_height {
-                                panic!("The range of blocks asked of the mock is not tight!");
-                            }
-                        }
-
-                        if let Some(highest) = range.clone().max() {
-                            if highest > highest_height {
-                                panic!("The range of blocks asked of the mock is not tight!");
-                            }
+                        let expected_range = lowest_height..=highest_height;
+                        if range != expected_range {
+                            panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
                         let blocks = blocks
@@ -496,12 +489,7 @@ pub(crate) mod test_utils {
                 self.db(),
                 clock.clone(),
                 factory,
-                crate::state_committer::Config {
-                    optimization_time_limit: Duration::from_secs(100),
-                    block_accumulation_time_limit: Duration::from_secs(100),
-                    num_blocks_to_accumulate: 1.try_into().unwrap(),
-                    lookback_window: 100,
-                },
+                StateCommitterConfig::default(),
             );
             committer.run().await.unwrap();
 
@@ -565,7 +553,7 @@ pub(crate) mod test_utils {
                     let mock = mocks::fuel::these_blocks_exist(blocks.clone());
 
                     (
-                        BlockImporter::new(self.db(), mock, block_validator, amount as u32),
+                        BlockImporter::new(self.db(), mock, block_validator, 0),
                         ImportedBlocks {
                             fuel_blocks: blocks,
                             secret_key,
@@ -583,7 +571,7 @@ pub(crate) mod test_utils {
                         .collect();
 
                     (
-                        BlockImporter::new(self.db(), mock, block_validator, amount as u32),
+                        BlockImporter::new(self.db(), mock, block_validator, 0),
                         ImportedBlocks {
                             fuel_blocks: blocks,
                             storage_blocks,

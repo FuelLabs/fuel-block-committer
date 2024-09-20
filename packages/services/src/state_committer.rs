@@ -18,7 +18,7 @@ pub struct Config {
     pub optimization_time_limit: Duration,
     pub block_accumulation_time_limit: Duration,
     pub num_blocks_to_accumulate: NonZeroUsize,
-    pub lookback_window: u32,
+    pub starting_fuel_height: u32,
 }
 
 #[cfg(test)]
@@ -28,7 +28,7 @@ impl Default for Config {
             optimization_time_limit: Duration::from_secs(100),
             block_accumulation_time_limit: Duration::from_secs(100),
             num_blocks_to_accumulate: NonZeroUsize::new(1).unwrap(),
-            lookback_window: 100,
+            starting_fuel_height: 0,
         }
     }
 }
@@ -79,8 +79,8 @@ where
     async fn bundle_and_fragment_blocks(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
         let Some(blocks) = self
             .storage
-            .lowest_unbundled_blocks(
-                self.config.lookback_window,
+            .lowest_sequence_of_unbundled_blocks(
+                self.config.starting_fuel_height,
                 self.config.num_blocks_to_accumulate.get(),
             )
             .await?

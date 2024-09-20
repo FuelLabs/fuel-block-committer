@@ -94,7 +94,7 @@ pub fn state_committer(
             optimization_time_limit: Duration::from_secs(20),
             block_accumulation_time_limit: Duration::from_secs(10),
             num_blocks_to_accumulate: 20000.try_into().unwrap(),
-            lookback_window: 10000,
+            starting_fuel_height: 0,
         },
     );
 
@@ -113,7 +113,7 @@ pub fn state_importer(
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
-    let state_importer = services::BlockImporter::new(storage, fuel, validator, 10000);
+    let state_importer = services::BlockImporter::new(storage, fuel, validator, 0);
 
     schedule_polling(
         config.app.block_check_interval,

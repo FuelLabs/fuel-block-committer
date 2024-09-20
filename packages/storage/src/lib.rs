@@ -26,7 +26,7 @@ impl Storage for Postgres {
         Ok(self._oldest_nonfinalized_fragment().await?)
     }
 
-    async fn available_blocks(&self) -> Result<Range<u32>> {
+    async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>> {
         self._available_blocks().await.map_err(Into::into)
     }
 
@@ -60,13 +60,13 @@ impl Storage for Postgres {
         Ok(self._set_submission_completed(fuel_block_hash).await?)
     }
 
-    async fn lowest_unbundled_blocks(
+    async fn lowest_sequence_of_unbundled_blocks(
         &self,
-        lookback_window: u32,
+        starting_height: u32,
         limit: usize,
     ) -> Result<Option<SequentialFuelBlocks>> {
         Ok(self
-            ._lowest_unbundled_blocks(lookback_window, limit)
+            ._lowest_unbundled_blocks(starting_height, limit)
             .await?)
     }
 
