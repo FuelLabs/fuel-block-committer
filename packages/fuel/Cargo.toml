@@ -12,12 +12,13 @@ build = "build.rs"
 
 [dependencies]
 async-trait = { workspace = true }
+cynic = { version = "2.2", features = ["http-reqwest"] }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
 fuel-core-types = { workspace = true, optional = true }
+futures = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["fuel"] }
 url = { workspace = true }
-futures = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }

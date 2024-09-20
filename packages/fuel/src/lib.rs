@@ -4,6 +4,7 @@ use std::ops::RangeInclusive;
 use futures::StreamExt;
 use ports::fuel::{BoxStream, FuelBlock};
 mod client;
+mod client_ext;
 mod metrics;
 
 pub use client::*;

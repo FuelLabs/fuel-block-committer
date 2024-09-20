@@ -2668,6 +2668,7 @@ name = "fuel"
 version = "0.6.0"
 dependencies = [
  "async-trait",
+ "cynic",
  "fuel-core-client",
  "fuel-core-types",
  "futures",
