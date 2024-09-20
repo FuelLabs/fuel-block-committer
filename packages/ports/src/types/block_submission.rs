@@ -2,8 +2,6 @@ use sqlx::types::chrono::{DateTime, Utc};
 
 use super::TransactionState;
 
-pub type FuelBlockHeight = u32;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmissionTx {
     pub id: Option<u32>,
@@ -35,17 +33,17 @@ impl Default for BlockSubmissionTx {
 pub struct BlockSubmission {
     pub id: Option<u32>,
     pub block_hash: [u8; 32],
-    pub block_height: FuelBlockHeight,
-    pub final_tx_id: Option<u32>,
+    pub block_height: u32,
+    pub completed: bool,
 }
 
 impl BlockSubmission {
-    pub fn new(block_hash: [u8; 32], block_height: FuelBlockHeight) -> Self {
+    pub fn new(block_hash: [u8; 32], block_height: u32) -> Self {
         Self {
             id: None,
-            final_tx_id: None,
             block_hash,
             block_height,
+            completed: false,
         }
     }
 }
@@ -57,7 +55,7 @@ impl rand::distributions::Distribution<BlockSubmission> for rand::distributions:
             id: Some(rng.gen()),
             block_hash: rng.gen(),
             block_height: rng.gen(),
-            final_tx_id: rng.gen(),
+            completed: rng.gen(),
         }
     }
 }

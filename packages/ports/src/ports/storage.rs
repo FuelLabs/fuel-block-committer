@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::types::{
-    BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission,
-    SubmissionTx, TransactionState,
+    BlockSubmission, BlockSubmissionTx, StateFragment, StateSubmission, SubmissionTx,
+    TransactionState,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -24,12 +24,15 @@ pub trait Storage: Send + Sync {
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
     ) -> Result<()>;
-    async fn get_pending_block_submission_txs(&self) -> Result<Vec<BlockSubmissionTx>>;
+    async fn get_pending_block_submission_txs(
+        &self,
+        submission_id: u32,
+    ) -> Result<Vec<BlockSubmissionTx>>;
     async fn update_block_submission_tx_state(
         &self,
         hash: [u8; 32],
         state: TransactionState,
-    ) -> Result<FuelBlockHeight>;
+    ) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
 
     async fn insert_state_submission(

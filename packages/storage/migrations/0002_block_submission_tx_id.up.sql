@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS l1_fuel_block_submission (
     id                  SERIAL PRIMARY KEY NOT NULL,
     fuel_block_hash     BYTEA NOT NULL,
     fuel_block_height   BIGINT NOT NULL UNIQUE CHECK (fuel_block_height >= 0),
-    final_tx_id         INTEGER,
+    completed           BOOLEAN NOT NULL,
     CHECK (octet_length(fuel_block_hash) = 32),
     UNIQUE (fuel_block_hash)
 );
@@ -23,9 +23,6 @@ CREATE TABLE IF NOT EXISTS l1_transaction (
     CHECK (octet_length(hash) = 32),
     CHECK (state IN (0, 1, 2))
 );
-
-ALTER TABLE l1_fuel_block_submission
-    ADD CONSTRAINT fk_final_tx_id FOREIGN KEY (final_tx_id) REFERENCES l1_transaction(id) ON DELETE SET NULL;
 
 ALTER TABLE l1_transaction
     ADD CONSTRAINT fk_submission_id FOREIGN KEY (submission_id) REFERENCES l1_fuel_block_submission(id) ON DELETE CASCADE;

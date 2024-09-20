@@ -33,7 +33,7 @@ where
             .storage
             .submission_w_latest_block()
             .await?
-            .map(|submission| submission.final_tx_id.is_some());
+            .map(|submission| submission.completed);
 
         let status = if last_submission_completed == Some(false) {
             Status::Committing
@@ -70,7 +70,9 @@ mod tests {
                         final_tx_id: if is_completed { Some(1) } else { None },
                         ..rng.gen()
                     };
-                    db.record_block_submission(BlockSubmissionTx::default(), latest_submission).await.unwrap();
+                    db.record_block_submission(BlockSubmissionTx::default(), latest_submission)
+                        .await
+                        .unwrap();
                 }
 
                 let status_reporter = StatusReporter::new(db);

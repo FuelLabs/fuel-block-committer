@@ -16,7 +16,7 @@ pub struct L1FuelBlockSubmission {
     pub id: i64,
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
-    pub final_tx_id: Option<i32>,
+    pub completed: bool,
 }
 
 impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
@@ -36,13 +36,11 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
             );
         };
 
-        let tx_id = value.final_tx_id.map(|id| id as u32);
-
         Ok(Self {
             id: Some(value.id as u32),
             block_hash,
             block_height,
-            final_tx_id: tx_id,
+            completed: value.completed,
         })
     }
 }
@@ -53,7 +51,7 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
             id: value.id.unwrap_or_default() as i64,
             fuel_block_hash: value.block_hash.to_vec(),
             fuel_block_height: i64::from(value.block_height),
-            final_tx_id: value.final_tx_id.map(|id| id as i32),
+            completed: value.completed,
         }
     }
 }

@@ -108,24 +108,16 @@ where
         Ok(validated_block)
     }
 
-    async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
-        let Some(submitted_height) = self.last_submitted_block_height().await? else {
-            return Ok(false);
-        };
-
+    async fn check_if_stale(
+        &self,
+        block_height: u32,
+        submitted_height: Option<u32>,
+    ) -> Result<bool> {
         Ok(submitted_height >= block_height)
     }
 
     fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
         current_block_height - (current_block_height % self.commit_interval)
-    }
-
-    async fn last_submitted_block_height(&self) -> Result<Option<u32>> {
-        Ok(self
-            .storage
-            .submission_w_latest_block()
-            .await?
-            .map(|submission| submission.block_height))
     }
 
     async fn fetch_block(&self, height: u32) -> Result<ValidatedFuelBlock> {
@@ -153,6 +145,29 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
+        let latest_submission = self.storage.submission_w_latest_block().await?;
+
+        let current_block = self.fetch_latest_block().await?;
+        let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
+
+        if self
+            .check_if_stale(current_epoch_block_height, latest_submission)
+            .await?
+        {
+            return Ok(());
+        }
+
+        let block = if current_block.height() == current_epoch_block_height {
+            current_block
+        } else {
+            self.fetch_block(current_epoch_block_height).await?
+        };
+
+        self.submit_block(block)
+            .await
+            .map_err(|e| Error::Other(e.to_string()))?;
+        info!("submitted {block:?}!");
+
         let transactions = self.storage.get_pending_block_submission_txs().await?;
 
         for tx in transactions {
@@ -162,8 +177,7 @@ where
             };
 
             if !tx_response.succeeded() {
-                let block_height = self
-                    .storage
+                self.storage
                     .update_block_submission_tx_state(tx_hash, TransactionState::Failed)
                     .await?;
 
@@ -180,8 +194,7 @@ where
                 continue; // not finalized
             }
 
-            let block_height = self
-                .storage
+            self.storage
                 .update_block_submission_tx_state(tx_hash, TransactionState::Finalized)
                 .await?;
 
@@ -194,35 +207,6 @@ where
                 .latest_committed_block
                 .set(i64::from(block_height));
         }
-
-        // TODO this needs to ignore txs that have been bumped
-        let has_pending_tx = !self
-            .storage
-            .get_pending_block_submission_txs()
-            .await?
-            .is_empty();
-        if has_pending_tx {
-            // submission in progress, skip
-            return Ok(());
-        }
-
-        let current_block = self.fetch_latest_block().await?;
-        let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
-
-        if self.check_if_stale(current_epoch_block_height).await? {
-            return Ok(());
-        }
-
-        let block = if current_block.height() == current_epoch_block_height {
-            current_block
-        } else {
-            self.fetch_block(current_epoch_block_height).await?
-        };
-
-        self.submit_block(block)
-            .await
-            .map_err(|e| Error::Other(e.to_string()))?;
-        info!("submitted {block:?}!");
 
         Ok(())
     }

@@ -1,6 +1,6 @@
 use ports::types::{
-    BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission,
-    SubmissionTx, TransactionState,
+    BlockSubmission, BlockSubmissionTx, StateFragment, StateSubmission, SubmissionTx,
+    TransactionState,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -98,10 +98,9 @@ impl Postgres {
 
         let row = tables::L1FuelBlockSubmission::from(submission);
         let submission_id = sqlx::query!(
-            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, final_tx_id) VALUES ($1, $2, $3) RETURNING id",
+            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height) VALUES ($1, $2) RETURNING id",
             row.fuel_block_hash,
             row.fuel_block_height,
-            row.final_tx_id,
         )
         .fetch_one(&mut *transaction)
         .await?
@@ -124,11 +123,15 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _get_pending_block_submission_txs(&self) -> Result<Vec<BlockSubmissionTx>> {
+    pub(crate) async fn _get_pending_block_submission_txs(
+        &self,
+        submission_id: u32,
+    ) -> Result<Vec<BlockSubmissionTx>> {
         sqlx::query_as!(
             tables::L1FuelBlockSubmissionTx,
-            "SELECT * FROM l1_transaction WHERE state = $1",
-            TransactionState::Pending.into_i16()
+            "SELECT * FROM l1_transaction WHERE state = $1 AND submission_id = $2",
+            TransactionState::Pending.into_i16(),
+            submission_id
         )
         .fetch_all(&self.connection_pool)
         .await?
@@ -141,34 +144,33 @@ impl Postgres {
         &self,
         hash: [u8; 32],
         state: TransactionState,
-    ) -> Result<FuelBlockHeight> {
+    ) -> Result<()> {
         // tx shouldn't go back to pending
         assert_ne!(state, TransactionState::Pending);
 
         let mut transaction = self.connection_pool.begin().await?;
 
-        let result = sqlx::query!(
-            "UPDATE l1_transaction SET state = $1 WHERE hash = $2 RETURNING submission_id, id",
+        // update the transaction state
+        let submission_id = sqlx::query!(
+            "UPDATE l1_transaction SET state = $1 WHERE hash = $2 RETURNING submission_id",
             state.into_i16(),
             hash.as_slice(),
         )
         .fetch_one(&mut *transaction)
-        .await?;
-        let (submission_id, tx_id) = (result.submission_id, result.id);
+        .await?
+        .submission_id;
 
-        // update submission with final tx id and return the block height
-        let block_height = sqlx::query!(
-            "UPDATE l1_fuel_block_submission SET final_tx_id = $1 WHERE id = $2 RETURNING fuel_block_height",
-            tx_id,
+        // set submission to completed
+        sqlx::query!(
+            "UPDATE l1_fuel_block_submission SET completed = true WHERE id = $1",
             submission_id
         )
-        .fetch_one(&mut *transaction)
-        .await?
-        .fuel_block_height;
+        .execute(&mut *transaction)
+        .await?;
 
         transaction.commit().await?;
 
-        Ok(block_height as u32)
+        Ok(())
     }
 
     pub(crate) async fn _submission_w_latest_block(

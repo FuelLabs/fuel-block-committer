@@ -10,8 +10,8 @@ mod postgres;
 use ports::{
     storage::{Result, Storage},
     types::{
-        BlockSubmission, BlockSubmissionTx, FuelBlockHeight, StateFragment, StateSubmission,
-        SubmissionTx, TransactionState,
+        BlockSubmission, BlockSubmissionTx, StateFragment, StateSubmission, SubmissionTx,
+        TransactionState,
     },
 };
 pub use postgres::{DbConfig, Postgres};
@@ -28,15 +28,20 @@ impl Storage for Postgres {
             .await?)
     }
 
-    async fn get_pending_block_submission_txs(&self) -> Result<Vec<BlockSubmissionTx>> {
-        Ok(self._get_pending_block_submission_txs().await?)
+    async fn get_pending_block_submission_txs(
+        &self,
+        submission_id: u32,
+    ) -> Result<Vec<BlockSubmissionTx>> {
+        Ok(self
+            ._get_pending_block_submission_txs(submission_id)
+            .await?)
     }
 
     async fn update_block_submission_tx_state(
         &self,
         hash: [u8; 32],
         state: TransactionState,
-    ) -> Result<FuelBlockHeight> {
+    ) -> Result<()> {
         Ok(self._update_block_submission_tx_state(hash, state).await?)
     }
 
@@ -89,7 +94,9 @@ impl Storage for Postgres {
 mod tests {
     use ports::{
         storage::{Error, Result, Storage},
-        types::{BlockSubmission, StateFragment, StateSubmission, TransactionState},
+        types::{
+            BlockSubmission, BlockSubmissionTx, StateFragment, StateSubmission, TransactionState,
+        },
     };
     use rand::{thread_rng, Rng};
     use storage as _;
@@ -107,16 +114,14 @@ mod tests {
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
         let latest_height = random_non_zero_height();
-        let tx_hash = [1; 32];
 
         let latest_submission = given_incomplete_submission(latest_height);
-        db.record_block_submission(tx_hash, latest_submission.clone())
+        db.record_block_submission(BlockSubmissionTx::default(), latest_submission.clone())
             .await
             .unwrap();
 
         let older_submission = given_incomplete_submission(latest_height - 1);
-        let older_tx_hash = [0; 32];
-        db.record_block_submission(older_tx_hash, older_submission)
+        db.record_block_submission(BlockSubmissionTx::default(), older_submission)
             .await
             .unwrap();
 
@@ -136,8 +141,7 @@ mod tests {
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
         let block_hash = submission.block_hash;
-        let tx_hash = [1; 32];
-        db.record_block_submission(tx_hash, submission)
+        db.record_block_submission(BlockSubmissionTx::default(), submission)
             .await
             .unwrap();
 
