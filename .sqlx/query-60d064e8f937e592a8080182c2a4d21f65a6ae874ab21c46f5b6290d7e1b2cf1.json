@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "WITH max_height_cte AS (SELECT MAX(height) AS max_height FROM fuel_blocks)\n            SELECT fb.*\n            FROM fuel_blocks fb, max_height_cte mh\n            WHERE fb.height >= (mh.max_height - $1)\n            AND fb.height > COALESCE(\n                (SELECT MAX(b.end_height) FROM bundles b), \n                -1\n            )\n            ORDER BY fb.height ASC\n            LIMIT $2;",
+  "query": "\n            SELECT fb.*\n            FROM fuel_blocks fb WHERE fb.height >= $1\n            AND NOT EXISTS (\n                SELECT 1\n                FROM bundles b\n                WHERE fb.height BETWEEN b.start_height AND b.end_height\n            )\n            ORDER BY fb.height LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -31,5 +31,5 @@
       false
     ]
   },
-  "hash": "e0540923d20c97e5d6bc5e44e34e1fe2b046584b40b58f7eba68e0d52748bfca"
+  "hash": "60d064e8f937e592a8080182c2a4d21f65a6ae874ab21c46f5b6290d7e1b2cf1"
 }
