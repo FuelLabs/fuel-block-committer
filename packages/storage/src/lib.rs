@@ -29,8 +29,8 @@ impl Storage for Postgres {
         self._available_blocks().await.map_err(Into::into)
     }
 
-    async fn insert_block(&self, block: ports::storage::FuelBlock) -> Result<()> {
-        Ok(self._insert_block(block).await?)
+    async fn insert_blocks(&self, blocks: NonEmptyVec<ports::storage::FuelBlock>) -> Result<()> {
+        Ok(self._insert_blocks(blocks).await?)
     }
 
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool> {
@@ -93,14 +93,12 @@ impl Storage for Postgres {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ports::non_empty_vec;
     use ports::storage::{Error, Storage};
-    use ports::{non_empty_vec, types::*};
-    use rand::{thread_rng, Rng};
-    use sqlx::Postgres;
-    use std::sync::Arc;
+    use rand::{thread_rng, Rng, SeedableRng};
 
     // Helper function to create a storage instance for testing
-    async fn get_test_storage() -> DbWithProcess {
+    async fn start_db() -> DbWithProcess {
         PostgresProcess::shared()
             .await
             .unwrap()
@@ -124,9 +122,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn can_insert_and_find_latest_block() {
+    async fn can_insert_and_find_latest_block_submission() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
         let latest_height = random_non_zero_height();
 
         let latest_submission = given_incomplete_submission(latest_height);
@@ -145,7 +143,7 @@ mod tests {
     #[tokio::test]
     async fn can_update_completion_status() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
@@ -162,7 +160,7 @@ mod tests {
     #[tokio::test]
     async fn updating_a_missing_submission_causes_an_error() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
@@ -189,7 +187,7 @@ mod tests {
     #[tokio::test]
     async fn can_insert_and_check_block_availability() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
         let block_hash: [u8; 32] = rand::random();
         let block_height = random_non_zero_height();
@@ -200,7 +198,10 @@ mod tests {
             height: block_height,
             data: block_data.clone(),
         };
-        storage.insert_block(block.clone()).await.unwrap();
+        storage
+            .insert_blocks(non_empty_vec![block.clone()])
+            .await
+            .unwrap();
 
         // When
         let is_available = storage.is_block_available(&block_hash).await.unwrap();
@@ -214,12 +215,23 @@ mod tests {
         assert!(!is_available);
     }
 
+    async fn ensure_a_fragment_exists_in_the_db(storage: impl Storage) -> NonNegative<i32> {
+        let fragment = storage
+            .insert_bundle_and_fragments(0..=0, non_empty_vec!(non_empty_vec!(0)))
+            .await
+            .unwrap()
+            .take_first();
+
+        fragment.id
+    }
+
     #[tokio::test]
     async fn can_record_and_get_pending_txs() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
-        let fragment_id = 1.try_into().unwrap();
+        let fragment_id = ensure_a_fragment_exists_in_the_db(&storage).await;
+
         let tx_hash = rand::random::<[u8; 32]>();
         storage
             .record_pending_tx(tx_hash, fragment_id)
@@ -240,9 +252,9 @@ mod tests {
     #[tokio::test]
     async fn can_update_tx_state() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
-        let fragment_id = 1.try_into().unwrap();
+        let fragment_id = ensure_a_fragment_exists_in_the_db(&storage).await;
         let tx_hash = rand::random::<[u8; 32]>();
         storage
             .record_pending_tx(tx_hash, fragment_id)
@@ -266,7 +278,7 @@ mod tests {
     #[tokio::test]
     async fn can_insert_bundle_and_fragments() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
         let block_range = 1..=5;
         let fragment_data1 = NonEmptyVec::try_from(vec![1u8, 2, 3]).unwrap();
@@ -287,12 +299,16 @@ mod tests {
         }
     }
 
+    fn round_to_millis(date: DateTime<Utc>) -> DateTime<Utc> {
+        DateTime::from_timestamp_millis(date.timestamp_millis()).unwrap()
+    }
+
     #[tokio::test]
     async fn can_get_last_time_a_fragment_was_finalized() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
-        let fragment_id = 1.try_into().unwrap();
+        let fragment_id = ensure_a_fragment_exists_in_the_db(&storage).await;
         let tx_hash = rand::random::<[u8; 32]>();
         storage
             .record_pending_tx(tx_hash, fragment_id)
@@ -313,37 +329,176 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(last_time, finalization_time);
+
+        assert_eq!(
+            round_to_millis(last_time),
+            round_to_millis(finalization_time)
+        );
+    }
+
+    async fn insert_sequence_of_unbundled_blocks(
+        storage: impl Storage,
+        range: RangeInclusive<u32>,
+    ) {
+        let mut rng = rand::rngs::SmallRng::from_entropy();
+        let blocks = range
+            .clone()
+            .map(|height| {
+                let block_hash: [u8; 32] = rng.gen();
+                let block_data = non_empty_vec![height as u8];
+                ports::storage::FuelBlock {
+                    hash: block_hash,
+                    height,
+                    data: block_data,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        storage
+            .insert_blocks(blocks.try_into().expect("shouldn't be empty"))
+            .await
+            .unwrap();
+    }
+
+    async fn insert_sequence_of_bundled_blocks(storage: impl Storage, range: RangeInclusive<u32>) {
+        insert_sequence_of_unbundled_blocks(&storage, range.clone()).await;
+
+        storage
+            .insert_bundle_and_fragments(range, non_empty_vec![non_empty_vec![1]])
+            .await
+            .unwrap();
+    }
+
+    async fn lowest_unbundled_sequence(
+        storage: impl Storage,
+        starting_height: u32,
+        limit: usize,
+    ) -> RangeInclusive<u32> {
+        storage
+            .lowest_sequence_of_unbundled_blocks(starting_height, limit)
+            .await
+            .unwrap()
+            .unwrap()
+            .height_range()
     }
 
     #[tokio::test]
     async fn can_get_lowest_sequence_of_unbundled_blocks() {
         // Given
-        let storage = get_test_storage().await;
+        let storage = start_db().await;
 
         // Insert blocks 1 to 10
-        for height in 1..=10 {
-            let block_hash: [u8; 32] = rand::random();
-            let block_data = non_empty_vec![height as u8];
-            let block = ports::storage::FuelBlock {
-                hash: block_hash,
-                height,
-                data: block_data,
-            };
-            storage.insert_block(block).await.unwrap();
-        }
+        insert_sequence_of_unbundled_blocks(&storage, 1..=10).await;
 
         // When
-        let starting_height = 1;
-        let limit = 5;
-        let sequence = storage
-            .lowest_sequence_of_unbundled_blocks(starting_height, limit)
-            .await
-            .unwrap()
-            .unwrap();
+        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
 
         // Then
-        assert_eq!(sequence.len().get(), 5);
-        assert_eq!(sequence.first().height, starting_height);
+        assert_eq!(height_range, 1..=10);
     }
+
+    #[tokio::test]
+    async fn handles_holes_in_sequences() {
+        // Given
+        let storage = start_db().await;
+
+        insert_sequence_of_unbundled_blocks(&storage, 0..=2).await;
+        insert_sequence_of_unbundled_blocks(&storage, 4..=6).await;
+
+        // when
+        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
+
+        // then
+        assert_eq!(height_range, 0..=2);
+    }
+
+    #[tokio::test]
+    async fn respects_starting_height() {
+        // Given
+        let storage = start_db().await;
+
+        insert_sequence_of_unbundled_blocks(&storage, 0..=10).await;
+
+        // when
+        let height_range = lowest_unbundled_sequence(&storage, 2, usize::MAX).await;
+
+        // then
+        assert_eq!(height_range, 2..=10);
+    }
+
+    #[tokio::test]
+    async fn respects_limit() {
+        // Given
+        let storage = start_db().await;
+
+        insert_sequence_of_unbundled_blocks(&storage, 0..=10).await;
+
+        // when
+        let height_range = lowest_unbundled_sequence(&storage, 0, 2).await;
+
+        // then
+        assert_eq!(height_range, 0..=1);
+    }
+
+    #[tokio::test]
+    async fn ignores_bundled_blocks() {
+        // Given
+        let storage = start_db().await;
+
+        insert_sequence_of_bundled_blocks(&storage, 0..=2).await;
+        insert_sequence_of_unbundled_blocks(&storage, 3..=4).await;
+
+        // when
+        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
+
+        // then
+        assert_eq!(height_range, 3..=4);
+    }
+
+    /// This can happen if we change the lookback config a couple of times in a short period of time
+    #[tokio::test]
+    async fn can_handle_bundled_blocks_appearing_after_unbundled_ones() {
+        // Given
+        let storage = start_db().await;
+
+        insert_sequence_of_unbundled_blocks(&storage, 0..=2).await;
+        insert_sequence_of_bundled_blocks(&storage, 7..=10).await;
+        insert_sequence_of_unbundled_blocks(&storage, 11..=15).await;
+
+        // when
+        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
+
+        // then
+        assert_eq!(height_range, 0..=2);
+    }
+
+    // Important because sqlx panics if the bundle is too big
+    #[tokio::test]
+    async fn can_insert_big_batches() {
+        let storage = start_db().await;
+
+        // u16::MAX because of implementation details
+        insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2).await;
+    }
+    //
+    // #[tokio::test]
+    // async fn something() {
+    //     let port = 5432;
+    //
+    //     let mut config = DbConfig {
+    //         host: "localhost".to_string(),
+    //         port,
+    //         username: "username".to_owned(),
+    //         password: "password".to_owned(),
+    //         database: "test".to_owned(),
+    //         max_connections: 5,
+    //         use_ssl: false,
+    //     };
+    //     let db = Postgres::connect(&config).await.unwrap();
+    //
+    //     // u16::MAX because of implementation details
+    //     insert_sequence_of_bundled_blocks(&db, 5..=500_000).await;
+    //     insert_sequence_of_unbundled_blocks(&db, 500_001..=1_000_000).await;
+    //     insert_sequence_of_bundled_blocks(&db, 1_000_001..=1_200_000).await;
+    // }
 }

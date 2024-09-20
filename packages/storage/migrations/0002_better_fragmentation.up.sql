@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS bundles (
     end_height    BIGINT NOT NULL CHECK (end_height >= start_height) -- Ensure valid range
 );
 
+CREATE INDEX idx_bundles_start_end ON bundles (start_height, end_height);
+
 -- Drop 'submission_id' from 'l1_fragments' and add 'bundle_id'
 ALTER TABLE l1_fragments
 DROP COLUMN submission_id,

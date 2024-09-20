@@ -90,6 +90,12 @@ impl SequentialFuelBlocks {
     pub fn len(&self) -> NonZeroUsize {
         self.blocks.len()
     }
+
+    pub fn height_range(&self) -> RangeInclusive<u32> {
+        let first = self.blocks.first().height;
+        let last = self.blocks.last().height;
+        first..=last
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,7 +148,7 @@ pub trait Storage: Send + Sync {
     async fn insert(&self, submission: BlockSubmission) -> Result<()>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
-    async fn insert_block(&self, block: FuelBlock) -> Result<()>;
+    async fn insert_blocks(&self, block: NonEmptyVec<FuelBlock>) -> Result<()>;
     async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
     async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
     async fn lowest_sequence_of_unbundled_blocks(
@@ -174,7 +180,41 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
             async fn insert(&self, submission: BlockSubmission) -> Result<()>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
                 async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
-                async fn insert_block(&self, block: FuelBlock) -> Result<()>;
+                async fn insert_blocks(&self, block: NonEmptyVec<FuelBlock>) -> Result<()>;
+                async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
+                async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
+                async fn lowest_sequence_of_unbundled_blocks(
+                    &self,
+                    starting_height: u32,
+                    limit: usize,
+                ) -> Result<Option<SequentialFuelBlocks>>;
+                async fn insert_bundle_and_fragments(
+                    &self,
+                    block_range: RangeInclusive<u32>,
+                    fragments: NonEmptyVec<NonEmptyVec<u8>>,
+                ) -> Result<NonEmptyVec<BundleFragment>>;
+
+                async fn record_pending_tx(
+                    &self,
+                    tx_hash: [u8; 32],
+                    fragment_id: NonNegative<i32>,
+                ) -> Result<()>;
+                async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+                async fn has_pending_txs(&self) -> Result<bool>;
+                async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
+                async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
+                async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
+        }
+    }
+}
+
+impl<T: Storage + Send + Sync> Storage for &T {
+    delegate! {
+        to (*self) {
+            async fn insert(&self, submission: BlockSubmission) -> Result<()>;
+                async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
+                async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
+                async fn insert_blocks(&self, block: NonEmptyVec<FuelBlock>) -> Result<()>;
                 async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
                 async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
                 async fn lowest_sequence_of_unbundled_blocks(

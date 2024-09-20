@@ -1,7 +1,7 @@
 use std::cmp::max;
 
 use futures::TryStreamExt;
-use ports::{fuel::FuelBlock, storage::Storage, types::NonEmptyVec};
+use ports::{fuel::FuelBlock, non_empty_vec, storage::Storage, types::NonEmptyVec};
 use tracing::info;
 use validator::Validator;
 
@@ -57,7 +57,7 @@ where
         if !self.storage.is_block_available(&block_id).await? {
             let db_block = encode_block(&block)?;
 
-            self.storage.insert_block(db_block).await?;
+            self.storage.insert_blocks(non_empty_vec![db_block]).await?;
 
             info!("Imported block: height: {block_height}, id: {block_id}");
         } else {

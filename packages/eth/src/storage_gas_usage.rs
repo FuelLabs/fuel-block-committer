@@ -6,8 +6,6 @@ use alloy::eips::eip4844::{
     DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES, MAX_BLOBS_PER_BLOCK,
     MAX_DATA_GAS_PER_BLOCK,
 };
-use itertools::Itertools;
-use ports::types::NonEmptyVec;
 
 /// Intrinsic gas cost of a eth transaction.
 const BASE_TX_COST: u64 = 21_000;
@@ -47,25 +45,6 @@ fn gas_usage_to_store_data(num_bytes: NonZeroUsize) -> GasUsage {
 const ENCODABLE_BYTES_PER_TX: usize = (FIELD_ELEMENT_BYTES as usize - 1)
     * (FIELD_ELEMENTS_PER_BLOB as usize * MAX_BLOBS_PER_BLOCK - 1);
 
-fn split_into_submittable_fragments(
-    data: &NonEmptyVec<u8>,
-) -> crate::error::Result<NonEmptyVec<NonEmptyVec<u8>>> {
-    Ok(data
-        .iter()
-        .chunks(ENCODABLE_BYTES_PER_TX)
-        .into_iter()
-        .fold(Vec::new(), |mut acc, chunk| {
-            let bytes = chunk.copied().collect::<Vec<_>>();
-
-            let non_empty_bytes = NonEmptyVec::try_from(bytes)
-                .expect("chunk is non-empty since it came from a non-empty vec");
-            acc.push(non_empty_bytes);
-            acc
-        })
-        .try_into()
-        .expect("must have at least one fragment since the input is non-empty"))
-}
-
 #[cfg(test)]
 mod tests {
     use alloy::consensus::{SidecarBuilder, SimpleCoder};
@@ -103,40 +82,6 @@ mod tests {
         builder.ingest(&data);
 
         assert_eq!(builder.build().unwrap().blobs.len(), num_blobs,);
-    }
-
-    #[test_case(100; "one small fragment")]
-    #[test_case(1000000; "one full fragment and one small")]
-    #[test_case(2000000; "two full fragments and one small")]
-    fn splits_into_correct_fragments_that_can_fit_in_a_tx(num_bytes: usize) {
-        // given
-        let mut rng = SmallRng::from_seed([0; 32]);
-        let mut bytes = vec![0; num_bytes];
-        rng.fill(&mut bytes[..]);
-        let original_bytes = bytes.try_into().unwrap();
-
-        // when
-        let fragments = split_into_submittable_fragments(&original_bytes).unwrap();
-
-        // then
-        let reconstructed = fragments
-            .iter()
-            .flat_map(|f| f.inner())
-            .copied()
-            .collect_vec();
-        assert_eq!(original_bytes.inner(), &reconstructed);
-
-        for (idx, fragment) in fragments.iter().enumerate() {
-            let mut builder = SidecarBuilder::from_coder_and_capacity(SimpleCoder::default(), 0);
-            builder.ingest(fragment.inner());
-            let num_blobs = builder.build().unwrap().blobs.len();
-
-            if idx == fragments.len().get() - 1 {
-                assert!(num_blobs <= 6);
-            } else {
-                assert_eq!(num_blobs, 6);
-            }
-        }
     }
 
     #[test]

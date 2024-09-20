@@ -54,7 +54,7 @@ impl WebsocketClient {
         self.inner.connection_health_checker()
     }
 
-    pub(crate) async fn _gas_prices(&self) -> Result<ports::l1::GasPrices> {
+    pub(crate) async fn gas_prices(&self) -> Result<ports::l1::GasPrices> {
         Ok(self.inner.gas_prices().await?)
     }
 
@@ -74,18 +74,18 @@ impl WebsocketClient {
         Ok(self.inner.get_block_number().await?)
     }
 
-    pub(crate) async fn _get_transaction_response(
+    pub(crate) async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
         Ok(self.inner.get_transaction_response(tx_hash).await?)
     }
 
-    pub(crate) async fn _balance(&self) -> Result<U256> {
+    pub(crate) async fn balance(&self) -> Result<U256> {
         Ok(self.inner.balance().await?)
     }
 
-    pub async fn _submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
+    pub async fn submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
         Ok(self.inner.submit_l2_state(tx).await?)
     }
 

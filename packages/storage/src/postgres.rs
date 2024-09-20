@@ -1,12 +1,14 @@
 use std::ops::RangeInclusive;
 
+use itertools::Itertools;
 use ports::{
     storage::{BundleFragment, SequentialFuelBlocks},
-    types::{
-        BlockSubmission, DateTime, NonEmptyVec, NonNegative, TransactionState, Utc,
-    },
+    types::{BlockSubmission, DateTime, NonEmptyVec, NonNegative, TransactionState, Utc},
 };
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    QueryBuilder,
+};
 
 use super::error::{Error, Result};
 use crate::mappings::tables::{self, L1TxState};
@@ -93,8 +95,9 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _insert(&self, submission: BlockSubmission) -> crate::error::Result<()> {
+    pub(crate) async fn _insert(&self, submission: BlockSubmission) -> Result<()> {
         let row = tables::L1FuelBlockSubmission::from(submission);
+
         sqlx::query!(
             "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
             row.fuel_block_hash,
@@ -102,31 +105,33 @@ impl Postgres {
             row.completed,
             row.submittal_height
         ).execute(&self.connection_pool).await?;
+
         Ok(())
     }
 
     pub(crate) async fn _oldest_nonfinalized_fragment(
         &self,
-    ) -> crate::error::Result<Option<ports::storage::BundleFragment>> {
-        sqlx::query_as!(
+    ) -> Result<Option<ports::storage::BundleFragment>> {
+        let fragment = sqlx::query_as!(
             tables::BundleFragment,
             r#"
-            SELECT f.id, f.bundle_id, f.idx, f.data
-            FROM l1_fragments f
-            LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-            LEFT JOIN l1_transactions t ON t.id = tf.transaction_id
-            JOIN bundles b ON b.id = f.bundle_id
-            WHERE t.id IS NULL OR t.state = $1 -- Unsubmitted or failed fragments
-            ORDER BY b.start_height ASC, f.idx ASC
-            LIMIT 1;
-            "#,
+                    SELECT f.id, f.bundle_id, f.idx, f.data
+                    FROM l1_fragments f
+                    LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+                    LEFT JOIN l1_transactions t ON t.id = tf.transaction_id
+                    JOIN bundles b ON b.id = f.bundle_id
+                    WHERE t.id IS NULL OR t.state = $1 -- Unsubmitted or failed fragments
+                    ORDER BY b.start_height ASC, f.idx ASC
+                    LIMIT 1;
+                    "#,
             L1TxState::FAILED_STATE
         )
         .fetch_optional(&self.connection_pool)
-        .await
-        .map_err(Error::from)?
+        .await?
         .map(TryFrom::try_from)
-        .transpose()
+        .transpose()?;
+
+        Ok(fragment)
     }
 
     pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<ports::storage::FuelBlock>> {
@@ -179,16 +184,44 @@ impl Postgres {
         Ok(Some(min..=max))
     }
 
-    pub(crate) async fn _insert_block(&self, block: ports::storage::FuelBlock) -> Result<()> {
-        let row = tables::FuelBlock::from(block);
-        sqlx::query!(
-            "INSERT INTO fuel_blocks (hash, height, data) VALUES ($1, $2, $3)",
-            row.hash,
-            row.height,
-            row.data
-        )
-        .execute(&self.connection_pool)
-        .await?;
+    pub(crate) async fn _insert_blocks(
+        &self,
+        blocks: NonEmptyVec<ports::storage::FuelBlock>,
+    ) -> Result<()> {
+        // Currently: hash, height and data
+        const FIELDS_PER_BLOCK: u16 = 3;
+        /// The maximum number of bind parameters that can be passed to a single postgres query is
+        /// u16::MAX. Sqlx panics if this limit is exceeded.
+        const MAX_BLOCKS_PER_QUERY: usize = (u16::MAX / FIELDS_PER_BLOCK) as usize;
+
+        let mut tx = self.connection_pool.begin().await?;
+
+        let queries = blocks
+            .into_iter()
+            .map(tables::FuelBlock::from)
+            .chunks(MAX_BLOCKS_PER_QUERY)
+            .into_iter()
+            .map(|chunk| {
+                let mut query_builder =
+                    QueryBuilder::new("INSERT INTO fuel_blocks (hash, height, data)");
+
+                query_builder.push_values(chunk, |mut b, block| {
+                    // update the constants above if you add/remove bindings
+                    b.push_bind(block.hash)
+                        .push_bind(block.height)
+                        .push_bind(block.data);
+                });
+
+                query_builder
+            })
+            .collect_vec();
+
+        for mut query in queries {
+            query.build().execute(&mut *tx).await?;
+        }
+
+        tx.commit().await?;
+
         Ok(())
     }
 
@@ -231,8 +264,7 @@ impl Postgres {
         starting_height: u32,
         limit: usize,
     ) -> Result<Option<SequentialFuelBlocks>> {
-        // TODO: segfault error msg
-        let limit = i64::try_from(limit).map_err(|e| Error::Conversion(format!("{e}")))?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let response = sqlx::query_as!(
             tables::FuelBlock,
             r#"
@@ -393,6 +425,7 @@ impl Postgres {
             )
             .fetch_one(&mut *tx)
             .await?;
+
             let id = record.id.try_into().map_err(|e| {
                 crate::error::Error::Conversion(format!(
                     "invalid fragment id received from db: {e}"
