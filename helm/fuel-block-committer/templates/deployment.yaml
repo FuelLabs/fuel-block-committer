@@ -36,8 +36,6 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "./fuel-block-committer" ]
-          args:
-            - "/mnt/config/config.toml"
           envFrom:
             - configMapRef:
                 name: fuel-block-committer
@@ -54,19 +52,8 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 10
-          volumeMounts:
-            - name: config-volume
-              mountPath: /mnt/config/config.toml
-              subPath: config.toml
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      volumes:
-        - name: config-volume
-          configMap:
-            name: {{ include "fuel-block-committer.fullname" . }}-config
-            items: 
-              - key: "committer-config"
-                path: "config.toml"
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

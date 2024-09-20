@@ -12,7 +12,7 @@ mod whole_stack;
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use ports::fuel::Api;
+    use ports::{fuel::Api, storage::Storage};
     use tokio::time::sleep_until;
     use validator::{BlockValidator, Validator};
 
@@ -59,13 +59,21 @@ mod tests {
         let show_logs = false;
         let blob_support = true;
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
+        let num_blocks = 1000;
 
         // when
         stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(10_000).await?;
+        stack.fuel_node.client().produce_blocks(num_blocks).await?;
 
         // then
-        stack.committer.wait_for_blob_eth_height(1).await?;
+        let db = stack.committer.db_instance().await;
+
+        while let Some(sequence) = db.lowest_sequence_of_unbundled_blocks(0, 1).await? {
+            let reached_height = sequence.into_inner().first().height;
+            eprintln!("bundled up to height: {reached_height}/{num_blocks}");
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
 
         Ok(())
     }

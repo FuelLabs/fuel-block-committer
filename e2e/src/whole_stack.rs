@@ -14,7 +14,7 @@ pub struct WholeStack {
     pub eth_node: EthNodeProcess,
     pub fuel_node: FuelNodeProcess,
     pub committer: CommitterProcess,
-    pub db: Arc<PostgresProcess>,
+    pub db_process: Arc<PostgresProcess>,
     pub deployed_contract: DeployedContract,
     pub contract_args: ContractArgs,
     pub kms: KmsProcess,
@@ -34,7 +34,7 @@ impl WholeStack {
         let (db_process, db) = start_db().await?;
 
         let committer = start_committer(
-            true,
+            logs,
             blob_support,
             db,
             &eth_node,
@@ -49,7 +49,7 @@ impl WholeStack {
             eth_node,
             fuel_node,
             committer,
-            db: db_process,
+            db_process,
             deployed_contract,
             contract_args,
             kms,
@@ -130,9 +130,9 @@ async fn start_committer(
         .with_main_key_arn(main_key.id.clone())
         .with_kms_url(main_key.url.clone())
         .with_bundle_accumulation_timeout("5s".to_owned())
-        .with_bundle_blocks_to_accumulate("5000".to_string())
+        .with_bundle_blocks_to_accumulate("100".to_string())
         .with_bundle_optimization_timeout("10s".to_owned())
-        .with_bundle_block_height_lookback("20000".to_owned())
+        .with_bundle_block_height_lookback("2000".to_owned())
         .with_bundle_compression_level("level6".to_owned());
 
     let committer = if blob_support {
