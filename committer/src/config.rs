@@ -69,9 +69,12 @@ pub struct App {
     pub host: Ipv4Addr,
     /// Postgres database configuration
     pub db: DbConfig,
-    /// How often to check the latest fuel block
+    /// How often to check for fuel blocks
     #[serde(deserialize_with = "human_readable_duration")]
     pub block_check_interval: Duration,
+    /// How often to check for finalized l1 txs
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub tx_finalization_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
     ///// Contains configs relating to block state posting to l1

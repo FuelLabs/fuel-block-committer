@@ -449,17 +449,4 @@ impl Postgres {
             "guaranteed to have at least one element since the data also came from a non empty vec",
         ))
     }
-
-    pub(crate) async fn _is_block_available(&self, block_hash: &[u8; 32]) -> Result<bool> {
-        let response = sqlx::query!(
-            "SELECT EXISTS (SELECT 1 FROM fuel_blocks WHERE hash = $1) AS block_exists",
-            block_hash
-        )
-        .fetch_one(&self.connection_pool)
-        .await?;
-
-        response.block_exists.ok_or_else(|| {
-            Error::Database("Failed to determine if block exists. This is a bug".to_string())
-        })
-    }
 }

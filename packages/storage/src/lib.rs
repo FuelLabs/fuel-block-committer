@@ -33,10 +33,6 @@ impl Storage for Postgres {
         Ok(self._insert_blocks(blocks).await?)
     }
 
-    async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool> {
-        self._is_block_available(hash).await.map_err(Into::into)
-    }
-
     async fn insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,
@@ -182,37 +178,6 @@ mod tests {
         } else {
             panic!("Expected storage error");
         }
-    }
-
-    #[tokio::test]
-    async fn can_insert_and_check_block_availability() {
-        // Given
-        let storage = start_db().await;
-
-        let block_hash: [u8; 32] = rand::random();
-        let block_height = random_non_zero_height();
-        let block_data = non_empty_vec![1u8, 2, 3];
-
-        let block = ports::storage::FuelBlock {
-            hash: block_hash,
-            height: block_height,
-            data: block_data.clone(),
-        };
-        storage
-            .insert_blocks(non_empty_vec![block.clone()])
-            .await
-            .unwrap();
-
-        // When
-        let is_available = storage.is_block_available(&block_hash).await.unwrap();
-
-        // Then
-        assert!(is_available);
-
-        // Check that a non-inserted block is not available
-        let other_block_hash: [u8; 32] = rand::random();
-        let is_available = storage.is_block_available(&other_block_hash).await.unwrap();
-        assert!(!is_available);
     }
 
     async fn ensure_a_fragment_exists_in_the_db(storage: impl Storage) -> NonNegative<i32> {

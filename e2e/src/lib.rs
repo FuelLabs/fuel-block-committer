@@ -60,30 +60,41 @@ mod tests {
         let show_logs = false;
         let blob_support = true;
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
-        let num_blocks = 100;
+
+        let num_iterations = 3;
+        let blocks_per_iteration = 100;
 
         // when
-        stack.fuel_node.produce_transaction(0).await?;
-        stack.fuel_node.client().produce_blocks(num_blocks).await?;
-
-        // then
-        let client = stack.fuel_node.client();
-        let blocks: Vec<_> = client
-            .full_blocks_in_height_range(0..=10)
-            .try_collect()
-            .await?;
-        eprintln!("fetched {} blocks", blocks.len());
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-
-        while let Some(sequence) = stack.db.lowest_sequence_of_unbundled_blocks(0, 1).await? {
-            let reached_height = sequence.into_inner().first().height;
-            eprintln!("bundled up to height: {reached_height}/{num_blocks}");
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        for _ in 0..num_iterations {
+            stack.fuel_node.produce_transactions(100).await?;
+            let _ = stack
+                .fuel_node
+                .client()
+                .produce_blocks(blocks_per_iteration)
+                .await;
         }
 
-        // TODO: segfault validate that anything happened ie any bundles since importer can fail
-        // query too complex
+        // then
+        let state_submitting_finished = || async {
+            let finished = stack
+                .db
+                .lowest_sequence_of_unbundled_blocks(0, 1)
+                .await?
+                .is_none()
+                && stack.db.oldest_nonfinalized_fragment().await?.is_none()
+                && !stack.db.has_pending_txs().await?
+                && stack
+                    .db
+                    .available_blocks()
+                    .await?
+                    .is_some_and(|range| *range.end() >= num_iterations * blocks_per_iteration);
+
+            anyhow::Result::<_>::Ok(finished)
+        };
+
+        while !state_submitting_finished().await? {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
 
         Ok(())
     }

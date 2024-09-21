@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
             starting_height,
         );
 
-        let state_importer_handle = setup::state_importer(
+        let state_importer_handle = setup::block_importer(
             fuel_adapter,
             storage.clone(),
             cancel_token.clone(),

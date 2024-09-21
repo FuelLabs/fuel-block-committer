@@ -1,16 +1,20 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{cmp::max, hash::Hash, path::PathBuf, str::FromStr};
 
 use fuel::HttpClient;
 use fuel_core_chain_config::{
-    ChainConfig, ConsensusConfig, SnapshotWriter, StateConfig, TESTNET_WALLET_SECRETS,
+    ChainConfig, CoinConfig, ConsensusConfig, SnapshotWriter, StateConfig, TESTNET_WALLET_SECRETS,
 };
 use fuel_core_types::{
     fuel_crypto::SecretKey as FuelSecretKey,
-    fuel_tx::{AssetId, Finalizable, Input, Output, TransactionBuilder, TxPointer},
+    fuel_tx::{AssetId, Finalizable, Input, Output, Transaction, TransactionBuilder, TxPointer},
     fuel_types::Address,
     fuel_vm::SecretKey as FuelKey,
 };
+use futures::{stream, StreamExt};
+use itertools::Itertools;
 use ports::fuel::FuelPublicKey;
+use rand::{Rng, SeedableRng};
+use secp256k1::SecretKey;
 use url::Url;
 
 #[derive(Default, Debug)]
@@ -22,6 +26,7 @@ pub struct FuelNodeProcess {
     _db_dir: tempfile::TempDir,
     _snapshot_dir: tempfile::TempDir,
     _child: tokio::process::Child,
+    wallet_keys: Vec<FuelSecretKey>,
     url: Url,
     public_key: FuelPublicKey,
 }
@@ -30,21 +35,47 @@ impl FuelNode {
     fn create_state_config(
         path: impl Into<PathBuf>,
         consensus_key: &FuelPublicKey,
-    ) -> anyhow::Result<()> {
+        num_wallets: usize,
+    ) -> anyhow::Result<Vec<FuelSecretKey>> {
         let chain_config = ChainConfig {
             consensus: ConsensusConfig::PoA {
                 signing_key: Input::owner(consensus_key),
             },
             ..ChainConfig::local_testnet()
         };
-        let state_config = StateConfig::local_testnet();
+
+        let mut rng = &mut rand::thread_rng();
+        let keys = std::iter::repeat_with(|| FuelSecretKey::random(&mut rng))
+            .take(num_wallets)
+            .collect_vec();
+
+        let coins = keys
+            .iter()
+            .flat_map(|key| {
+                std::iter::repeat_with(|| CoinConfig {
+                    owner: Input::owner(&key.public_key()),
+                    amount: u64::MAX,
+                    asset_id: AssetId::zeroed(),
+                    tx_id: rng.gen(),
+                    output_index: rng.gen(),
+                    ..Default::default()
+                })
+                .take(10)
+                .collect_vec()
+            })
+            .collect_vec();
+
+        let state_config = StateConfig {
+            coins,
+            ..StateConfig::local_testnet()
+        };
 
         let snapshot = SnapshotWriter::json(path);
         snapshot
             .write_state_config(state_config, &chain_config)
             .map_err(|_| anyhow::anyhow!("Failed to write state config"))?;
 
-        Ok(())
+        Ok(keys)
     }
 
     pub async fn start(&self) -> anyhow::Result<FuelNodeProcess> {
@@ -58,7 +89,7 @@ impl FuelNode {
         let public_key = secret_key.public_key();
 
         let snapshot_dir = tempfile::tempdir()?;
-        Self::create_state_config(snapshot_dir.path(), &public_key)?;
+        let wallet_keys = Self::create_state_config(snapshot_dir.path(), &public_key, 1000)?;
 
         // This ensures forward compatibility when running against a newer node with a different native executor version.
         // If the node detects our older version in the chain configuration, it defaults to using the wasm executor.
@@ -99,6 +130,7 @@ impl FuelNode {
             url,
             public_key,
             _snapshot_dir: snapshot_dir,
+            wallet_keys,
         };
 
         process.wait_until_healthy().await;
@@ -117,18 +149,36 @@ impl FuelNodeProcess {
         HttpClient::new(&self.url, 5)
     }
 
-    pub async fn produce_transaction(&self, wallet_idx: usize) -> anyhow::Result<()> {
+    pub async fn produce_transactions(&self, amount: usize) -> anyhow::Result<()> {
+        let num_wallets = self.wallet_keys.len();
+
+        let keys = self
+            .wallet_keys
+            .iter()
+            .cloned()
+            .cycle()
+            .take(amount)
+            .collect_vec();
+
+        stream::iter(keys)
+            .map(|key| async move { Self::send_transfer_tx(self.client(), key).await })
+            .buffered(num_wallets)
+            .for_each(|_| async {})
+            .await;
+
+        Ok(())
+    }
+
+    async fn send_transfer_tx(client: HttpClient, key: FuelSecretKey) -> anyhow::Result<()> {
         let mut tx = TransactionBuilder::script(vec![], vec![]);
 
         tx.script_gas_limit(1_000_000);
 
-        assert!(wallet_idx < TESTNET_WALLET_SECRETS.len());
-        let secret = TESTNET_WALLET_SECRETS[wallet_idx];
-        let secret_key = FuelKey::from_str(secret).expect("valid secret key");
+        let secret_key = key;
         let address = Input::owner(&secret_key.public_key());
 
         let base_asset = AssetId::zeroed();
-        let coin = self.client().get_coin(address, base_asset).await?;
+        let coin = client.get_coin(address, base_asset).await?;
 
         tx.add_unsigned_coin_input(
             secret_key,
@@ -152,7 +202,8 @@ impl FuelNodeProcess {
         });
 
         let tx = tx.finalize();
-        self.client().send_tx(&tx.into()).await?;
+
+        client.send_tx(&tx.into()).await?;
 
         Ok(())
     }

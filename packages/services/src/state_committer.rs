@@ -215,14 +215,11 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         if self.has_pending_transactions().await? {
-            tracing::info!("Pending transactions detected; skipping this run.");
             return Ok(());
         }
 
         if let Some(fragment) = self.next_fragment_to_submit().await? {
             self.submit_fragment(fragment).await?;
-        } else {
-            tracing::info!("No fragments to submit at this time.");
         }
 
         Ok(())

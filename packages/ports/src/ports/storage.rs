@@ -27,11 +27,6 @@ pub struct FuelBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FuelBundle {
-    pub id: NonNegative<i64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleFragment {
     pub id: NonNegative<i32>,
     pub idx: NonNegative<i32>,
@@ -149,7 +144,6 @@ pub trait Storage: Send + Sync {
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_blocks(&self, block: NonEmptyVec<FuelBlock>) -> Result<()>;
-    async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
     async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
     async fn lowest_sequence_of_unbundled_blocks(
         &self,
@@ -181,7 +175,6 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
                 async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
                 async fn insert_blocks(&self, block: NonEmptyVec<FuelBlock>) -> Result<()>;
-                async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
                 async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
                 async fn lowest_sequence_of_unbundled_blocks(
                     &self,
@@ -215,7 +208,6 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
                 async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
                 async fn insert_blocks(&self, block: NonEmptyVec<FuelBlock>) -> Result<()>;
-                async fn is_block_available(&self, hash: &[u8; 32]) -> Result<bool>;
                 async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
                 async fn lowest_sequence_of_unbundled_blocks(
                     &self,

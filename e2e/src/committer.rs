@@ -2,7 +2,6 @@ use std::{path::Path, time::Duration};
 
 use anyhow::Context;
 use ports::types::Address;
-use storage::{DbConfig, Postgres};
 use url::Url;
 
 #[derive(Default)]
@@ -68,8 +67,9 @@ impl Committer {
             .env("COMMITTER__APP__DB__DATABASE", &db_name)
             .env("COMMITTER__APP__PORT", unused_port.to_string())
             .env("COMMITTER__APP__HOST", "127.0.0.1")
-            .env("COMMITTER__APP__BLOCK_CHECK_INTERVAL", "1s")
-            .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
+            .env("COMMITTER__APP__BLOCK_CHECK_INTERVAL", "5s")
+            .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "2s")
+            .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "1")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
