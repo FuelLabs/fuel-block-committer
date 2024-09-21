@@ -5,9 +5,7 @@ use delegate::delegate;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, GasPrices, Result},
-    types::{
-        FuelBlockCommittedOnL1, L1Height, NonEmptyVec, TransactionResponse, ValidatedFuelBlock,
-    },
+    types::{FuelBlockCommittedOnL1, L1Height, NonEmptyVec, TransactionResponse},
 };
 use websocket::EthEventStreamer;
 
@@ -23,7 +21,7 @@ pub use websocket::WebsocketClient;
 impl Contract for WebsocketClient {
     delegate! {
         to self {
-            async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
+            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
             fn commit_interval(&self) -> NonZeroU32;
         }
     }

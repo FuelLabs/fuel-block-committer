@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, pin::Pin};
 
 use crate::types::{
     FuelBlockCommittedOnL1, InvalidL1Height, L1Height, NonEmptyVec, Stream, TransactionResponse,
-    ValidatedFuelBlock, U256,
+    U256,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -25,7 +25,7 @@ impl From<InvalidL1Height> for Error {
 #[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Contract: Send + Sync {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
     fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
     fn commit_interval(&self) -> std::num::NonZeroU32;
 }

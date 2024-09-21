@@ -2360,7 +2360,6 @@ dependencies = [
  "testcontainers",
  "tokio",
  "url",
- "validator",
  "walkdir",
  "zip",
 ]
@@ -2719,7 +2718,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "validator",
 ]
 
 [[package]]
@@ -4448,7 +4446,6 @@ dependencies = [
  "sqlx",
  "thiserror",
  "trait-variant",
- "validator",
 ]
 
 [[package]]
@@ -5478,7 +5475,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "trait-variant",
- "validator",
 ]
 
 [[package]]
@@ -6659,21 +6655,6 @@ name = "uuid"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
-
-[[package]]
-name = "validator"
-version = "0.6.0"
-dependencies = [
- "fuel-core-client",
- "fuel-crypto",
- "hex",
- "mockall",
- "rand",
- "serde",
- "tai64",
- "thiserror",
- "validator",
-]
 
 [[package]]
 name = "valuable"

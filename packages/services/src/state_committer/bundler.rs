@@ -231,7 +231,7 @@ impl<T> Bundler<T>
 where
     T: ports::l1::StorageCostCalculator + Send + Sync,
 {
-    pub fn new(cost_calculator: T, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
+    fn new(cost_calculator: T, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
         Self {
             cost_calculator,
             current_block_count: blocks.len(),

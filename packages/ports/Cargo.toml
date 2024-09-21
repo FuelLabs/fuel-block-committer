@@ -21,24 +21,21 @@ rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
-validator = { workspace = true, optional = true }
 hex = { workspace = true }
 async-trait = { workspace = true, optional = true }
 
 [features]
-test-helpers = ["dep:mockall", "dep:rand", "validator?/test-helpers"]
+test-helpers = ["dep:mockall", "dep:rand"]
 l1 = [
   "dep:async-trait",
   "dep:alloy",
   "dep:futures",
   "dep:thiserror",
-  "dep:validator",
   "dep:trait-variant",
 ]
 fuel = [
   "dep:thiserror",
   "dep:fuel-core-client",
-  "dep:validator",
   "dep:futures",
   "dep:trait-variant",
 ]

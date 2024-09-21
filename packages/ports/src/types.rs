@@ -115,5 +115,3 @@ pub use fuel_block_committed_on_l1::*;
 pub use l1_height::*;
 pub use serial_id::*;
 pub use state_submission::*;
-#[cfg(any(feature = "fuel", feature = "l1"))]
-pub use validator::block::*;

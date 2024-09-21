@@ -1,3 +1,4 @@
+use delegate::delegate;
 use std::num::NonZeroU32;
 
 use ::metrics::{
@@ -5,7 +6,7 @@ use ::metrics::{
 };
 use ports::{
     l1::GasPrices,
-    types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock, U256},
+    types::{NonEmptyVec, TransactionResponse, U256},
 };
 
 use crate::{
@@ -18,7 +19,7 @@ use crate::{
 #[async_trait::async_trait]
 pub trait EthApi {
     async fn gas_prices(&self) -> Result<GasPrices>;
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()>;
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
@@ -29,7 +30,7 @@ pub trait EthApi {
     ) -> Result<Option<TransactionResponse>>;
     async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
     #[cfg(feature = "test-helpers")]
-    async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool>;
+    async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]>;
 }
@@ -80,14 +81,20 @@ impl<T> EthApi for HealthTrackingMiddleware<T>
 where
     T: EthApi + Send + Sync,
 {
+    delegate! {
+        to self.adapter {
+            fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
+            fn commit_interval(&self) -> NonZeroU32;
+        }
+    }
     async fn gas_prices(&self) -> Result<GasPrices> {
         let response = self.adapter.gas_prices().await;
         self.note_network_status(&response);
         response
     }
 
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
-        let response = self.adapter.submit(block).await;
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+        let response = self.adapter.submit(hash, height).await;
         self.note_network_status(&response);
         response
     }
@@ -107,18 +114,10 @@ where
         response
     }
 
-    fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
-        self.adapter.event_streamer(eth_block_height)
-    }
-
     async fn balance(&self) -> Result<U256> {
         let response = self.adapter.balance().await;
         self.note_network_status(&response);
         response
-    }
-
-    fn commit_interval(&self) -> NonZeroU32 {
-        self.adapter.commit_interval()
     }
 
     async fn submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
@@ -128,15 +127,20 @@ where
     }
 
     #[cfg(feature = "test-helpers")]
-    async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
-        self.adapter.finalized(block).await
+    async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool> {
+        let response = self.adapter.finalized(hash, height).await;
+        self.note_network_status(&response);
+        response
     }
 
     #[cfg(feature = "test-helpers")]
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]> {
-        self.adapter
+        let response = self
+            .adapter
             .block_hash_at_commit_height(commit_height)
-            .await
+            .await;
+        self.note_network_status(&response);
+        response
     }
 }
 
@@ -152,7 +156,7 @@ mod tests {
         let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
-            .returning(|_| Err(Error::Network("An error".into())));
+            .returning(|_, _| Err(Error::Network("An error".into())));
 
         eth_adapter
             .expect_get_block_number()
@@ -161,7 +165,7 @@ mod tests {
         let adapter = HealthTrackingMiddleware::new(eth_adapter, 1);
         let health_check = adapter.connection_health_checker();
 
-        let _ = adapter.submit(given_a_block(42)).await;
+        let _ = adapter.submit([0; 32], 0).await;
 
         // when
         let _ = adapter.get_block_number().await;
@@ -176,7 +180,7 @@ mod tests {
         let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
-            .returning(|_| Err(Error::Other("An error".into())));
+            .returning(|_, _| Err(Error::Other("An error".into())));
 
         eth_adapter
             .expect_get_block_number()
@@ -185,7 +189,7 @@ mod tests {
         let adapter = HealthTrackingMiddleware::new(eth_adapter, 2);
         let health_check = adapter.connection_health_checker();
 
-        let _ = adapter.submit(given_a_block(42)).await;
+        let _ = adapter.submit([0; 32], 0).await;
 
         // when
         let _ = adapter.get_block_number().await;
@@ -199,7 +203,7 @@ mod tests {
         let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
-            .returning(|_| Err(Error::Network("An error".into())));
+            .returning(|_, _| Err(Error::Network("An error".into())));
 
         eth_adapter
             .expect_get_block_number()
@@ -209,7 +213,7 @@ mod tests {
         let health_check = adapter.connection_health_checker();
         assert!(health_check.healthy());
 
-        let _ = adapter.submit(given_a_block(42)).await;
+        let _ = adapter.submit([0; 32], 0).await;
         assert!(health_check.healthy());
 
         let _ = adapter.get_block_number().await;
@@ -224,7 +228,7 @@ mod tests {
         let mut eth_adapter = MockEthApi::new();
         eth_adapter
             .expect_submit()
-            .returning(|_| Err(Error::Network("An error".into())));
+            .returning(|_, _| Err(Error::Network("An error".into())));
 
         eth_adapter
             .expect_get_block_number()
@@ -234,7 +238,7 @@ mod tests {
         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
         adapter.register_metrics(&registry);
 
-        let _ = adapter.submit(given_a_block(42)).await;
+        let _ = adapter.submit([0; 32], 0).await;
         let _ = adapter.get_block_number().await;
 
         let metrics = registry.gather();
@@ -246,9 +250,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(eth_network_err_metric.get_value(), 2f64);
-    }
-
-    fn given_a_block(block_height: u32) -> ValidatedFuelBlock {
-        ValidatedFuelBlock::new([0; 32], block_height)
     }
 }

@@ -6,7 +6,9 @@ mod state_committer;
 mod state_listener;
 mod status_reporter;
 mod wallet_balance_tracker;
+mod validator;
 
+pub use validator::BlockValidator;
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
@@ -111,12 +113,9 @@ pub(crate) mod test_utils {
     use mocks::l1::TxStatus;
     use ports::types::{DateTime, NonEmptyVec, Utc};
     use storage::{DbWithProcess, PostgresProcess};
-    use validator::BlockValidator;
 
     use crate::{
-        block_importer::{self, encode_blocks},
-        state_committer::bundler::{self},
-        BlockImporter, StateCommitter, StateCommitterConfig, StateListener,
+        block_importer::{self, encode_blocks}, state_committer::bundler::{self}, BlockImporter, BlockValidator, StateCommitter, StateCommitterConfig, StateListener
     };
 
     use super::Runner;
@@ -166,7 +165,7 @@ pub(crate) mod test_utils {
             impl ports::l1::Contract for FullL1Mock {
                 delegate! {
                     to self.contract {
-                        async fn submit(&self, block: ports::types::ValidatedFuelBlock) -> ports::l1::Result<()>;
+                        async fn submit(&self, hash: [u8;32], height: u32) -> ports::l1::Result<()>;
                         fn event_streamer(&self, height: L1Height) -> Box<dyn ports::l1::EventStreamer + Send + Sync>;
                         fn commit_interval(&self) -> std::num::NonZeroU32;
                     }

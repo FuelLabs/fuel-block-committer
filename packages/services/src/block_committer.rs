@@ -4,15 +4,11 @@ use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
-use ports::{
-    storage::Storage,
-    types::{BlockSubmission, ValidatedFuelBlock},
-};
+use ports::{fuel::FuelBlock, storage::Storage, types::BlockSubmission};
 use tracing::info;
-use validator::Validator;
 
 use super::Runner;
-use crate::{Error, Result};
+use crate::{validator::Validator, Error, Result};
 
 pub struct BlockCommitter<L1, Db, Fuel, BlockValidator> {
     l1_adapter: L1,
@@ -73,12 +69,12 @@ where
     BlockValidator: Validator,
     Fuel: ports::fuel::Api,
 {
-    async fn submit_block(&self, fuel_block: ValidatedFuelBlock) -> Result<()> {
+    async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
         let submittal_height = self.l1_adapter.get_block_number().await?;
 
         let submission = BlockSubmission {
-            block_hash: fuel_block.hash(),
-            block_height: fuel_block.height(),
+            block_hash: *fuel_block.id,
+            block_height: fuel_block.header.height,
             submittal_height,
             completed: false,
         };
@@ -86,20 +82,26 @@ where
         self.storage.insert(submission).await?;
 
         // if we have a network failure the DB entry will be left at completed:false.
-        self.l1_adapter.submit(fuel_block).await?;
+        self.l1_adapter
+            .submit(*fuel_block.id, fuel_block.header.height)
+            .await?;
 
         Ok(())
     }
 
-    async fn fetch_latest_block(&self) -> Result<ValidatedFuelBlock> {
+    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
-        let validated_block = self.block_validator.validate(&latest_block)?;
+        self.block_validator.validate(
+            latest_block.id,
+            &latest_block.header,
+            &latest_block.consensus,
+        )?;
 
         self.metrics
             .latest_fuel_block
-            .set(i64::from(validated_block.height()));
+            .set(i64::from(latest_block.header.height));
 
-        Ok(validated_block)
+        Ok(latest_block)
     }
 
     async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
@@ -122,7 +124,7 @@ where
             .map(|submission| submission.block_height))
     }
 
-    async fn fetch_block(&self, height: u32) -> Result<ValidatedFuelBlock> {
+    async fn fetch_block(&self, height: u32) -> Result<FuelBlock> {
         let fuel_block = self
             .fuel_adapter
             .block_at_height(height)
@@ -133,7 +135,9 @@ where
                 ))
             })?;
 
-        Ok(self.block_validator.validate(&fuel_block)?)
+        self.block_validator
+            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)?;
+        Ok(fuel_block)
     }
 }
 
@@ -146,19 +150,20 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let current_block = self.fetch_latest_block().await?;
-        let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
+        let current_epoch_block_height =
+            self.current_epoch_block_height(current_block.header.height);
 
         if self.check_if_stale(current_epoch_block_height).await? {
             return Ok(());
         }
 
-        let block = if current_block.height() == current_epoch_block_height {
+        let block = if current_block.header.height == current_epoch_block_height {
             current_block
         } else {
             self.fetch_block(current_epoch_block_height).await?
         };
 
-        self.submit_block(block)
+        self.submit_block(block.clone())
             .await
             .map_err(|e| Error::Other(e.to_string()))?;
         info!("submitted {block:?}!");
@@ -177,19 +182,21 @@ mod tests {
     use ports::fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus};
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{DbWithProcess, Postgres, PostgresProcess};
-    use validator::BlockValidator;
 
-    use crate::test_utils::mocks::l1::FullL1Mock;
+    use crate::{test_utils::mocks::l1::FullL1Mock, validator::BlockValidator};
 
     use super::*;
 
-    fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> FullL1Mock {
+    fn given_l1_that_expects_submission(
+        expected_hash: [u8; 32],
+        expected_height: u32,
+    ) -> FullL1Mock {
         let mut l1 = FullL1Mock::default();
 
         l1.contract
             .expect_submit()
-            .with(predicate::eq(block))
-            .return_once(move |_| Box::pin(async { Ok(()) }));
+            .withf(move |hash, height| *hash == expected_hash && *height == expected_height)
+            .return_once(move |_, _| Box::pin(async { Ok(()) }));
 
         l1.api
             .expect_get_block_number()
@@ -207,8 +214,7 @@ mod tests {
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
 
-        let validated_missed_block = ValidatedFuelBlock::new(*missed_block.id, 4);
-        let l1 = given_l1_that_expects_submission(validated_missed_block);
+        let l1 = given_l1_that_expects_submission(*missed_block.id, 4);
         let db = db_with_submissions(vec![0, 2]).await;
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
@@ -276,7 +282,7 @@ mod tests {
         let fuel_adapter = given_fetcher(vec![block.clone()]);
 
         let db = db_with_submissions(vec![0, 2]).await;
-        let l1 = given_l1_that_expects_submission(ValidatedFuelBlock::new(*block.id, 4));
+        let l1 = given_l1_that_expects_submission(*block.id, 4);
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
 

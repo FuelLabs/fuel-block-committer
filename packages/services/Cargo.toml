@@ -19,11 +19,11 @@ thiserror = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 hex = { workspace = true }
-validator = { workspace = true }
 mockall = { workspace = true, optional = true }
 flate2 = { workspace = true, features = ["default"] }
 tokio = { workspace = true }
 trait-variant = { workspace = true }
+fuel-crypto = { workspace = true }
 
 [dev-dependencies]
 delegate = { workspace = true }
@@ -39,7 +39,6 @@ rand = { workspace = true, features = ["small_rng"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
-validator = { workspace = true, features = ["test-helpers"] }
 
 [features]
 test-helpers = ["dep:mockall"]

@@ -15,7 +15,6 @@ mod tests {
     use futures::{StreamExt, TryStreamExt};
     use ports::{fuel::Api, storage::Storage};
     use tokio::time::sleep_until;
-    use validator::{BlockValidator, Validator};
 
     use crate::whole_stack::WholeStack;
 
@@ -46,10 +45,7 @@ mod tests {
 
         let latest_block = stack.fuel_node.client().latest_block().await?;
 
-        let validated_block = BlockValidator::new(*stack.fuel_node.consensus_pub_key().hash())
-            .validate(&latest_block)?;
-
-        assert!(stack.deployed_contract.finalized(validated_block).await?);
+        assert!(stack.deployed_contract.finalized(latest_block).await?);
 
         Ok(())
     }

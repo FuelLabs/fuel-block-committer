@@ -4,7 +4,7 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::primitives::Address;
 use ports::{
     l1::Result,
-    types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock, U256},
+    types::{NonEmptyVec, TransactionResponse, U256},
 };
 use url::Url;
 
@@ -62,8 +62,8 @@ impl WebsocketClient {
         self.inner.event_streamer(eth_block_height)
     }
 
-    pub(crate) async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
-        Ok(self.inner.submit(block).await?)
+    pub(crate) async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+        Ok(self.inner.submit(hash, height).await?)
     }
 
     pub(crate) fn commit_interval(&self) -> NonZeroU32 {
@@ -90,8 +90,8 @@ impl WebsocketClient {
     }
 
     #[cfg(feature = "test-helpers")]
-    pub async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
-        Ok(self.inner.finalized(block).await?)
+    pub async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool> {
+        Ok(self.inner.finalized(hash, height).await?)
     }
 
     #[cfg(feature = "test-helpers")]

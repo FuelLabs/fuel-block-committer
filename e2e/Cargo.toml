@@ -62,4 +62,3 @@ tokio = { workspace = true, features = [
   "fs",
 ] }
 url = { workspace = true }
-validator = { workspace = true, features = ["validator"] }

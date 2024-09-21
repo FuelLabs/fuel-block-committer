@@ -9,7 +9,7 @@ use alloy::{
 };
 use eth::{AwsClient, AwsConfig, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
-use ports::types::{Address, ValidatedFuelBlock};
+use ports::{fuel::FuelBlock, types::Address};
 use serde::Deserialize;
 use tokio::process::Command;
 use url::Url;
@@ -35,9 +35,9 @@ impl DeployedContract {
         })
     }
 
-    pub async fn finalized(&self, block: ValidatedFuelBlock) -> anyhow::Result<bool> {
+    pub async fn finalized(&self, block: FuelBlock) -> anyhow::Result<bool> {
         self.chain_state_contract
-            .finalized(block)
+            .finalized(*block.id, block.header.height)
             .await
             .map_err(Into::into)
     }

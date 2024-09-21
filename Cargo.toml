@@ -10,7 +10,6 @@ members = [
   "packages/ports",
   "packages/services",
   "packages/storage",
-  "packages/validator",
 ]
 
 [workspace.package]
@@ -30,7 +29,6 @@ metrics = { path = "./packages/metrics", default-features = false }
 ports = { path = "./packages/ports", default-features = false }
 storage = { path = "./packages/storage", default-features = false }
 services = { path = "./packages/services", default-features = false }
-validator = { path = "./packages/validator", default-features = false }
 clock = { path = "./packages/clock", default-features = false }
 
 test-case = { version = "3.3", default-features = false }

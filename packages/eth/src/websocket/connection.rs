@@ -15,7 +15,7 @@ use alloy::{
 };
 use ports::{
     l1::GasPrices,
-    types::{NonEmptyVec, TransactionResponse, ValidatedFuelBlock},
+    types::{NonEmptyVec, TransactionResponse},
 };
 use url::Url;
 
@@ -78,9 +78,9 @@ impl EthApi for WsConnection {
         })
     }
 
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
-        let commit_height = Self::calculate_commit_height(block.height(), self.commit_interval);
-        let contract_call = self.contract.commit(block.hash().into(), commit_height);
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+        let commit_height = Self::calculate_commit_height(height, self.commit_interval);
+        let contract_call = self.contract.commit(hash.into(), commit_height);
         let tx = contract_call.send().await?;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
@@ -139,10 +139,10 @@ impl EthApi for WsConnection {
     }
 
     #[cfg(feature = "test-helpers")]
-    async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
+    async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool> {
         Ok(self
             .contract
-            .finalized(block.hash().into(), U256::from(block.height()))
+            .finalized(hash.into(), U256::from(height))
             .call()
             .await?
             ._0)

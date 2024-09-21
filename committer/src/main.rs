@@ -16,7 +16,7 @@ pub type L1 = eth::WebsocketClient;
 pub type AwsClient = eth::AwsClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
-pub type Validator = validator::BlockValidator;
+pub type Validator = services::BlockValidator;
 
 #[tokio::main]
 async fn main() -> Result<()> {

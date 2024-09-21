@@ -5,12 +5,12 @@ use eth::{AwsConfig, Eip4844GasUsage};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{
-    BlockCommitter, CommitListener, Runner, StateCommitterConfig, WalletBalanceTracker,
+    BlockCommitter, BlockValidator, CommitListener, Runner, StateCommitterConfig,
+    WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use validator::BlockValidator;
 
 use crate::{config, errors::Result, AwsClient, Database, FuelApi, L1};
 

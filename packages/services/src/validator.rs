@@ -1,13 +1,19 @@
-use fuel_core_client::client::types::{
-    block::{
-        Block as FuelBlock, Consensus as FuelConsensus, Header as FuelHeader,
-        PoAConsensus as FuelPoAConsensus,
-    },
-    primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32},
-};
-use fuel_crypto::{Hasher, Message};
+use ports::fuel::{Consensus, FuelBytes32, FuelHeader};
 
-use crate::{block::ValidatedFuelBlock, Error, Result, Validator};
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    BlockValidation(String),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg_attr(feature = "test-helpers", mockall::automock)]
+pub trait Validator: Send + Sync {
+    fn validate(&self, id: FuelBytes32, header: &FuelHeader, consensus: &Consensus) -> Result<()>;
+}
+use fuel_crypto::{Hasher, Message};
+use ports::fuel::{FuelBlockId, FuelPoAConsensus};
 
 #[derive(Debug)]
 pub struct BlockValidator {
@@ -15,8 +21,8 @@ pub struct BlockValidator {
 }
 
 impl Validator for BlockValidator {
-    fn validate(&self, fuel_block: &FuelBlock) -> Result<ValidatedFuelBlock> {
-        self._validate(fuel_block)
+    fn validate(&self, id: FuelBytes32, header: &FuelHeader, consensus: &Consensus) -> Result<()> {
+        self._validate(id, header, consensus)
     }
 }
 
@@ -25,66 +31,40 @@ impl BlockValidator {
         Self { producer_addr }
     }
 
-    fn _validate(&self, fuel_block: &FuelBlock) -> Result<ValidatedFuelBlock> {
+    fn _validate(&self, id: FuelBytes32, header: &FuelHeader, consensus: &Consensus) -> Result<()> {
         // Genesis block is a special case. It does not have a producer address or a signature.
-        if let FuelConsensus::Genesis(_) = fuel_block.consensus {
-            return Ok(ValidatedFuelBlock {
-                hash: *fuel_block.id,
-                height: fuel_block.header.height,
-            });
+        if let Consensus::Genesis(_) = consensus {
+            return Ok(());
         }
 
-        self.validate_producer_addr(fuel_block)?;
-        Self::validate_block_id(fuel_block)?;
-        self.validate_block_signature(fuel_block)?;
-
-        Ok(ValidatedFuelBlock {
-            hash: *fuel_block.id,
-            height: fuel_block.header.height,
-        })
-    }
-
-    fn validate_producer_addr(&self, fuel_block: &FuelBlock) -> Result<()> {
-        let Some(producer_addr) = fuel_block.block_producer().map(|key| key.hash()) else {
-            return Err(Error::BlockValidation(
-                "producer public key not found in fuel block".to_string(),
-            ));
-        };
-
-        if *producer_addr != self.producer_addr {
-            return Err(Error::BlockValidation(format!(
-                "producer addr '{}' does not match expected addr '{}'. block: {fuel_block:?}",
-                hex::encode(producer_addr),
-                hex::encode(self.producer_addr)
-            )));
-        }
+        Self::validate_block_id(id, header)?;
+        self.validate_block_signature(id, consensus)?;
 
         Ok(())
     }
 
-    fn validate_block_id(fuel_block: &FuelBlock) -> Result<()> {
-        let calculated_block_id = Self::calculate_block_id(fuel_block);
-        if fuel_block.id != calculated_block_id {
+    fn validate_block_id(id: FuelBytes32, header: &FuelHeader) -> Result<()> {
+        let calculated_block_id = Self::calculate_block_id(header);
+        if id != calculated_block_id {
             return Err(Error::BlockValidation(format!(
                 "fuel block id `{:x}` does not match \
                  calculated block id `{calculated_block_id:x}`.",
-                fuel_block.id,
+                id,
             )));
         }
 
         Ok(())
     }
 
-    fn validate_block_signature(&self, fuel_block: &FuelBlock) -> Result<()> {
-        let FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }) = fuel_block.consensus
-        else {
+    fn validate_block_signature(&self, id: FuelBytes32, consensus: &Consensus) -> Result<()> {
+        let Consensus::PoAConsensus(FuelPoAConsensus { signature }) = consensus else {
             return Err(Error::BlockValidation(
                 "PoAConsensus signature not found in fuel block".to_string(),
             ));
         };
 
-        let recovered_producer_addr = *signature
-            .recover(&Message::from_bytes(*fuel_block.id))
+        let recovered_producer_addr = signature
+            .recover(&Message::from_bytes(*id))
             .map_err(|e| {
                 Error::BlockValidation(format!(
                     "failed to recover public key from PoAConsensus signature: {e:?}",
@@ -92,7 +72,7 @@ impl BlockValidator {
             })?
             .hash();
 
-        if recovered_producer_addr != self.producer_addr {
+        if *recovered_producer_addr != self.producer_addr {
             return Err(Error::BlockValidation(format!(
                 "recovered producer addr `{}` does not match \
              expected addr`{}`.",
@@ -104,8 +84,8 @@ impl BlockValidator {
         Ok(())
     }
 
-    fn calculate_block_id(fuel_block: &FuelBlock) -> FuelBlockId {
-        let application_hash = Self::application_hash(&fuel_block.header);
+    fn calculate_block_id(header: &FuelHeader) -> FuelBlockId {
+        let application_hash = Self::application_hash(header);
 
         let mut hasher = Hasher::default();
         let FuelHeader {
@@ -113,7 +93,7 @@ impl BlockValidator {
             height,
             time,
             ..
-        } = &fuel_block.header;
+        } = &header;
 
         hasher.input(prev_root.as_ref());
         hasher.input(height.to_be_bytes());
@@ -152,21 +132,12 @@ impl BlockValidator {
 
 #[cfg(test)]
 mod tests {
-    use fuel_core_client::client::types::block::Genesis;
     use fuel_crypto::{PublicKey, SecretKey, Signature};
+    use ports::fuel::{FuelBlock, FuelGenesis};
     use rand::{rngs::StdRng, SeedableRng};
     use tai64::Tai64;
 
     use super::*;
-
-    #[test]
-    #[should_panic(expected = "producer public key not found in fuel block")]
-    fn validate_public_key_missing() {
-        let fuel_block = given_a_block(None);
-        let validator = BlockValidator::new([0; 32]);
-
-        validator.validate(&fuel_block).unwrap();
-    }
 
     #[test]
     #[should_panic(expected = "does not match expected addr")]
@@ -175,7 +146,9 @@ mod tests {
         let fuel_block = given_a_block(Some(secret_key));
         let validator = BlockValidator::new([0; 32]);
 
-        validator.validate(&fuel_block).unwrap();
+        validator
+            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)
+            .unwrap();
     }
 
     #[test]
@@ -186,7 +159,9 @@ mod tests {
         fuel_block.header.height = 42; // Change a value to get a different block id
         let validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        validator.validate(&fuel_block).unwrap();
+        validator
+            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)
+            .unwrap();
     }
 
     #[test]
@@ -194,10 +169,12 @@ mod tests {
     fn validate_block_consensus_not_poa() {
         let secret_key = given_secret_key();
         let mut fuel_block = given_a_block(Some(secret_key));
-        fuel_block.consensus = FuelConsensus::Unknown;
+        fuel_block.consensus = Consensus::Unknown;
         let validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        validator.validate(&fuel_block).unwrap();
+        validator
+            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)
+            .unwrap();
     }
 
     #[test]
@@ -214,12 +191,14 @@ mod tests {
             Signature::sign(&different_secret_key, &id_message)
         };
 
-        fuel_block.consensus = FuelConsensus::PoAConsensus(FuelPoAConsensus {
+        fuel_block.consensus = Consensus::PoAConsensus(FuelPoAConsensus {
             signature: invalid_signature,
         });
         let validator = BlockValidator::new(*correct_secret_key.public_key().hash());
 
-        validator.validate(&fuel_block).unwrap();
+        validator
+            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)
+            .unwrap();
     }
 
     #[test]
@@ -228,7 +207,9 @@ mod tests {
         let fuel_block = given_a_block(Some(secret_key));
         let validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        validator.validate(&fuel_block).unwrap();
+        validator
+            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)
+            .unwrap();
     }
 
     #[test]
@@ -269,7 +250,7 @@ mod tests {
                         .parse()
                         .unwrap(),
             },
-            consensus: FuelConsensus::Genesis(Genesis {
+            consensus: Consensus::Genesis(FuelGenesis {
                 chain_config_hash:
                     "0xd0df79ce0a5e69a88735306dcc9259d9c1d6b060f14cabe4df2b8afdeea8693b"
                         .parse()
@@ -299,7 +280,7 @@ mod tests {
         let validator = BlockValidator::new(actual_producer_address);
 
         // when
-        let res = validator.validate(&block);
+        let res = validator.validate(block.id, &block.header, &block.consensus);
 
         // then
         res.unwrap();
@@ -324,7 +305,7 @@ mod tests {
             FuelBlock {
                 id,
                 header,
-                consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
+                consensus: Consensus::PoAConsensus(FuelPoAConsensus { signature }),
                 transactions: vec![],
                 block_producer: Some(secret_key.public_key()),
             }
@@ -332,7 +313,7 @@ mod tests {
             FuelBlock {
                 id,
                 header,
-                consensus: FuelConsensus::Unknown,
+                consensus: Consensus::Unknown,
                 transactions: vec![],
                 block_producer: None,
             }

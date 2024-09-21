@@ -9,9 +9,8 @@ use ports::{
     types::NonEmptyVec,
 };
 use tracing::info;
-use validator::Validator;
 
-use crate::{Error, Result, Runner};
+use crate::{validator::Validator, Error, Result, Runner};
 
 /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
 /// into local storage. It fetches blocks from the Fuel API, validates them,
@@ -60,6 +59,15 @@ where
 
         Ok(())
     }
+
+    fn validate_blocks(&self, blocks: &NonEmptyVec<FullFuelBlock>) -> Result<()> {
+        for block in blocks.iter() {
+            self.block_validator
+                .validate(block.id, &block.header, &block.consensus)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub(crate) fn encode_blocks(
@@ -102,32 +110,32 @@ where
 
         let chain_height = self.fuel_api.latest_height().await?;
 
-        if let Some(db_height_range) = &available_blocks {
-            let latest_db_block = *db_height_range.end();
+        let start_request_range = if let Some(available_blocks) = &available_blocks {
+            let latest_db_block = *available_blocks.end();
+
             if latest_db_block > chain_height {
                 let err_msg = format!(
                     "Latest database block ({latest_db_block}) is has a height greater than the current chain height ({chain_height})",
                 );
                 return Err(Error::Other(err_msg));
-            }
-
-            if latest_db_block == chain_height {
+            } else if latest_db_block == chain_height {
                 info!(
                     "Database is up to date with the chain({chain_height}); no import necessary."
                 );
                 return Ok(());
+            } else {
+                max(self.starting_height, latest_db_block.saturating_add(1))
             }
-        }
-
-        let start_request_range = match available_blocks {
-            Some(db_height) => max(self.starting_height, db_height.end().saturating_add(1)),
-            None => self.starting_height,
+        } else {
+            self.starting_height
         };
 
         self.fuel_api
             .full_blocks_in_height_range(start_request_range..=chain_height)
             .map_err(crate::Error::from)
             .try_for_each(|blocks| async {
+                self.validate_blocks(&blocks)?;
+
                 self.import_blocks(blocks).await?;
 
                 Ok(())
@@ -142,27 +150,25 @@ where
 mod tests {
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
-    use rand::{rngs::StdRng, SeedableRng};
-    use validator::BlockValidator;
+    use rand::{
+        rngs::{SmallRng, StdRng},
+        CryptoRng, RngCore, SeedableRng,
+    };
 
     use crate::{
         test_utils::{self, Blocks, ImportedBlocks},
-        Error,
+        BlockValidator, Error,
     };
 
     use super::*;
-
-    fn given_secret_key() -> SecretKey {
-        let mut rng = StdRng::seed_from_u64(42);
-        SecretKey::random(&mut rng)
-    }
 
     #[tokio::test]
     async fn imports_first_block_when_db_is_empty() -> Result<()> {
         // Given
         let setup = test_utils::Setup::init().await;
 
-        let secret_key = given_secret_key();
+        let mut rng = StdRng::from_seed([0; 32]);
+        let secret_key = SecretKey::random(&mut rng);
         let block = test_utils::mocks::fuel::generate_block(0, &secret_key, 1, 100);
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
@@ -183,6 +189,38 @@ mod tests {
         let expected_block = encode_blocks(non_empty_vec![block]);
 
         assert_eq!(*all_blocks, expected_block);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn wont_import_invalid_blocks() -> Result<()> {
+        // Given
+        let setup = test_utils::Setup::init().await;
+
+        let mut rng = StdRng::from_seed([0; 32]);
+        let correct_secret_key = SecretKey::random(&mut rng);
+        let block_validator = BlockValidator::new(*correct_secret_key.public_key().hash());
+
+        let incorrect_secret_key = SecretKey::random(&mut rng);
+        let block = test_utils::mocks::fuel::generate_block(0, &incorrect_secret_key, 1, 100);
+
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
+
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+
+        // When
+        let result = importer.run().await;
+
+        // Then
+        let Err(Error::BlockValidation(msg)) = result else {
+            panic!("expected a validation error, got: {:?}", result);
+        };
+
+        assert_eq!(
+            msg,
+            r#"recovered producer addr `13d5eed3c6132bcf8dc2f92944d11fb3dc32df5ed183ab4716914eb21fd2b318` does not match expected addr`4747f47fb79e2b73b2f3c3ca1ea69d9b2b0caf8ac2d3480da6e750664f40914b`."#
+        );
 
         Ok(())
     }
