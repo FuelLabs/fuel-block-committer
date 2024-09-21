@@ -129,7 +129,7 @@ mod tests {
         types::{BlockSubmission, FuelBlockCommittedOnL1, L1Height, U256},
     };
     use rand::Rng;
-    use storage::{DbWithProcess, Postgres, PostgresProcess};
+    use storage::{DbWithProcess, PostgresProcess};
     use tokio_util::sync::CancellationToken;
 
     use crate::{CommitListener, Runner};

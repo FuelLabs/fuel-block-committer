@@ -93,6 +93,7 @@ impl Default for Compressor {
 }
 
 impl Compressor {
+    #[cfg(test)]
     pub fn no_compression() -> Self {
         Self::new(CompressionLevel::Disabled)
     }
@@ -138,6 +139,7 @@ impl Compressor {
             .map_err(|_| crate::Error::Other("compression resulted in no data".to_string()))
     }
 
+    #[cfg(test)]
     pub fn compress_blocking(&self, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
         Self::_compress(self.compression, data)
     }
@@ -603,7 +605,7 @@ mod tests {
         let encoding_overhead = 40;
         let blobs_per_block = 6;
         let max_bytes_per_tx = Eip4844GasUsage.max_bytes_per_submission().get();
-        (max_bytes_per_tx / blobs_per_block - encoding_overhead)
+        max_bytes_per_tx / blobs_per_block - encoding_overhead
     }
 
     // Because, for example, you've used up more of a whole blob you paid for

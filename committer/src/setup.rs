@@ -97,7 +97,7 @@ pub fn state_committer(
     );
 
     schedule_polling(
-        config.app.block_check_interval,
+        config.app.tx_finalization_check_interval,
         state_committer,
         "State Committer",
         cancel_token,

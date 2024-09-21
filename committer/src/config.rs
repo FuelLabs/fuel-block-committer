@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, num::NonZeroUsize, path::PathBuf, str::FromStr, time::Duration};
+use std::{net::Ipv4Addr, num::NonZeroUsize, str::FromStr, time::Duration};
 
 use clap::{command, Parser};
 use eth::Address;

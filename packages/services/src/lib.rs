@@ -104,7 +104,7 @@ pub(crate) mod test_utils {
         data.try_into().expect("is not empty due to check")
     }
 
-    use std::{ops::{Range, RangeInclusive}, sync::Arc};
+    use std::ops::RangeInclusive;
 
     use clock::TestClock;
     use eth::Eip4844GasUsage;
@@ -122,12 +122,11 @@ pub(crate) mod test_utils {
 
     pub mod mocks {
         pub mod l1 {
-            use std::num::NonZeroUsize;
 
             use delegate::delegate;
             use mockall::{predicate::eq, Sequence};
             use ports::{
-                l1::{Api, GasPrices},
+                l1::GasPrices,
                 types::{L1Height, NonEmptyVec, TransactionResponse, U256},
             };
 
@@ -255,16 +254,16 @@ pub(crate) mod test_utils {
 
             use std::{
                 iter,
-                ops::{Range, RangeInclusive},
+                ops::RangeInclusive,
             };
 
             use fuel_crypto::{Message, SecretKey, Signature};
             use futures::{stream, StreamExt};
             use itertools::Itertools;
             use ports::{
-                fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock}, non_empty_vec, storage::SequentialFuelBlocks, types::NonEmptyVec
+                fuel::{ FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock}, non_empty_vec, storage::SequentialFuelBlocks, types::NonEmptyVec
             };
-            use rand::{Rng, RngCore, SeedableRng};
+            use rand::{ RngCore, SeedableRng};
 
             use crate::block_importer;
 
@@ -352,17 +351,6 @@ pub(crate) mod test_utils {
                     time: tai64::Tai64(0),
                     application_hash,
                 }
-            }
-
-            pub fn blocks_exists( 
-                secret_key: SecretKey,
-                heights: Range<u32>,
-            ) -> ports::fuel::MockApi {
-                let blocks = heights
-                    .map(|height| generate_block(height, &secret_key, 1, 100))
-                    .collect::<Vec<_>>();
-
-                these_blocks_exist(blocks)
             }
 
             pub fn these_blocks_exist(
@@ -526,20 +514,6 @@ pub(crate) mod test_utils {
                         },
                     )
                 }
-                Blocks::Blocks { blocks, secret_key } => {
-                    let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-                    let mock = mocks::fuel::these_blocks_exist(blocks.clone());
-
-                    let storage_blocks = block_importer::encode_blocks(blocks.clone().try_into().unwrap());
-                    (
-                        BlockImporter::new(self.db(), mock, block_validator, 0),
-                        ImportedBlocks {
-                            fuel_blocks: blocks,
-                            storage_blocks,
-                            secret_key,
-                        },
-                    )
-                }
             }
         }
     }
@@ -550,18 +524,5 @@ pub(crate) mod test_utils {
             tx_per_block: usize,
             size_per_tx: usize,
         },
-        Blocks {
-            blocks: NonEmptyVec<ports::fuel::FullFuelBlock>,
-            secret_key: SecretKey,
-        },
-    }
-
-    impl Blocks {
-        pub fn len(&self) -> usize {
-            match self {
-                Self::WithHeights { range, .. } => range.clone().count(),
-                Self::Blocks { blocks, .. } => blocks.len().get(),
-            }
-        }
     }
 }

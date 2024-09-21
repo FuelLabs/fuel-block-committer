@@ -1,20 +1,18 @@
-use std::{cmp::max, hash::Hash, path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
 use fuel::HttpClient;
 use fuel_core_chain_config::{
-    ChainConfig, CoinConfig, ConsensusConfig, SnapshotWriter, StateConfig, TESTNET_WALLET_SECRETS,
+    ChainConfig, CoinConfig, ConsensusConfig, SnapshotWriter, StateConfig,
 };
 use fuel_core_types::{
     fuel_crypto::SecretKey as FuelSecretKey,
-    fuel_tx::{AssetId, Finalizable, Input, Output, Transaction, TransactionBuilder, TxPointer},
+    fuel_tx::{AssetId, Finalizable, Input, Output, TransactionBuilder, TxPointer},
     fuel_types::Address,
-    fuel_vm::SecretKey as FuelKey,
 };
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use ports::fuel::FuelPublicKey;
-use rand::{Rng, SeedableRng};
-use secp256k1::SecretKey;
+use rand::Rng;
 use url::Url;
 
 #[derive(Default, Debug)]

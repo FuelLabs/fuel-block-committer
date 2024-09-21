@@ -12,8 +12,7 @@ mod whole_stack;
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use futures::{StreamExt, TryStreamExt};
-    use ports::{fuel::Api, storage::Storage};
+    use ports::storage::Storage;
     use tokio::time::sleep_until;
 
     use crate::whole_stack::WholeStack;

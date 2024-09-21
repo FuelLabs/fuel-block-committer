@@ -174,14 +174,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use fuel_crypto::{Message, SecretKey, Signature};
     use metrics::prometheus::{proto::Metric, Registry};
-    use mockall::predicate::{self, eq};
+    use mockall::predicate::eq;
     use ports::fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus};
     use rand::{rngs::StdRng, Rng, SeedableRng};
-    use storage::{DbWithProcess, Postgres, PostgresProcess};
+    use storage::{DbWithProcess, PostgresProcess};
 
     use crate::{test_utils::mocks::l1::FullL1Mock, validator::BlockValidator};
 

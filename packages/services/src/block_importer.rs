@@ -2,12 +2,7 @@ use std::cmp::max;
 
 use futures::TryStreamExt;
 use itertools::{chain, Itertools};
-use ports::{
-    fuel::{FuelBlock, FullFuelBlock},
-    non_empty_vec,
-    storage::Storage,
-    types::NonEmptyVec,
-};
+use ports::{fuel::FullFuelBlock, storage::Storage, types::NonEmptyVec};
 use tracing::info;
 
 use crate::{validator::Validator, Error, Result, Runner};
@@ -68,6 +63,28 @@ where
 
         Ok(())
     }
+
+    async fn determine_starting_height(&mut self, chain_height: u32) -> Result<Option<u32>> {
+        let Some(available_blocks) = self.storage.available_blocks().await? else {
+            return Ok(Some(self.starting_height));
+        };
+
+        let latest_db_block = *available_blocks.end();
+
+        match latest_db_block.cmp(&chain_height) {
+            std::cmp::Ordering::Greater => {
+                let err_msg = format!(
+                    "Latest database block ({latest_db_block}) is has a height greater than the current chain height ({chain_height})",
+                );
+                Err(Error::Other(err_msg))
+            }
+            std::cmp::Ordering::Equal => Ok(None),
+            std::cmp::Ordering::Less => Ok(Some(max(
+                self.starting_height,
+                latest_db_block.saturating_add(1),
+            ))),
+        }
+    }
 }
 
 pub(crate) fn encode_blocks(
@@ -106,32 +123,15 @@ where
 {
     /// Runs the block importer, fetching and importing blocks as needed.
     async fn run(&mut self) -> Result<()> {
-        let available_blocks = self.storage.available_blocks().await?;
-
         let chain_height = self.fuel_api.latest_height().await?;
 
-        let start_request_range = if let Some(available_blocks) = &available_blocks {
-            let latest_db_block = *available_blocks.end();
-
-            if latest_db_block > chain_height {
-                let err_msg = format!(
-                    "Latest database block ({latest_db_block}) is has a height greater than the current chain height ({chain_height})",
-                );
-                return Err(Error::Other(err_msg));
-            } else if latest_db_block == chain_height {
-                info!(
-                    "Database is up to date with the chain({chain_height}); no import necessary."
-                );
-                return Ok(());
-            } else {
-                max(self.starting_height, latest_db_block.saturating_add(1))
-            }
-        } else {
-            self.starting_height
+        let Some(starting_height) = self.determine_starting_height(chain_height).await? else {
+            info!("Database is up to date with the chain({chain_height}); no import necessary.");
+            return Ok(());
         };
 
         self.fuel_api
-            .full_blocks_in_height_range(start_request_range..=chain_height)
+            .full_blocks_in_height_range(starting_height..=chain_height)
             .map_err(crate::Error::from)
             .try_for_each(|blocks| async {
                 self.validate_blocks(&blocks)?;
@@ -150,10 +150,8 @@ where
 mod tests {
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
-    use rand::{
-        rngs::{SmallRng, StdRng},
-        CryptoRng, RngCore, SeedableRng,
-    };
+    use ports::non_empty_vec;
+    use rand::{rngs::StdRng, SeedableRng};
 
     use crate::{
         test_utils::{self, Blocks, ImportedBlocks},
