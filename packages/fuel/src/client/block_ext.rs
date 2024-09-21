@@ -2,7 +2,7 @@ use cynic::QueryBuilder;
 use fuel_core_client::client::{
     pagination::{PaginatedResult, PaginationRequest},
     schema::{
-        block::{BlockByHeightArgs, Consensus, Header},
+        block::{Consensus, Header},
         primitives::TransactionId,
         schema,
         tx::TransactionStatus,
@@ -36,17 +36,6 @@ pub struct FullBlockConnection {
 pub struct FullBlockEdge {
     pub cursor: String,
     pub node: FullBlock,
-}
-
-#[derive(cynic::QueryFragment, Debug)]
-#[cynic(
-    schema_path = "./target/schema.sdl",
-    graphql_type = "Query",
-    variables = "BlockByHeightArgs"
-)]
-pub struct FullBlockByHeightQuery {
-    #[arguments(height: $height)]
-    pub block: Option<FullBlock>,
 }
 
 #[derive(cynic::QueryFragment, Debug)]
@@ -130,24 +119,3 @@ impl ClientExt for FuelClient {
         Ok(blocks)
     }
 }
-
-//#[cfg(test)] // TODO: @hal3e check what to do with this test
-//mod tests {
-//    use super::*;
-//    use fuel_core_client::client::pagination::PageDirection;
-//
-//    #[tokio::test]
-//    async fn testnet_works() {
-//        let client = FuelClient::new("https://testnet.fuel.network")
-//            .expect("Should connect to the beta 5 network");
-//
-//        let request = PaginationRequest {
-//            cursor: None,
-//            results: 1,
-//            direction: PageDirection::Backward,
-//        };
-//        let full_block = client.full_blocks(request).await;
-//
-//        assert!(full_block.is_ok(), "{full_block:?}");
-//    }
-//}

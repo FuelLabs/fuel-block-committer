@@ -14,9 +14,8 @@ ports = { workspace = true, features = ["clock"] }
 tokio = { workspace = true, features = ["sync"], optional = true }
 
 [dev-dependencies]
+clock = { workspace = true, features = ["test-helpers"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]
-# TODO: remove
-default = ["test-helpers"]
 test-helpers = ["dep:tokio"]

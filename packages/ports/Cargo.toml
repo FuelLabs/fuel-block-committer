@@ -35,7 +35,13 @@ l1 = [
   "dep:validator",
   "dep:trait-variant",
 ]
-fuel = ["dep:thiserror", "dep:fuel-core-client", "dep:validator", "dep:futures"]
+fuel = [
+  "dep:thiserror",
+  "dep:fuel-core-client",
+  "dep:validator",
+  "dep:futures",
+  "dep:trait-variant",
+]
 storage = [
   "dep:trait-variant",
   "dep:impl-tools",

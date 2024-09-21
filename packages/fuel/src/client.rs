@@ -92,7 +92,6 @@ impl HttpClient {
         }
     }
 
-    // TODO: check if this method can be removed
     pub(crate) async fn block_at_height(&self, height: u32) -> Result<Option<Block>> {
         match self.client.block_by_height(height.into()).await {
             Ok(maybe_block) => {
@@ -104,26 +103,6 @@ impl HttpClient {
                 Err(Error::Network(err.to_string()))
             }
         }
-    }
-
-    fn create_blocks_request(range: RangeInclusive<u32>) -> Result<PaginationRequest<String>> {
-        let start = range.start().saturating_sub(1);
-        let results = range
-            .end()
-            .saturating_sub(*range.start())
-            .try_into()
-            .map_err(|_| {
-                Error::Other(
-                    "could not convert `u32` to `i32` when calculating blocks request range"
-                        .to_string(),
-                )
-            })?;
-
-        Ok(PaginationRequest {
-            cursor: Some(start.to_string()),
-            results,
-            direction: PageDirection::Forward,
-        })
     }
 
     pub(crate) fn block_in_height_range(
