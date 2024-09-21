@@ -443,14 +443,12 @@ where
 mod tests {
 
     use eth::Eip4844GasUsage;
-    
+
     use fuel_crypto::SecretKey;
     use ports::l1::StorageCostCalculator;
     use ports::non_empty_vec;
 
-    use crate::test_utils::{
-        mocks::fuel::{generate_storage_block, generate_storage_block_sequence},
-    };
+    use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
 
     use super::*;
 
@@ -480,7 +478,7 @@ mod tests {
     async fn finishing_will_advance_if_not_called_at_least_once() {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = generate_storage_block_sequence(0..=0, &secret_key, 10);
+        let blocks = generate_storage_block_sequence(0..=0, &secret_key, 10, 100);
 
         let bundler = Bundler::new(
             Eip4844GasUsage,
@@ -510,14 +508,22 @@ mod tests {
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let compressable_block = {
-            let mut block =
-                generate_storage_block(0, &secret_key, enough_txs_to_almost_fill_entire_l1_tx());
+            let mut block = generate_storage_block(
+                0,
+                &secret_key,
+                enough_bytes_to_almost_fill_entire_l1_tx() / 1000,
+                1000,
+            );
             block.data.fill(0);
             block
         };
 
-        let non_compressable_block =
-            generate_storage_block(1, &secret_key, enough_txs_to_almost_fill_entire_l1_tx() / 2);
+        let non_compressable_block = generate_storage_block(
+            1,
+            &secret_key,
+            enough_bytes_to_almost_fill_entire_l1_tx() / 1000 / 2,
+            1000,
+        );
 
         let blocks: SequentialFuelBlocks =
             non_empty_vec![compressable_block, non_compressable_block]
@@ -561,7 +567,7 @@ mod tests {
     async fn wont_constrict_bundle_because_storage_gas_remained_unchanged() -> Result<()> {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = generate_storage_block_sequence(0..=1, &secret_key, 10);
+        let blocks = generate_storage_block_sequence(0..=1, &secret_key, 10, 100);
 
         let mut bundler = Bundler::new(
             Eip4844GasUsage,
@@ -593,12 +599,11 @@ mod tests {
         Ok(())
     }
 
-    fn enough_txs_to_almost_fill_a_blob() -> usize {
+    fn enough_bytes_to_almost_fill_a_blob() -> usize {
         let encoding_overhead = 40;
         let blobs_per_block = 6;
-        let tx_size = 32;
         let max_bytes_per_tx = Eip4844GasUsage.max_bytes_per_submission().get();
-        (max_bytes_per_tx / blobs_per_block - encoding_overhead) / tx_size
+        (max_bytes_per_tx / blobs_per_block - encoding_overhead)
     }
 
     // Because, for example, you've used up more of a whole blob you paid for
@@ -608,8 +613,8 @@ mod tests {
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let blocks = non_empty_vec![
-            generate_storage_block(0, &secret_key, 0),
-            generate_storage_block(1, &secret_key, enough_txs_to_almost_fill_a_blob())
+            generate_storage_block(0, &secret_key, 0, 100),
+            generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob())
         ];
 
         let mut bundler = Bundler::new(
@@ -635,11 +640,10 @@ mod tests {
         Ok(())
     }
 
-    fn enough_txs_to_almost_fill_entire_l1_tx() -> usize {
+    fn enough_bytes_to_almost_fill_entire_l1_tx() -> usize {
         let encoding_overhead = 20;
-        let tx_size = 32;
         let max_bytes_per_tx = Eip4844GasUsage.max_bytes_per_submission().get();
-        (max_bytes_per_tx - encoding_overhead) / tx_size
+        max_bytes_per_tx - encoding_overhead
     }
 
     #[tokio::test]
@@ -647,10 +651,15 @@ mod tests {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
-        let enough_tx_to_spill_into_second_tx = 1;
+        let enough_bytes_to_spill_into_second_tx = 32;
         let blocks = non_empty_vec![
-            generate_storage_block(0, &secret_key, enough_txs_to_almost_fill_entire_l1_tx()),
-            generate_storage_block(1, &secret_key, enough_tx_to_spill_into_second_tx)
+            generate_storage_block(
+                0,
+                &secret_key,
+                1,
+                enough_bytes_to_almost_fill_entire_l1_tx(),
+            ),
+            generate_storage_block(1, &secret_key, 1, enough_bytes_to_spill_into_second_tx)
         ];
 
         let mut bundler = Bundler::new(
@@ -686,18 +695,23 @@ mod tests {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
-        let enough_tx_to_make_up_for_the_extra_cost = 100000;
+        let enough_bytes_to_make_up_for_the_extra_cost = 100000;
         // we lose some space since the first block is not compressible
         let compression_overhead = 4;
         let non_compressable_block = generate_storage_block(
             0,
             &secret_key,
-            enough_txs_to_almost_fill_entire_l1_tx() - compression_overhead,
+            1,
+            enough_bytes_to_almost_fill_entire_l1_tx() - compression_overhead,
         );
 
         let compressable_block = {
-            let mut block =
-                generate_storage_block(1, &secret_key, enough_tx_to_make_up_for_the_extra_cost);
+            let mut block = generate_storage_block(
+                1,
+                &secret_key,
+                1,
+                enough_bytes_to_make_up_for_the_extra_cost,
+            );
             block.data.fill(0);
             block
         };

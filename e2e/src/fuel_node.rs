@@ -66,7 +66,10 @@ impl FuelNode {
         // To prevent this, we force the node to use our version number to refer to its native executor.
         let executor_version = fuel_core_types::blockchain::header::LATEST_STATE_TRANSITION_VERSION;
 
+        // The lower limit for 100 Full blocks is somewhere between 400k and 500k
+        let gql_complexity = "--graphql-max-complexity=500000";
         cmd.arg("run")
+            .arg(gql_complexity)
             .arg("--port")
             .arg(unused_port.to_string())
             .arg("--snapshot")

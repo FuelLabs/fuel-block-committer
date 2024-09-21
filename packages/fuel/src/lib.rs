@@ -2,29 +2,36 @@
 use std::ops::RangeInclusive;
 
 use futures::StreamExt;
-use ports::fuel::{BoxStream, FuelBlock};
+use ports::{
+    fuel::{BoxStream, FuelBlock},
+    types::NonEmptyVec,
+};
 mod client;
 mod metrics;
 
 pub use client::*;
+use delegate::delegate;
 
 type Error = ports::fuel::Error;
 type Result<T> = ports::fuel::Result<T>;
 
 impl ports::fuel::Api for client::HttpClient {
-    async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>> {
-        self._block_at_height(height).await
+    delegate! {
+        to self {
+            async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>>;
+            async fn latest_block(&self) -> ports::fuel::Result<FuelBlock>;
+        }
     }
 
-    fn blocks_in_height_range(
+    async fn latest_height(&self) -> Result<u32> {
+        self.latest_block().await.map(|b| b.header.height)
+    }
+
+    fn full_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<Vec<FuelBlock>>> {
-        self._block_in_height_range(range).boxed()
-    }
-
-    async fn latest_block(&self) -> ports::fuel::Result<FuelBlock> {
-        self.latest_block().await
+    ) -> BoxStream<'_, Result<NonEmptyVec<ports::fuel::FullFuelBlock>>> {
+        self.block_in_height_range(range).boxed()
     }
 }
 

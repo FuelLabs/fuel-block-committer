@@ -73,8 +73,8 @@ pub trait Runner: Send + Sync {
 #[cfg(test)]
 pub(crate) mod test_utils {
 
-    pub async fn encode_and_merge<'a>(
-        blocks: impl IntoIterator<Item = &'a ports::fuel::FuelBlock>,
+    pub async fn encode_and_merge(
+        blocks: impl IntoIterator<Item = ports::fuel::FullFuelBlock>,
     ) -> NonEmptyVec<u8> {
         let blocks = blocks.into_iter().collect::<Vec<_>>();
 
@@ -82,10 +82,10 @@ pub(crate) mod test_utils {
             panic!("blocks must not be empty");
         }
 
-        let bytes: Vec<u8> = blocks
-            .into_iter()
-            .flat_map(|block| block_importer::encode_block(block).unwrap().data)
-            .collect();
+        let blocks = NonEmptyVec::try_from(blocks).expect("is not empty");
+               
+
+        let bytes = block_importer::encode_blocks(blocks).into_iter().flat_map(|b|b.data).collect_vec();
 
         bytes.try_into().expect("is not empty")
     }
@@ -102,18 +102,19 @@ pub(crate) mod test_utils {
         data.try_into().expect("is not empty due to check")
     }
 
-    use std::{ops::Range, sync::Arc};
+    use std::{ops::{Range, RangeInclusive}, sync::Arc};
 
     use clock::TestClock;
     use eth::Eip4844GasUsage;
     use fuel_crypto::SecretKey;
+    use itertools::Itertools;
     use mocks::l1::TxStatus;
     use ports::types::{DateTime, NonEmptyVec, Utc};
     use storage::{DbWithProcess, PostgresProcess};
     use validator::BlockValidator;
 
     use crate::{
-        block_importer::{self},
+        block_importer::{self, encode_blocks},
         state_committer::bundler::{self},
         BlockImporter, StateCommitter, StateCommitterConfig, StateListener,
     };
@@ -262,11 +263,9 @@ pub(crate) mod test_utils {
             use futures::{stream, StreamExt};
             use itertools::Itertools;
             use ports::{
-                fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
-                storage::SequentialFuelBlocks,
-                types::NonEmptyVec,
+                fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock}, non_empty_vec, storage::SequentialFuelBlocks, types::NonEmptyVec
             };
-            use rand::{Rng, SeedableRng};
+            use rand::{Rng, RngCore, SeedableRng};
 
             use crate::block_importer;
 
@@ -274,7 +273,8 @@ pub(crate) mod test_utils {
                 height: u32,
                 secret_key: &SecretKey,
                 num_tx: usize,
-            ) -> ports::fuel::FuelBlock {
+                tx_size: usize
+            ) -> ports::fuel::FullFuelBlock {
                 let header = given_header(height);
 
                 let mut hasher = fuel_crypto::Hasher::default();
@@ -288,16 +288,19 @@ pub(crate) mod test_utils {
                 let signature = Signature::sign(secret_key, &id_message);
 
                 let mut small_rng = rand::rngs::SmallRng::from_seed([0; 32]);
-                let transactions = std::iter::repeat_with(|| small_rng.gen())
+                let raw_transactions = std::iter::repeat_with(|| {
+                    let mut buf = vec![0; tx_size];
+                    small_rng.fill_bytes(&mut buf);
+                    NonEmptyVec::try_from(buf).unwrap()
+                })
                     .take(num_tx)
                     .collect::<Vec<_>>();
 
-                FuelBlock {
+                FullFuelBlock {
                     id,
                     header,
                     consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
-                    transactions,
-                    block_producer: Some(secret_key.public_key()),
+                    raw_transactions,
                 }
             }
 
@@ -305,9 +308,10 @@ pub(crate) mod test_utils {
                 heights: RangeInclusive<u32>,
                 secret_key: &SecretKey,
                 num_tx: usize,
+                tx_size: usize
             ) -> SequentialFuelBlocks {
                 let blocks = heights
-                    .map(|height| generate_storage_block(height, secret_key, num_tx))
+                    .map(|height| generate_storage_block(height, secret_key, num_tx, tx_size))
                     .collect_vec();
 
                 let non_empty_blocks =
@@ -322,9 +326,10 @@ pub(crate) mod test_utils {
                 height: u32,
                 secret_key: &SecretKey,
                 num_tx: usize,
+                tx_size: usize
             ) -> ports::storage::FuelBlock {
-                let block = generate_block(height, secret_key, num_tx);
-                block_importer::encode_block(&block).unwrap()
+                let block = generate_block(height, secret_key, num_tx, tx_size);
+                block_importer::encode_blocks(non_empty_vec![block]).take_first()
             }
 
             fn given_header(height: u32) -> FuelHeader {
@@ -355,14 +360,14 @@ pub(crate) mod test_utils {
                 heights: Range<u32>,
             ) -> ports::fuel::MockApi {
                 let blocks = heights
-                    .map(|height| generate_block(height, &secret_key, 1))
+                    .map(|height| generate_block(height, &secret_key, 1, 100))
                     .collect::<Vec<_>>();
 
                 these_blocks_exist(blocks)
             }
 
             pub fn these_blocks_exist(
-                blocks: impl IntoIterator<Item = ports::fuel::FuelBlock>,
+                blocks: impl IntoIterator<Item = ports::fuel::FullFuelBlock>,
             ) -> ports::fuel::MockApi {
                 let mut fuel_mock = ports::fuel::MockApi::default();
 
@@ -381,11 +386,11 @@ pub(crate) mod test_utils {
                 let highest_height = latest_block.header.height;
 
                 fuel_mock
-                    .expect_latest_block()
-                    .return_once(|| Box::pin(async move { Ok(latest_block) }));
+                    .expect_latest_height()
+                    .return_once(move || Box::pin(async move { Ok(highest_height) }));
 
                 fuel_mock
-                    .expect_blocks_in_height_range()
+                    .expect_full_blocks_in_height_range()
                     .returning(move |range| {
                         let expected_range = lowest_height..=highest_height;
                         if range != expected_range {
@@ -396,7 +401,8 @@ pub(crate) mod test_utils {
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
                             .cloned()
-                            .collect_vec();
+                            .collect_vec().try_into().expect("is not empty");
+                                                    
                         
                         stream::iter(iter::once(Ok(blocks_batch))).boxed()
                     });
@@ -408,8 +414,8 @@ pub(crate) mod test_utils {
 
     #[derive(Debug)]
     pub struct ImportedBlocks {
-        pub fuel_blocks: Vec<ports::fuel::FuelBlock>,
-        pub storage_blocks: Vec<ports::storage::FuelBlock>,
+        pub fuel_blocks: NonEmptyVec<ports::fuel::FullFuelBlock>,
+        pub storage_blocks: NonEmptyVec<ports::storage::FuelBlock>,
         pub secret_key: SecretKey,
     }
 
@@ -434,8 +440,9 @@ pub(crate) mod test_utils {
 
         pub async fn commit_single_block_bundle(&self, finalization_time: DateTime<Utc>) {
             self.import_blocks(Blocks::WithHeights {
-                range: 0..1,
+                range: 0..=0,
                 tx_per_block: 1,
+                size_per_tx: 100
             })
             .await;
 
@@ -495,6 +502,7 @@ pub(crate) mod test_utils {
                 Blocks::WithHeights {
                     range,
                     tx_per_block,
+                    size_per_tx,
                 } => {
                     let secret_key = SecretKey::random(&mut rand::thread_rng());
 
@@ -502,21 +510,18 @@ pub(crate) mod test_utils {
 
                     let blocks = range
                         .map(|height| {
-                            mocks::fuel::generate_block(height, &secret_key, tx_per_block)
+                            mocks::fuel::generate_block(height, &secret_key, tx_per_block, size_per_tx)
                         })
                         .collect::<Vec<_>>();
 
-                    let storage_blocks = blocks
-                        .iter()
-                        .map(|block| block_importer::encode_block(block).unwrap())
-                        .collect();
+                    let storage_blocks = encode_blocks(blocks.clone().try_into().unwrap());
 
                     let mock = mocks::fuel::these_blocks_exist(blocks.clone());
 
                     (
                         BlockImporter::new(self.db(), mock, block_validator, 0),
                         ImportedBlocks {
-                            fuel_blocks: blocks,
+                            fuel_blocks: blocks.try_into().unwrap(),
                             secret_key,
                             storage_blocks,
                         },
@@ -526,11 +531,7 @@ pub(crate) mod test_utils {
                     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
                     let mock = mocks::fuel::these_blocks_exist(blocks.clone());
 
-                    let storage_blocks = blocks
-                        .iter()
-                        .map(|block| block_importer::encode_block(block).unwrap())
-                        .collect();
-
+                    let storage_blocks = block_importer::encode_blocks(blocks.clone().try_into().unwrap());
                     (
                         BlockImporter::new(self.db(), mock, block_validator, 0),
                         ImportedBlocks {
@@ -546,11 +547,12 @@ pub(crate) mod test_utils {
 
     pub enum Blocks {
         WithHeights {
-            range: Range<u32>,
+            range: RangeInclusive<u32>,
             tx_per_block: usize,
+            size_per_tx: usize,
         },
         Blocks {
-            blocks: Vec<ports::fuel::FuelBlock>,
+            blocks: NonEmptyVec<ports::fuel::FullFuelBlock>,
             secret_key: SecretKey,
         },
     }
@@ -558,8 +560,8 @@ pub(crate) mod test_utils {
     impl Blocks {
         pub fn len(&self) -> usize {
             match self {
-                Self::WithHeights { range, .. } => range.len(),
-                Self::Blocks { blocks, .. } => blocks.len(),
+                Self::WithHeights { range, .. } => range.clone().count(),
+                Self::Blocks { blocks, .. } => blocks.len().get(),
             }
         }
     }

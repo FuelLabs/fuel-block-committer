@@ -11,6 +11,7 @@ use fuel_core_client::client::{
     FuelClient,
 };
 use fuel_core_types::fuel_crypto::PublicKey;
+use ports::types::NonEmptyVec;
 
 #[derive(cynic::QueryFragment, Debug)]
 #[cynic(
@@ -55,6 +56,25 @@ pub struct FullBlock {
     pub header: Header,
     pub consensus: Consensus,
     pub transactions: Vec<OpaqueTransaction>,
+}
+
+impl From<FullBlock> for ports::fuel::FullFuelBlock {
+    fn from(value: FullBlock) -> Self {
+        Self {
+            id: value.id.into(),
+            header: value.header.try_into().unwrap(),
+            consensus: value.consensus.into(),
+            raw_transactions: value
+                .transactions
+                .into_iter()
+                .map(|t| {
+                    let payload = t.raw_payload.to_vec();
+                    // TODO: segfault turn into error later
+                    NonEmptyVec::try_from(payload).expect("turn into an error later")
+                })
+                .collect(),
+        }
+    }
 }
 
 impl FullBlock {

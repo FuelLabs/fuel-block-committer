@@ -11,6 +11,7 @@ rust-version = { workspace = true }
 build = "build.rs"
 
 [dependencies]
+delegate = { workspace = true }
 cynic = { version = "2.2", features = ["http-reqwest"] }
 trait-variant = { workspace = true }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }

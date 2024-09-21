@@ -25,6 +25,8 @@ walkdir = { workspace = true }
 zip = { workspace = true, features = ["deflate"] }
 
 [dev-dependencies]
+# TODO: segfault remove
+futures = { workspace = true }
 fs_extra = { workspace = true }
 alloy = { workspace = true, features = [
   "signer-aws",

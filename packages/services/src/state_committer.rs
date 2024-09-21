@@ -321,19 +321,20 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..1,
-                tx_per_block: max_fragment_size.div_ceil(32),
+                range: 0..=0,
+                tx_per_block: 1,
+                size_per_tx: max_fragment_size,
             })
             .await;
 
-        let bundle_data = test_utils::encode_and_merge(&blocks).await.into_inner();
+        let bundle_data = test_utils::encode_and_merge(blocks).await;
 
         let fragment_tx_ids = [[0; 32], [1; 32]];
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (
                 Some(
-                    bundle_data[..max_fragment_size]
+                    (*bundle_data)[..max_fragment_size]
                         .to_vec()
                         .try_into()
                         .unwrap(),
@@ -342,7 +343,7 @@ mod tests {
             ),
             (
                 Some(
-                    bundle_data[max_fragment_size..]
+                    (*bundle_data)[max_fragment_size..]
                         .to_vec()
                         .try_into()
                         .unwrap(),
@@ -385,11 +386,12 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..1,
+                range: 0..=0,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
-        let bundle_data = test_utils::encode_and_merge(&blocks).await;
+        let bundle_data = test_utils::encode_and_merge(blocks).await;
 
         let original_tx = [0; 32];
         let retry_tx = [1; 32];
@@ -430,8 +432,9 @@ mod tests {
         let setup = test_utils::Setup::init().await;
         setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..1,
+                range: 0..=0,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
@@ -466,8 +469,9 @@ mod tests {
 
         setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..2,
+                range: 0..=1,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
@@ -517,11 +521,12 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..1,
+                range: 0..=0,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
-        let bundle_data = test_utils::encode_and_merge(&blocks).await;
+        let bundle_data = test_utils::encode_and_merge(blocks).await;
 
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(Some(bundle_data), [1; 32])]);
@@ -564,11 +569,12 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 1..2,
+                range: 1..=1,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
-        let bundle_data = test_utils::encode_and_merge(&blocks).await;
+        let bundle_data = test_utils::encode_and_merge(blocks).await;
 
         let l1_mock_submit =
             test_utils::mocks::l1::expects_state_submissions([(Some(bundle_data), [1; 32])]);
@@ -604,12 +610,13 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..3,
+                range: 0..=2,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
-        let bundle_data = test_utils::encode_and_merge(&blocks[..2]).await;
+        let bundle_data = test_utils::encode_and_merge((*blocks)[..2].to_vec()).await;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
             Some(bundle_data.clone()),
@@ -646,17 +653,18 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..2,
+                range: 0..=1,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
 
-        let bundle_1 = test_utils::encode_and_merge(&blocks[0..=0]).await;
+        let bundle_1 = test_utils::encode_and_merge((*blocks)[0..=0].to_vec()).await;
 
-        let bundle_2 = test_utils::encode_and_merge(&blocks[1..=1]).await;
+        let bundle_2 = test_utils::encode_and_merge((*blocks)[1..=1].to_vec()).await;
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (Some(bundle_1.clone()), bundle_1_tx),
@@ -696,8 +704,9 @@ mod tests {
         let setup = test_utils::Setup::init().await;
         setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..1,
+                range: 0..=0,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
@@ -767,8 +776,9 @@ mod tests {
         let setup = test_utils::Setup::init().await;
         setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..1,
+                range: 0..=0,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
@@ -819,8 +829,9 @@ mod tests {
         // Import enough blocks to create a bundle
         setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..1,
+                range: 0..=0,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 

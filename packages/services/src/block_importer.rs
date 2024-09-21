@@ -1,7 +1,13 @@
 use std::cmp::max;
 
 use futures::TryStreamExt;
-use ports::{fuel::FuelBlock, non_empty_vec, storage::Storage, types::NonEmptyVec};
+use itertools::{chain, Itertools};
+use ports::{
+    fuel::{FuelBlock, FullFuelBlock},
+    non_empty_vec,
+    storage::Storage,
+    types::NonEmptyVec,
+};
 use tracing::info;
 use validator::Validator;
 
@@ -40,53 +46,48 @@ where
     FuelApi: ports::fuel::Api,
     BlockValidator: Validator,
 {
-    /// Fetches and validates the latest block from the Fuel API.
-    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
-        let latest_block = self.fuel_api.latest_block().await?;
-
-        self.block_validator.validate(&latest_block)?;
-
-        Ok(latest_block)
-    }
-
     /// Imports a block into storage if it's not already available.
-    async fn import_block(&self, block: FuelBlock) -> Result<()> {
-        let block_id = block.id;
-        let block_height = block.header.height;
+    async fn import_blocks(&self, blocks: NonEmptyVec<FullFuelBlock>) -> Result<()> {
+        let db_blocks = encode_blocks(blocks);
 
-        if !self.storage.is_block_available(&block_id).await? {
-            let db_block = encode_block(&block)?;
+        // TODO: segfault validate these blocks
+        let starting_height = db_blocks.first().height;
+        let ending_height = db_blocks.last().height;
 
-            self.storage.insert_blocks(non_empty_vec![db_block]).await?;
+        self.storage.insert_blocks(db_blocks).await?;
 
-            info!("Imported block: height: {block_height}, id: {block_id}");
-        } else {
-            info!("Block already available: height: {block_height}, id: {block_id}",);
-        }
+        info!("Imported blocks: {starting_height}..={ending_height}");
+
         Ok(())
     }
 }
 
-pub(crate) fn encode_block(block: &FuelBlock) -> Result<ports::storage::FuelBlock> {
-    let data = encode_block_data(block)?;
-    Ok(ports::storage::FuelBlock {
-        hash: *block.id,
-        height: block.header.height,
-        data,
-    })
+pub(crate) fn encode_blocks(
+    blocks: NonEmptyVec<FullFuelBlock>,
+) -> NonEmptyVec<ports::storage::FuelBlock> {
+    // TODO: segfautl a try collect for non epmyt vec
+    blocks
+        .into_iter()
+        .map(|full_block| ports::storage::FuelBlock {
+            hash: *full_block.id,
+            height: full_block.header.height,
+            data: encode_block_data(full_block),
+        })
+        .collect_vec()
+        .try_into()
+        .expect("should be non-empty")
 }
 
-fn encode_block_data(block: &FuelBlock) -> Result<NonEmptyVec<u8>> {
-    // added this because genesis block has no transactions and we must have some
-    let mut encoded = block.transactions.len().to_be_bytes().to_vec();
+fn encode_block_data(block: FullFuelBlock) -> NonEmptyVec<u8> {
+    let tx_num = u64::try_from(block.raw_transactions.len()).unwrap();
 
-    let tx_bytes = block.transactions.iter().flat_map(|tx| tx.iter()).cloned();
-    encoded.extend(tx_bytes);
+    let bytes = chain!(
+        tx_num.to_be_bytes(),
+        block.raw_transactions.into_iter().flatten()
+    )
+    .collect::<Vec<_>>();
 
-    let data = NonEmptyVec::try_from(encoded)
-        .map_err(|e| Error::Other(format!("Couldn't encode block (id:{}): {}", block.id, e)))?;
-
-    Ok(data)
+    NonEmptyVec::try_from(bytes).expect("should be non-empty")
 }
 
 impl<Db, FuelApi, BlockValidator> Runner for BlockImporter<Db, FuelApi, BlockValidator>
@@ -99,9 +100,7 @@ where
     async fn run(&mut self) -> Result<()> {
         let available_blocks = self.storage.available_blocks().await?;
 
-        let latest_block = self.fetch_latest_block().await?;
-
-        let chain_height = latest_block.header.height;
+        let chain_height = self.fuel_api.latest_height().await?;
 
         if let Some(db_height_range) = &available_blocks {
             let latest_db_block = *db_height_range.end();
@@ -126,12 +125,10 @@ where
         };
 
         self.fuel_api
-            .blocks_in_height_range(start_request_range..=chain_height)
+            .full_blocks_in_height_range(start_request_range..=chain_height)
             .map_err(crate::Error::from)
-            .try_for_each(|blocks_batch| async {
-                for block in blocks_batch {
-                    self.import_block(block).await?;
-                }
+            .try_for_each(|blocks| async {
+                self.import_blocks(blocks).await?;
 
                 Ok(())
             })
@@ -166,7 +163,7 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         let secret_key = given_secret_key();
-        let block = test_utils::mocks::fuel::generate_block(0, &secret_key, 1);
+        let block = test_utils::mocks::fuel::generate_block(0, &secret_key, 1, 100);
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -183,9 +180,9 @@ mod tests {
             .await?
             .unwrap();
 
-        let expected_block = encode_block(&block)?;
+        let expected_block = encode_blocks(non_empty_vec![block]);
 
-        assert_eq!(**all_blocks, vec![expected_block]);
+        assert_eq!(*all_blocks, expected_block);
 
         Ok(())
     }
@@ -201,13 +198,15 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..3,
+                range: 0..=2,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
-        let new_blocks =
-            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1));
+        let new_blocks = (3..=5)
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
+            .collect_vec();
 
         let all_blocks = existing_blocks
             .into_iter()
@@ -228,12 +227,10 @@ mod tests {
             .lowest_sequence_of_unbundled_blocks(0, 100)
             .await?
             .unwrap();
-        let expected_blocks = all_blocks
-            .iter()
-            .map(|block| encode_block(block).unwrap())
-            .collect_vec();
 
-        pretty_assertions::assert_eq!(**stored_blocks, expected_blocks);
+        let expected_blocks = encode_blocks(all_blocks.try_into().unwrap());
+
+        pretty_assertions::assert_eq!(*stored_blocks, expected_blocks);
 
         Ok(())
     }
@@ -245,14 +242,15 @@ mod tests {
 
         let secret_key = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..6,
+                range: 0..=5,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await
             .secret_key;
 
         let chain_blocks = (0..=2)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
             .collect_vec();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(chain_blocks.clone());
@@ -280,14 +278,15 @@ mod tests {
 
         let ImportedBlocks { secret_key, .. } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..3,
+                range: 0..=2,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
         let starting_height = 8;
         let new_blocks = (starting_height..=13)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
             .collect_vec();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
@@ -305,12 +304,9 @@ mod tests {
             .lowest_sequence_of_unbundled_blocks(starting_height, 100)
             .await?
             .unwrap();
-        let expected_blocks = new_blocks
-            .iter()
-            .map(|block| encode_block(block).unwrap())
-            .collect_vec();
+        let expected_blocks = encode_blocks(new_blocks.try_into().unwrap());
 
-        pretty_assertions::assert_eq!(**stored_new_blocks, expected_blocks);
+        pretty_assertions::assert_eq!(*stored_new_blocks, expected_blocks);
 
         Ok(())
     }
@@ -327,8 +323,9 @@ mod tests {
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 0..3,
+                range: 0..=2,
                 tx_per_block: 1,
+                size_per_tx: 100,
             })
             .await;
 
@@ -348,7 +345,7 @@ mod tests {
             .await?
             .unwrap();
 
-        assert_eq!(**stored_blocks, storage_blocks);
+        assert_eq!(*stored_blocks, storage_blocks);
 
         Ok(())
     }

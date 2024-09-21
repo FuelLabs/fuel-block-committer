@@ -12,6 +12,7 @@ mod whole_stack;
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
+    use futures::{StreamExt, TryStreamExt};
     use ports::{fuel::Api, storage::Storage};
     use tokio::time::sleep_until;
     use validator::{BlockValidator, Validator};
@@ -59,19 +60,30 @@ mod tests {
         let show_logs = false;
         let blob_support = true;
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
-        let num_blocks = 1000;
+        let num_blocks = 100;
 
         // when
         stack.fuel_node.produce_transaction(0).await?;
         stack.fuel_node.client().produce_blocks(num_blocks).await?;
 
         // then
+        let client = stack.fuel_node.client();
+        let blocks: Vec<_> = client
+            .full_blocks_in_height_range(0..=10)
+            .try_collect()
+            .await?;
+        eprintln!("fetched {} blocks", blocks.len());
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
         while let Some(sequence) = stack.db.lowest_sequence_of_unbundled_blocks(0, 1).await? {
             let reached_height = sequence.into_inner().first().height;
             eprintln!("bundled up to height: {reached_height}/{num_blocks}");
 
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
+
+        // TODO: segfault validate that anything happened ie any bundles since importer can fail
+        // query too complex
 
         Ok(())
     }

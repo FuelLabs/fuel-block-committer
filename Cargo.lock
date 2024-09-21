@@ -2344,6 +2344,7 @@ dependencies = [
  "fuel",
  "fuel-core-chain-config",
  "fuel-core-types",
+ "futures",
  "hex",
  "itertools 0.13.0",
  "portpicker",
@@ -2670,6 +2671,7 @@ name = "fuel"
 version = "0.6.0"
 dependencies = [
  "cynic",
+ "delegate",
  "fuel-core-client",
  "fuel-core-types",
  "futures",
