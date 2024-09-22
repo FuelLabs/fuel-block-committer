@@ -11,7 +11,6 @@ use tracing::info;
 use crate::{Error, Result, Runner};
 
 /// The `StateCommitter` is responsible for committing state fragments to L1.
-/// It bundles blocks, fragments them, and submits the fragments to the L1 adapter.
 pub struct StateCommitter<L1, Storage, Clock> {
     l1_adapter: L1,
     storage: Storage,

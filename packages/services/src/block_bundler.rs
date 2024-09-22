@@ -105,9 +105,10 @@ where
             known_to_be_optimal: optimal,
             compression_ratio,
             gas_usage,
+            optimization_attempts,
         } = self.find_optimal_bundle(bundler).await?;
 
-        info!("Bundler proposed: optimal={optimal}, compression_ratio={compression_ratio}, heights={block_heights:?}, num_fragments={}, gas_usage={gas_usage:?}", fragments.len());
+        info!("Bundler proposed: known_to_be_optimal={optimal}, optimization_attempts={optimization_attempts}, compression_ratio={compression_ratio}, heights={block_heights:?}, num_blocks={}, num_fragments={}, gas_usage={gas_usage:?}",  block_heights.clone().count(), fragments.len());
 
         let fragments = self
             .storage
@@ -519,6 +520,7 @@ mod tests {
             known_to_be_optimal: false,
             compression_ratio: 1.0,
             gas_usage: 100,
+            optimization_attempts: 10,
         };
 
         let (bundler_factory, send_can_advance_permission, mut notify_has_advanced) =

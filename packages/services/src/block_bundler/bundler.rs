@@ -153,6 +153,7 @@ pub struct BundleProposal {
     pub fragments: NonEmptyVec<NonEmptyVec<u8>>,
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
+    pub optimization_attempts: u64,
     pub compression_ratio: f64,
     pub gas_usage: u64,
 }
@@ -209,17 +210,27 @@ where
 /// Represents a bundle configuration and its associated gas usage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Proposal {
-    num_blocks: NonZeroUsize,
+    block_heights: RangeInclusive<u32>,
     uncompressed_data_size: NonZeroUsize,
-    compressed_data_size: NonZeroUsize,
+    compressed_data: NonEmptyVec<u8>,
     gas_usage: u64,
+}
+impl Proposal {
+    fn gas_per_uncompressed_byte(&self) -> f64 {
+        self.gas_usage as f64 / self.uncompressed_data_size.get() as f64
+    }
+
+    fn compression_ratio(&self) -> f64 {
+        self.uncompressed_data_size.get() as f64 / self.compressed_data.len().get() as f64
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
     blocks: NonEmptyVec<ports::storage::FuelBlock>,
-    gas_usages: Vec<Proposal>,
+    best_proposal: Option<Proposal>,
+    number_of_attempts: u64,
     current_block_count: NonZeroUsize,
     attempts_exhausted: bool,
     compressor: Compressor,
@@ -234,25 +245,26 @@ where
             fragment_encoder: cost_calculator,
             current_block_count: blocks.len(),
             blocks: blocks.into_inner(),
-            gas_usages: Vec::new(),
+            best_proposal: None,
             compressor,
             attempts_exhausted: false,
+            number_of_attempts: 0,
         }
     }
 
     /// Selects the best proposal based on the current gas prices.
-    fn select_best_proposal(&self) -> Result<&Proposal> {
-        self.gas_usages
-            .iter()
-            .min_by(|a, b| {
-                let fee_a = a.gas_usage as f64 / a.uncompressed_data_size.get() as f64;
-                let fee_b = b.gas_usage as f64 / b.uncompressed_data_size.get() as f64;
-
-                fee_a
-                    .partial_cmp(&fee_b)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .ok_or_else(|| crate::Error::Other("No proposals available".to_string()))
+    fn save_if_best_so_far(&mut self, new_proposal: Proposal) {
+        match &mut self.best_proposal {
+            Some(best)
+                if new_proposal.gas_per_uncompressed_byte() < best.gas_per_uncompressed_byte() =>
+            {
+                *best = new_proposal;
+            }
+            None => {
+                self.best_proposal = Some(new_proposal);
+            }
+            _ => {}
+        }
     }
 
     /// Calculates the block heights range based on the number of blocks.
@@ -267,31 +279,6 @@ where
         let last_block = &self.blocks[num_blocks.get().saturating_sub(1)];
 
         Ok(first_block.height..=last_block.height)
-    }
-
-    /// Recompresses the data for the best bundle configuration.
-    async fn compress_first_n_blocks(&self, num_blocks: NonZeroUsize) -> Result<NonEmptyVec<u8>> {
-        // TODO: segfault graceful shutdown trigger needed here
-        let blocks = self
-            .blocks
-            .inner()
-            .iter()
-            .take(num_blocks.get())
-            .cloned()
-            .collect::<Vec<_>>();
-        let blocks = NonEmptyVec::try_from(blocks).expect("Should have at least one block");
-
-        let uncompressed_data = self.merge_block_data(blocks);
-        self.compressor.compress(uncompressed_data).await
-    }
-
-    /// Calculates the compression ratio (uncompressed size / compressed size).
-    fn calculate_compression_ratio(
-        &self,
-        uncompressed_size: NonZeroUsize,
-        compressed_size: NonZeroUsize,
-    ) -> f64 {
-        uncompressed_size.get() as f64 / compressed_size.get() as f64
     }
 
     /// Merges the data from multiple blocks into a single `NonEmptyVec<u8>`.
@@ -327,16 +314,17 @@ where
 
         // Compress the data to get compressed_size
         let compressed_data = self.compressor.compress(uncompressed_data.clone()).await?;
-        let compressed_size = compressed_data.len();
 
         // Estimate gas usage based on compressed data
         let gas_usage = self.fragment_encoder.gas_usage(compressed_data.len());
 
+        let block_heights = self.calculate_block_heights(self.current_block_count)?;
+
         Ok(Proposal {
-            num_blocks: self.current_block_count,
             uncompressed_data_size,
-            compressed_data_size: compressed_size,
+            compressed_data,
             gas_usage,
+            block_heights,
         })
     }
 }
@@ -352,8 +340,7 @@ where
         let bundle_blocks = self.blocks_for_new_proposal();
 
         let proposal = self.create_proposal(bundle_blocks).await?;
-
-        self.gas_usages.push(proposal);
+        self.save_if_best_so_far(proposal);
 
         let more_attempts = if self.current_block_count.get() > 1 {
             let new_block_count = self.current_block_count.get().saturating_sub(1);
@@ -367,6 +354,7 @@ where
         };
 
         self.attempts_exhausted = !more_attempts;
+        self.number_of_attempts += 1;
 
         // Return whether there are more configurations to process
         Ok(more_attempts)
@@ -376,35 +364,24 @@ where
     ///
     /// Consumes the bundler.
     async fn finish(mut self) -> Result<BundleProposal> {
-        if self.gas_usages.is_empty() {
+        if self.best_proposal.is_none() {
             self.advance().await?;
         }
 
-        // Select the best proposal based on current gas prices
-        let best_proposal = self.select_best_proposal()?;
+        let best_proposal = self.best_proposal.take().unwrap();
+        let compression_ratio = best_proposal.compression_ratio();
 
-        // Determine the block height range based on the number of blocks in the best proposal
-        let block_heights = self.calculate_block_heights(best_proposal.num_blocks)?;
-
-        // Recompress the best bundle's data
-        let compressed_data = self
-            .compress_first_n_blocks(best_proposal.num_blocks)
-            .await?;
-
-        // Calculate compression ratio
-        let compression_ratio = self.calculate_compression_ratio(
-            best_proposal.uncompressed_data_size,
-            compressed_data.len(),
-        );
-
-        let fragments = self.fragment_encoder.encode(compressed_data)?;
+        let fragments = self
+            .fragment_encoder
+            .encode(best_proposal.compressed_data)?;
 
         Ok(BundleProposal {
             fragments,
-            block_heights,
+            block_heights: best_proposal.block_heights,
             known_to_be_optimal: self.attempts_exhausted,
             compression_ratio,
             gas_usage: best_proposal.gas_usage,
+            optimization_attempts: self.number_of_attempts,
         })
     }
 }

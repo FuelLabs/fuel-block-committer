@@ -182,8 +182,8 @@ impl Committer {
         self
     }
 
-    pub fn with_fuel_block_producer_addr(mut self, fuel_block_producer_addr: [u8; 32]) -> Self {
-        self.fuel_block_producer_addr = Some(hex::encode(fuel_block_producer_addr));
+    pub fn with_fuel_block_producer_addr(mut self, fuel_block_producer_addr: String) -> Self {
+        self.fuel_block_producer_addr = Some(fuel_block_producer_addr);
         self
     }
 
