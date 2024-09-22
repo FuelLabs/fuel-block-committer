@@ -4,10 +4,7 @@ use std::num::NonZeroU32;
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::{
-    l1::GasPrices,
-    types::{NonEmptyVec, TransactionResponse, U256},
-};
+use ports::types::{NonEmptyVec, TransactionResponse, U256};
 
 use crate::{
     error::{Error, Result},
@@ -18,7 +15,6 @@ use crate::{
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    async fn gas_prices(&self) -> Result<GasPrices>;
     async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
@@ -28,7 +24,10 @@ pub trait EthApi {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>>;
-    async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    ) -> Result<ports::l1::FragmentsSubmitted>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -87,11 +86,6 @@ where
             fn commit_interval(&self) -> NonZeroU32;
         }
     }
-    async fn gas_prices(&self) -> Result<GasPrices> {
-        let response = self.adapter.gas_prices().await;
-        self.note_network_status(&response);
-        response
-    }
 
     async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
         let response = self.adapter.submit(hash, height).await;
@@ -120,8 +114,11 @@ where
         response
     }
 
-    async fn submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
-        let response = self.adapter.submit_l2_state(tx).await;
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    ) -> Result<ports::l1::FragmentsSubmitted> {
+        let response = self.adapter.submit_state_fragments(fragments).await;
         self.note_network_status(&response);
         response
     }

@@ -107,7 +107,7 @@ pub(crate) mod test_utils {
     use std::ops::RangeInclusive;
 
     use clock::TestClock;
-    use eth::Eip4844GasUsage;
+    use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
     use mocks::l1::TxStatus;
@@ -175,7 +175,7 @@ pub(crate) mod test_utils {
                 delegate! {
                     to self.api {
                         async fn gas_prices(&self) -> ports::l1::Result<GasPrices>;
-                        async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> ports::l1::Result<[u8; 32]>;
+                        async fn submit_state_fragments(&self, state_data: NonEmptyVec<u8>) -> ports::l1::Result<[u8; 32]>;
                         async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
                         async fn balance(&self) -> ports::l1::Result<U256>;
                         async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> ports::l1::Result<Option<TransactionResponse>>;
@@ -436,7 +436,7 @@ pub(crate) mod test_utils {
             let clock = TestClock::default();
             clock.set_time(finalization_time);
 
-            let factory = bundler::Factory::new(Eip4844GasUsage, crate::CompressionLevel::Level6);
+            let factory = bundler::Factory::new(Eip4844BlobEncoder, crate::CompressionLevel::Level6);
 
             let tx = [2u8; 32];
 

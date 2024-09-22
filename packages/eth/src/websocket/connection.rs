@@ -1,7 +1,8 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 use alloy::{
-    consensus::{SidecarBuilder, SimpleCoder},
+    consensus::BlobTransactionSidecar,
+    eips::eip4844,
     network::{Ethereum, EthereumWallet, TransactionBuilder, TxSigner},
     primitives::{Address, U256},
     providers::{
@@ -13,14 +14,19 @@ use alloy::{
     signers::aws::AwsSigner,
     sol,
 };
+use itertools::izip;
+use itertools::Itertools;
 use ports::{
-    l1::GasPrices,
+    l1::FragmentsSubmitted,
     types::{NonEmptyVec, TransactionResponse},
 };
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    Eip4844BlobEncoder,
+};
 
 pub type WsProvider = FillProvider<
     JoinFill<
@@ -68,16 +74,6 @@ pub struct WsConnection {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    async fn gas_prices(&self) -> Result<GasPrices> {
-        let normal_price = self.provider.get_gas_price().await?;
-        let blob_price = self.provider.get_blob_base_fee().await?;
-
-        Ok(GasPrices {
-            storage: blob_price,
-            normal: normal_price,
-        })
-    }
-
     async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
         let commit_height = Self::calculate_commit_height(height, self.commit_interval);
         let contract_call = self.contract.commit(hash.into(), commit_height);
@@ -122,20 +118,28 @@ impl EthApi for WsConnection {
         Self::convert_to_tx_response(tx_receipt)
     }
 
-    async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]> {
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    ) -> Result<ports::l1::FragmentsSubmitted> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
                 _ => return Err(Error::Other("blob pool signer not configured".to_string())),
             };
 
-        let blob_tx = self
-            .prepare_blob_tx(state_data.inner(), *blob_signer_address)
-            .await?;
+        let (sidecar, num_fragments) = Eip4844BlobEncoder::decode(&fragments)?;
+
+        let blob_tx = TransactionRequest::default()
+            .with_to(*blob_signer_address)
+            .with_blob_sidecar(sidecar);
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
 
-        Ok(tx.tx_hash().0)
+        Ok(FragmentsSubmitted {
+            tx: tx.tx_hash().0,
+            num_fragments,
+        })
     }
 
     #[cfg(feature = "test-helpers")]
@@ -221,16 +225,6 @@ impl WsConnection {
         Ok(self.provider.get_balance(address).await?)
     }
 
-    async fn prepare_blob_tx(&self, data: &[u8], to: Address) -> Result<TransactionRequest> {
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
-
-        let blob_tx = TransactionRequest::default()
-            .with_to(to)
-            .with_blob_sidecar(sidecar);
-
-        Ok(blob_tx)
-    }
-
     fn convert_to_tx_response(
         tx_receipt: Option<TransactionReceipt>,
     ) -> Result<Option<TransactionResponse>> {
@@ -255,6 +249,7 @@ impl WsConnection {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]

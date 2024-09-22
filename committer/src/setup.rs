@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eth::{AwsConfig, Eip4844GasUsage};
+use eth::{AwsConfig, Eip4844BlobEncoder};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{
@@ -81,7 +81,7 @@ pub fn state_committer(
     starting_fuel_height: u32,
 ) -> tokio::task::JoinHandle<()> {
     let bundler_factory =
-        services::BundlerFactory::new(Eip4844GasUsage, config.app.bundle.compression_level);
+        services::BundlerFactory::new(Eip4844BlobEncoder, config.app.bundle.compression_level);
 
     let state_committer = services::StateCommitter::new(
         l1,

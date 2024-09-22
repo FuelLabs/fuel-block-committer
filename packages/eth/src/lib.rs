@@ -4,7 +4,7 @@ use alloy::primitives::U256;
 use delegate::delegate;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
-    l1::{Api, Contract, EventStreamer, GasPrices, Result},
+    l1::{Api, Contract, EventStreamer, FragmentsSubmitted, Result},
     types::{FuelBlockCommittedOnL1, L1Height, NonEmptyVec, TransactionResponse},
 };
 use websocket::EthEventStreamer;
@@ -31,14 +31,16 @@ impl Contract for WebsocketClient {
     }
 }
 
-mod storage_gas_usage;
-pub use storage_gas_usage::Eip4844GasUsage;
+mod blob_encoding;
+pub use blob_encoding::Eip4844BlobEncoder;
 
 impl Api for WebsocketClient {
     delegate! {
         to (&self) {
-            async fn gas_prices(&self) -> Result<GasPrices>;
-            async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
+            async fn submit_state_fragments(
+                &self,
+                fragments: NonEmptyVec<NonEmptyVec<u8>>,
+            ) -> Result<FragmentsSubmitted>;
             async fn balance(&self) -> Result<U256>;
             async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
         }

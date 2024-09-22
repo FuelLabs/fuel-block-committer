@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::primitives::Address;
 use ports::{
-    l1::Result,
+    l1::{FragmentsSubmitted, Result},
     types::{NonEmptyVec, TransactionResponse, U256},
 };
 use url::Url;
@@ -54,10 +54,6 @@ impl WebsocketClient {
         self.inner.connection_health_checker()
     }
 
-    pub(crate) async fn gas_prices(&self) -> Result<ports::l1::GasPrices> {
-        Ok(self.inner.gas_prices().await?)
-    }
-
     pub(crate) fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
         self.inner.event_streamer(eth_block_height)
     }
@@ -85,8 +81,11 @@ impl WebsocketClient {
         Ok(self.inner.balance().await?)
     }
 
-    pub async fn submit_l2_state(&self, tx: NonEmptyVec<u8>) -> Result<[u8; 32]> {
-        Ok(self.inner.submit_l2_state(tx).await?)
+    pub(crate) async fn submit_state_fragments(
+        &self,
+        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    ) -> ports::l1::Result<FragmentsSubmitted> {
+        Ok(self.inner.submit_state_fragments(fragments).await?)
     }
 
     #[cfg(feature = "test-helpers")]

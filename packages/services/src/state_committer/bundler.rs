@@ -197,7 +197,7 @@ impl<L1> Factory<L1> {
 
 impl<GasCalculator> BundlerFactory for Factory<GasCalculator>
 where
-    GasCalculator: ports::l1::StorageCostCalculator + Clone + Send + Sync + 'static,
+    GasCalculator: ports::l1::FragmentEncoder + Clone + Send + Sync + 'static,
 {
     type Bundler = Bundler<GasCalculator>;
 
@@ -231,7 +231,7 @@ pub struct Bundler<CostCalc> {
 
 impl<T> Bundler<T>
 where
-    T: ports::l1::StorageCostCalculator + Send + Sync,
+    T: ports::l1::FragmentEncoder + Send + Sync,
 {
     fn new(cost_calculator: T, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
         Self {
@@ -349,9 +349,7 @@ where
         let compressed_size = compressed_data.len();
 
         // Estimate gas usage based on compressed data
-        let gas_usage = self
-            .cost_calculator
-            .gas_usage_to_store_data(compressed_data.len());
+        let gas_usage = self.cost_calculator.gas_usage(compressed_data.len());
 
         Ok(Proposal {
             num_blocks: self.current_block_count,
@@ -364,7 +362,7 @@ where
 
 impl<T> Bundle for Bundler<T>
 where
-    T: ports::l1::StorageCostCalculator + Send + Sync,
+    T: ports::l1::FragmentEncoder + Send + Sync,
 {
     /// Advances the bundler by trying the next bundle configuration.
     ///
@@ -407,7 +405,6 @@ where
         // Determine the block height range based on the number of blocks in the best proposal
         let block_heights = self.calculate_block_heights(best_proposal.num_blocks)?;
 
-        // TODO: maybe start working backwards from max blocks available
         // Recompress the best bundle's data
         let compressed_data = self
             .compress_first_n_blocks(best_proposal.num_blocks)
@@ -444,10 +441,10 @@ where
 #[cfg(test)]
 mod tests {
 
-    use eth::Eip4844GasUsage;
+    use eth::Eip4844BlobEncoder;
 
     use fuel_crypto::SecretKey;
-    use ports::l1::StorageCostCalculator;
+    use ports::l1::FragmentEncoder;
     use ports::non_empty_vec;
 
     use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
@@ -483,7 +480,7 @@ mod tests {
         let blocks = generate_storage_block_sequence(0..=0, &secret_key, 10, 100);
 
         let bundler = Bundler::new(
-            Eip4844GasUsage,
+            Eip4844BlobEncoder,
             blocks.clone(),
             Compressor::no_compression(),
         );
@@ -537,7 +534,7 @@ mod tests {
             normal: 1,
         };
 
-        let mut bundler = Bundler::new(Eip4844GasUsage, blocks.clone(), Compressor::default());
+        let mut bundler = Bundler::new(Eip4844BlobEncoder, blocks.clone(), Compressor::default());
 
         bundler.advance().await?;
 
@@ -557,7 +554,7 @@ mod tests {
     }
 
     async fn proposal_if_finalized_now(
-        bundler: &Bundler<Eip4844GasUsage>,
+        bundler: &Bundler<Eip4844BlobEncoder>,
         price: GasPrices,
     ) -> BundleProposal {
         bundler.clone().finish(price).await.unwrap()
@@ -572,7 +569,7 @@ mod tests {
         let blocks = generate_storage_block_sequence(0..=1, &secret_key, 10, 100);
 
         let mut bundler = Bundler::new(
-            Eip4844GasUsage,
+            Eip4844BlobEncoder,
             blocks.clone(),
             Compressor::no_compression(),
         );
@@ -604,7 +601,7 @@ mod tests {
     fn enough_bytes_to_almost_fill_a_blob() -> usize {
         let encoding_overhead = 40;
         let blobs_per_block = 6;
-        let max_bytes_per_tx = Eip4844GasUsage.max_bytes_per_submission().get();
+        let max_bytes_per_tx = Eip4844BlobEncoder.max_bytes_per_submission().get();
         max_bytes_per_tx / blobs_per_block - encoding_overhead
     }
 
@@ -620,7 +617,7 @@ mod tests {
         ];
 
         let mut bundler = Bundler::new(
-            Eip4844GasUsage,
+            Eip4844BlobEncoder,
             blocks.clone().try_into().unwrap(),
             Compressor::no_compression(),
         );
@@ -644,7 +641,7 @@ mod tests {
 
     fn enough_bytes_to_almost_fill_entire_l1_tx() -> usize {
         let encoding_overhead = 20;
-        let max_bytes_per_tx = Eip4844GasUsage.max_bytes_per_submission().get();
+        let max_bytes_per_tx = Eip4844BlobEncoder.max_bytes_per_submission().get();
         max_bytes_per_tx - encoding_overhead
     }
 
@@ -665,7 +662,7 @@ mod tests {
         ];
 
         let mut bundler = Bundler::new(
-            Eip4844GasUsage,
+            Eip4844BlobEncoder,
             blocks.clone().try_into().unwrap(),
             Compressor::no_compression(),
         );
@@ -721,7 +718,7 @@ mod tests {
         let blocks = non_empty_vec![non_compressable_block, compressable_block];
 
         let mut bundler = Bundler::new(
-            Eip4844GasUsage,
+            Eip4844BlobEncoder,
             blocks.clone().try_into().unwrap(),
             Compressor::default(),
         );

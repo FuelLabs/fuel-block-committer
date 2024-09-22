@@ -30,24 +30,20 @@ pub trait Contract: Send + Sync {
     fn commit_interval(&self) -> std::num::NonZeroU32;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GasUsage {
-    pub storage: u64,
-    pub normal: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GasPrices {
-    pub storage: u128,
-    pub normal: u128,
+#[derive(Debug, Clone, Copy)]
+pub struct FragmentsSubmitted {
+    pub tx: [u8; 32],
+    pub num_fragments: NonZeroUsize,
 }
 
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Api {
-    async fn gas_prices(&self) -> Result<GasPrices>;
-    async fn submit_l2_state(&self, state_data: NonEmptyVec<u8>) -> Result<[u8; 32]>;
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    ) -> Result<FragmentsSubmitted>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;
     async fn get_transaction_response(
@@ -56,9 +52,9 @@ pub trait Api {
     ) -> Result<Option<TransactionResponse>>;
 }
 
-pub trait StorageCostCalculator {
-    fn max_bytes_per_submission(&self) -> NonZeroUsize;
-    fn gas_usage_to_store_data(&self, num_bytes: NonZeroUsize) -> GasUsage;
+pub trait FragmentEncoder {
+    fn encode(data: NonEmptyVec<u8>) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
+    fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64;
 }
 
 #[cfg_attr(feature = "test-helpers", mockall::automock)]

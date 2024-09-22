@@ -172,7 +172,11 @@ where
 
     /// Submits a fragment to the L1 adapter and records the tx in storage.
     async fn submit_fragment(&self, fragment: BundleFragment) -> Result<()> {
-        match self.l1_adapter.submit_l2_state(fragment.data.clone()).await {
+        match self
+            .l1_adapter
+            .submit_state_fragments(fragment.data.clone())
+            .await
+        {
             Ok(tx_hash) => {
                 self.storage.record_pending_tx(tx_hash, fragment.id).await?;
                 tracing::info!(
@@ -233,8 +237,8 @@ mod tests {
     use crate::test_utils::{Blocks, ImportedBlocks};
     use crate::{test_utils, CompressionLevel, Runner, StateCommitter};
     use clock::TestClock;
-    use eth::Eip4844GasUsage;
-    use ports::l1::{GasPrices, GasUsage, StorageCostCalculator};
+    use eth::Eip4844BlobEncoder;
+    use ports::l1::{FragmentEncoder, GasPrices, GasUsage};
     use ports::non_empty_vec;
     use ports::storage::SequentialFuelBlocks;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -312,7 +316,7 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let max_fragment_size = Eip4844GasUsage.max_bytes_per_submission().get();
+        let max_fragment_size = Eip4844BlobEncoder.max_bytes_per_submission().get();
         let ImportedBlocks {
             fuel_blocks: blocks,
             ..
@@ -863,7 +867,7 @@ mod tests {
         Ok(())
     }
 
-    fn default_bundler_factory() -> bundler::Factory<Eip4844GasUsage> {
-        bundler::Factory::new(Eip4844GasUsage, CompressionLevel::Disabled)
+    fn default_bundler_factory() -> bundler::Factory<Eip4844BlobEncoder> {
+        bundler::Factory::new(Eip4844BlobEncoder, CompressionLevel::Disabled)
     }
 }
