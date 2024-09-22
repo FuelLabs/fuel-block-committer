@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 
+use alloy::eips::eip4844::BYTES_PER_BLOB;
 use itertools::izip;
 use itertools::Itertools;
 use ports::types::NonEmptyVec;
@@ -19,14 +20,27 @@ const BASE_TX_COST: u64 = 21_000;
 pub struct Eip4844BlobEncoder;
 
 impl Eip4844BlobEncoder {
+    #[cfg(feature = "test-helpers")]
+    pub const FRAGMENT_SIZE: usize =
+        FIELD_ELEMENTS_PER_BLOB as usize * FIELD_ELEMENT_BYTES as usize;
+
     pub(crate) fn decode(
         fragments: &NonEmptyVec<NonEmptyVec<u8>>,
     ) -> crate::error::Result<(BlobTransactionSidecar, NonZeroUsize)> {
+        eprintln!("decoding fragments");
         let fragments: Vec<_> = fragments
+            .inner()
             .iter()
-            .take(6)
-            .map(|raw_fragment| SingleBlob::decode(raw_fragment))
+            .inspect(|e| eprintln!("inspecting fragment: {:?}", e.len()))
+            // .take(6)
+            .inspect(|e| eprintln!("inspecting fragment after take: {:?}", e.len()))
+            .map(|e| {
+                eprintln!("about to give to decode: {:?}", e.len());
+
+                SingleBlob::decode(e)
+            })
             .try_collect()?;
+        eprintln!("decoded");
 
         let fragments_num = NonZeroUsize::try_from(fragments.len()).expect("cannot be 0");
 
@@ -35,7 +49,7 @@ impl Eip4844BlobEncoder {
 }
 
 impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
-    fn encode(data: NonEmptyVec<u8>) -> ports::l1::Result<NonEmptyVec<NonEmptyVec<u8>>> {
+    fn encode(&self, data: NonEmptyVec<u8>) -> ports::l1::Result<NonEmptyVec<NonEmptyVec<u8>>> {
         let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data.inner())
             .build()
             .map_err(|e| ports::l1::Error::Other(format!("failed to build sidecar: {:?}", e)))?;
@@ -65,7 +79,8 @@ impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
 }
 
 struct SingleBlob {
-    data: eip4844::Blob,
+    // needs to be heap allocated because it's large enough to cause a stack overflow
+    data: Box<eip4844::Blob>,
     committment: eip4844::Bytes48,
     proof: eip4844::Bytes48,
 }
@@ -75,7 +90,7 @@ impl SingleBlob {
         eip4844::BYTES_PER_BLOB + eip4844::BYTES_PER_COMMITMENT + eip4844::BYTES_PER_PROOF;
 
     fn decode(bytes: &NonEmptyVec<u8>) -> crate::error::Result<Self> {
-        let bytes: &[u8; Self::SIZE] = bytes.as_slice().try_into().map_err(|_| {
+        let bytes: &[u8; Self::SIZE] = bytes.inner().as_slice().try_into().map_err(|_| {
             crate::error::Error::Other(format!(
                 "Failed to decode blob: expected {} bytes, got {}",
                 Self::SIZE,
@@ -83,26 +98,28 @@ impl SingleBlob {
             ))
         })?;
 
-        let data = eip4844::Blob::from_slice(&bytes[..eip4844::BYTES_PER_BLOB]);
+        let data = Box::new(bytes[..eip4844::BYTES_PER_BLOB].try_into().unwrap());
         let remaining_bytes = &bytes[eip4844::BYTES_PER_BLOB..];
 
-        let committment =
-            eip4844::Bytes48::from_slice(&remaining_bytes[..eip4844::BYTES_PER_COMMITMENT]);
-
+        let committment: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_COMMITMENT]
+            .try_into()
+            .unwrap();
         let remaining_bytes = &remaining_bytes[eip4844::BYTES_PER_COMMITMENT..];
 
-        let proof = eip4844::Bytes48::from_slice(&remaining_bytes[..eip4844::BYTES_PER_PROOF]);
+        let proof: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_PROOF]
+            .try_into()
+            .unwrap();
 
         Ok(Self {
             data,
-            committment,
-            proof,
+            committment: committment.into(),
+            proof: proof.into(),
         })
     }
 
     fn encode(&self) -> NonEmptyVec<u8> {
         let mut bytes = Vec::with_capacity(Self::SIZE);
-        bytes.extend_from_slice(self.data.as_ref());
+        bytes.extend_from_slice(self.data.as_slice());
         bytes.extend_from_slice(self.committment.as_ref());
         bytes.extend_from_slice(self.proof.as_ref());
         NonEmptyVec::try_from(bytes).expect("cannot be empty")
@@ -120,7 +137,7 @@ fn split_sidecar(sidecar: BlobTransactionSidecar) -> crate::error::Result<Vec<Si
 
     let single_blobs = izip!(sidecar.blobs, sidecar.commitments, sidecar.proofs)
         .map(|(data, committment, proof)| SingleBlob {
-            data,
+            data: Box::new(data),
             committment,
             proof,
         })
@@ -137,7 +154,7 @@ fn merge_into_sidecar(
     let mut proofs = vec![];
 
     for blob in single_blobs {
-        blobs.push(blob.data);
+        blobs.push(blob.data.as_slice().try_into().unwrap());
         commitments.push(blob.committment);
         proofs.push(blob.proof);
     }

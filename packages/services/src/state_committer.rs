@@ -1,6 +1,7 @@
 use std::{num::NonZeroUsize, time::Duration};
 
 use bundler::{Bundle, BundleProposal, BundlerFactory};
+use itertools::Itertools;
 use ports::{
     clock::Clock,
     storage::{BundleFragment, Storage},
@@ -136,8 +137,7 @@ where
             }
         }
 
-        let gas_prices = self.l1_adapter.gas_prices().await?;
-        bundler.finish(gas_prices).await
+        bundler.finish().await
     }
 
     async fn still_time_to_accumulate_more(&self) -> Result<bool> {
@@ -171,23 +171,52 @@ where
     }
 
     /// Submits a fragment to the L1 adapter and records the tx in storage.
-    async fn submit_fragment(&self, fragment: BundleFragment) -> Result<()> {
-        match self
-            .l1_adapter
-            .submit_state_fragments(fragment.data.clone())
-            .await
-        {
-            Ok(tx_hash) => {
-                self.storage.record_pending_tx(tx_hash, fragment.id).await?;
+    async fn submit_fragments(&self, fragments: NonEmptyVec<BundleFragment>) -> Result<()> {
+        let data = fragments
+            .inner()
+            .iter()
+            .map(|f| f.data.clone())
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("non-empty vec");
+        eprintln!("submitting fragments");
+
+        match self.l1_adapter.submit_state_fragments(data).await {
+            Ok(submittal_report) => {
+                let fragment_ids = NonEmptyVec::try_from(
+                    fragments
+                        .inner()
+                        .iter()
+                        .map(|f| f.id)
+                        .take(submittal_report.num_fragments.get())
+                        .collect_vec(),
+                )
+                .expect("non-empty vec");
+
+                let ids = fragment_ids
+                    .inner()
+                    .iter()
+                    .map(|id| id.as_u32().to_string())
+                    .join(", ");
+
+                self.storage
+                    .record_pending_tx(submittal_report.tx, fragment_ids)
+                    .await?;
+
                 tracing::info!(
-                    "Submitted fragment {} with tx {}",
-                    fragment.id,
-                    hex::encode(tx_hash)
+                    "Submitted fragments {ids} with tx {}",
+                    hex::encode(submittal_report.tx)
                 );
                 Ok(())
             }
             Err(e) => {
-                tracing::error!("Failed to submit fragment {}: {e}", fragment.id);
+                let ids = fragments
+                    .inner()
+                    .iter()
+                    .map(|f| f.id.as_u32().to_string())
+                    .join(", ");
+
+                tracing::error!("Failed to submit fragments {ids}: {e}");
                 Err(e.into())
             }
         }
@@ -197,16 +226,16 @@ where
         self.storage.has_pending_txs().await.map_err(|e| e.into())
     }
 
-    async fn next_fragment_to_submit(&self) -> Result<Option<BundleFragment>> {
-        let fragment = if let Some(fragment) = self.storage.oldest_nonfinalized_fragment().await? {
-            Some(fragment)
+    async fn next_fragments_to_submit(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
+        let existing_fragments = self.storage.oldest_nonfinalized_fragments(6).await?;
+
+        let fragments = if !existing_fragments.is_empty() {
+            Some(existing_fragments.try_into().expect("non-empty vec"))
         } else {
-            self.bundle_and_fragment_blocks()
-                .await?
-                .map(|fragments| fragments.take_first())
+            self.bundle_and_fragment_blocks().await?
         };
 
-        Ok(fragment)
+        Ok(fragments)
     }
 }
 
@@ -222,8 +251,8 @@ where
             return Ok(());
         }
 
-        if let Some(fragment) = self.next_fragment_to_submit().await? {
-            self.submit_fragment(fragment).await?;
+        if let Some(fragments) = self.next_fragments_to_submit().await? {
+            self.submit_fragments(fragments).await?;
         }
 
         Ok(())
@@ -238,7 +267,7 @@ mod tests {
     use crate::{test_utils, CompressionLevel, Runner, StateCommitter};
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
-    use ports::l1::{FragmentEncoder, GasPrices, GasUsage};
+    use ports::l1::{FragmentEncoder, FragmentsSubmitted};
     use ports::non_empty_vec;
     use ports::storage::SequentialFuelBlocks;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -276,7 +305,7 @@ mod tests {
             Ok(true)
         }
 
-        async fn finish(self, _: GasPrices) -> Result<BundleProposal> {
+        async fn finish(self) -> Result<BundleProposal> {
             Ok(self.proposal.expect(
                 "proposal to be set inside controllable bundler if it ever was meant to finish",
             ))
@@ -312,45 +341,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fragments_correctly_and_sends_fragments_in_order() -> Result<()> {
+    async fn sends_fragments_in_order() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let max_fragment_size = Eip4844BlobEncoder.max_bytes_per_submission().get();
+        // Loss due to blob encoding
+        let fits_in_a_blob = (Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
         let ImportedBlocks {
             fuel_blocks: blocks,
             ..
         } = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=0,
-                tx_per_block: 1,
-                size_per_tx: max_fragment_size,
+                tx_per_block: 7,
+                size_per_tx: fits_in_a_blob,
             })
             .await;
 
         let bundle_data = test_utils::encode_and_merge(blocks).await;
+        let expected_fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
+
+        assert_eq!(expected_fragments.len().get(), 7);
 
         let fragment_tx_ids = [[0; 32], [1; 32]];
 
+        let first_tx_fragments = expected_fragments.clone();
+        let second_tx_fragments = non_empty_vec![expected_fragments[6].clone()];
+
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (
-                Some(
-                    (*bundle_data)[..max_fragment_size]
-                        .to_vec()
-                        .try_into()
-                        .unwrap(),
-                ),
-                fragment_tx_ids[0],
-            ),
-            (
-                Some(
-                    (*bundle_data)[max_fragment_size..]
-                        .to_vec()
-                        .try_into()
-                        .unwrap(),
-                ),
-                fragment_tx_ids[1],
-            ),
+            // We give all 7 fragments in the first submission, but 1 wont be used
+            (Some(first_tx_fragments), fragment_tx_ids[0]),
+            // It will be sent next time
+            (Some(second_tx_fragments), fragment_tx_ids[1]),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -362,13 +384,13 @@ mod tests {
         );
 
         // when
-        // Send the first fragment
+        // Send the first fragments
         state_committer.run().await?;
         setup
             .report_txs_finished([(fragment_tx_ids[0], TxStatus::Success)])
             .await;
 
-        // Send the second fragment
+        // Send the second fragments
         state_committer.run().await?;
 
         // then
@@ -393,14 +415,14 @@ mod tests {
             })
             .await;
         let bundle_data = test_utils::encode_and_merge(blocks).await;
+        let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
         let original_tx = [0; 32];
         let retry_tx = [1; 32];
 
-        // the whole bundle goes into one fragment
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (Some(bundle_data.clone()), original_tx),
-            (Some(bundle_data), retry_tx),
+            (Some(fragments.clone()), original_tx),
+            (Some(fragments.clone()), retry_tx),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -477,18 +499,17 @@ mod tests {
             .await;
 
         let mut l1_mock_submit = ports::l1::MockApi::new();
-        l1_mock_submit.expect_gas_prices().once().return_once(|| {
-            Box::pin(async {
-                Ok(GasPrices {
-                    storage: 10,
-                    normal: 1,
-                })
-            })
-        });
         l1_mock_submit
-            .expect_submit_l2_state()
+            .expect_submit_state_fragments()
             .once()
-            .return_once(|_| Box::pin(async { Ok([1; 32]) }));
+            .return_once(|_| {
+                Box::pin(async {
+                    Ok(FragmentsSubmitted {
+                        tx: [1; 32],
+                        num_fragments: 6.try_into().unwrap(),
+                    })
+                })
+            });
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
@@ -527,10 +548,8 @@ mod tests {
                 size_per_tx: 100,
             })
             .await;
-        let bundle_data = test_utils::encode_and_merge(blocks).await;
 
-        let l1_mock_submit =
-            test_utils::mocks::l1::expects_state_submissions([(Some(bundle_data), [1; 32])]);
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(None, [1; 32])]);
 
         let clock = TestClock::default();
         let mut state_committer = StateCommitter::new(
@@ -577,8 +596,7 @@ mod tests {
             .await;
         let bundle_data = test_utils::encode_and_merge(blocks).await;
 
-        let l1_mock_submit =
-            test_utils::mocks::l1::expects_state_submissions([(Some(bundle_data), [1; 32])]);
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(None, [1; 32])]);
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
@@ -617,12 +635,12 @@ mod tests {
             })
             .await;
 
-        let bundle_data = test_utils::encode_and_merge((*blocks)[..2].to_vec()).await;
+        let bundle_data =
+            test_utils::encode_and_merge(blocks.inner()[..2].to_vec().try_into().unwrap()).await;
+        let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
-        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
-            Some(bundle_data.clone()),
-            [1; 32],
-        )]);
+        let l1_mock_submit =
+            test_utils::mocks::l1::expects_state_submissions([(Some(fragments), [1; 32])]);
 
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
@@ -663,13 +681,17 @@ mod tests {
         let bundle_1_tx = [0; 32];
         let bundle_2_tx = [1; 32];
 
-        let bundle_1 = test_utils::encode_and_merge((*blocks)[0..=0].to_vec()).await;
+        let bundle_1 =
+            test_utils::encode_and_merge(blocks.inner()[0..=0].to_vec().try_into().unwrap()).await;
+        let fragments_1 = Eip4844BlobEncoder.encode(bundle_1).unwrap();
 
-        let bundle_2 = test_utils::encode_and_merge((*blocks)[1..=1].to_vec()).await;
+        let bundle_2 =
+            test_utils::encode_and_merge(blocks.inner()[1..=1].to_vec().try_into().unwrap()).await;
+        let fragments_2 = Eip4844BlobEncoder.encode(bundle_2).unwrap();
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (Some(bundle_1.clone()), bundle_1_tx),
-            (Some(bundle_2.clone()), bundle_2_tx),
+            (Some(fragments_1), bundle_1_tx),
+            (Some(fragments_2), bundle_2_tx),
         ]);
 
         let mut state_committer = StateCommitter::new(
@@ -712,24 +734,21 @@ mod tests {
             .await;
 
         let fragment_tx_id = [2; 32];
-        let unoptimal_fragment = test_utils::random_data(100usize);
+        let unoptimal_fragments = non_empty_vec![test_utils::random_data(100usize)];
 
         let unoptimal_bundle = BundleProposal {
-            fragments: non_empty_vec![unoptimal_fragment.clone()],
+            fragments: unoptimal_fragments.clone(),
             block_heights: 0..=0,
             known_to_be_optimal: false,
             compression_ratio: 1.0,
-            gas_usage: GasUsage {
-                storage: 100,
-                normal: 1,
-            },
+            gas_usage: 100,
         };
 
         let (bundler_factory, send_can_advance_permission, mut notify_has_advanced) =
             ControllableBundlerFactory::setup(Some(unoptimal_bundle));
 
         let l1_mock = test_utils::mocks::l1::expects_state_submissions([(
-            Some(unoptimal_fragment.clone()),
+            Some(unoptimal_fragments),
             fragment_tx_id,
         )]);
 
@@ -838,15 +857,7 @@ mod tests {
 
         // Configure the L1 adapter to fail on submission
         let mut l1_mock = ports::l1::MockApi::new();
-        l1_mock.expect_gas_prices().once().return_once(|| {
-            Box::pin(async {
-                Ok(GasPrices {
-                    storage: 10,
-                    normal: 1,
-                })
-            })
-        });
-        l1_mock.expect_submit_l2_state().return_once(|_| {
+        l1_mock.expect_submit_state_fragments().return_once(|_| {
             Box::pin(async { Err(ports::l1::Error::Other("Submission failed".into())) })
         });
 

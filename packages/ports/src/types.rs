@@ -1,7 +1,4 @@
-use std::{
-    num::NonZeroUsize,
-    ops::{Deref, DerefMut, Index},
-};
+use std::{num::NonZeroUsize, ops::Index};
 
 #[cfg(feature = "l1")]
 pub use alloy::primitives::{Address, U256};
@@ -13,31 +10,10 @@ pub struct NonEmptyVec<T> {
     vec: Vec<T>,
 }
 
-impl<T> DerefMut for NonEmptyVec<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.vec
-    }
-}
-
-impl<T> Deref for NonEmptyVec<T> {
-    type Target = Vec<T>;
-    fn deref(&self) -> &Self::Target {
-        &self.vec
-    }
-}
-
 impl<T> Index<usize> for NonEmptyVec<T> {
     type Output = T;
     fn index(&self, index: usize) -> &Self::Output {
         &self.vec[index]
-    }
-}
-
-impl<T> IntoIterator for NonEmptyVec<T> {
-    type Item = T;
-    type IntoIter = std::vec::IntoIter<T>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.vec.into_iter()
     }
 }
 
@@ -69,10 +45,6 @@ impl<T> TryFrom<Vec<T>> for NonEmptyVec<T> {
 }
 
 impl<T> NonEmptyVec<T> {
-    pub fn iter(&self) -> std::slice::Iter<T> {
-        self.vec.iter()
-    }
-
     pub fn first(&self) -> &T {
         self.vec.first().expect("vec is not empty")
     }

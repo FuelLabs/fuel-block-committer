@@ -21,8 +21,8 @@ impl Storage for Postgres {
         Ok(self._insert(submission).await?)
     }
 
-    async fn oldest_nonfinalized_fragment(&self) -> Result<Option<ports::storage::BundleFragment>> {
-        Ok(self._oldest_nonfinalized_fragment().await?)
+    async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>> {
+        Ok(self._oldest_nonfinalized_fragments(limit).await?)
     }
 
     async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>> {
@@ -38,6 +38,7 @@ impl Storage for Postgres {
         block_range: RangeInclusive<u32>,
         fragments: NonEmptyVec<NonEmptyVec<u8>>,
     ) -> Result<NonEmptyVec<BundleFragment>> {
+        eprintln!("Inserting bundle and fragments: {:?}", block_range);
         Ok(self
             ._insert_bundle_and_fragments(block_range, fragments)
             .await?)
@@ -68,9 +69,9 @@ impl Storage for Postgres {
     async fn record_pending_tx(
         &self,
         tx_hash: [u8; 32],
-        fragment_id: NonNegative<i32>,
+        fragment_ids: NonEmptyVec<NonNegative<i32>>,
     ) -> Result<()> {
-        Ok(self._record_pending_tx(tx_hash, fragment_id).await?)
+        Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
     }
 
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
@@ -89,6 +90,7 @@ impl Storage for Postgres {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
     use ports::non_empty_vec;
     use ports::storage::{Error, Storage};
     use rand::{thread_rng, Rng, SeedableRng};
@@ -180,14 +182,22 @@ mod tests {
         }
     }
 
-    async fn ensure_a_fragment_exists_in_the_db(storage: impl Storage) -> NonNegative<i32> {
-        let fragment = storage
-            .insert_bundle_and_fragments(0..=0, non_empty_vec!(non_empty_vec!(0)))
+    async fn ensure_some_fragments_exists_in_the_db(
+        storage: impl Storage,
+    ) -> NonEmptyVec<NonNegative<i32>> {
+        let ids = storage
+            .insert_bundle_and_fragments(
+                0..=0,
+                non_empty_vec!(non_empty_vec![0], non_empty_vec![1]),
+            )
             .await
             .unwrap()
-            .take_first();
+            .into_inner()
+            .into_iter()
+            .map(|fragment| fragment.id)
+            .collect_vec();
 
-        fragment.id
+        ids.try_into().unwrap()
     }
 
     #[tokio::test]
@@ -195,11 +205,11 @@ mod tests {
         // Given
         let storage = start_db().await;
 
-        let fragment_id = ensure_a_fragment_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
 
         let tx_hash = rand::random::<[u8; 32]>();
         storage
-            .record_pending_tx(tx_hash, fragment_id)
+            .record_pending_tx(tx_hash, fragment_ids)
             .await
             .unwrap();
 
@@ -219,10 +229,10 @@ mod tests {
         // Given
         let storage = start_db().await;
 
-        let fragment_id = ensure_a_fragment_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
         let tx_hash = rand::random::<[u8; 32]>();
         storage
-            .record_pending_tx(tx_hash, fragment_id)
+            .record_pending_tx(tx_hash, fragment_ids)
             .await
             .unwrap();
 
@@ -259,7 +269,11 @@ mod tests {
 
         // Then
         assert_eq!(inserted_fragments.len().get(), 2);
-        for (inserted_fragment, fragment_data) in inserted_fragments.iter().zip(fragments.iter()) {
+        for (inserted_fragment, fragment_data) in inserted_fragments
+            .inner()
+            .iter()
+            .zip(fragments.inner().iter())
+        {
             assert_eq!(inserted_fragment.data, fragment_data.clone());
         }
     }
@@ -273,10 +287,10 @@ mod tests {
         // Given
         let storage = start_db().await;
 
-        let fragment_id = ensure_a_fragment_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
         let tx_hash = rand::random::<[u8; 32]>();
         storage
-            .record_pending_tx(tx_hash, fragment_id)
+            .record_pending_tx(tx_hash, fragment_ids)
             .await
             .unwrap();
 

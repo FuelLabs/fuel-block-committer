@@ -53,7 +53,7 @@ pub trait Api {
 }
 
 pub trait FragmentEncoder {
-    fn encode(data: NonEmptyVec<u8>) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
+    fn encode(&self, data: NonEmptyVec<u8>) -> Result<NonEmptyVec<NonEmptyVec<u8>>>;
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64;
 }
 

@@ -56,7 +56,7 @@ where
     }
 
     fn validate_blocks(&self, blocks: &NonEmptyVec<FullFuelBlock>) -> Result<()> {
-        for block in blocks.iter() {
+        for block in blocks.inner() {
             self.block_validator
                 .validate(block.id, &block.header, &block.consensus)?;
         }
@@ -92,6 +92,7 @@ pub(crate) fn encode_blocks(
 ) -> NonEmptyVec<ports::storage::FuelBlock> {
     // TODO: segfautl a try collect for non epmyt vec
     blocks
+        .into_inner()
         .into_iter()
         .map(|full_block| ports::storage::FuelBlock {
             hash: *full_block.id,
@@ -108,7 +109,10 @@ fn encode_block_data(block: FullFuelBlock) -> NonEmptyVec<u8> {
 
     let bytes = chain!(
         tx_num.to_be_bytes(),
-        block.raw_transactions.into_iter().flatten()
+        block
+            .raw_transactions
+            .into_iter()
+            .flat_map(|tx| tx.into_inner())
     )
     .collect::<Vec<_>>();
 
@@ -245,6 +249,7 @@ mod tests {
             .collect_vec();
 
         let all_blocks = existing_blocks
+            .into_inner()
             .into_iter()
             .chain(new_blocks.clone())
             .collect_vec();
@@ -365,7 +370,7 @@ mod tests {
             })
             .await;
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks);
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks.into_inner());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);

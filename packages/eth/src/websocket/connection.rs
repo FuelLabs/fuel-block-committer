@@ -122,6 +122,8 @@ impl EthApi for WsConnection {
         &self,
         fragments: NonEmptyVec<NonEmptyVec<u8>>,
     ) -> Result<ports::l1::FragmentsSubmitted> {
+        eprintln!("submit_state_fragments");
+
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
@@ -133,6 +135,7 @@ impl EthApi for WsConnection {
         let blob_tx = TransactionRequest::default()
             .with_to(*blob_signer_address)
             .with_blob_sidecar(sidecar);
+        eprintln!("blob_tx: {:?}", blob_tx);
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
 

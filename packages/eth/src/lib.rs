@@ -36,7 +36,7 @@ pub use blob_encoding::Eip4844BlobEncoder;
 
 impl Api for WebsocketClient {
     delegate! {
-        to (&self) {
+        to (*self) {
             async fn submit_state_fragments(
                 &self,
                 fragments: NonEmptyVec<NonEmptyVec<u8>>,

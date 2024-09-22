@@ -61,6 +61,8 @@ mod tests {
 
         // when
         for _ in 0..num_iterations {
+            eprintln!("Producing transactions");
+
             stack.fuel_node.produce_transactions(100).await?;
             let _ = stack
                 .fuel_node
@@ -68,23 +70,35 @@ mod tests {
                 .produce_blocks(blocks_per_iteration)
                 .await;
         }
+        eprintln!("Finished producing transactions");
 
         // then
         let state_submitting_finished = || async {
-            let finished = stack
+            eprintln!("Checking if state submitting is finished");
+            let no_unbundled_blocks = stack
                 .db
                 .lowest_sequence_of_unbundled_blocks(0, 1)
                 .await?
-                .is_none()
-                && stack.db.oldest_nonfinalized_fragment().await?.is_none()
-                && !stack.db.has_pending_txs().await?
-                && stack
-                    .db
-                    .available_blocks()
-                    .await?
-                    .is_some_and(|range| *range.end() >= num_iterations * blocks_per_iteration);
+                .is_none();
 
-            anyhow::Result::<_>::Ok(finished)
+            eprintln!("Checking if no unfinalized fragments");
+            let no_unfinalized_fragments =
+                stack.db.oldest_nonfinalized_fragments(1).await?.is_empty();
+            eprintln!("Checking if no pending transactions");
+            let no_pending_transactions = !stack.db.has_pending_txs().await?;
+            eprintln!("Checking if all blocks imported");
+            let all_blocks_imported = stack
+                .db
+                .available_blocks()
+                .await?
+                .is_some_and(|range| *range.end() >= num_iterations * blocks_per_iteration);
+
+            anyhow::Result::<_>::Ok(
+                no_unbundled_blocks
+                    && no_unfinalized_fragments
+                    && no_pending_transactions
+                    && all_blocks_imported,
+            )
         };
 
         while !state_submitting_finished().await? {

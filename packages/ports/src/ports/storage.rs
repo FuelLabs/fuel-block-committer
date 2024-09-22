@@ -43,9 +43,9 @@ pub struct SequentialFuelBlocks {
 
 impl IntoIterator for SequentialFuelBlocks {
     type Item = FuelBlock;
-    type IntoIter = <NonEmptyVec<FuelBlock> as IntoIterator>::IntoIter;
+    type IntoIter = <Vec<FuelBlock> as IntoIterator>::IntoIter;
     fn into_iter(self) -> Self::IntoIter {
-        self.blocks.into_iter()
+        self.blocks.into_inner().into_iter()
     }
 }
 
@@ -63,6 +63,7 @@ impl SequentialFuelBlocks {
 
     pub fn from_first_sequence(blocks: NonEmptyVec<FuelBlock>) -> Self {
         let blocks: Vec<_> = blocks
+            .into_inner()
             .into_iter()
             .scan(None, |prev, block| match prev {
                 Some(height) if *height + 1 == block.height => {
@@ -159,18 +160,18 @@ pub trait Storage: Send + Sync {
     async fn record_pending_tx(
         &self,
         tx_hash: [u8; 32],
-        fragment_id: NonNegative<i32>,
+        fragments: NonEmptyVec<NonNegative<i32>>,
     ) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
-    async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
+    async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
 
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
     delegate! {
-        to (self.as_ref()) {
+        to (**self) {
             async fn insert(&self, submission: BlockSubmission) -> Result<()>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
                 async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
@@ -190,11 +191,11 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 async fn record_pending_tx(
                     &self,
                     tx_hash: [u8; 32],
-                    fragment_id: NonNegative<i32>,
+                    fragment_id: NonEmptyVec<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
-                async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
+                async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
         }
@@ -203,7 +204,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
 
 impl<T: Storage + Send + Sync> Storage for &T {
     delegate! {
-        to (*self) {
+        to (**self) {
             async fn insert(&self, submission: BlockSubmission) -> Result<()>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
                 async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
@@ -223,11 +224,11 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn record_pending_tx(
                     &self,
                     tx_hash: [u8; 32],
-                    fragment_id: NonNegative<i32>,
+                    fragment_id: NonEmptyVec<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
-                async fn oldest_nonfinalized_fragment(&self) -> Result<Option<BundleFragment>>;
+                async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
         }

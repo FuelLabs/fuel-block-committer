@@ -109,10 +109,12 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _oldest_nonfinalized_fragment(
+    pub(crate) async fn _oldest_nonfinalized_fragments(
         &self,
-    ) -> Result<Option<ports::storage::BundleFragment>> {
-        let fragment = sqlx::query_as!(
+        limit: usize,
+    ) -> Result<Vec<ports::storage::BundleFragment>> {
+        let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
+        let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
                     SELECT f.id, f.bundle_id, f.idx, f.data
@@ -122,16 +124,18 @@ impl Postgres {
                     JOIN bundles b ON b.id = f.bundle_id
                     WHERE t.id IS NULL OR t.state = $1 -- Unsubmitted or failed fragments
                     ORDER BY b.start_height ASC, f.idx ASC
-                    LIMIT 1;
+                    LIMIT $2;
                     "#,
-            L1TxState::FAILED_STATE
+            L1TxState::FAILED_STATE,
+            limit
         )
-        .fetch_optional(&self.connection_pool)
+        .fetch_all(&self.connection_pool)
         .await?
+        .into_iter()
         .map(TryFrom::try_from)
-        .transpose()?;
+        .try_collect()?;
 
-        Ok(fragment)
+        Ok(fragments)
     }
 
     pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<ports::storage::FuelBlock>> {
@@ -197,6 +201,7 @@ impl Postgres {
         let mut tx = self.connection_pool.begin().await?;
 
         let queries = blocks
+            .into_inner()
             .into_iter()
             .map(tables::FuelBlock::from)
             .chunks(MAX_BLOCKS_PER_QUERY)
@@ -318,7 +323,7 @@ impl Postgres {
     pub(crate) async fn _record_pending_tx(
         &self,
         tx_hash: [u8; 32],
-        fragment_id: NonNegative<i32>,
+        fragment_ids: NonEmptyVec<NonNegative<i32>>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
@@ -331,13 +336,16 @@ impl Postgres {
         .await?
         .id;
 
-        sqlx::query!(
+        // TODO: segfault batch this
+        for id in fragment_ids.inner() {
+            sqlx::query!(
             "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
             tx_id,
-            fragment_id.as_i32()
-        )
-        .execute(&mut *tx)
-        .await?;
+            id.as_i32()
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
 
         tx.commit().await?;
         Ok(())
@@ -414,17 +422,20 @@ impl Postgres {
 
         // Insert fragments associated with the bundle
         for (idx, fragment_data) in fragment_datas.into_inner().into_iter().enumerate() {
+            eprintln!("Inserting fragment: {idx}");
+
             let idx = i32::try_from(idx).map_err(|_| {
                 crate::error::Error::Conversion(format!("invalid idx for fragment: {idx}"))
             })?;
             let record = sqlx::query!(
                 "INSERT INTO l1_fragments (idx, data, bundle_id) VALUES ($1, $2, $3) RETURNING id",
                 idx,
-                &fragment_data.inner(),
+                fragment_data.inner(),
                 bundle_id.as_i32()
             )
             .fetch_one(&mut *tx)
             .await?;
+            eprintln!("Fragment inserted: {idx}");
 
             let id = record.id.try_into().map_err(|e| {
                 crate::error::Error::Conversion(format!(
@@ -444,6 +455,7 @@ impl Postgres {
 
         // Commit the transaction
         tx.commit().await?;
+        eprintln!("Transaction committed");
 
         Ok(fragments.try_into().expect(
             "guaranteed to have at least one element since the data also came from a non empty vec",

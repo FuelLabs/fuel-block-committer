@@ -2,11 +2,7 @@ use crate::Result;
 use itertools::Itertools;
 
 use flate2::{write::GzEncoder, Compression};
-use ports::{
-    l1::{GasPrices, GasUsage},
-    storage::SequentialFuelBlocks,
-    types::NonEmptyVec,
-};
+use ports::{storage::SequentialFuelBlocks, types::NonEmptyVec};
 use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive, str::FromStr};
 
 #[derive(Debug, Clone, Copy)]
@@ -158,7 +154,7 @@ pub struct BundleProposal {
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
     pub compression_ratio: f64,
-    pub gas_usage: GasUsage,
+    pub gas_usage: u64,
 }
 
 #[trait_variant::make(Send)]
@@ -172,7 +168,7 @@ pub trait Bundle {
     /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
     ///
     /// Consumes the bundler.
-    async fn finish(self, gas_prices: GasPrices) -> Result<BundleProposal>;
+    async fn finish(self) -> Result<BundleProposal>;
 }
 
 #[trait_variant::make(Send)]
@@ -216,14 +212,14 @@ struct Proposal {
     num_blocks: NonZeroUsize,
     uncompressed_data_size: NonZeroUsize,
     compressed_data_size: NonZeroUsize,
-    gas_usage: GasUsage,
+    gas_usage: u64,
 }
 
 #[derive(Debug, Clone)]
-pub struct Bundler<CostCalc> {
-    cost_calculator: CostCalc,
+pub struct Bundler<FragmentEncoder> {
+    fragment_encoder: FragmentEncoder,
     blocks: NonEmptyVec<ports::storage::FuelBlock>,
-    gas_usages: Vec<Proposal>, // Track all proposals
+    gas_usages: Vec<Proposal>,
     current_block_count: NonZeroUsize,
     attempts_exhausted: bool,
     compressor: Compressor,
@@ -235,7 +231,7 @@ where
 {
     fn new(cost_calculator: T, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
         Self {
-            cost_calculator,
+            fragment_encoder: cost_calculator,
             current_block_count: blocks.len(),
             blocks: blocks.into_inner(),
             gas_usages: Vec::new(),
@@ -245,20 +241,13 @@ where
     }
 
     /// Selects the best proposal based on the current gas prices.
-    fn select_best_proposal(&self, gas_prices: &GasPrices) -> Result<&Proposal> {
+    fn select_best_proposal(&self) -> Result<&Proposal> {
         self.gas_usages
             .iter()
             .min_by(|a, b| {
-                let fee_a = Self::calculate_fee_per_byte(
-                    &a.gas_usage,
-                    &a.uncompressed_data_size,
-                    gas_prices,
-                );
-                let fee_b = Self::calculate_fee_per_byte(
-                    &b.gas_usage,
-                    &b.uncompressed_data_size,
-                    gas_prices,
-                );
+                let fee_a = a.gas_usage as f64 / a.uncompressed_data_size.get() as f64;
+                let fee_b = b.gas_usage as f64 / b.uncompressed_data_size.get() as f64;
+
                 fee_a
                     .partial_cmp(&fee_b)
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -285,6 +274,7 @@ where
         // TODO: segfault graceful shutdown trigger needed here
         let blocks = self
             .blocks
+            .inner()
             .iter()
             .take(num_blocks.get())
             .cloned()
@@ -293,20 +283,6 @@ where
 
         let uncompressed_data = self.merge_block_data(blocks);
         self.compressor.compress(uncompressed_data).await
-    }
-
-    /// Calculates the fee per uncompressed byte.
-    fn calculate_fee_per_byte(
-        gas_usage: &GasUsage,
-        uncompressed_size: &NonZeroUsize,
-        gas_prices: &GasPrices,
-    ) -> f64 {
-        let storage_fee = u128::from(gas_usage.storage).saturating_mul(gas_prices.storage);
-        let normal_fee = u128::from(gas_usage.normal).saturating_mul(gas_prices.normal);
-
-        let total_fee = storage_fee.saturating_add(normal_fee);
-
-        total_fee as f64 / uncompressed_size.get() as f64
     }
 
     /// Calculates the compression ratio (uncompressed size / compressed size).
@@ -320,7 +296,11 @@ where
 
     /// Merges the data from multiple blocks into a single `NonEmptyVec<u8>`.
     fn merge_block_data(&self, blocks: NonEmptyVec<ports::storage::FuelBlock>) -> NonEmptyVec<u8> {
-        let bytes = blocks.into_iter().flat_map(|b| b.data).collect_vec();
+        let bytes = blocks
+            .into_inner()
+            .into_iter()
+            .flat_map(|b| b.data.into_inner())
+            .collect_vec();
         bytes.try_into().expect("Cannot be empty")
     }
 
@@ -328,6 +308,7 @@ where
     fn blocks_for_new_proposal(&self) -> NonEmptyVec<ports::storage::FuelBlock> {
         NonEmptyVec::try_from(
             self.blocks
+                .inner()
                 .iter()
                 .take(self.current_block_count.get())
                 .cloned()
@@ -349,7 +330,7 @@ where
         let compressed_size = compressed_data.len();
 
         // Estimate gas usage based on compressed data
-        let gas_usage = self.cost_calculator.gas_usage(compressed_data.len());
+        let gas_usage = self.fragment_encoder.gas_usage(compressed_data.len());
 
         Ok(Proposal {
             num_blocks: self.current_block_count,
@@ -394,13 +375,13 @@ where
     /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
     ///
     /// Consumes the bundler.
-    async fn finish(mut self, gas_prices: GasPrices) -> Result<BundleProposal> {
+    async fn finish(mut self) -> Result<BundleProposal> {
         if self.gas_usages.is_empty() {
             self.advance().await?;
         }
 
         // Select the best proposal based on current gas prices
-        let best_proposal = self.select_best_proposal(&gas_prices)?;
+        let best_proposal = self.select_best_proposal()?;
 
         // Determine the block height range based on the number of blocks in the best proposal
         let block_heights = self.calculate_block_heights(best_proposal.num_blocks)?;
@@ -410,23 +391,13 @@ where
             .compress_first_n_blocks(best_proposal.num_blocks)
             .await?;
 
-        // Split into submittable fragments
-        let max_data_per_fragment = self.cost_calculator.max_bytes_per_submission();
-
         // Calculate compression ratio
         let compression_ratio = self.calculate_compression_ratio(
             best_proposal.uncompressed_data_size,
             compressed_data.len(),
         );
 
-        let fragments = compressed_data
-            .into_iter()
-            .chunks(max_data_per_fragment.get())
-            .into_iter()
-            .map(|chunk| NonEmptyVec::try_from(chunk.collect_vec()).expect("should never be empty"))
-            .collect_vec();
-
-        let fragments = NonEmptyVec::try_from(fragments).expect("should never be empty");
+        let fragments = self.fragment_encoder.encode(compressed_data)?;
 
         Ok(BundleProposal {
             fragments,
@@ -486,19 +457,13 @@ mod tests {
         );
 
         // when
-        let bundle = bundler
-            .finish(GasPrices {
-                storage: 10,
-                normal: 1,
-            })
-            .await
-            .unwrap();
+        let bundle = bundler.finish().await.unwrap();
 
         // then
-        let expected_fragment = blocks[0].data.clone();
+        let expected_fragments = Eip4844BlobEncoder.encode(blocks[0].data.clone()).unwrap();
         assert!(bundle.known_to_be_optimal);
         assert_eq!(bundle.block_heights, 0..=0);
-        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment]);
+        assert_eq!(bundle.fragments, expected_fragments);
     }
 
     #[tokio::test]
@@ -506,42 +471,31 @@ mod tests {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
-        let compressable_block = {
-            let mut block = generate_storage_block(
-                0,
-                &secret_key,
-                enough_bytes_to_almost_fill_entire_l1_tx() / 1000,
-                1000,
-            );
-            block.data.fill(0);
-            block
-        };
+        let stops_at_blob_boundary =
+            generate_storage_block(0, &secret_key, 1, enough_bytes_to_almost_fill_a_blob());
 
-        let non_compressable_block = generate_storage_block(
-            1,
-            &secret_key,
-            enough_bytes_to_almost_fill_entire_l1_tx() / 1000 / 2,
-            1000,
+        let requires_new_blob_but_doesnt_utilize_it =
+            generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob() / 3);
+
+        let blocks: SequentialFuelBlocks = non_empty_vec![
+            stops_at_blob_boundary,
+            requires_new_blob_but_doesnt_utilize_it
+        ]
+        .try_into()
+        .unwrap();
+
+        let mut bundler = Bundler::new(
+            Eip4844BlobEncoder,
+            blocks.clone(),
+            Compressor::no_compression(),
         );
-
-        let blocks: SequentialFuelBlocks =
-            non_empty_vec![compressable_block, non_compressable_block]
-                .try_into()
-                .unwrap();
-
-        let price = GasPrices {
-            storage: 10,
-            normal: 1,
-        };
-
-        let mut bundler = Bundler::new(Eip4844BlobEncoder, blocks.clone(), Compressor::default());
 
         bundler.advance().await?;
 
         // when
-        let non_optimal_bundle = proposal_if_finalized_now(&bundler, price).await;
+        let non_optimal_bundle = proposal_if_finalized_now(&bundler).await;
         bundler.advance().await?;
-        let optimal_bundle = bundler.finish(price).await?;
+        let optimal_bundle = bundler.finish().await?;
 
         // then
         assert_eq!(non_optimal_bundle.block_heights, 0..=1);
@@ -553,17 +507,14 @@ mod tests {
         Ok(())
     }
 
-    async fn proposal_if_finalized_now(
-        bundler: &Bundler<Eip4844BlobEncoder>,
-        price: GasPrices,
-    ) -> BundleProposal {
-        bundler.clone().finish(price).await.unwrap()
+    async fn proposal_if_finalized_now(bundler: &Bundler<Eip4844BlobEncoder>) -> BundleProposal {
+        bundler.clone().finish().await.unwrap()
     }
 
     // This can happen when you've already paying for a blob but are not utilizing it. Adding
     // more data is going to increase the bytes per gas but keep the storage price the same.
     #[tokio::test]
-    async fn wont_constrict_bundle_because_storage_gas_remained_unchanged() -> Result<()> {
+    async fn wont_constrict_bundle_because_gas_remained_unchanged() -> Result<()> {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
         let blocks = generate_storage_block_sequence(0..=1, &secret_key, 10, 100);
@@ -574,35 +525,30 @@ mod tests {
             Compressor::no_compression(),
         );
 
-        let price = GasPrices {
-            storage: 10,
-            normal: 1,
-        };
         while bundler.advance().await? {}
 
         // when
-        let bundle = bundler.finish(price).await?;
+        let bundle = bundler.finish().await?;
 
         // then
-        let expected_fragment: NonEmptyVec<u8> = blocks
+        let bundle_data: NonEmptyVec<u8> = blocks
             .into_iter()
-            .flat_map(|b| b.data)
+            .flat_map(|b| b.data.into_inner())
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
+        let expected_fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
         assert!(bundle.known_to_be_optimal);
         assert_eq!(bundle.block_heights, 0..=1);
-        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment]);
+        assert_eq!(bundle.fragments, expected_fragments);
 
         Ok(())
     }
 
     fn enough_bytes_to_almost_fill_a_blob() -> usize {
-        let encoding_overhead = 40;
-        let blobs_per_block = 6;
-        let max_bytes_per_tx = Eip4844BlobEncoder.max_bytes_per_submission().get();
-        max_bytes_per_tx / blobs_per_block - encoding_overhead
+        let encoding_overhead = Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
+        Eip4844BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
     }
 
     // Because, for example, you've used up more of a whole blob you paid for
@@ -625,12 +571,7 @@ mod tests {
         while bundler.advance().await? {}
 
         // when
-        let bundle = bundler
-            .finish(GasPrices {
-                storage: 10,
-                normal: 1,
-            })
-            .await?;
+        let bundle = bundler.finish().await?;
 
         // then
         assert!(bundle.known_to_be_optimal);
@@ -641,103 +582,7 @@ mod tests {
 
     fn enough_bytes_to_almost_fill_entire_l1_tx() -> usize {
         let encoding_overhead = 20;
-        let max_bytes_per_tx = Eip4844BlobEncoder.max_bytes_per_submission().get();
+        let max_bytes_per_tx = Eip4844BlobEncoder::FRAGMENT_SIZE * 6;
         max_bytes_per_tx - encoding_overhead
-    }
-
-    #[tokio::test]
-    async fn bigger_bundle_avoided_due_to_poorly_used_extra_l1_tx() -> Result<()> {
-        // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-
-        let enough_bytes_to_spill_into_second_tx = 32;
-        let blocks = non_empty_vec![
-            generate_storage_block(
-                0,
-                &secret_key,
-                1,
-                enough_bytes_to_almost_fill_entire_l1_tx(),
-            ),
-            generate_storage_block(1, &secret_key, 1, enough_bytes_to_spill_into_second_tx)
-        ];
-
-        let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
-            blocks.clone().try_into().unwrap(),
-            Compressor::no_compression(),
-        );
-
-        while bundler.advance().await? {}
-
-        // when
-        let bundle = bundler
-            .finish(GasPrices {
-                storage: 10,
-                normal: 1,
-            })
-            .await?;
-
-        // then
-        let expected_fragment = &blocks.first().data;
-
-        assert!(bundle.known_to_be_optimal);
-        assert_eq!(bundle.block_heights, 0..=0);
-        assert_eq!(bundle.fragments, non_empty_vec![expected_fragment.clone()]);
-
-        Ok(())
-    }
-
-    // When, for example, adding new blocks to the bundle will cause a second l1 tx but the overall
-    // compression will make up for the extra cost
-    #[tokio::test]
-    async fn bigger_bundle_results_in_a_new_tx_but_better_compression() -> Result<()> {
-        // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-
-        let enough_bytes_to_make_up_for_the_extra_cost = 100000;
-        // we lose some space since the first block is not compressible
-        let compression_overhead = 4;
-        let non_compressable_block = generate_storage_block(
-            0,
-            &secret_key,
-            1,
-            enough_bytes_to_almost_fill_entire_l1_tx() - compression_overhead,
-        );
-
-        let compressable_block = {
-            let mut block = generate_storage_block(
-                1,
-                &secret_key,
-                1,
-                enough_bytes_to_make_up_for_the_extra_cost,
-            );
-            block.data.fill(0);
-            block
-        };
-
-        let blocks = non_empty_vec![non_compressable_block, compressable_block];
-
-        let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
-            blocks.clone().try_into().unwrap(),
-            Compressor::default(),
-        );
-
-        while bundler.advance().await? {}
-
-        // when
-        let bundle = bundler
-            .finish(GasPrices {
-                storage: 10,
-                normal: 1,
-            })
-            .await?;
-
-        // then
-        assert!(bundle.known_to_be_optimal);
-        assert_eq!(bundle.block_heights, 0..=1);
-        assert_eq!(bundle.gas_usage.normal, 2 * 21_000);
-
-        Ok(())
     }
 }
