@@ -138,6 +138,7 @@ pub struct Internal {
     pub between_eth_event_stream_restablishing_attempts: Duration,
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
+    pub new_bundle_check_interval: Duration,
 }
 
 impl Default for Internal {
@@ -147,6 +148,7 @@ impl Default for Internal {
             between_eth_event_stream_restablishing_attempts: Duration::from_secs(3),
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
+            new_bundle_check_interval: Duration::from_secs(10),
         }
     }
 }

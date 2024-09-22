@@ -90,6 +90,14 @@ async fn main() -> Result<()> {
         let starting_height =
             current_fuel_height.saturating_sub(config.app.bundle.block_height_lookback);
 
+        let block_bundler = setup::block_bundler(
+            storage.clone(),
+            cancel_token.clone(),
+            &config,
+            &internal_config,
+            starting_height,
+        );
+
         let state_committer_handle = setup::state_committer(
             ethereum_rpc.clone(),
             storage.clone(),
@@ -116,6 +124,7 @@ async fn main() -> Result<()> {
 
         handles.push(state_committer_handle);
         handles.push(state_importer_handle);
+        handles.push(block_bundler);
         handles.push(state_listener_handle);
     }
 

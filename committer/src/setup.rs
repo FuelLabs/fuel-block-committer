@@ -4,7 +4,10 @@ use clock::SystemClock;
 use eth::{AwsConfig, Eip4844BlobEncoder};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
-use services::{BlockCommitter, BlockValidator, CommitListener, Runner, WalletBalanceTracker};
+use services::{
+    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, CommitListener, Runner,
+    WalletBalanceTracker,
+};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -70,6 +73,36 @@ pub fn block_committer(
     )
 }
 
+pub fn block_bundler(
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+    starting_fuel_height: u32,
+) -> tokio::task::JoinHandle<()> {
+    let bundler_factory =
+        services::BundlerFactory::new(Eip4844BlobEncoder, config.app.bundle.compression_level);
+
+    let block_bundler = BlockBundler::new(
+        storage,
+        SystemClock,
+        bundler_factory,
+        BlockBundlerConfig {
+            optimization_time_limit: config.app.bundle.optimization_timeout,
+            block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            starting_fuel_height,
+        },
+    );
+
+    schedule_polling(
+        internal_config.new_bundle_check_interval,
+        block_bundler,
+        "Block Bundler",
+        cancel_token,
+    )
+}
+
 pub fn state_committer(
     l1: L1,
     storage: Database,
@@ -77,9 +110,6 @@ pub fn state_committer(
     config: &config::Config,
     starting_fuel_height: u32,
 ) -> tokio::task::JoinHandle<()> {
-    let bundler_factory =
-        services::BundlerFactory::new(Eip4844BlobEncoder, config.app.bundle.compression_level);
-
     let state_committer = services::StateCommitter::new(l1, storage, SystemClock);
 
     schedule_polling(

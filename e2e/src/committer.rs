@@ -68,8 +68,8 @@ impl Committer {
             .env("COMMITTER__APP__PORT", unused_port.to_string())
             .env("COMMITTER__APP__HOST", "127.0.0.1")
             .env("COMMITTER__APP__BLOCK_CHECK_INTERVAL", "5s")
-            .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "2s")
-            .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "1")
+            .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "5s")
+            .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
@@ -222,27 +222,8 @@ impl CommitterProcess {
         Ok(())
     }
 
-    pub async fn wait_for_blob_eth_height(&self, height: u64) -> anyhow::Result<()> {
-        loop {
-            match self.fetch_latest_blob_block().await {
-                Ok(value) if value >= height => {
-                    break;
-                }
-                _ => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    continue;
-                }
-            }
-        }
-        Ok(())
-    }
-
     async fn fetch_latest_committed_block(&self) -> anyhow::Result<u64> {
         self.fetch_metric_value("latest_committed_block").await
-    }
-
-    async fn fetch_latest_blob_block(&self) -> anyhow::Result<u64> {
-        self.fetch_metric_value("last_eth_block_w_blob").await
     }
 
     async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
