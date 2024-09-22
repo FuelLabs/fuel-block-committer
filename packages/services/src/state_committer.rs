@@ -179,7 +179,6 @@ where
             .collect::<Vec<_>>()
             .try_into()
             .expect("non-empty vec");
-        eprintln!("submitting fragments");
 
         match self.l1_adapter.submit_state_fragments(data).await {
             Ok(submittal_report) => {

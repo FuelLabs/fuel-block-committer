@@ -422,8 +422,6 @@ impl Postgres {
 
         // Insert fragments associated with the bundle
         for (idx, fragment_data) in fragment_datas.into_inner().into_iter().enumerate() {
-            eprintln!("Inserting fragment: {idx}");
-
             let idx = i32::try_from(idx).map_err(|_| {
                 crate::error::Error::Conversion(format!("invalid idx for fragment: {idx}"))
             })?;
@@ -435,7 +433,6 @@ impl Postgres {
             )
             .fetch_one(&mut *tx)
             .await?;
-            eprintln!("Fragment inserted: {idx}");
 
             let id = record.id.try_into().map_err(|e| {
                 crate::error::Error::Conversion(format!(
@@ -455,7 +452,6 @@ impl Postgres {
 
         // Commit the transaction
         tx.commit().await?;
-        eprintln!("Transaction committed");
 
         Ok(fragments.try_into().expect(
             "guaranteed to have at least one element since the data also came from a non empty vec",

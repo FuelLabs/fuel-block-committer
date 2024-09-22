@@ -38,7 +38,6 @@ impl Storage for Postgres {
         block_range: RangeInclusive<u32>,
         fragments: NonEmptyVec<NonEmptyVec<u8>>,
     ) -> Result<NonEmptyVec<BundleFragment>> {
-        eprintln!("Inserting bundle and fragments: {:?}", block_range);
         Ok(self
             ._insert_bundle_and_fragments(block_range, fragments)
             .await?)

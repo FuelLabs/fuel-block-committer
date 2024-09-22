@@ -27,20 +27,12 @@ impl Eip4844BlobEncoder {
     pub(crate) fn decode(
         fragments: &NonEmptyVec<NonEmptyVec<u8>>,
     ) -> crate::error::Result<(BlobTransactionSidecar, NonZeroUsize)> {
-        eprintln!("decoding fragments");
         let fragments: Vec<_> = fragments
             .inner()
             .iter()
-            .inspect(|e| eprintln!("inspecting fragment: {:?}", e.len()))
-            // .take(6)
-            .inspect(|e| eprintln!("inspecting fragment after take: {:?}", e.len()))
-            .map(|e| {
-                eprintln!("about to give to decode: {:?}", e.len());
-
-                SingleBlob::decode(e)
-            })
+            .take(6)
+            .map(SingleBlob::decode)
             .try_collect()?;
-        eprintln!("decoded");
 
         let fragments_num = NonZeroUsize::try_from(fragments.len()).expect("cannot be 0");
 

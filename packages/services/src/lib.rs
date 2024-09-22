@@ -79,8 +79,6 @@ pub(crate) mod test_utils {
         blocks: NonEmptyVec<ports::fuel::FullFuelBlock>,
     ) -> NonEmptyVec<u8> {
 
-        let blocks = NonEmptyVec::try_from(blocks).expect("is not empty");
-               
 
         let bytes = block_importer::encode_blocks(blocks).into_inner().into_iter().flat_map(|b|b.data.into_inner()).collect_vec();
 
@@ -186,7 +184,6 @@ pub(crate) mod test_utils {
                     l1_mock
                         .expect_submit_state_fragments()
                         .withf(move |data| {
-                            eprintln!("data: {:?}", data.len());
                             if let Some(fragment) = &fragment {
                                 data == fragment
                             } else {
@@ -195,7 +192,6 @@ pub(crate) mod test_utils {
                         })
                         .once()
                         .return_once(move |fragments| {
-                            let max_fragments = 6;
                             Box::pin(async move { Ok(FragmentsSubmitted{tx: tx_id, num_fragments: min(fragments.len(), 6.try_into().unwrap())}) })
                         })
                         .in_sequence(&mut sequence);
