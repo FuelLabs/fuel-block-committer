@@ -1,5 +1,6 @@
 mod block_committer;
 mod block_importer;
+mod block_bundler;
 mod commit_listener;
 mod health_reporter;
 mod state_committer;
@@ -13,10 +14,9 @@ pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
-pub use state_committer::{
-    bundler::CompressionLevel, bundler::Factory as BundlerFactory, Config as StateCommitterConfig,
-    StateCommitter,
-};
+pub use block_bundler::bundler::{CompressionLevel, Factory as BundlerFactory};
+pub use block_bundler::{Config as BlockBundlerConfig, BlockBundler};
+pub use state_committer::StateCommitter ;
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
 pub use wallet_balance_tracker::WalletBalanceTracker;
@@ -97,18 +97,18 @@ pub(crate) mod test_utils {
         data.try_into().expect("is not empty due to check")
     }
 
-    use std::ops::RangeInclusive;
+    use std::{ops::RangeInclusive, time::Duration};
 
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
     use mocks::l1::TxStatus;
-    use ports::types::{DateTime, NonEmptyVec, Utc};
+    use ports::{storage::Storage, types::{DateTime, NonEmptyVec, Utc}};
     use storage::{DbWithProcess, PostgresProcess};
 
     use crate::{
-        block_importer::{self, encode_blocks}, state_committer::bundler::{self}, BlockImporter, BlockValidator, StateCommitter, StateCommitterConfig, StateListener
+        block_bundler::bundler::Factory, block_importer::{self, encode_blocks}, BlockBundler, BlockBundlerConfig, BlockImporter, BlockValidator, BundlerFactory, StateCommitter, StateListener
     };
 
     use super::Runner;
@@ -405,27 +405,17 @@ pub(crate) mod test_utils {
         }
 
         pub async fn commit_single_block_bundle(&self, finalization_time: DateTime<Utc>) {
-            self.import_blocks(Blocks::WithHeights {
-                range: 0..=0,
-                tx_per_block: 1,
-                size_per_tx: 100
-            })
-            .await;
+            self.insert_fragments(6).await;
 
             let clock = TestClock::default();
             clock.set_time(finalization_time);
 
-            let factory = bundler::Factory::new(Eip4844BlobEncoder, crate::CompressionLevel::Level6);
-
-            let tx = [2u8; 32];
-
+            let tx = [1; 32];
             let l1_mock = mocks::l1::expects_state_submissions(vec![(None, tx)]);
             let mut committer = StateCommitter::new(
                 l1_mock,
                 self.db(),
                 clock.clone(),
-                factory,
-                StateCommitterConfig::default(),
             );
             committer.run().await.unwrap();
 
@@ -435,6 +425,27 @@ pub(crate) mod test_utils {
                 .run()
                 .await
                 .unwrap();
+        }
+
+        pub async fn insert_fragments(&self, amount: usize) -> Vec<NonEmptyVec<u8>> {
+            let max_per_blob = (Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
+            self.import_blocks(Blocks::WithHeights { range: 0..=0, tx_per_block: amount, size_per_tx: max_per_blob  }).await;
+
+
+            let factory = Factory::new(Eip4844BlobEncoder, crate::CompressionLevel::Level6);
+            let mut bundler = BlockBundler::new(self.db(), TestClock::default(), factory, BlockBundlerConfig{
+                optimization_time_limit: Duration::ZERO,
+                block_accumulation_time_limit: Duration::ZERO,
+                num_blocks_to_accumulate: 1.try_into().unwrap(),
+                starting_fuel_height: 0
+            });
+
+            bundler.run().await.unwrap();
+
+            let fragments = self.db.oldest_nonfinalized_fragments(amount).await.unwrap();
+            assert_eq!(fragments.len(), amount);
+
+            fragments.into_iter().map(|f| f.data).collect()
         }
 
         pub async fn import_blocks(&self, blocks: Blocks) -> ImportedBlocks {
