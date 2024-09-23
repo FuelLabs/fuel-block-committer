@@ -34,7 +34,8 @@ impl Default for Config {
 
 /// The `BlockBundler` bundles blocks and fragments them. Those fragments are later on submitted to
 /// l1 by the [`crate::StateCommitter`]
-pub struct BlockBundler<Storage, Clock, BundlerFactory> {
+pub struct BlockBundler<F, Storage, Clock, BundlerFactory> {
+    fuel_api: F,
     storage: Storage,
     clock: Clock,
     component_created_at: DateTime<Utc>,
@@ -42,15 +43,22 @@ pub struct BlockBundler<Storage, Clock, BundlerFactory> {
     config: Config,
 }
 
-impl<Storage, C, BF> BlockBundler<Storage, C, BF>
+impl<F, Storage, C, BF> BlockBundler<F, Storage, C, BF>
 where
     C: Clock,
 {
     /// Creates a new `BlockBundler`.
-    pub fn new(storage: Storage, clock: C, bundler_factory: BF, config: Config) -> Self {
+    pub fn new(
+        fuel_adapter: F,
+        storage: Storage,
+        clock: C,
+        bundler_factory: BF,
+        config: Config,
+    ) -> Self {
         let now = clock.now();
 
         Self {
+            fuel_api: fuel_adapter,
             storage,
             clock,
             component_created_at: now,
@@ -60,8 +68,9 @@ where
     }
 }
 
-impl<Db, C, BF> BlockBundler<Db, C, BF>
+impl<F, Db, C, BF> BlockBundler<F, Db, C, BF>
 where
+    F: ports::fuel::Api,
     Db: Storage,
     C: Clock,
     BF: BundlerFactory,
@@ -161,8 +170,9 @@ where
     }
 }
 
-impl<Db, C, BF> Runner for BlockBundler<Db, C, BF>
+impl<F, Db, C, BF> Runner for BlockBundler<F, Db, C, BF>
 where
+    F: ports::fuel::Api + Send + Sync,
     Db: Storage + Clone + Send + Sync,
     C: Clock + Send + Sync,
     BF: BundlerFactory + Send + Sync,
@@ -277,6 +287,7 @@ mod tests {
         let num_blocks_to_accumulate = 2.try_into().unwrap();
 
         let mut block_bundler = BlockBundler::new(
+            ports::fuel::MockApi::new(),
             setup.db(),
             TestClock::default(),
             default_bundler_factory(),
@@ -320,6 +331,7 @@ mod tests {
 
         let clock = TestClock::default();
         let mut block_bundler = BlockBundler::new(
+            ports::fuel::MockApi::new(),
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
@@ -377,6 +389,7 @@ mod tests {
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let mut block_bundler = BlockBundler::new(
+            ports::fuel::MockApi::new(),
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
@@ -428,6 +441,7 @@ mod tests {
         let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
         let mut block_bundler = BlockBundler::new(
+            ports::fuel::MockApi::new(),
             setup.db(),
             TestClock::default(),
             default_bundler_factory(),
@@ -480,6 +494,7 @@ mod tests {
         let fragments_2 = Eip4844BlobEncoder.encode(bundle_2).unwrap();
 
         let mut bundler = BlockBundler::new(
+            ports::fuel::MockApi::new(),
             setup.db(),
             TestClock::default(),
             default_bundler_factory(),
@@ -540,6 +555,7 @@ mod tests {
 
         let optimization_timeout = Duration::from_secs(1);
         let mut block_bundler = BlockBundler::new(
+            ports::fuel::MockApi::new(),
             setup.db(),
             test_clock.clone(),
             bundler_factory,
@@ -591,6 +607,7 @@ mod tests {
         // Create the BlockBundler
         let optimization_timeout = Duration::from_secs(1);
         let mut block_bundler = BlockBundler::new(
+            ports::fuel::MockApi::new(),
             setup.db(),
             test_clock.clone(),
             bundler_factory,

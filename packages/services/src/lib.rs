@@ -440,6 +440,7 @@ pub(crate) mod test_utils {
 
             let factory = Factory::new(Eip4844BlobEncoder, crate::CompressionLevel::Level6);
             let mut bundler = BlockBundler::new(
+                ports::fuel::MockApi::new(),
                 self.db(),
                 TestClock::default(),
                 factory,

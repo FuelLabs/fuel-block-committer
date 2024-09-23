@@ -74,6 +74,7 @@ pub fn block_committer(
 }
 
 pub fn block_bundler(
+    fuel: FuelApi,
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
@@ -84,6 +85,7 @@ pub fn block_bundler(
         services::BundlerFactory::new(Eip4844BlobEncoder, config.app.bundle.compression_level);
 
     let block_bundler = BlockBundler::new(
+        fuel,
         storage,
         SystemClock,
         bundler_factory,
@@ -219,7 +221,7 @@ pub fn fuel_adapter(
     let fuel_adapter = FuelApi::new(
         &config.fuel.graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
-        internal_config.max_full_blocks_per_request
+        internal_config.max_full_blocks_per_request,
     );
     fuel_adapter.register_metrics(registry);
 

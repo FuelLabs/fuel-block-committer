@@ -91,6 +91,7 @@ async fn main() -> Result<()> {
             current_fuel_height.saturating_sub(config.app.bundle.block_height_lookback);
 
         let block_bundler = setup::block_bundler(
+            fuel_adapter.clone(),
             storage.clone(),
             cancel_token.clone(),
             &config,
