@@ -23,16 +23,16 @@ pub trait Storage: Send + Sync {
         &self,
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
-    ) -> Result<()>;
+    ) -> Result<u32>;
     async fn get_pending_block_submission_txs(
         &self,
         submission_id: u32,
     ) -> Result<Vec<BlockSubmissionTx>>;
-    async fn update_block_submission_tx_state(
+    async fn update_block_submission_tx(
         &self,
         hash: [u8; 32],
         state: TransactionState,
-    ) -> Result<()>;
+    ) -> Result<BlockSubmission>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
 
     async fn insert_state_submission(

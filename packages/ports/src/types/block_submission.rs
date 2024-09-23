@@ -11,7 +11,7 @@ pub struct BlockSubmissionTx {
     pub max_fee: u128,
     pub priority_fee: u128,
     pub state: TransactionState,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl Default for BlockSubmissionTx {
@@ -24,7 +24,7 @@ impl Default for BlockSubmissionTx {
             max_fee: 0,
             priority_fee: 0,
             state: TransactionState::Pending,
-            created_at: Utc::now(),
+            created_at: None,
         }
     }
 }

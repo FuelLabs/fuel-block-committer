@@ -65,7 +65,7 @@ pub struct L1FuelBlockSubmissionTx {
     pub max_fee: BigDecimal,
     pub priority_fee: BigDecimal,
     pub state: i16,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 // Assumes that the BigDecimal is non-negative and has no fractional part

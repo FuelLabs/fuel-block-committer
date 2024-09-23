@@ -22,7 +22,7 @@ impl Storage for Postgres {
         &self,
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
-    ) -> Result<()> {
+    ) -> Result<u32> {
         Ok(self
             ._record_block_submission(submission_tx, submission)
             .await?)
@@ -37,12 +37,12 @@ impl Storage for Postgres {
             .await?)
     }
 
-    async fn update_block_submission_tx_state(
+    async fn update_block_submission_tx(
         &self,
         hash: [u8; 32],
         state: TransactionState,
-    ) -> Result<()> {
-        Ok(self._update_block_submission_tx_state(hash, state).await?)
+    ) -> Result<BlockSubmission> {
+        Ok(self._update_block_submission_tx(hash, state).await?)
     }
 
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
@@ -116,12 +116,15 @@ mod tests {
         let latest_height = random_non_zero_height();
 
         let latest_submission = given_incomplete_submission(latest_height);
-        db.record_block_submission(BlockSubmissionTx::default(), latest_submission.clone())
+        let submission_tx = given_pending_tx(0);
+        let submission_id = db
+            .record_block_submission(submission_tx, latest_submission.clone())
             .await
             .unwrap();
 
         let older_submission = given_incomplete_submission(latest_height - 1);
-        db.record_block_submission(BlockSubmissionTx::default(), older_submission)
+        let submission_tx = given_pending_tx(1);
+        db.record_block_submission(submission_tx, older_submission)
             .await
             .unwrap();
 
@@ -129,7 +132,44 @@ mod tests {
         let actual = db.submission_w_latest_block().await.unwrap().unwrap();
 
         // then
-        assert_eq!(actual, latest_submission);
+        let expected = BlockSubmission {
+            id: Some(submission_id),
+            ..latest_submission
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn can_record_and_find_pending_tx() {
+        // given
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await.unwrap();
+        let latest_height = random_non_zero_height();
+
+        let latest_submission = given_incomplete_submission(latest_height);
+        let submission_tx = given_pending_tx(0);
+
+        let submission_id = db
+            .record_block_submission(submission_tx.clone(), latest_submission.clone())
+            .await
+            .unwrap();
+
+        // when
+        let actual = db
+            .get_pending_block_submission_txs(submission_id)
+            .await
+            .unwrap()
+            .pop()
+            .expect("pending tx to exist");
+
+        // then
+        let expected = BlockSubmissionTx {
+            id: actual.id,
+            created_at: actual.created_at,
+            submission_id: Some(submission_id),
+            ..submission_tx
+        };
+        assert_eq!(actual, expected);
     }
 
     #[tokio::test]
@@ -140,38 +180,62 @@ mod tests {
 
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
-        let block_hash = submission.block_hash;
-        db.record_block_submission(BlockSubmissionTx::default(), submission)
+        let submission_tx = given_pending_tx(0);
+
+        let submission_id = db
+            .record_block_submission(submission_tx, submission)
             .await
             .unwrap();
 
         // when
-        let submission = db.set_submission_completed(block_hash).await.unwrap();
+        let submission_tx = db
+            ._get_pending_block_submission_txs(submission_id)
+            .await
+            .unwrap()
+            .pop()
+            .expect("pending tx to exist");
+        db.update_block_submission_tx(submission_tx.hash, TransactionState::Finalized)
+            .await
+            .unwrap();
 
         // then
+        let pending_txs = db
+            ._get_pending_block_submission_txs(submission_id)
+            .await
+            .unwrap();
+        assert!(pending_txs.is_empty());
+
+        let submission = db
+            .submission_w_latest_block()
+            .await
+            .unwrap()
+            .expect("submission to exist");
         assert!(submission.completed);
     }
 
     #[tokio::test]
-    async fn updating_a_missing_submission_causes_an_error() {
+    async fn updating_a_missing_submission_tx_causes_an_error() {
         // given
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
 
-        let height = random_non_zero_height();
-        let submission = given_incomplete_submission(height);
-        let block_hash = submission.block_hash;
+        let submission_tx = given_pending_tx(0);
 
         // when
-        let result = db.set_submission_completed(block_hash).await;
+        let result = db
+            .update_block_submission_tx(submission_tx.hash, TransactionState::Finalized)
+            .await;
 
         // then
         let Err(Error::Database(msg)) = result else {
             panic!("should be storage error");
         };
 
-        let block_hash = hex::encode(block_hash);
-        assert_eq!(msg, format!("Cannot set submission to completed! Submission of block: `{block_hash}` not found in DB."));
+        let tx_hash = hex::encode(submission_tx.hash);
+        assert_eq!(
+            msg,
+            format!("Cannot update tx state! Tx with hash: `{tx_hash}` not found in DB.")
+        );
     }
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {
@@ -179,6 +243,15 @@ mod tests {
         submission.block_height = fuel_block_height;
 
         submission
+    }
+
+    fn given_pending_tx(nonce: u32) -> BlockSubmissionTx {
+        BlockSubmissionTx {
+            hash: [nonce as u8; 32],
+            nonce,
+            state: TransactionState::Pending,
+            ..Default::default()
+        }
     }
 
     #[tokio::test]

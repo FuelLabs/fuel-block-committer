@@ -182,7 +182,7 @@ where
 
             if !tx_response.succeeded() {
                 self.storage
-                    .update_block_submission_tx_state(tx_hash, TransactionState::Failed)
+                    .update_block_submission_tx(tx_hash, TransactionState::Failed)
                     .await?;
 
                 info!(
@@ -199,7 +199,7 @@ where
             }
 
             self.storage
-                .update_block_submission_tx_state(tx_hash, TransactionState::Finalized)
+                .update_block_submission_tx(tx_hash, TransactionState::Finalized)
                 .await?;
 
             info!(

@@ -93,14 +93,15 @@ impl Postgres {
         &self,
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
-    ) -> crate::error::Result<()> {
+    ) -> crate::error::Result<u32> {
         let mut transaction = self.connection_pool.begin().await?;
 
         let row = tables::L1FuelBlockSubmission::from(submission);
         let submission_id = sqlx::query!(
-            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height) VALUES ($1, $2) RETURNING id",
+            "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed) VALUES ($1, $2, $3) RETURNING id",
             row.fuel_block_hash,
             row.fuel_block_height,
+            row.completed,
         )
         .fetch_one(&mut *transaction)
         .await?
@@ -108,19 +109,20 @@ impl Postgres {
 
         let row = tables::L1FuelBlockSubmissionTx::from(submission_tx);
         sqlx::query!(
-            "INSERT INTO l1_transaction (hash, nonce, max_fee, priority_fee, submission_id) VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO l1_transaction (hash, nonce, max_fee, priority_fee, submission_id, state) VALUES ($1, $2, $3, $4, $5, $6)",
             row.hash,
             row.nonce,
             row.max_fee,
             row.priority_fee,
-            submission_id
+            submission_id,
+            TransactionState::Pending.into_i16(),
         )
         .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
 
-        Ok(())
+        Ok(submission_id as u32)
     }
 
     pub(crate) async fn _get_pending_block_submission_txs(
@@ -140,37 +142,58 @@ impl Postgres {
         .collect::<Result<Vec<_>>>()
     }
 
-    pub(crate) async fn _update_block_submission_tx_state(
+    pub(crate) async fn _update_block_submission_tx(
         &self,
-        hash: [u8; 32],
+        tx_hash: [u8; 32],
         state: TransactionState,
-    ) -> Result<()> {
+    ) -> Result<BlockSubmission> {
         // tx shouldn't go back to pending
         assert_ne!(state, TransactionState::Pending);
 
         let mut transaction = self.connection_pool.begin().await?;
 
         // update the transaction state
-        let submission_id = sqlx::query!(
-            "UPDATE l1_transaction SET state = $1 WHERE hash = $2 RETURNING submission_id",
+        let tx_row = sqlx::query_as!(
+            tables::L1FuelBlockSubmissionTx,
+            "UPDATE l1_transaction SET state = $1 WHERE hash = $2 RETURNING *",
             state.into_i16(),
-            hash.as_slice(),
+            tx_hash.as_slice(),
         )
-        .fetch_one(&mut *transaction)
-        .await?
-        .submission_id;
+        .fetch_optional(&mut *transaction)
+        .await?;
+
+        let submission_id = if let Some(row) = tx_row {
+            row.submission_id
+        } else {
+            let hash = hex::encode(tx_hash);
+            return Err(Error::Database(format!(
+                "Cannot update tx state! Tx with hash: `{hash}` not found in DB."
+            )));
+        };
 
         // set submission to completed
-        sqlx::query!(
-            "UPDATE l1_fuel_block_submission SET completed = true WHERE id = $1",
-            submission_id
+        let submission_row = sqlx::query_as!(
+            tables::L1FuelBlockSubmission,
+            "UPDATE l1_fuel_block_submission SET completed = true WHERE id = $1 RETURNING *",
+            submission_id as i64
         )
-        .execute(&mut *transaction)
-        .await?;
+        .fetch_optional(&mut *transaction)
+        .await?
+        .map(BlockSubmission::try_from)
+        .transpose()?;
+
+        let submission_row = if let Some(row) = submission_row {
+            row
+        } else {
+            let hash = hex::encode(tx_hash);
+            return Err(Error::Database(format!(
+                "Cannot update tx state! Tx with hash: `{hash}` not found in DB."
+            )));
+        };
 
         transaction.commit().await?;
 
-        Ok(())
+        Ok(submission_row)
     }
 
     pub(crate) async fn _submission_w_latest_block(
