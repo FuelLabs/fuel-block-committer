@@ -38,7 +38,9 @@ impl FuelNodeType {
     pub fn client(&self) -> HttpClient {
         match self {
             FuelNodeType::Local(fuel_node) => fuel_node.client(),
-            FuelNodeType::Testnet { .. } => HttpClient::new(&self.url(), 10, 100.try_into().unwrap()),
+            FuelNodeType::Testnet { .. } => {
+                HttpClient::new(&self.url(), 10, 100.try_into().unwrap())
+            }
         }
     }
 }
@@ -107,7 +109,6 @@ impl WholeStack {
 
         let db = start_db().await?;
 
-        eprintln!("Starting committer");
         let committer = {
             let committer_builder = Committer::default()
                 .with_show_logs(logs)
@@ -132,7 +133,6 @@ impl WholeStack {
             };
             committer.start().await?
         };
-        eprintln!("Committer started");
 
         Ok(WholeStack {
             eth_node,
