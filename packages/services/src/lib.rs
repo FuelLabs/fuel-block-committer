@@ -418,7 +418,7 @@ pub(crate) mod test_utils {
         }
 
         pub async fn commit_single_block_bundle(&self, finalization_time: DateTime<Utc>) {
-            self.insert_fragments(6).await;
+            self.insert_fragments(0, 6).await;
 
             let clock = TestClock::default();
             clock.set_time(finalization_time);
@@ -442,11 +442,11 @@ pub(crate) mod test_utils {
                 .unwrap();
         }
 
-        pub async fn insert_fragments(&self, amount: usize) -> Vec<Fragment> {
+        pub async fn insert_fragments(&self, height: u32, amount: usize) -> Vec<Fragment> {
             let max_per_blob = (Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
             let ImportedBlocks { fuel_blocks, .. } = self
                 .import_blocks(Blocks::WithHeights {
-                    range: 0..=0,
+                    range: height..=height,
                     tx_per_block: amount,
                     size_per_tx: max_per_blob,
                 })

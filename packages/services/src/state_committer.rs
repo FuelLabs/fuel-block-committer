@@ -141,11 +141,41 @@ mod tests {
     use crate::{test_utils, test_utils::mocks::l1::TxStatus, Runner, StateCommitter};
 
     #[tokio::test]
+    async fn wont_send_fragments_if_lookback_window_moved_on() -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        let _expired_fragments = setup.insert_fragments(0, 3).await;
+        let new_fragments = setup.insert_fragments(1, 3).await;
+
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
+            Some(NonEmpty::from_vec(new_fragments.clone()).unwrap()),
+            [0; 32],
+        )]);
+
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(2);
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            fuel_mock,
+            setup.db(),
+            Config { lookback_window: 1 },
+        );
+
+        // when
+        state_committer.run().await?;
+
+        // then
+        // Mocks validate that the fragments have been sent
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn sends_fragments_in_order() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let fragments = setup.insert_fragments(7).await;
+        let fragments = setup.insert_fragments(0, 7).await;
 
         let first_tx_fragments = fragments[0..6].iter().cloned().collect_nonempty().unwrap();
 
@@ -182,7 +212,7 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let fragments = NonEmpty::collect(setup.insert_fragments(2).await).unwrap();
+        let fragments = NonEmpty::collect(setup.insert_fragments(0, 2).await).unwrap();
 
         let original_tx = [0; 32];
         let retry_tx = [1; 32];
@@ -217,7 +247,7 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        setup.insert_fragments(2).await;
+        setup.insert_fragments(0, 2).await;
 
         let mut l1_mock_submit = ports::l1::MockApi::new();
         l1_mock_submit
@@ -255,7 +285,7 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         // Import enough blocks to create a bundle
-        setup.insert_fragments(1).await;
+        setup.insert_fragments(0, 1).await;
 
         // Configure the L1 adapter to fail on submission
         let mut l1_mock = ports::l1::MockApi::new();
