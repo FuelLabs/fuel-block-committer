@@ -193,8 +193,7 @@ where
             }
 
             //TODO: self.num_blocks_to_finalize
-            if !tx_response.confirmations(current_block_number) < 10
-            {
+            if !tx_response.confirmations(current_block_number) < 10 {
                 continue; // not finalized
             }
 
