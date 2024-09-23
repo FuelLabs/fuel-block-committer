@@ -114,22 +114,25 @@ impl Postgres {
 
     pub(crate) async fn _oldest_nonfinalized_fragments(
         &self,
+        starting_height: u32,
         limit: usize,
     ) -> Result<Vec<ports::storage::BundleFragment>> {
         let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
-                    SELECT f.*
-                    FROM l1_fragments f
-                    LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-                    LEFT JOIN l1_transactions t ON t.id = tf.transaction_id
-                    JOIN bundles b ON b.id = f.bundle_id
-                    WHERE t.id IS NULL OR t.state = $1 -- Unsubmitted or failed fragments
-                    ORDER BY b.start_height ASC, f.idx ASC
-                    LIMIT $2;
-                    "#,
+            SELECT f.*
+            FROM l1_fragments f
+            LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+            LEFT JOIN l1_transactions t ON t.id = tf.transaction_id
+            JOIN bundles b ON b.id = f.bundle_id
+            WHERE (t.id IS NULL OR t.state = $1) 
+              AND b.end_height >= $2 -- Exclude bundles ending before starting_height
+            ORDER BY b.start_height ASC, f.idx ASC
+            LIMIT $3;
+        "#,
             L1TxState::FAILED_STATE,
+            i64::from(starting_height),
             limit
         )
         .fetch_all(&self.connection_pool)

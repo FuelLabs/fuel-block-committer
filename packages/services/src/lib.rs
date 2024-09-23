@@ -17,7 +17,7 @@ pub use block_committer::BlockCommitter;
 pub use block_importer::{BlockImporter, Config as BlockImporterConfig};
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
-pub use state_committer::StateCommitter;
+pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
 pub use validator::BlockValidator;
@@ -425,7 +425,13 @@ pub(crate) mod test_utils {
 
             let tx = [1; 32];
             let l1_mock = mocks::l1::expects_state_submissions(vec![(None, tx)]);
-            let mut committer = StateCommitter::new(l1_mock, self.db());
+            let fuel_mock = mocks::fuel::latest_height_is(0);
+            let mut committer = StateCommitter::new(
+                l1_mock,
+                fuel_mock,
+                self.db(),
+                crate::StateCommitterConfig::default(),
+            );
             committer.run().await.unwrap();
 
             let l1_mock = mocks::l1::txs_finished([(tx, TxStatus::Success)]);
@@ -469,7 +475,11 @@ pub(crate) mod test_utils {
 
             bundler.run().await.unwrap();
 
-            let fragments = self.db.oldest_nonfinalized_fragments(amount).await.unwrap();
+            let fragments = self
+                .db
+                .oldest_nonfinalized_fragments(0, amount)
+                .await
+                .unwrap();
             assert_eq!(fragments.len(), amount);
 
             fragments.into_iter().map(|f| f.fragment).collect()

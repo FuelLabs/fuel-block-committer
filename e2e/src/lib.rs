@@ -83,7 +83,11 @@ mod tests {
                 .lowest_sequence_of_unbundled_blocks(0, 1)
                 .await?
                 .is_none()
-                && stack.db.oldest_nonfinalized_fragments(1).await?.is_empty()
+                && stack
+                    .db
+                    .oldest_nonfinalized_fragments(0, 1)
+                    .await?
+                    .is_empty()
                 && !stack.db.has_pending_txs().await?
                 && stack
                     .db

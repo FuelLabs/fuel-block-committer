@@ -6,25 +6,50 @@ use ports::{
 
 use crate::{Result, Runner};
 
-/// The `StateCommitter` is responsible for committing state fragments to L1.
-pub struct StateCommitter<L1, Storage> {
-    l1_adapter: L1,
-    storage: Storage,
+// src/config.rs
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// The lookback window in blocks to determine the starting height.
+    pub lookback_window: u32,
 }
 
-impl<L1, Storage> StateCommitter<L1, Storage> {
+impl Config {
+    pub fn new(lookback_window: u32) -> Self {
+        Self { lookback_window }
+    }
+}
+
+#[cfg(test)]
+impl Default for Config {
+    fn default() -> Self {
+        Self::new(100)
+    }
+}
+
+/// The `StateCommitter` is responsible for committing state fragments to L1.
+pub struct StateCommitter<L1, F, Storage> {
+    l1_adapter: L1,
+    fuel_api: F,
+    storage: Storage,
+    config: Config,
+}
+
+impl<L1, F, Storage> StateCommitter<L1, F, Storage> {
     /// Creates a new `StateCommitter`.
-    pub fn new(l1_adapter: L1, storage: Storage) -> Self {
+    pub fn new(l1_adapter: L1, fuel_api: F, storage: Storage, config: Config) -> Self {
         Self {
             l1_adapter,
+            fuel_api,
             storage,
+            config,
         }
     }
 }
 
-impl<L1, Db> StateCommitter<L1, Db>
+impl<L1, F, Db> StateCommitter<L1, F, Db>
 where
     L1: ports::l1::Api,
+    F: ports::fuel::Api,
     Db: Storage,
 {
     /// Submits a fragment to the L1 adapter and records the tx in storage.
@@ -76,14 +101,22 @@ where
     }
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
-        let existing_fragments = self.storage.oldest_nonfinalized_fragments(6).await?;
+        let latest_height = self.fuel_api.latest_height().await?;
+
+        let starting_height = latest_height.saturating_sub(self.config.lookback_window);
+
+        let existing_fragments = self
+            .storage
+            .oldest_nonfinalized_fragments(starting_height, 6)
+            .await?;
 
         Ok(NonEmpty::collect(existing_fragments))
     }
 }
 
-impl<L1, Db> Runner for StateCommitter<L1, Db>
+impl<L1, F, Db> Runner for StateCommitter<L1, F, Db>
 where
+    F: ports::fuel::Api + Send + Sync,
     L1: ports::l1::Api + Send + Sync,
     Db: Storage + Clone + Send + Sync,
 {
@@ -124,7 +157,9 @@ mod tests {
             (Some(second_tx_fragments), fragment_tx_ids[1]),
         ]);
 
-        let mut state_committer = StateCommitter::new(l1_mock_submit, setup.db());
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
+        let mut state_committer =
+            StateCommitter::new(l1_mock_submit, fuel_mock, setup.db(), Config::default());
 
         // when
         // Send the first fragments
@@ -157,7 +192,9 @@ mod tests {
             (Some(fragments.clone()), retry_tx),
         ]);
 
-        let mut state_committer = StateCommitter::new(l1_mock_submit, setup.db());
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
+        let mut state_committer =
+            StateCommitter::new(l1_mock_submit, fuel_mock, setup.db(), Config::default());
 
         // when
         // Send the first fragment (which will fail)
@@ -195,7 +232,9 @@ mod tests {
                 })
             });
 
-        let mut state_committer = StateCommitter::new(l1_mock_submit, setup.db());
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
+        let mut state_committer =
+            StateCommitter::new(l1_mock_submit, fuel_mock, setup.db(), Config::default());
 
         // when
         // First run: bundles and sends the first fragment
@@ -224,7 +263,9 @@ mod tests {
             Box::pin(async { Err(ports::l1::Error::Other("Submission failed".into())) })
         });
 
-        let mut state_committer = StateCommitter::new(l1_mock, setup.db());
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
+        let mut state_committer =
+            StateCommitter::new(l1_mock, fuel_mock, setup.db(), Config::default());
 
         // when
         let result = state_committer.run().await;

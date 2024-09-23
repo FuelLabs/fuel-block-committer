@@ -170,7 +170,11 @@ pub trait Storage: Send + Sync {
     ) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
-    async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>>;
+    async fn oldest_nonfinalized_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleFragment>>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
@@ -188,12 +192,11 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     starting_height: u32,
                     limit: usize,
                 ) -> Result<Option<SequentialFuelBlocks>>;
-            async fn insert_bundle_and_fragments(
-                &self,
-                block_range: RangeInclusive<u32>,
-                fragments: NonEmpty<Fragment>,
-            ) -> Result<()>;
-
+                async fn insert_bundle_and_fragments(
+                    &self,
+                    block_range: RangeInclusive<u32>,
+                    fragments: NonEmpty<Fragment>,
+                ) -> Result<()>;
                 async fn record_pending_tx(
                     &self,
                     tx_hash: [u8; 32],
@@ -201,7 +204,11 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
-                async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>>;
+                async fn oldest_nonfinalized_fragments(
+                    &self,
+                    starting_height: u32,
+                    limit: usize,
+                ) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
         }
@@ -233,7 +240,11 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
-                async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>>;
+                async fn oldest_nonfinalized_fragments(
+                    &self,
+                    starting_height: u32,
+                    limit: usize,
+                ) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
         }
@@ -246,7 +257,7 @@ mod tests {
     use nonempty::{nonempty, NonEmpty};
 
     fn create_fuel_block(height: u32) -> FuelBlock {
-        let mut hash = [0;32];
+        let mut hash = [0; 32];
         hash[..4].copy_from_slice(&height.to_be_bytes());
 
         FuelBlock {
@@ -257,7 +268,12 @@ mod tests {
     }
 
     fn create_non_empty_fuel_blocks(block_heights: &[u32]) -> NonEmpty<FuelBlock> {
-        block_heights.iter().cloned().map(create_fuel_block).collect_nonempty().unwrap()
+        block_heights
+            .iter()
+            .cloned()
+            .map(create_fuel_block)
+            .collect_nonempty()
+            .unwrap()
     }
 
     // Test: Successful conversion from a valid, sequential list of FuelBlocks
@@ -270,9 +286,15 @@ mod tests {
         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
 
         // Then
-        assert!(seq_blocks.is_ok(), "Conversion should succeed for sequential blocks");
+        assert!(
+            seq_blocks.is_ok(),
+            "Conversion should succeed for sequential blocks"
+        );
         let seq_blocks = seq_blocks.unwrap();
-        assert_eq!(seq_blocks.blocks, blocks, "SequentialFuelBlocks should contain the original blocks");
+        assert_eq!(
+            seq_blocks.blocks, blocks,
+            "SequentialFuelBlocks should contain the original blocks"
+        );
     }
 
     // Test: Conversion fails when blocks are not sorted by height
@@ -285,7 +307,10 @@ mod tests {
         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
 
         // Then
-        assert!(seq_blocks.is_err(), "Conversion should fail for non-sorted blocks");
+        assert!(
+            seq_blocks.is_err(),
+            "Conversion should fail for non-sorted blocks"
+        );
         let error = seq_blocks.unwrap_err();
         assert_eq!(
             error.to_string(),
@@ -294,46 +319,49 @@ mod tests {
         );
     }
 
-     // Test: Conversion fails when blocks have gaps in their heights
-     #[test]
-     fn try_from_with_non_sequential_blocks_returns_error() {
-         // Given
-         let blocks = create_non_empty_fuel_blocks(&[1, 2, 4, 5]);
+    // Test: Conversion fails when blocks have gaps in their heights
+    #[test]
+    fn try_from_with_non_sequential_blocks_returns_error() {
+        // Given
+        let blocks = create_non_empty_fuel_blocks(&[1, 2, 4, 5]);
 
-         // When
-         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        // When
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
 
-         // Then
-         assert!(seq_blocks.is_err(), "Conversion should fail for non-sequential blocks");
-         let error = seq_blocks.unwrap_err();
-         assert_eq!(
-             error.to_string(),
-             "invalid sequence: blocks are not sequential by height",
-             "Error message should indicate sequentiality issue"
-         );
-     }
+        // Then
+        assert!(
+            seq_blocks.is_err(),
+            "Conversion should fail for non-sequential blocks"
+        );
+        let error = seq_blocks.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid sequence: blocks are not sequential by height",
+            "Error message should indicate sequentiality issue"
+        );
+    }
 
-     // Test: Iterating over SequentialFuelBlocks yields all blocks in order
-     #[test]
-     fn iterates_over_sequential_fuel_blocks_correctly() {
-         // Given
-         let blocks = create_non_empty_fuel_blocks(&[10, 11, 12]);
-         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
+    // Test: Iterating over SequentialFuelBlocks yields all blocks in order
+    #[test]
+    fn iterates_over_sequential_fuel_blocks_correctly() {
+        // Given
+        let blocks = create_non_empty_fuel_blocks(&[10, 11, 12]);
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
 
-         // When
-         let collected: Vec<FuelBlock> = seq_blocks.clone().into_iter().collect();
+        // When
+        let collected: Vec<FuelBlock> = seq_blocks.clone().into_iter().collect();
 
-         // Then
-         assert_eq!(
-             collected,
-             vec![
-                 create_fuel_block(10),
-                 create_fuel_block(11),
-                 create_fuel_block(12)
-             ],
-             "Iterated blocks should match the original sequence"
-         );
-     }
+        // Then
+        assert_eq!(
+            collected,
+            vec![
+                create_fuel_block(10),
+                create_fuel_block(11),
+                create_fuel_block(12)
+            ],
+            "Iterated blocks should match the original sequence"
+        );
+    }
 
     // Test: Indexing into SequentialFuelBlocks retrieves the correct FuelBlock
     #[test]
@@ -343,9 +371,21 @@ mod tests {
         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
 
         // When & Then
-        assert_eq!(seq_blocks[0], create_fuel_block(100), "First block should match");
-        assert_eq!(seq_blocks[1], create_fuel_block(101), "Second block should match");
-        assert_eq!(seq_blocks[3], create_fuel_block(103), "Fourth block should match");
+        assert_eq!(
+            seq_blocks[0],
+            create_fuel_block(100),
+            "First block should match"
+        );
+        assert_eq!(
+            seq_blocks[1],
+            create_fuel_block(101),
+            "Second block should match"
+        );
+        assert_eq!(
+            seq_blocks[3],
+            create_fuel_block(103),
+            "Fourth block should match"
+        );
     }
 
     // Test: Accessing an out-of-bounds index panics as expected
@@ -363,23 +403,23 @@ mod tests {
         // Panic is expected
     }
 
-     // Test: len method returns the correct number of blocks
-     #[test]
-     fn len_returns_correct_number_of_blocks() {
-         // Given
-         let blocks = create_non_empty_fuel_blocks(&[7, 8, 9, 10]);
-         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
+    // Test: len method returns the correct number of blocks
+    #[test]
+    fn len_returns_correct_number_of_blocks() {
+        // Given
+        let blocks = create_non_empty_fuel_blocks(&[7, 8, 9, 10]);
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
 
-         // When
-         let length = seq_blocks.len();
+        // When
+        let length = seq_blocks.len();
 
-         // Then
-         assert_eq!(
-             length,
-             NonZeroUsize::new(4).unwrap(),
-             "Length should be equal to the number of blocks"
-         );
-     }
+        // Then
+        assert_eq!(
+            length,
+            NonZeroUsize::new(4).unwrap(),
+            "Length should be equal to the number of blocks"
+        );
+    }
 
     // Test: height_range method returns the correct inclusive range
     #[test]
@@ -410,8 +450,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            seq_blocks.blocks,
-            blocks,
+            seq_blocks.blocks, blocks,
             "All sequential blocks should be included"
         );
     }
@@ -433,109 +472,117 @@ mod tests {
         );
     }
 
-     // Test: from_first_sequence correctly handles a single block
-     #[test]
-     fn from_first_sequence_with_single_block_includes_it() {
-         // Given
-         let blocks = nonempty![create_fuel_block(42)];
+    // Test: from_first_sequence correctly handles a single block
+    #[test]
+    fn from_first_sequence_with_single_block_includes_it() {
+        // Given
+        let blocks = nonempty![create_fuel_block(42)];
 
-         // When
-         let seq_blocks = SequentialFuelBlocks::from_first_sequence(blocks.clone());
+        // When
+        let seq_blocks = SequentialFuelBlocks::from_first_sequence(blocks.clone());
 
-         // Then
-         assert_eq!(
-             seq_blocks.blocks, blocks,
-             "Single block should be included correctly"
-         );
-     }
+        // Then
+        assert_eq!(
+            seq_blocks.blocks, blocks,
+            "Single block should be included correctly"
+        );
+    }
 
-     // Test: into_inner retrieves the original NonEmpty<FuelBlock>
-     #[test]
-     fn into_inner_returns_original_nonempty_blocks() {
-         // Given
-         let blocks = create_non_empty_fuel_blocks(&[10, 11, 12]);
-         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
+    // Test: into_inner retrieves the original NonEmpty<FuelBlock>
+    #[test]
+    fn into_inner_returns_original_nonempty_blocks() {
+        // Given
+        let blocks = create_non_empty_fuel_blocks(&[10, 11, 12]);
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
 
-         // When
-         let inner = seq_blocks.into_inner();
+        // When
+        let inner = seq_blocks.into_inner();
 
-         // Then
-         assert_eq!(
-             inner, blocks,
-             "into_inner should return the original NonEmpty<FuelBlock>"
-         );
-     }
+        // Then
+        assert_eq!(
+            inner, blocks,
+            "into_inner should return the original NonEmpty<FuelBlock>"
+        );
+    }
 
-     // Test: InvalidSequence error displays correctly
-     #[test]
-     fn invalid_sequence_display_formats_correctly() {
-         // Given
-         let error = InvalidSequence::new("test reason".to_string());
+    // Test: InvalidSequence error displays correctly
+    #[test]
+    fn invalid_sequence_display_formats_correctly() {
+        // Given
+        let error = InvalidSequence::new("test reason".to_string());
 
-         // When
-         let display = error.to_string();
+        // When
+        let display = error.to_string();
 
-         // Then
-         assert_eq!(
-             display,
-             "invalid sequence: test reason",
-             "Error display should match the expected format"
-         );
-     }
+        // Then
+        assert_eq!(
+            display, "invalid sequence: test reason",
+            "Error display should match the expected format"
+        );
+    }
 
-     // Test: Single block is always considered sequential
-     #[test]
-     fn single_block_is_always_sequential() {
-         // Given
-         let blocks = nonempty![create_fuel_block(999)];
+    // Test: Single block is always considered sequential
+    #[test]
+    fn single_block_is_always_sequential() {
+        // Given
+        let blocks = nonempty![create_fuel_block(999)];
 
-         // When
-         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        // When
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
 
-         // Then
-         assert!(seq_blocks.is_ok(), "Single block should be considered sequential");
-         let seq_blocks = seq_blocks.unwrap();
-         assert_eq!(
-             seq_blocks.blocks, blocks,
-             "SequentialFuelBlocks should contain the single block"
-         );
-     }
+        // Then
+        assert!(
+            seq_blocks.is_ok(),
+            "Single block should be considered sequential"
+        );
+        let seq_blocks = seq_blocks.unwrap();
+        assert_eq!(
+            seq_blocks.blocks, blocks,
+            "SequentialFuelBlocks should contain the single block"
+        );
+    }
 
-     // Test: Two blocks with the same height result in an error
-     #[test]
-     fn two_blocks_with_same_height_returns_error() {
-         // Given
-         let blocks = nonempty![create_fuel_block(1), create_fuel_block(1)];
+    // Test: Two blocks with the same height result in an error
+    #[test]
+    fn two_blocks_with_same_height_returns_error() {
+        // Given
+        let blocks = nonempty![create_fuel_block(1), create_fuel_block(1)];
 
-         // When
-         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        // When
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
 
-         // Then
-         assert!(seq_blocks.is_err(), "Duplicate heights should result in an error");
-         let error = seq_blocks.unwrap_err();
-         assert_eq!(
-             error.to_string(),
-             "invalid sequence: blocks are not sorted by height",
-             "Error message should indicate sorting issue due to duplicate heights"
-         );
-     }
+        // Then
+        assert!(
+            seq_blocks.is_err(),
+            "Duplicate heights should result in an error"
+        );
+        let error = seq_blocks.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid sequence: blocks are not sorted by height",
+            "Error message should indicate sorting issue due to duplicate heights"
+        );
+    }
 
-     // Test: Two blocks with non-consecutive heights result in an error
-     #[test]
-     fn two_blocks_with_non_consecutive_heights_returns_error() {
-         // Given
-         let blocks = nonempty![create_fuel_block(1), create_fuel_block(3)];
+    // Test: Two blocks with non-consecutive heights result in an error
+    #[test]
+    fn two_blocks_with_non_consecutive_heights_returns_error() {
+        // Given
+        let blocks = nonempty![create_fuel_block(1), create_fuel_block(3)];
 
-         // When
-         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        // When
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
 
-         // Then
-         assert!(seq_blocks.is_err(), "Non-consecutive heights should result in an error");
-         let error = seq_blocks.unwrap_err();
-         assert_eq!(
-             error.to_string(),
-             "invalid sequence: blocks are not sequential by height",
-             "Error message should indicate sequentiality issue"
-         );
-     }
+        // Then
+        assert!(
+            seq_blocks.is_err(),
+            "Non-consecutive heights should result in an error"
+        );
+        let error = seq_blocks.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid sequence: blocks are not sequential by height",
+            "Error message should indicate sequentiality issue"
+        );
+    }
 }

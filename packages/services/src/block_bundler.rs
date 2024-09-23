@@ -317,7 +317,7 @@ mod tests {
         // then
         assert!(setup
             .db()
-            .oldest_nonfinalized_fragments(1)
+            .oldest_nonfinalized_fragments(0, 1)
             .await?
             .is_empty());
 
@@ -369,7 +369,7 @@ mod tests {
         // then
         let fragments = setup
             .db()
-            .oldest_nonfinalized_fragments(1)
+            .oldest_nonfinalized_fragments(0, 1)
             .await?
             .into_iter()
             .map(|f| f.fragment)
@@ -430,7 +430,7 @@ mod tests {
 
         let unsubmitted_fragments = setup
             .db()
-            .oldest_nonfinalized_fragments(1)
+            .oldest_nonfinalized_fragments(0, 1)
             .await?
             .into_iter()
             .map(|f| f.fragment.clone())
@@ -479,7 +479,7 @@ mod tests {
         // then
         let unsubmitted_fragments = setup
             .db()
-            .oldest_nonfinalized_fragments(10)
+            .oldest_nonfinalized_fragments(0, 10)
             .await?
             .into_iter()
             .map(|f| f.fragment)
@@ -532,7 +532,10 @@ mod tests {
         bundler.run().await?;
 
         // then
-        let unsubmitted_fragments = setup.db().oldest_nonfinalized_fragments(usize::MAX).await?;
+        let unsubmitted_fragments = setup
+            .db()
+            .oldest_nonfinalized_fragments(0, usize::MAX)
+            .await?;
         let fragments = unsubmitted_fragments
             .iter()
             .map(|f| f.fragment.clone())
@@ -719,7 +722,10 @@ mod tests {
         block_bundler.run().await?;
 
         // then
-        let unsubmitted_fragments = setup.db().oldest_nonfinalized_fragments(usize::MAX).await?;
+        let unsubmitted_fragments = setup
+            .db()
+            .oldest_nonfinalized_fragments(0, usize::MAX)
+            .await?;
         let fragments = unsubmitted_fragments
             .iter()
             .map(|f| f.fragment.clone())

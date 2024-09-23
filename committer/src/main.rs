@@ -89,6 +89,7 @@ async fn main() -> Result<()> {
         );
 
         let state_committer_handle = setup::state_committer(
+            fuel_adapter.clone(),
             ethereum_rpc.clone(),
             storage.clone(),
             cancel_token.clone(),

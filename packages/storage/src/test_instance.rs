@@ -180,7 +180,11 @@ impl Storage for DbWithProcess {
             ) -> ports::storage::Result<()>;
             async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
             async fn has_pending_txs(&self) -> ports::storage::Result<bool>;
-            async fn oldest_nonfinalized_fragments(&self, limit: usize) -> ports::storage::Result<Vec<BundleFragment>>;
+            async fn oldest_nonfinalized_fragments(
+                &self,
+                starting_height: u32,
+                limit: usize,
+            ) -> ports::storage::Result<Vec<BundleFragment>>;
             async fn last_time_a_fragment_was_finalized(&self) -> ports::storage::Result<Option<DateTime<Utc>>>;
             async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<()>;
         }

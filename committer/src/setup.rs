@@ -105,12 +105,20 @@ pub fn block_bundler(
 }
 
 pub fn state_committer(
+    fuel: FuelApi,
     l1: L1,
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_committer = services::StateCommitter::new(l1, storage);
+    let state_committer = services::StateCommitter::new(
+        l1,
+        fuel,
+        storage,
+        services::StateCommitterConfig {
+            lookback_window: config.app.bundle.block_height_lookback,
+        },
+    );
 
     schedule_polling(
         config.app.tx_finalization_check_interval,

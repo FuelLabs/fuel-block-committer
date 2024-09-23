@@ -22,8 +22,14 @@ impl Storage for Postgres {
         Ok(self._insert(submission).await?)
     }
 
-    async fn oldest_nonfinalized_fragments(&self, limit: usize) -> Result<Vec<BundleFragment>> {
-        Ok(self._oldest_nonfinalized_fragments(limit).await?)
+    async fn oldest_nonfinalized_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleFragment>> {
+        Ok(self
+            ._oldest_nonfinalized_fragments(starting_height, limit)
+            .await?)
     }
 
     async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>> {
@@ -208,7 +214,7 @@ mod tests {
             .unwrap();
 
         storage
-            .oldest_nonfinalized_fragments(2)
+            .oldest_nonfinalized_fragments(0, 2)
             .await
             .unwrap()
             .into_iter()
@@ -293,7 +299,7 @@ mod tests {
 
         // Then
         let inserted_fragments = storage
-            .oldest_nonfinalized_fragments(2)
+            .oldest_nonfinalized_fragments(0, 2)
             .await
             .unwrap()
             .into_iter()
@@ -497,5 +503,80 @@ mod tests {
         // u16::MAX because of implementation details
         insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2, u16::MAX as usize * 2)
             .await;
+    }
+
+    #[tokio::test]
+    async fn excludes_fragments_from_bundles_ending_before_starting_height() {
+        // Given
+        let storage = start_db().await;
+        let starting_height = 10;
+
+        // Insert a bundle that ends before the starting_height
+        storage
+            .insert_bundle_and_fragments(
+                1..=5, // Bundle ends at 5
+                nonempty!(Fragment {
+                    data: nonempty![0],
+                    unused_bytes: 1000,
+                    total_bytes: 100.try_into().unwrap()
+                }),
+            )
+            .await
+            .unwrap();
+
+        // Insert a bundle that ends after the starting_height
+        let fragment = Fragment {
+            data: nonempty![1],
+            unused_bytes: 1000,
+            total_bytes: 100.try_into().unwrap(),
+        };
+        storage
+            .insert_bundle_and_fragments(
+                10..=15, // Bundle ends at 15
+                nonempty!(fragment.clone()),
+            )
+            .await
+            .unwrap();
+
+        // When
+        let fragments = storage
+            .oldest_nonfinalized_fragments(starting_height, 10)
+            .await
+            .unwrap();
+
+        // Then
+        assert_eq!(fragments.len(), 1);
+        assert_eq!(fragments[0].fragment, fragment);
+    }
+
+    #[tokio::test]
+    async fn includes_fragments_from_bundles_ending_at_starting_height() {
+        // Given
+        let storage = start_db().await;
+        let starting_height = 10;
+
+        // Insert a bundle that ends exactly at the starting_height
+        let fragment = Fragment {
+            data: nonempty![2],
+            unused_bytes: 1000,
+            total_bytes: 100.try_into().unwrap(),
+        };
+        storage
+            .insert_bundle_and_fragments(
+                5..=10, // Bundle ends at 10
+                nonempty!(fragment.clone()),
+            )
+            .await
+            .unwrap();
+
+        // When
+        let fragments = storage
+            .oldest_nonfinalized_fragments(starting_height, 10)
+            .await
+            .unwrap();
+
+        // Then
+        assert_eq!(fragments.len(), 1);
+        assert_eq!(fragments[0].fragment, fragment);
     }
 }
