@@ -11,6 +11,21 @@ use tracing::info;
 
 use crate::{validator::Validator, Error, Result, Runner};
 
+/// Configuration for the `BlockImporter`.
+#[derive(Debug, Clone, Copy)]
+pub struct Config {
+    pub lookback_window: u32,
+}
+
+#[cfg(test)]
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            lookback_window: 1000,
+        }
+    }
+}
+
 /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
 /// into local storage. It fetches blocks from the Fuel API, validates them,
 /// and stores them if they are not already present.
@@ -18,7 +33,7 @@ pub struct BlockImporter<Db, FuelApi, BlockValidator> {
     storage: Db,
     fuel_api: FuelApi,
     block_validator: BlockValidator,
-    starting_height: u32,
+    config: Config,
 }
 
 impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator> {
@@ -27,13 +42,13 @@ impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator> {
         storage: Db,
         fuel_api: FuelApi,
         block_validator: BlockValidator,
-        starting_height: u32,
+        config: Config,
     ) -> Self {
         Self {
             storage,
             fuel_api,
             block_validator,
-            starting_height,
+            config,
         }
     }
 }
@@ -67,23 +82,34 @@ where
         Ok(())
     }
 
-    async fn determine_starting_height(&mut self, chain_height: u32) -> Result<Option<u32>> {
+    /// Determines the starting height based on the latest chain height and the lookback window.
+    async fn determine_starting_height(&self, chain_height: u32) -> Result<Option<u32>> {
+        eprintln!("chain_height: {:?}", chain_height);
+        let starting_height = chain_height.saturating_sub(self.config.lookback_window);
+        eprintln!("starting_height: {:?}", starting_height);
+
         let Some(available_blocks) = self.storage.available_blocks().await? else {
-            return Ok(Some(self.starting_height));
+            eprintln!(
+                "No available blocks in the database; starting from height {starting_height}"
+            );
+
+            return Ok(Some(starting_height));
         };
+        eprintln!("available_blocks: {:?}", available_blocks);
 
         let latest_db_block = *available_blocks.end();
+        eprintln!("latest_db_block: {:?}", latest_db_block);
 
         match latest_db_block.cmp(&chain_height) {
             std::cmp::Ordering::Greater => {
                 let err_msg = format!(
-                    "Latest database block ({latest_db_block}) is has a height greater than the current chain height ({chain_height})",
+                    "Latest database block ({latest_db_block}) has a height greater than the current chain height ({chain_height})",
                 );
                 Err(Error::Other(err_msg))
             }
             std::cmp::Ordering::Equal => Ok(None),
             std::cmp::Ordering::Less => Ok(Some(max(
-                self.starting_height,
+                starting_height,
                 latest_db_block.saturating_add(1),
             ))),
         }
@@ -129,6 +155,7 @@ where
             info!("Database is up to date with the chain({chain_height}); no import necessary.");
             return Ok(());
         };
+        println!("starting_height: {:?}", starting_height);
 
         self.fuel_api
             .full_blocks_in_height_range(starting_height..=chain_height)
@@ -171,7 +198,12 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+        let mut importer = BlockImporter::new(
+            setup.db(),
+            fuel_mock,
+            block_validator,
+            Config { lookback_window: 0 },
+        );
 
         // When
         importer.run().await?;
@@ -204,7 +236,12 @@ mod tests {
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+        let mut importer = BlockImporter::new(
+            setup.db(),
+            fuel_mock,
+            block_validator,
+            Config { lookback_window: 0 },
+        );
 
         // When
         let result = importer.run().await;
@@ -252,7 +289,8 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+        let mut importer =
+            BlockImporter::new(setup.db(), fuel_mock, block_validator, Config::default());
 
         // When
         importer.run().await?;
@@ -292,14 +330,22 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(chain_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+        let mut importer = BlockImporter::new(
+            setup.db(),
+            fuel_mock,
+            block_validator,
+            Config { lookback_window: 0 },
+        );
 
         // When
         let result = importer.run().await;
 
         // Then
         if let Err(Error::Other(err)) = result {
-            assert_eq!(err, "Latest database block (5) is has a height greater than the current chain height (2)");
+            assert_eq!(
+                err,
+                "Latest database block (5) has a height greater than the current chain height (2)"
+            );
         } else {
             panic!("Expected an Error::Other due to db height being greater than chain height");
         }
@@ -329,8 +375,14 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer =
-            BlockImporter::new(setup.db(), fuel_mock, block_validator, starting_height);
+        let mut importer = BlockImporter::new(
+            setup.db(),
+            fuel_mock,
+            block_validator,
+            Config {
+                lookback_window: 5, // Example lookback_window
+            },
+        );
 
         // When
         importer.run().await?;
@@ -369,7 +421,12 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+        let mut importer = BlockImporter::new(
+            setup.db(),
+            fuel_mock,
+            block_validator,
+            Config { lookback_window: 0 },
+        );
 
         // When
         importer.run().await?;
@@ -383,6 +440,52 @@ mod tests {
             .unwrap();
 
         assert_eq!(stored_blocks.into_inner(), storage_blocks);
+
+        Ok(())
+    }
+
+    /// New Test: Ensures that blocks outside the lookback window are not bundled.
+    #[tokio::test]
+    async fn skips_blocks_outside_lookback_window() -> Result<()> {
+        // Given
+        let setup = test_utils::Setup::init().await;
+        let lookback_window = 2;
+
+        let secret_key = SecretKey::random(&mut StdRng::from_seed([0; 32]));
+        let blocks_to_import = (3..=5)
+            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100));
+
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks_to_import);
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let mut importer = BlockImporter::new(
+            setup.db(),
+            fuel_mock,
+            block_validator,
+            Config { lookback_window },
+        );
+
+        // When
+        importer.run().await?;
+
+        // Then
+        let unbundled_blocks = setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(0, 10)
+            .await?
+            .unwrap();
+
+        let unbundled_block_heights: Vec<_> = unbundled_blocks
+            .into_inner()
+            .iter()
+            .map(|b| b.height)
+            .collect();
+
+        assert_eq!(
+            unbundled_block_heights,
+            vec![3, 4, 5],
+            "Blocks outside the lookback window should remain unbundled"
+        );
 
         Ok(())
     }

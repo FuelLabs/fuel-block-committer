@@ -14,7 +14,7 @@ pub use block_bundler::{
     BlockBundler, Config as BlockBundlerConfig,
 };
 pub use block_committer::BlockCommitter;
-pub use block_importer::BlockImporter;
+pub use block_importer::{BlockImporter, Config as BlockImporterConfig};
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::StateCommitter;
@@ -77,7 +77,7 @@ pub trait Runner: Send + Sync {
 #[cfg(test)]
 pub(crate) mod test_utils {
 
-    pub async fn encode_and_merge(blocks: NonEmpty<ports::fuel::FullFuelBlock>) -> NonEmpty<u8> {
+    pub fn encode_and_merge(blocks: NonEmpty<ports::fuel::FullFuelBlock>) -> NonEmpty<u8> {
         block_importer::encode_blocks(blocks)
             .into_iter()
             .flat_map(|b| b.data)
@@ -112,7 +112,7 @@ pub(crate) mod test_utils {
     use super::Runner;
     use crate::{
         block_bundler::bundler::Factory,
-        block_importer::{self, encode_blocks},
+        block_importer::{self, encode_blocks, Config},
         BlockBundler, BlockBundlerConfig, BlockImporter, BlockValidator, StateCommitter,
         StateListener,
     };
@@ -529,7 +529,7 @@ pub(crate) mod test_utils {
                     let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone());
 
                     (
-                        BlockImporter::new(self.db(), mock, block_validator, 0),
+                        BlockImporter::new(self.db(), mock, block_validator, Config::default()),
                         ImportedBlocks {
                             fuel_blocks,
                             secret_key,

@@ -5,8 +5,8 @@ use eth::{AwsConfig, Eip4844BlobEncoder};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use ports::storage::Storage;
 use services::{
-    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, CommitListener, Runner,
-    WalletBalanceTracker,
+    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockImporterConfig, BlockValidator,
+    CommitListener, Runner, WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -125,11 +125,16 @@ pub fn block_importer(
     storage: impl Storage + 'static,
     cancel_token: CancellationToken,
     config: &config::Config,
-    starting_fuel_height: u32,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
-    let block_importer =
-        services::BlockImporter::new(storage, fuel, validator, starting_fuel_height);
+    let block_importer = services::BlockImporter::new(
+        storage,
+        fuel,
+        validator,
+        BlockImporterConfig {
+            lookback_window: config.app.bundle.block_height_lookback,
+        },
+    );
 
     schedule_polling(
         config.app.block_check_interval,

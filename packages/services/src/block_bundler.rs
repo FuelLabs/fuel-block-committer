@@ -340,7 +340,7 @@ mod tests {
                 size_per_tx: 100,
             })
             .await;
-        let data = encode_and_merge(blocks.clone()).await;
+        let data = encode_and_merge(blocks.clone());
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let clock = TestClock::default();
@@ -404,7 +404,7 @@ mod tests {
                 size_per_tx: 100,
             })
             .await;
-        let data = encode_and_merge(fuel_blocks.clone()).await;
+        let data = encode_and_merge(fuel_blocks.clone());
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let latest_height = fuel_blocks.last().header.height;
@@ -459,7 +459,7 @@ mod tests {
             .await;
 
         let first_two_blocks = blocks.iter().take(2).cloned().collect_nonempty().unwrap();
-        let bundle_data = test_utils::encode_and_merge(first_two_blocks.clone()).await;
+        let bundle_data = test_utils::encode_and_merge(first_two_blocks.clone());
         let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
         let mut block_bundler = BlockBundler::new(
@@ -508,11 +508,11 @@ mod tests {
             .await;
 
         let block_1 = nonempty![blocks.first().clone()];
-        let bundle_1 = test_utils::encode_and_merge(block_1.clone()).await;
+        let bundle_1 = test_utils::encode_and_merge(block_1.clone());
         let fragments_1 = Eip4844BlobEncoder.encode(bundle_1).unwrap();
 
         let block_2 = nonempty![blocks.last().clone()];
-        let bundle_2 = test_utils::encode_and_merge(block_2.clone()).await;
+        let bundle_2 = test_utils::encode_and_merge(block_2.clone());
         let fragments_2 = Eip4844BlobEncoder.encode(bundle_2).unwrap();
 
         let mut bundler = BlockBundler::new(
@@ -700,7 +700,7 @@ mod tests {
         );
 
         // Encode the blocks to be bundled
-        let data = encode_and_merge(NonEmpty::from_vec(blocks_to_bundle.clone()).unwrap()).await;
+        let data = encode_and_merge(NonEmpty::from_vec(blocks_to_bundle.clone()).unwrap());
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let mut block_bundler = BlockBundler::new(

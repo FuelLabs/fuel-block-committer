@@ -80,16 +80,6 @@ async fn main() -> Result<()> {
     // If the blob pool wallet key is set, we need to start
     // the state committer and state importer
     if config.eth.blob_pool_key_arn.is_some() {
-        let current_fuel_height = fuel_adapter
-            .latest_block()
-            .await
-            .map_err(From::from)
-            .with_context(|| "couldn't fetch the latest fuel height needed to initialize app")?
-            .header
-            .height;
-        let starting_height =
-            current_fuel_height.saturating_sub(config.app.bundle.block_height_lookback);
-
         let block_bundler = setup::block_bundler(
             fuel_adapter.clone(),
             storage.clone(),
@@ -105,13 +95,8 @@ async fn main() -> Result<()> {
             &config,
         );
 
-        let state_importer_handle = setup::block_importer(
-            fuel_adapter,
-            storage.clone(),
-            cancel_token.clone(),
-            &config,
-            starting_height,
-        );
+        let state_importer_handle =
+            setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
 
         let state_listener_handle = setup::state_listener(
             ethereum_rpc,
