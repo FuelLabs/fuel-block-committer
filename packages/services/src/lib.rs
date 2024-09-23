@@ -211,11 +211,13 @@ pub(crate) mod test_utils {
             }
 
             pub fn txs_finished(
+                current_height: u32,
+                tx_height: u32,
                 statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
             ) -> ports::l1::MockApi {
                 let mut l1_mock = ports::l1::MockApi::new();
 
-                let height = L1Height::from(0);
+                let height = L1Height::from(current_height);
                 l1_mock
                     .expect_get_block_number()
                     .returning(move || Box::pin(async move { Ok(height) }));
@@ -223,6 +225,7 @@ pub(crate) mod test_utils {
                 for expectation in statuses {
                     let (tx_id, status) = expectation;
 
+                    let height = L1Height::from(tx_height);
                     l1_mock
                         .expect_get_transaction_response()
                         .with(eq(tx_id))
@@ -403,6 +406,18 @@ pub(crate) mod test_utils {
     }
 
     impl Setup {
+        pub async fn send_fragments(&self, eth_tx: [u8; 32]) {
+            StateCommitter::new(
+                mocks::l1::expects_state_submissions(vec![(None, eth_tx)]),
+                mocks::fuel::latest_height_is(0),
+                self.db(),
+                crate::StateCommitterConfig::default(),
+            )
+            .run()
+            .await
+            .unwrap();
+        }
+
         pub async fn init() -> Self {
             let db = PostgresProcess::shared()
                 .await
@@ -434,7 +449,7 @@ pub(crate) mod test_utils {
             );
             committer.run().await.unwrap();
 
-            let l1_mock = mocks::l1::txs_finished([(tx, TxStatus::Success)]);
+            let l1_mock = mocks::l1::txs_finished(0, 0, [(tx, TxStatus::Success)]);
 
             StateListener::new(l1_mock, self.db(), 0, clock.clone())
                 .run()
@@ -497,7 +512,7 @@ pub(crate) mod test_utils {
             &self,
             statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
         ) {
-            let l1_mock = mocks::l1::txs_finished(statuses);
+            let l1_mock = mocks::l1::txs_finished(0, 0, statuses);
 
             StateListener::new(l1_mock, self.db(), 0, TestClock::default())
                 .run()
