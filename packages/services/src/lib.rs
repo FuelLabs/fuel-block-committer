@@ -101,7 +101,7 @@ pub(crate) mod test_utils {
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
-    use itertools::Itertools;
+
     use mocks::l1::TxStatus;
     use ports::{
         storage::Storage,
@@ -497,7 +497,7 @@ pub(crate) mod test_utils {
 
                     let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-                    let blocks = range
+                    let fuel_blocks = range
                         .map(|height| {
                             mocks::fuel::generate_block(
                                 height,
@@ -509,14 +509,14 @@ pub(crate) mod test_utils {
                         .collect_nonempty()
                         .unwrap();
 
-                    let storage_blocks = encode_blocks(blocks.clone().try_into().unwrap());
+                    let storage_blocks = encode_blocks(fuel_blocks.clone());
 
-                    let mock = mocks::fuel::these_blocks_exist(blocks.clone());
+                    let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone());
 
                     (
                         BlockImporter::new(self.db(), mock, block_validator, 0),
                         ImportedBlocks {
-                            fuel_blocks: blocks.try_into().unwrap(),
+                            fuel_blocks,
                             secret_key,
                             storage_blocks,
                         },

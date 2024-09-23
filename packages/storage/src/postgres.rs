@@ -4,8 +4,8 @@ use itertools::Itertools;
 use ports::{
     storage::SequentialFuelBlocks,
     types::{
-        BlockSubmission, CollectNonEmpty, DateTime, Fragment, NonEmpty, NonNegative,
-        TransactionState, TryCollectNonEmpty, Utc,
+        BlockSubmission, DateTime, Fragment, NonEmpty, NonNegative, TransactionState,
+        TryCollectNonEmpty, Utc,
     },
 };
 use sqlx::{

@@ -1,7 +1,7 @@
 use std::cmp::max;
 
 use futures::TryStreamExt;
-use itertools::{chain, Itertools};
+use itertools::chain;
 use ports::{
     fuel::FullFuelBlock,
     storage::Storage,
@@ -110,7 +110,7 @@ fn encode_block_data(block: FullFuelBlock) -> NonEmpty<u8> {
 
     chain!(
         tx_num.to_be_bytes(),
-        block.raw_transactions.into_iter().flat_map(|tx| tx)
+        block.raw_transactions.into_iter().flatten()
     )
     .collect_nonempty()
     .expect("should be non-empty")
@@ -266,7 +266,7 @@ mod tests {
             .await?
             .unwrap();
 
-        let expected_blocks = encode_blocks(all_blocks.try_into().unwrap());
+        let expected_blocks = encode_blocks(all_blocks);
 
         pretty_assertions::assert_eq!(stored_blocks.into_inner(), expected_blocks);
 

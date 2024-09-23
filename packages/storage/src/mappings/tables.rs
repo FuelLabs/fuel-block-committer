@@ -177,7 +177,7 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
         })?;
 
         let data = NonEmpty::collect(value.data)
-            .ok_or_else(|| crate::error::Error::Conversion(format!("Invalid db `data`.")))?;
+            .ok_or_else(|| crate::error::Error::Conversion("Invalid db `data`.".to_string()))?;
 
         Ok(Self {
             height,

@@ -1,5 +1,4 @@
 use crate::Result;
-use itertools::Itertools;
 
 use flate2::{write::GzEncoder, Compression};
 use ports::{
