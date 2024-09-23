@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM l1_fragments ORDER BY idx ASC",
+  "query": "\n                    SELECT f.*\n                    FROM l1_fragments f\n                    LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id\n                    LEFT JOIN l1_transactions t ON t.id = tf.transaction_id\n                    JOIN bundles b ON b.id = f.bundle_id\n                    WHERE t.id IS NULL OR t.state = $1 -- Unsubmitted or failed fragments\n                    ORDER BY b.start_height ASC, f.idx ASC\n                    LIMIT $2;\n                    ",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,10 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int2",
+        "Int8"
+      ]
     },
     "nullable": [
       false,
@@ -46,5 +49,5 @@
       false
     ]
   },
-  "hash": "050da178612b738321d948e01675dd48b98ec38be553251f532ae666a34da9a0"
+  "hash": "1d3bc51e22f98d6ef951b2c05fe60d04e1f60095dfa1c797b6c7c5c27c111cc4"
 }
