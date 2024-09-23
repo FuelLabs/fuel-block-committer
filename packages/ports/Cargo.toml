@@ -23,6 +23,8 @@ sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
 hex = { workspace = true }
 async-trait = { workspace = true, optional = true }
+nonempty = { workspace = true }
+itertools = { workspace = true, features = ["use_std"] }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand"]

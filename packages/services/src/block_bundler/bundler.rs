@@ -4,7 +4,7 @@ use itertools::Itertools;
 use flate2::{write::GzEncoder, Compression};
 use ports::{
     storage::SequentialFuelBlocks,
-    types::{Fragment, NonEmptyVec},
+    types::{CollectNonEmpty, Fragment, NonEmpty},
 };
 use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive, str::FromStr};
 
@@ -118,34 +118,34 @@ impl Compressor {
         }
     }
 
-    fn _compress(
-        compression: Option<Compression>,
-        data: &NonEmptyVec<u8>,
-    ) -> Result<NonEmptyVec<u8>> {
+    fn _compress(compression: Option<Compression>, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
         let Some(level) = compression else {
             return Ok(data.clone());
         };
 
+        let bytes = Vec::from(data);
+
         let mut encoder = GzEncoder::new(Vec::new(), level);
         encoder
-            .write_all(data.inner())
+            .write_all(&bytes)
             .map_err(|e| crate::Error::Other(e.to_string()))?;
 
         encoder
             .finish()
             .map_err(|e| crate::Error::Other(e.to_string()))?
-            .try_into()
-            .map_err(|_| crate::Error::Other("compression resulted in no data".to_string()))
+            .into_iter()
+            .collect_nonempty()
+            .ok_or_else(|| crate::Error::Other("compression resulted in no data".to_string()))
     }
 
     #[cfg(test)]
-    pub fn compress_blocking(&self, data: &NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
+    pub fn compress_blocking(&self, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
         Self::_compress(self.compression, data)
     }
 
-    pub async fn compress(&self, data: NonEmptyVec<u8>) -> Result<NonEmptyVec<u8>> {
+    pub async fn compress(&self, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
         let level = self.compression;
-        tokio::task::spawn_blocking(move || Self::_compress(level, &data))
+        tokio::task::spawn_blocking(move || Self::_compress(level, data))
             .await
             .map_err(|e| crate::Error::Other(e.to_string()))?
     }
@@ -153,7 +153,7 @@ impl Compressor {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BundleProposal {
-    pub fragments: NonEmptyVec<Fragment>,
+    pub fragments: NonEmpty<Fragment>,
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
     pub optimization_attempts: u64,
@@ -215,7 +215,7 @@ where
 struct Proposal {
     block_heights: RangeInclusive<u32>,
     uncompressed_data_size: NonZeroUsize,
-    compressed_data: NonEmptyVec<u8>,
+    compressed_data: NonEmpty<u8>,
     gas_usage: u64,
 }
 impl Proposal {
@@ -224,14 +224,14 @@ impl Proposal {
     }
 
     fn compression_ratio(&self) -> f64 {
-        self.uncompressed_data_size.get() as f64 / self.compressed_data.len().get() as f64
+        self.uncompressed_data_size.get() as f64 / self.compressed_data.len() as f64
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
-    blocks: NonEmptyVec<ports::storage::FuelBlock>,
+    blocks: NonEmpty<ports::storage::FuelBlock>,
     best_proposal: Option<Proposal>,
     number_of_attempts: u64,
     current_block_count: NonZeroUsize,
@@ -272,7 +272,7 @@ where
 
     /// Calculates the block heights range based on the number of blocks.
     fn calculate_block_heights(&self, num_blocks: NonZeroUsize) -> Result<RangeInclusive<u32>> {
-        if num_blocks > self.blocks.len() {
+        if num_blocks > self.blocks.len_nonzero() {
             return Err(crate::Error::Other(
                 "Invalid number of blocks for proposal".to_string(),
             ));
@@ -284,42 +284,40 @@ where
         Ok(first_block.height..=last_block.height)
     }
 
-    /// Merges the data from multiple blocks into a single `NonEmptyVec<u8>`.
-    fn merge_block_data(&self, blocks: NonEmptyVec<ports::storage::FuelBlock>) -> NonEmptyVec<u8> {
-        let bytes = blocks
-            .into_inner()
+    /// Merges the data from multiple blocks into a single `NonEmpty<u8>`.
+    fn merge_block_data(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> NonEmpty<u8> {
+        blocks
             .into_iter()
-            .flat_map(|b| b.data.into_inner())
-            .collect_vec();
-        bytes.try_into().expect("Cannot be empty")
+            .flat_map(|b| b.data)
+            .collect_nonempty()
+            .expect("non-empty")
     }
 
     /// Retrieves the next bundle configuration.
-    fn blocks_for_new_proposal(&self) -> NonEmptyVec<ports::storage::FuelBlock> {
-        NonEmptyVec::try_from(
-            self.blocks
-                .inner()
-                .iter()
-                .take(self.current_block_count.get())
-                .cloned()
-                .collect::<Vec<_>>(),
-        )
-        .expect("should never be empty")
+    fn blocks_for_new_proposal(&self) -> NonEmpty<ports::storage::FuelBlock> {
+        self.blocks
+            .iter()
+            .take(self.current_block_count.get())
+            .cloned()
+            .collect_nonempty()
+            .expect("non-empty")
     }
 
     /// Creates a proposal for the given bundle configuration.
     async fn create_proposal(
         &self,
-        bundle_blocks: NonEmptyVec<ports::storage::FuelBlock>,
+        bundle_blocks: NonEmpty<ports::storage::FuelBlock>,
     ) -> Result<Proposal> {
         let uncompressed_data = self.merge_block_data(bundle_blocks.clone());
-        let uncompressed_data_size = uncompressed_data.len();
+        let uncompressed_data_size = uncompressed_data.len_nonzero();
 
         // Compress the data to get compressed_size
         let compressed_data = self.compressor.compress(uncompressed_data.clone()).await?;
 
         // Estimate gas usage based on compressed data
-        let gas_usage = self.fragment_encoder.gas_usage(compressed_data.len());
+        let gas_usage = self
+            .fragment_encoder
+            .gas_usage(compressed_data.len_nonzero());
 
         let block_heights = self.calculate_block_heights(self.current_block_count)?;
 
@@ -395,8 +393,7 @@ mod tests {
     use eth::Eip4844BlobEncoder;
 
     use fuel_crypto::SecretKey;
-    use ports::l1::FragmentEncoder;
-    use ports::non_empty_vec;
+    use ports::{l1::FragmentEncoder, types::nonempty};
 
     use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
 
@@ -406,10 +403,10 @@ mod tests {
     fn can_disable_compression() {
         // given
         let compressor = Compressor::new(CompressionLevel::Disabled);
-        let data = non_empty_vec!(1, 2, 3);
+        let data = nonempty!(1, 2, 3);
 
         // when
-        let compressed = compressor.compress_blocking(&data).unwrap();
+        let compressed = compressor.compress_blocking(data.clone()).unwrap();
 
         // then
         assert_eq!(data, compressed);
@@ -417,10 +414,10 @@ mod tests {
 
     #[test]
     fn all_compression_levels_work() {
-        let data = non_empty_vec!(1, 2, 3);
+        let data = nonempty!(1, 2, 3);
         for level in CompressionLevel::levels() {
             let compressor = Compressor::new(level);
-            compressor.compress_blocking(&data).unwrap();
+            compressor.compress_blocking(data.clone()).unwrap();
         }
     }
 
@@ -457,7 +454,7 @@ mod tests {
         let requires_new_blob_but_doesnt_utilize_it =
             generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob() / 3);
 
-        let blocks: SequentialFuelBlocks = non_empty_vec![
+        let blocks: SequentialFuelBlocks = nonempty![
             stops_at_blob_boundary,
             requires_new_blob_but_doesnt_utilize_it
         ]
@@ -511,11 +508,10 @@ mod tests {
         let bundle = bundler.finish().await?;
 
         // then
-        let bundle_data: NonEmptyVec<u8> = blocks
+        let bundle_data = blocks
             .into_iter()
-            .flat_map(|b| b.data.into_inner())
-            .collect::<Vec<_>>()
-            .try_into()
+            .flat_map(|b| b.data)
+            .collect_nonempty()
             .unwrap();
         let expected_fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
@@ -537,7 +533,7 @@ mod tests {
         // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
-        let blocks = non_empty_vec![
+        let blocks = nonempty![
             generate_storage_block(0, &secret_key, 0, 100),
             generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob())
         ];

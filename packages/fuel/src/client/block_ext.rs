@@ -11,7 +11,7 @@ use fuel_core_client::client::{
     FuelClient,
 };
 use fuel_core_types::fuel_crypto::PublicKey;
-use ports::types::NonEmptyVec;
+use ports::types::NonEmpty;
 
 #[derive(cynic::QueryFragment, Debug)]
 #[cynic(
@@ -59,7 +59,7 @@ impl From<FullBlock> for ports::fuel::FullFuelBlock {
                 .map(|t| {
                     let payload = t.raw_payload.to_vec();
                     // TODO: segfault turn into error later
-                    NonEmptyVec::try_from(payload).expect("turn into an error later")
+                    NonEmpty::collect(payload).expect("turn into an error later")
                 })
                 .collect(),
         }

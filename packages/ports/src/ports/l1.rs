@@ -1,7 +1,7 @@
 use std::{num::NonZeroUsize, pin::Pin};
 
 use crate::types::{
-    Fragment, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, NonEmptyVec, Stream,
+    Fragment, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, NonEmpty, Stream,
     TransactionResponse, U256,
 };
 
@@ -42,7 +42,7 @@ pub struct FragmentsSubmitted {
 pub trait Api {
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<Fragment>,
+        fragments: NonEmpty<Fragment>,
     ) -> Result<FragmentsSubmitted>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;
@@ -53,7 +53,7 @@ pub trait Api {
 }
 
 pub trait FragmentEncoder {
-    fn encode(&self, data: NonEmptyVec<u8>) -> Result<NonEmptyVec<Fragment>>;
+    fn encode(&self, data: NonEmpty<u8>) -> Result<NonEmpty<Fragment>>;
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64;
 }
 

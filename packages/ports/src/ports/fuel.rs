@@ -14,12 +14,11 @@ pub struct FullFuelBlock {
     pub id: FuelBytes32,
     pub header: FuelHeader,
     pub consensus: Consensus,
-    pub raw_transactions: Vec<NonEmptyVec<u8>>,
+    pub raw_transactions: Vec<NonEmpty<u8>>,
 }
 
+use crate::types::NonEmpty;
 pub use futures::stream::BoxStream;
-
-use crate::types::NonEmptyVec;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -41,7 +40,7 @@ pub trait Api: Send + Sync {
     fn full_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<NonEmptyVec<FullFuelBlock>>>;
+    ) -> BoxStream<'_, Result<NonEmpty<FullFuelBlock>>>;
     async fn latest_block(&self) -> Result<FuelBlock>;
     async fn latest_height(&self) -> Result<u32>;
 }

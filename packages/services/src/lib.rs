@@ -75,28 +75,25 @@ pub trait Runner: Send + Sync {
 #[cfg(test)]
 pub(crate) mod test_utils {
 
-    pub async fn encode_and_merge(
-        blocks: NonEmptyVec<ports::fuel::FullFuelBlock>,
-    ) -> NonEmptyVec<u8> {
-        let bytes = block_importer::encode_blocks(blocks)
-            .into_inner()
+    pub async fn encode_and_merge(blocks: NonEmpty<ports::fuel::FullFuelBlock>) -> NonEmpty<u8> {
+        block_importer::encode_blocks(blocks)
             .into_iter()
-            .flat_map(|b| b.data.into_inner())
-            .collect_vec();
-
-        bytes.try_into().expect("is not empty")
+            .flat_map(|b| b.data)
+            .collect_nonempty()
+            .expect("is not empty")
     }
 
-    pub fn random_data(size: impl Into<usize>) -> NonEmptyVec<u8> {
+    pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
         let size = size.into();
         if size == 0 {
             panic!("random data size must be greater than 0");
         }
 
         // TODO: segfault use better random data generation
-        let data: Vec<u8> = (0..size).map(|_| rand::random::<u8>()).collect();
-
-        data.try_into().expect("is not empty due to check")
+        (0..size)
+            .map(|_| rand::random::<u8>())
+            .collect_nonempty()
+            .expect("is not empty")
     }
 
     use std::{ops::RangeInclusive, time::Duration};
@@ -108,7 +105,7 @@ pub(crate) mod test_utils {
     use mocks::l1::TxStatus;
     use ports::{
         storage::Storage,
-        types::{DateTime, Fragment, NonEmptyVec, Utc},
+        types::{CollectNonEmpty, DateTime, Fragment, NonEmpty, Utc},
     };
     use storage::{DbWithProcess, PostgresProcess};
 
@@ -130,7 +127,7 @@ pub(crate) mod test_utils {
             use mockall::{predicate::eq, Sequence};
             use ports::{
                 l1::FragmentsSubmitted,
-                types::{Fragment, L1Height, NonEmptyVec, TransactionResponse, U256},
+                types::{Fragment, L1Height, NonEmpty, TransactionResponse, U256},
             };
 
             pub struct FullL1Mock {
@@ -168,7 +165,7 @@ pub(crate) mod test_utils {
                     to self.api {
                         async fn submit_state_fragments(
                             &self,
-                            fragments: NonEmptyVec<Fragment>,
+                            fragments: NonEmpty<Fragment>,
                         ) -> ports::l1::Result<FragmentsSubmitted>;
                         async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
                         async fn balance(&self) -> ports::l1::Result<U256>;
@@ -183,7 +180,7 @@ pub(crate) mod test_utils {
             }
 
             pub fn expects_state_submissions(
-                expectations: impl IntoIterator<Item = (Option<NonEmptyVec<Fragment>>, [u8; 32])>,
+                expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, [u8; 32])>,
             ) -> ports::l1::MockApi {
                 let mut sequence = Sequence::new();
 
@@ -204,7 +201,7 @@ pub(crate) mod test_utils {
                             Box::pin(async move {
                                 Ok(FragmentsSubmitted {
                                     tx: tx_id,
-                                    num_fragments: min(fragments.len(), 6.try_into().unwrap()),
+                                    num_fragments: min(fragments.len(), 6).try_into().unwrap(),
                                 })
                             })
                         })
@@ -252,9 +249,8 @@ pub(crate) mod test_utils {
             use itertools::Itertools;
             use ports::{
                 fuel::{FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock},
-                non_empty_vec,
                 storage::SequentialFuelBlocks,
-                types::NonEmptyVec,
+                types::{nonempty, CollectNonEmpty, NonEmpty},
             };
             use rand::{RngCore, SeedableRng};
 
@@ -282,7 +278,7 @@ pub(crate) mod test_utils {
                 let raw_transactions = std::iter::repeat_with(|| {
                     let mut buf = vec![0; tx_size];
                     small_rng.fill_bytes(&mut buf);
-                    NonEmptyVec::try_from(buf).unwrap()
+                    NonEmpty::collect(buf).unwrap()
                 })
                 .take(num_tx)
                 .collect::<Vec<_>>();
@@ -301,16 +297,12 @@ pub(crate) mod test_utils {
                 num_tx: usize,
                 tx_size: usize,
             ) -> SequentialFuelBlocks {
-                let blocks = heights
+                heights
                     .map(|height| generate_storage_block(height, secret_key, num_tx, tx_size))
-                    .collect_vec();
-
-                let non_empty_blocks =
-                    NonEmptyVec::try_from(blocks).expect("test gave an invalid range");
-
-                non_empty_blocks
+                    .collect_nonempty()
+                    .unwrap()
                     .try_into()
-                    .expect("generated from a range, guaranteed sequence of heights")
+                    .unwrap()
             }
 
             pub fn generate_storage_block(
@@ -320,7 +312,9 @@ pub(crate) mod test_utils {
                 tx_size: usize,
             ) -> ports::storage::FuelBlock {
                 let block = generate_block(height, secret_key, num_tx, tx_size);
-                block_importer::encode_blocks(non_empty_vec![block]).take_first()
+                block_importer::encode_blocks(nonempty![block])
+                    .first()
+                    .clone()
             }
 
             fn given_header(height: u32) -> FuelHeader {
@@ -381,7 +375,7 @@ pub(crate) mod test_utils {
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
                             .cloned()
-                            .collect_vec().try_into().expect("is not empty");
+                            .collect_nonempty().unwrap();
 
                         stream::iter(iter::once(Ok(blocks_batch))).boxed()
                     });
@@ -393,8 +387,8 @@ pub(crate) mod test_utils {
 
     #[derive(Debug)]
     pub struct ImportedBlocks {
-        pub fuel_blocks: NonEmptyVec<ports::fuel::FullFuelBlock>,
-        pub storage_blocks: NonEmptyVec<ports::storage::FuelBlock>,
+        pub fuel_blocks: NonEmpty<ports::fuel::FullFuelBlock>,
+        pub storage_blocks: NonEmpty<ports::storage::FuelBlock>,
         pub secret_key: SecretKey,
     }
 
@@ -512,7 +506,8 @@ pub(crate) mod test_utils {
                                 size_per_tx,
                             )
                         })
-                        .collect::<Vec<_>>();
+                        .collect_nonempty()
+                        .unwrap();
 
                     let storage_blocks = encode_blocks(blocks.clone().try_into().unwrap());
 

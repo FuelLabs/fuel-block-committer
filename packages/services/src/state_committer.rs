@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use ports::{
     storage::{BundleFragment, Storage},
-    types::NonEmptyVec,
+    types::{CollectNonEmpty, NonEmpty},
 };
 
 use crate::{Result, Runner};
@@ -28,29 +28,23 @@ where
     Db: Storage,
 {
     /// Submits a fragment to the L1 adapter and records the tx in storage.
-    async fn submit_fragments(&self, fragments: NonEmptyVec<BundleFragment>) -> Result<()> {
+    async fn submit_fragments(&self, fragments: NonEmpty<BundleFragment>) -> Result<()> {
         let data = fragments
-            .inner()
             .iter()
             .map(|f| f.fragment.clone())
-            .collect::<Vec<_>>()
-            .try_into()
+            .collect_nonempty()
             .expect("non-empty vec");
 
         match self.l1_adapter.submit_state_fragments(data).await {
             Ok(submittal_report) => {
-                let fragment_ids = NonEmptyVec::try_from(
-                    fragments
-                        .inner()
-                        .iter()
-                        .map(|f| f.id)
-                        .take(submittal_report.num_fragments.get())
-                        .collect_vec(),
-                )
-                .expect("non-empty vec");
+                let fragment_ids = fragments
+                    .iter()
+                    .map(|f| f.id)
+                    .take(submittal_report.num_fragments.get())
+                    .collect_nonempty()
+                    .expect("non-empty vec");
 
                 let ids = fragment_ids
-                    .inner()
                     .iter()
                     .map(|id| id.as_u32().to_string())
                     .join(", ");
@@ -67,7 +61,6 @@ where
             }
             Err(e) => {
                 let ids = fragments
-                    .inner()
                     .iter()
                     .map(|f| f.id.as_u32().to_string())
                     .join(", ");
@@ -82,16 +75,10 @@ where
         self.storage.has_pending_txs().await.map_err(|e| e.into())
     }
 
-    async fn next_fragments_to_submit(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
+    async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
         let existing_fragments = self.storage.oldest_nonfinalized_fragments(6).await?;
 
-        let fragments = if !existing_fragments.is_empty() {
-            Some(existing_fragments.try_into().expect("non-empty vec"))
-        } else {
-            None
-        };
-
-        Ok(fragments)
+        Ok(NonEmpty::collect(existing_fragments))
     }
 }
 
@@ -120,7 +107,7 @@ mod tests {
     use crate::{test_utils, Runner, StateCommitter};
 
     use ports::l1::FragmentsSubmitted;
-    use ports::non_empty_vec;
+    use ports::types::nonempty;
 
     #[tokio::test]
     async fn sends_fragments_in_order() -> Result<()> {
@@ -129,8 +116,9 @@ mod tests {
 
         let fragments = setup.insert_fragments(7).await;
 
-        let first_tx_fragments = fragments[0..6].to_vec().try_into().unwrap();
-        let second_tx_fragments = non_empty_vec![fragments[6].clone()];
+        let first_tx_fragments = fragments[0..6].iter().cloned().collect_nonempty().unwrap();
+
+        let second_tx_fragments = nonempty![fragments[6].clone()];
         let fragment_tx_ids = [[0; 32], [1; 32]];
 
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
@@ -161,7 +149,7 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let fragments: NonEmptyVec<_> = setup.insert_fragments(2).await.try_into().unwrap();
+        let fragments = NonEmpty::collect(setup.insert_fragments(2).await).unwrap();
 
         let original_tx = [0; 32];
         let retry_tx = [1; 32];

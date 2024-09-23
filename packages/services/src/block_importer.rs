@@ -2,7 +2,11 @@ use std::cmp::max;
 
 use futures::TryStreamExt;
 use itertools::{chain, Itertools};
-use ports::{fuel::FullFuelBlock, storage::Storage, types::NonEmptyVec};
+use ports::{
+    fuel::FullFuelBlock,
+    storage::Storage,
+    types::{CollectNonEmpty, NonEmpty},
+};
 use tracing::info;
 
 use crate::{validator::Validator, Error, Result, Runner};
@@ -41,7 +45,7 @@ where
     BlockValidator: Validator,
 {
     /// Imports a block into storage if it's not already available.
-    async fn import_blocks(&self, blocks: NonEmptyVec<FullFuelBlock>) -> Result<()> {
+    async fn import_blocks(&self, blocks: NonEmpty<FullFuelBlock>) -> Result<()> {
         let db_blocks = encode_blocks(blocks);
 
         // TODO: segfault validate these blocks
@@ -55,8 +59,8 @@ where
         Ok(())
     }
 
-    fn validate_blocks(&self, blocks: &NonEmptyVec<FullFuelBlock>) -> Result<()> {
-        for block in blocks.inner() {
+    fn validate_blocks(&self, blocks: &NonEmpty<FullFuelBlock>) -> Result<()> {
+        for block in blocks {
             self.block_validator
                 .validate(block.id, &block.header, &block.consensus)?;
         }
@@ -88,35 +92,28 @@ where
 }
 
 pub(crate) fn encode_blocks(
-    blocks: NonEmptyVec<FullFuelBlock>,
-) -> NonEmptyVec<ports::storage::FuelBlock> {
-    // TODO: segfautl a try collect for non epmyt vec
+    blocks: NonEmpty<FullFuelBlock>,
+) -> NonEmpty<ports::storage::FuelBlock> {
     blocks
-        .into_inner()
         .into_iter()
         .map(|full_block| ports::storage::FuelBlock {
             hash: *full_block.id,
             height: full_block.header.height,
             data: encode_block_data(full_block),
         })
-        .collect_vec()
-        .try_into()
+        .collect_nonempty()
         .expect("should be non-empty")
 }
 
-fn encode_block_data(block: FullFuelBlock) -> NonEmptyVec<u8> {
+fn encode_block_data(block: FullFuelBlock) -> NonEmpty<u8> {
     let tx_num = u64::try_from(block.raw_transactions.len()).unwrap();
 
-    let bytes = chain!(
+    chain!(
         tx_num.to_be_bytes(),
-        block
-            .raw_transactions
-            .into_iter()
-            .flat_map(|tx| tx.into_inner())
+        block.raw_transactions.into_iter().flat_map(|tx| tx)
     )
-    .collect::<Vec<_>>();
-
-    NonEmptyVec::try_from(bytes).expect("should be non-empty")
+    .collect_nonempty()
+    .expect("should be non-empty")
 }
 
 impl<Db, FuelApi, BlockValidator> Runner for BlockImporter<Db, FuelApi, BlockValidator>
@@ -154,7 +151,7 @@ where
 mod tests {
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
-    use ports::non_empty_vec;
+    use ports::types::nonempty;
     use rand::{rngs::StdRng, SeedableRng};
 
     use crate::{
@@ -188,7 +185,7 @@ mod tests {
             .await?
             .unwrap();
 
-        let expected_block = encode_blocks(non_empty_vec![block]);
+        let expected_block = encode_blocks(nonempty![block]);
 
         assert_eq!(all_blocks.into_inner(), expected_block);
 
@@ -249,10 +246,10 @@ mod tests {
             .collect_vec();
 
         let all_blocks = existing_blocks
-            .into_inner()
             .into_iter()
             .chain(new_blocks.clone())
-            .collect_vec();
+            .collect_nonempty()
+            .unwrap();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -328,7 +325,8 @@ mod tests {
         let starting_height = 8;
         let new_blocks = (starting_height..=13)
             .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
-            .collect_vec();
+            .collect_nonempty()
+            .unwrap();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
@@ -345,7 +343,7 @@ mod tests {
             .lowest_sequence_of_unbundled_blocks(starting_height, 100)
             .await?
             .unwrap();
-        let expected_blocks = encode_blocks(new_blocks.try_into().unwrap());
+        let expected_blocks = encode_blocks(new_blocks);
 
         pretty_assertions::assert_eq!(stored_new_blocks.into_inner(), expected_blocks);
 
@@ -370,7 +368,7 @@ mod tests {
             })
             .await;
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks.into_inner());
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);

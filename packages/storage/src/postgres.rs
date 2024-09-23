@@ -3,7 +3,10 @@ use std::ops::RangeInclusive;
 use itertools::Itertools;
 use ports::{
     storage::SequentialFuelBlocks,
-    types::{BlockSubmission, DateTime, Fragment, NonEmptyVec, NonNegative, TransactionState, Utc},
+    types::{
+        BlockSubmission, CollectNonEmpty, DateTime, Fragment, NonEmpty, NonNegative,
+        TransactionState, TryCollectNonEmpty, Utc,
+    },
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -190,7 +193,7 @@ impl Postgres {
 
     pub(crate) async fn _insert_blocks(
         &self,
-        blocks: NonEmptyVec<ports::storage::FuelBlock>,
+        blocks: NonEmpty<ports::storage::FuelBlock>,
     ) -> Result<()> {
         // Currently: hash, height and data
         const FIELDS_PER_BLOCK: u16 = 3;
@@ -201,7 +204,6 @@ impl Postgres {
         let mut tx = self.connection_pool.begin().await?;
 
         let queries = blocks
-            .into_inner()
             .into_iter()
             .map(tables::FuelBlock::from)
             .chunks(MAX_BLOCKS_PER_QUERY)
@@ -270,6 +272,7 @@ impl Postgres {
         limit: usize,
     ) -> Result<Option<SequentialFuelBlocks>> {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+
         let response = sqlx::query_as!(
             tables::FuelBlock,
             r#"
@@ -288,18 +291,11 @@ impl Postgres {
         .await
         .map_err(Error::from)?;
 
-        if response.is_empty() {
-            return Ok(None);
-        }
-
-        let fuel_blocks = response
+        Ok(response
             .into_iter()
-            .map(|b| b.try_into())
-            .collect::<Result<Vec<ports::storage::FuelBlock>>>()?;
-
-        Ok(Some(SequentialFuelBlocks::from_first_sequence(
-            NonEmptyVec::try_from(fuel_blocks).expect("checked for emptyness"),
-        )))
+            .map(ports::storage::FuelBlock::try_from)
+            .try_collect_nonempty()?
+            .map(SequentialFuelBlocks::from_first_sequence))
     }
 
     pub(crate) async fn _set_submission_completed(
@@ -323,7 +319,7 @@ impl Postgres {
     pub(crate) async fn _record_pending_tx(
         &self,
         tx_hash: [u8; 32],
-        fragment_ids: NonEmptyVec<NonNegative<i32>>,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
@@ -337,7 +333,7 @@ impl Postgres {
         .id;
 
         // TODO: segfault batch this
-        for id in fragment_ids.inner() {
+        for id in fragment_ids {
             sqlx::query!(
             "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
             tx_id,
@@ -398,7 +394,7 @@ impl Postgres {
     pub(crate) async fn _insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,
-        fragments: NonEmptyVec<Fragment>,
+        fragments: NonEmpty<Fragment>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
@@ -420,15 +416,16 @@ impl Postgres {
         })?;
 
         // Insert fragments associated with the bundle
-        for (idx, fragment) in fragments.into_inner().into_iter().enumerate() {
+        for (idx, fragment) in fragments.into_iter().enumerate() {
             let idx = i32::try_from(idx).map_err(|_| {
                 crate::error::Error::Conversion(format!("invalid idx for fragment: {idx}"))
             })?;
 
+            let data = Vec::from(fragment.data);
             sqlx::query!(
                 "INSERT INTO l1_fragments (idx, data, bundle_id, unused_bytes, total_bytes) VALUES ($1, $2, $3, $4, $5)",
                 idx,
-                fragment.data.inner().as_slice(),
+                data.as_slice(),
                 bundle_id.as_i32(),
                 i64::from(fragment.unused_bytes),
                 i64::from(fragment.total_bytes.get())

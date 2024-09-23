@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 
-use ports::types::{DateTime, NonEmptyVec, NonNegative, TransactionState, Utc};
+use ports::types::{DateTime, NonEmpty, NonNegative, TransactionState, Utc};
 use sqlx::{postgres::PgRow, Row};
 
 macro_rules! bail {
@@ -85,9 +85,10 @@ impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
             ))
         })?;
         // TODO: segfault, make all errors have better context
-        let data = value.data.try_into().map_err(|_| {
+        let data = NonEmpty::collect(value.data).ok_or_else(|| {
             crate::error::Error::Conversion("db fragment data is invalid".to_owned())
         })?;
+
         let id = value.id.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!("Invalid db `id` ({}). Reason: {e}", value.id))
         })?;
@@ -154,7 +155,7 @@ impl From<ports::storage::FuelBlock> for FuelBlock {
         Self {
             hash: value.hash.to_vec(),
             height: value.height.into(),
-            data: value.data.into_inner(),
+            data: value.data.into(),
         }
     }
 }
@@ -175,9 +176,8 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
             ))
         })?;
 
-        let data = NonEmptyVec::try_from(value.data).map_err(|e| {
-            crate::error::Error::Conversion(format!("Invalid db `data`. Reason: {e}"))
-        })?;
+        let data = NonEmpty::collect(value.data)
+            .ok_or_else(|| crate::error::Error::Conversion(format!("Invalid db `data`.")))?;
 
         Ok(Self {
             height,

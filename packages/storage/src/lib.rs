@@ -13,7 +13,7 @@ mod postgres;
 use ports::{
     storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, DateTime, Fragment, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc,
+        BlockSubmission, DateTime, Fragment, L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
 pub use postgres::{DbConfig, Postgres};
@@ -31,14 +31,14 @@ impl Storage for Postgres {
         self._available_blocks().await.map_err(Into::into)
     }
 
-    async fn insert_blocks(&self, blocks: NonEmptyVec<ports::storage::FuelBlock>) -> Result<()> {
+    async fn insert_blocks(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> Result<()> {
         Ok(self._insert_blocks(blocks).await?)
     }
 
     async fn insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,
-        fragments: NonEmptyVec<Fragment>,
+        fragments: NonEmpty<Fragment>,
     ) -> Result<()> {
         Ok(self
             ._insert_bundle_and_fragments(block_range, fragments)
@@ -70,7 +70,7 @@ impl Storage for Postgres {
     async fn record_pending_tx(
         &self,
         tx_hash: [u8; 32],
-        fragment_ids: NonEmptyVec<NonNegative<i32>>,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
     ) -> Result<()> {
         Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
     }
@@ -92,8 +92,10 @@ impl Storage for Postgres {
 mod tests {
     use super::*;
     use itertools::Itertools;
-    use ports::non_empty_vec;
-    use ports::storage::{Error, Storage};
+    use ports::{
+        storage::{Error, Storage},
+        types::{nonempty, CollectNonEmpty},
+    };
     use rand::{thread_rng, Rng, SeedableRng};
 
     // Helper function to create a storage instance for testing
@@ -185,18 +187,18 @@ mod tests {
 
     async fn ensure_some_fragments_exists_in_the_db(
         storage: impl Storage,
-    ) -> NonEmptyVec<NonNegative<i32>> {
+    ) -> NonEmpty<NonNegative<i32>> {
         storage
             .insert_bundle_and_fragments(
                 0..=0,
-                non_empty_vec!(
+                nonempty!(
                     Fragment {
-                        data: non_empty_vec![0],
+                        data: nonempty![0],
                         unused_bytes: 1000,
                         total_bytes: 100.try_into().unwrap()
                     },
                     Fragment {
-                        data: non_empty_vec![1],
+                        data: nonempty![1],
                         unused_bytes: 1000,
                         total_bytes: 100.try_into().unwrap()
                     }
@@ -211,8 +213,7 @@ mod tests {
             .unwrap()
             .into_iter()
             .map(|f| f.id)
-            .collect_vec()
-            .try_into()
+            .collect_nonempty()
             .unwrap()
     }
 
@@ -273,17 +274,16 @@ mod tests {
 
         let block_range = 1..=5;
         let fragment_1 = Fragment {
-            data: NonEmptyVec::try_from(vec![1u8, 2, 3]).unwrap(),
+            data: nonempty![1u8, 2, 3],
             unused_bytes: 1000,
             total_bytes: 100.try_into().unwrap(),
         };
         let fragment_2 = Fragment {
-            data: NonEmptyVec::try_from(vec![4u8, 5, 6]).unwrap(),
+            data: nonempty![4u8, 5, 6],
             unused_bytes: 1000,
             total_bytes: 100.try_into().unwrap(),
         };
-        let fragments =
-            NonEmptyVec::try_from(vec![fragment_1.clone(), fragment_2.clone()]).unwrap();
+        let fragments = nonempty![fragment_1.clone(), fragment_2.clone()];
 
         // When
         storage
@@ -300,9 +300,7 @@ mod tests {
             .collect_vec();
 
         assert_eq!(inserted_fragments.len(), 2);
-        for (inserted_fragment, given_fragment) in
-            inserted_fragments.iter().zip(fragments.inner().iter())
-        {
+        for (inserted_fragment, given_fragment) in inserted_fragments.iter().zip(fragments.iter()) {
             assert_eq!(inserted_fragment.fragment, *given_fragment);
         }
     }
@@ -353,19 +351,17 @@ mod tests {
             .clone()
             .map(|height| {
                 let block_hash: [u8; 32] = rng.gen();
-                let block_data = non_empty_vec![height as u8];
+                let block_data = nonempty![height as u8];
                 ports::storage::FuelBlock {
                     hash: block_hash,
                     height,
                     data: block_data,
                 }
             })
-            .collect::<Vec<_>>();
+            .collect_nonempty()
+            .expect("shouldn't be empty");
 
-        storage
-            .insert_blocks(blocks.try_into().expect("shouldn't be empty"))
-            .await
-            .unwrap();
+        storage.insert_blocks(blocks).await.unwrap();
     }
 
     async fn insert_sequence_of_bundled_blocks(storage: impl Storage, range: RangeInclusive<u32>) {
@@ -374,8 +370,8 @@ mod tests {
         storage
             .insert_bundle_and_fragments(
                 range,
-                non_empty_vec![Fragment {
-                    data: non_empty_vec![1],
+                nonempty![Fragment {
+                    data: nonempty![1],
                     unused_bytes: 1000,
                     total_bytes: 100.try_into().unwrap()
                 }],

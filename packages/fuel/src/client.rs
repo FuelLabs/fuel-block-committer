@@ -17,7 +17,7 @@ use futures::{stream, Stream};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::NonEmptyVec;
+use ports::types::{CollectNonEmpty, NonEmpty};
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
@@ -108,7 +108,7 @@ impl HttpClient {
     pub(crate) fn block_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> impl Stream<Item = Result<NonEmptyVec<ports::fuel::FullFuelBlock>>> + '_ {
+    ) -> impl Stream<Item = Result<NonEmpty<ports::fuel::FullFuelBlock>>> + '_ {
         const MAX_BLOCKS_PER_REQUEST: i32 = 100; // TODO: @hal3e make this configurable
 
         struct Progress {
@@ -165,19 +165,16 @@ impl HttpClient {
                     ))
                 })?;
 
-            if response.results.is_empty() {
-                return Ok(None);
-            }
-
-            let results: Vec<_> = current_progress
+            let results = current_progress
                 .consume(response)
                 .into_iter()
-                .map(|b| b.into())
-                .collect();
+                .map(|b| b.into());
 
-            let results = NonEmptyVec::try_from(results).expect("should be non-empty");
-
-            Ok(Some((results, current_progress)))
+            if let Some(non_empty) = results.collect_nonempty() {
+                Ok(Some((non_empty, current_progress)))
+            } else {
+                Ok(None)
+            }
         })
     }
 

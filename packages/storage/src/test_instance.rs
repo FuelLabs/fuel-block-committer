@@ -8,7 +8,7 @@ use std::{
 use ports::{
     storage::{BundleFragment, FuelBlock, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, DateTime, Fragment, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc,
+        BlockSubmission, DateTime, Fragment, L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
 use testcontainers::{
@@ -161,7 +161,7 @@ impl Storage for DbWithProcess {
             async fn insert(&self, submission: BlockSubmission) -> ports::storage::Result<()>;
             async fn submission_w_latest_block(&self) -> ports::storage::Result<Option<BlockSubmission>>;
             async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> ports::storage::Result<BlockSubmission>;
-            async fn insert_blocks(&self, blocks: NonEmptyVec<FuelBlock>) -> ports::storage::Result<()>;
+            async fn insert_blocks(&self, blocks: NonEmpty<FuelBlock>) -> ports::storage::Result<()>;
             async fn available_blocks(&self) -> ports::storage::Result<Option<RangeInclusive<u32>>>;
             async fn lowest_sequence_of_unbundled_blocks(
                 &self,
@@ -171,12 +171,12 @@ impl Storage for DbWithProcess {
             async fn insert_bundle_and_fragments(
                 &self,
                 block_range: RangeInclusive<u32>,
-                fragments: NonEmptyVec<Fragment>,
+                fragments: NonEmpty<Fragment>,
             ) -> ports::storage::Result<()>;
             async fn record_pending_tx(
                 &self,
                 tx_hash: [u8; 32],
-                fragment_ids: NonEmptyVec<NonNegative<i32>>,
+                fragment_ids: NonEmpty<NonNegative<i32>>,
             ) -> ports::storage::Result<()>;
             async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
             async fn has_pending_txs(&self) -> ports::storage::Result<bool>;

@@ -3,8 +3,9 @@ use std::num::NonZeroUsize;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use itertools::izip;
 use itertools::Itertools;
+use ports::types::CollectNonEmpty;
 use ports::types::Fragment;
-use ports::types::NonEmptyVec;
+use ports::types::NonEmpty;
 
 use alloy::{
     consensus::{BlobTransactionSidecar, SidecarBuilder, SimpleCoder},
@@ -20,11 +21,10 @@ impl Eip4844BlobEncoder {
         FIELD_ELEMENTS_PER_BLOB as usize * eip4844::FIELD_ELEMENT_BYTES as usize;
 
     pub(crate) fn decode(
-        fragments: &NonEmptyVec<Fragment>,
+        fragments: NonEmpty<Fragment>,
     ) -> crate::error::Result<(BlobTransactionSidecar, NonZeroUsize)> {
         let fragments: Vec<_> = fragments
-            .inner()
-            .iter()
+            .into_iter()
             .take(6)
             .map(SingleBlob::decode)
             .try_collect()?;
@@ -36,8 +36,9 @@ impl Eip4844BlobEncoder {
 }
 
 impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
-    fn encode(&self, data: NonEmptyVec<u8>) -> ports::l1::Result<NonEmptyVec<Fragment>> {
-        let builder = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data.inner());
+    fn encode(&self, data: NonEmpty<u8>) -> ports::l1::Result<NonEmpty<Fragment>> {
+        let builder =
+            SidecarBuilder::from_coder_and_data(SimpleCoder::default(), Vec::from(data).as_slice());
 
         let single_blobs =
             split_sidecar(builder).map_err(|e| ports::l1::Error::Other(e.to_string()))?;
@@ -45,8 +46,7 @@ impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
         Ok(single_blobs
             .into_iter()
             .map(|blob| blob.encode())
-            .collect_vec()
-            .try_into()
+            .collect_nonempty()
             .expect("cannot be empty"))
     }
 
@@ -75,15 +75,15 @@ impl SingleBlob {
     const SIZE: usize =
         eip4844::BYTES_PER_BLOB + eip4844::BYTES_PER_COMMITMENT + eip4844::BYTES_PER_PROOF;
 
-    fn decode(fragment: &Fragment) -> crate::error::Result<Self> {
-        let bytes: &[u8; Self::SIZE] =
-            fragment.data.inner().as_slice().try_into().map_err(|_| {
-                crate::error::Error::Other(format!(
-                    "Failed to decode blob: expected {} bytes, got {}",
-                    Self::SIZE,
-                    fragment.data.len().get()
-                ))
-            })?;
+    fn decode(fragment: Fragment) -> crate::error::Result<Self> {
+        let data = Vec::from(fragment.data);
+        let bytes: &[u8; Self::SIZE] = data.as_slice().try_into().map_err(|_| {
+            crate::error::Error::Other(format!(
+                "Failed to decode blob: expected {} bytes, got {}",
+                Self::SIZE,
+                data.len()
+            ))
+        })?;
 
         let data = Box::new(bytes[..eip4844::BYTES_PER_BLOB].try_into().unwrap());
         let remaining_bytes = &bytes[eip4844::BYTES_PER_BLOB..];
@@ -110,7 +110,7 @@ impl SingleBlob {
         bytes.extend_from_slice(self.data.as_slice());
         bytes.extend_from_slice(self.committment.as_ref());
         bytes.extend_from_slice(self.proof.as_ref());
-        let data = NonEmptyVec::try_from(bytes).expect("cannot be empty");
+        let data = NonEmpty::collect(bytes).expect("cannot be empty");
 
         Fragment {
             data,
@@ -228,23 +228,23 @@ mod tests {
     #[test]
     fn decoding_fails_if_extra_bytes_present() {
         let data = Fragment {
-            data: NonEmptyVec::try_from(vec![0; SingleBlob::SIZE + 1]).unwrap(),
+            data: NonEmpty::collect(vec![0; SingleBlob::SIZE + 1]).unwrap(),
             unused_bytes: 0,
             total_bytes: 1.try_into().unwrap(),
         };
 
-        assert!(SingleBlob::decode(&data).is_err());
+        assert!(SingleBlob::decode(data).is_err());
     }
 
     #[test]
     fn decoding_fails_if_bytes_missing() {
         let data = Fragment {
-            data: NonEmptyVec::try_from(vec![0; SingleBlob::SIZE - 1]).unwrap(),
+            data: NonEmpty::collect(vec![0; SingleBlob::SIZE - 1]).unwrap(),
             unused_bytes: 0,
             total_bytes: 1.try_into().unwrap(),
         };
 
-        assert!(SingleBlob::decode(&data).is_err());
+        assert!(SingleBlob::decode(data).is_err());
     }
 
     #[test]
@@ -264,7 +264,7 @@ mod tests {
 
         let reassmbled_single_blobs = fragments
             .into_iter()
-            .map(|fragment| SingleBlob::decode(&fragment).unwrap())
+            .map(|fragment| SingleBlob::decode(fragment).unwrap())
             .collect_vec();
 
         let reassmbled_sidecar = merge_into_sidecar(reassmbled_single_blobs);

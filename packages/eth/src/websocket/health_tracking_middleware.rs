@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{Fragment, NonEmptyVec, TransactionResponse, U256};
+use ports::types::{Fragment, NonEmpty, TransactionResponse, U256};
 
 use crate::{
     error::{Error, Result},
@@ -26,7 +26,7 @@ pub trait EthApi {
     ) -> Result<Option<TransactionResponse>>;
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<ports::types::Fragment>,
+        fragments: NonEmpty<ports::types::Fragment>,
     ) -> Result<ports::l1::FragmentsSubmitted>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
@@ -126,7 +126,7 @@ where
 
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<Fragment>,
+        fragments: NonEmpty<Fragment>,
     ) -> Result<ports::l1::FragmentsSubmitted> {
         let response = self.adapter.submit_state_fragments(fragments).await;
         self.note_network_status(&response);

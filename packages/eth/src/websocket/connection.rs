@@ -13,13 +13,14 @@ use alloy::{
     signers::aws::AwsSigner,
     sol,
 };
+use itertools::Itertools;
 use metrics::{
     prometheus::{self, histogram_opts},
     RegistersMetrics,
 };
 use ports::{
     l1::FragmentsSubmitted,
-    types::{Fragment, NonEmptyVec, TransactionResponse},
+    types::{Fragment, NonEmpty, TransactionResponse},
 };
 use url::Url;
 
@@ -172,7 +173,7 @@ impl EthApi for WsConnection {
 
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<Fragment>,
+        fragments: NonEmpty<Fragment>,
     ) -> Result<ports::l1::FragmentsSubmitted> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
@@ -180,7 +181,10 @@ impl EthApi for WsConnection {
                 _ => return Err(Error::Other("blob pool signer not configured".to_string())),
             };
 
-        let (sidecar, num_fragments) = Eip4844BlobEncoder::decode(&fragments)?;
+        // we only want to add it to the metrics if the submission succeeds
+        let used_bytes_per_fragment = fragments.iter().map(|f| f.total_bytes).collect_vec();
+
+        let (sidecar, num_fragments) = Eip4844BlobEncoder::decode(fragments)?;
 
         let blob_tx = TransactionRequest::default()
             .with_to(*blob_signer_address)
@@ -191,10 +195,8 @@ impl EthApi for WsConnection {
             .blobs_per_tx
             .observe(num_fragments.get() as f64);
 
-        for fragment in fragments.inner() {
-            self.metrics
-                .blob_used_bytes
-                .observe(fragment.total_bytes.get() as f64);
+        for bytes in used_bytes_per_fragment {
+            self.metrics.blob_used_bytes.observe(bytes.get() as f64);
         }
 
         Ok(FragmentsSubmitted {

@@ -183,9 +183,8 @@ mod tests {
     use eth::Eip4844BlobEncoder;
     use itertools::Itertools;
     use ports::l1::FragmentEncoder;
-    use ports::non_empty_vec;
     use ports::storage::SequentialFuelBlocks;
-    use ports::types::Fragment;
+    use ports::types::{nonempty, CollectNonEmpty, Fragment};
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
     use tokio::sync::Mutex;
 
@@ -336,9 +335,10 @@ mod tests {
             .await?
             .into_iter()
             .map(|f| f.fragment)
-            .collect_vec();
+            .collect_nonempty()
+            .unwrap();
 
-        assert_eq!(fragments, expected_fragments.into_inner());
+        assert_eq!(fragments, expected_fragments);
 
         assert!(setup
             .db()
@@ -392,9 +392,10 @@ mod tests {
             .await?
             .into_iter()
             .map(|f| f.fragment)
-            .collect_vec();
+            .collect_nonempty()
+            .unwrap();
 
-        assert_eq!(unsubmitted_fragments, expected_fragments.into_inner());
+        assert_eq!(unsubmitted_fragments, expected_fragments);
 
         Ok(())
     }
@@ -415,8 +416,8 @@ mod tests {
             })
             .await;
 
-        let bundle_data =
-            test_utils::encode_and_merge(blocks.inner()[..2].to_vec().try_into().unwrap()).await;
+        let first_two_blocks = blocks.into_iter().take(2).collect_nonempty().unwrap();
+        let bundle_data = test_utils::encode_and_merge(first_two_blocks).await;
         let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
         let mut state_committer = BlockBundler::new(
@@ -439,8 +440,10 @@ mod tests {
             .await?
             .into_iter()
             .map(|f| f.fragment)
-            .collect_vec();
-        assert_eq!(unsubmitted_fragments, fragments.into_inner());
+            .collect_nonempty()
+            .unwrap();
+
+        assert_eq!(unsubmitted_fragments, fragments);
 
         Ok(())
     }
@@ -461,12 +464,12 @@ mod tests {
             })
             .await;
 
-        let bundle_1 =
-            test_utils::encode_and_merge(blocks.inner()[0..=0].to_vec().try_into().unwrap()).await;
+        let block_1 = nonempty![blocks.first().clone()];
+        let bundle_1 = test_utils::encode_and_merge(block_1).await;
         let fragments_1 = Eip4844BlobEncoder.encode(bundle_1).unwrap();
 
-        let bundle_2 =
-            test_utils::encode_and_merge(blocks.inner()[1..=1].to_vec().try_into().unwrap()).await;
+        let block_2 = nonempty![blocks.last().clone()];
+        let bundle_2 = test_utils::encode_and_merge(block_2).await;
         let fragments_2 = Eip4844BlobEncoder.encode(bundle_2).unwrap();
 
         let mut bundler = BlockBundler::new(
@@ -490,11 +493,7 @@ mod tests {
             .iter()
             .map(|f| f.fragment.clone())
             .collect::<Vec<_>>();
-        let all_fragments = fragments_1
-            .into_inner()
-            .into_iter()
-            .chain(fragments_2.into_inner())
-            .collect_vec();
+        let all_fragments = fragments_1.into_iter().chain(fragments_2).collect_vec();
         assert_eq!(fragments, all_fragments);
 
         Ok(())
@@ -512,7 +511,7 @@ mod tests {
             })
             .await;
 
-        let unoptimal_fragments = non_empty_vec![Fragment {
+        let unoptimal_fragments = nonempty![Fragment {
             data: test_utils::random_data(100usize),
             unused_bytes: 1000,
             total_bytes: 50.try_into().unwrap(),

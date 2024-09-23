@@ -5,7 +5,7 @@ use delegate::delegate;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
     l1::{Api, Contract, EventStreamer, FragmentsSubmitted, Result},
-    types::{Fragment, FuelBlockCommittedOnL1, L1Height, NonEmptyVec, TransactionResponse},
+    types::{Fragment, FuelBlockCommittedOnL1, L1Height, NonEmpty, TransactionResponse},
 };
 use websocket::EthEventStreamer;
 
@@ -39,7 +39,7 @@ impl Api for WebsocketClient {
         to (*self) {
             async fn submit_state_fragments(
                 &self,
-                fragments: NonEmptyVec<Fragment>,
+                fragments: NonEmpty<Fragment>,
             ) -> Result<FragmentsSubmitted>;
             async fn balance(&self) -> Result<U256>;
             async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;

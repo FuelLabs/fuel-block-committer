@@ -31,6 +31,7 @@ storage = { path = "./packages/storage", default-features = false }
 services = { path = "./packages/services", default-features = false }
 clock = { path = "./packages/clock", default-features = false }
 
+nonempty = { version = "0.10", default-features = false }
 test-case = { version = "3.3", default-features = false }
 delegate = { version = "0.13", default-features = false }
 trait-variant = { version = "0.1", default-features = false }
