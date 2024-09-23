@@ -32,8 +32,8 @@ impl Default for Config {
     }
 }
 
-/// The `BlockBundler` is responsible for committing state fragments to L1.
-/// It bundles blocks, fragments them, and submits the fragments to the L1 adapter.
+/// The `BlockBundler` bundles blocks and fragments them. Those fragments are later on submitted to
+/// l1 by the [`crate::StateCommitter`]
 pub struct BlockBundler<Storage, Clock, BundlerFactory> {
     storage: Storage,
     clock: Clock,
@@ -376,7 +376,7 @@ mod tests {
         let data = encode_and_merge(fuel_blocks).await;
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
-        let mut state_committer = BlockBundler::new(
+        let mut block_bundler = BlockBundler::new(
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
@@ -388,7 +388,7 @@ mod tests {
         );
 
         // when
-        state_committer.run().await?;
+        block_bundler.run().await?;
 
         // then
         // we will bundle and fragment because the time limit (10s) is measured from the last finalized fragment
@@ -427,7 +427,7 @@ mod tests {
         let bundle_data = test_utils::encode_and_merge(first_two_blocks).await;
         let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
-        let mut state_committer = BlockBundler::new(
+        let mut block_bundler = BlockBundler::new(
             setup.db(),
             TestClock::default(),
             default_bundler_factory(),
@@ -438,7 +438,7 @@ mod tests {
         );
 
         // when
-        state_committer.run().await?;
+        block_bundler.run().await?;
 
         // then
         let unsubmitted_fragments = setup
@@ -539,7 +539,7 @@ mod tests {
         let test_clock = TestClock::default();
 
         let optimization_timeout = Duration::from_secs(1);
-        let mut state_committer = BlockBundler::new(
+        let mut block_bundler = BlockBundler::new(
             setup.db(),
             test_clock.clone(),
             bundler_factory,
@@ -549,8 +549,8 @@ mod tests {
             },
         );
 
-        let state_committer_handle = tokio::spawn(async move {
-            state_committer.run().await.unwrap();
+        let block_bundler_handle = tokio::spawn(async move {
+            block_bundler.run().await.unwrap();
         });
 
         // when
@@ -565,7 +565,7 @@ mod tests {
 
         // then
         // Wait for the BlockBundler task to complete
-        state_committer_handle.await.unwrap();
+        block_bundler_handle.await.unwrap();
 
         Ok(())
     }
@@ -590,7 +590,7 @@ mod tests {
 
         // Create the BlockBundler
         let optimization_timeout = Duration::from_secs(1);
-        let mut state_committer = BlockBundler::new(
+        let mut block_bundler = BlockBundler::new(
             setup.db(),
             test_clock.clone(),
             bundler_factory,
@@ -601,8 +601,8 @@ mod tests {
         );
 
         // Spawn the BlockBundler run method in a separate task
-        let state_committer_handle = tokio::spawn(async move {
-            state_committer.run().await.unwrap();
+        let block_bundler_handle = tokio::spawn(async move {
+            block_bundler.run().await.unwrap();
         });
 
         // Advance the clock but not beyond the optimization time limit
@@ -613,7 +613,7 @@ mod tests {
             send_can_advance.send(()).unwrap();
         }
         // then
-        let res = tokio::time::timeout(Duration::from_millis(500), state_committer_handle).await;
+        let res = tokio::time::timeout(Duration::from_millis(500), block_bundler_handle).await;
 
         assert!(res.is_err(), "expected a timeout");
 
