@@ -8,7 +8,6 @@ use ports::types::{BlockSubmissionTx, TransactionResponse, ValidatedFuelBlock, U
 use crate::{
     error::{Error, Result},
     metrics::Metrics,
-    websocket::event_streamer::EthEventStreamer,
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -18,7 +17,6 @@ pub trait EthApi {
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
-    fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
     async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
@@ -95,10 +93,6 @@ where
         let response = self.adapter.get_transaction_response(tx_hash).await;
         self.note_network_status(&response);
         response
-    }
-
-    fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
-        self.adapter.event_streamer(eth_block_height)
     }
 
     async fn balance(&self) -> Result<U256> {

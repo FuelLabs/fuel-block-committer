@@ -1,18 +1,13 @@
 #![deny(unused_crate_dependencies)]
 
-use std::{num::NonZeroU32, pin::Pin};
+use std::num::NonZeroU32;
 
 use alloy::primitives::U256;
 use async_trait::async_trait;
-use futures::{stream::TryStreamExt, Stream};
 use ports::{
-    l1::{Api, Contract, EventStreamer, Result},
-    types::{
-        BlockSubmissionTx, FuelBlockCommittedOnL1, L1Height, TransactionResponse,
-        ValidatedFuelBlock,
-    },
+    l1::{Api, Contract, Result},
+    types::{BlockSubmissionTx, L1Height, TransactionResponse, ValidatedFuelBlock},
 };
-use websocket::EthEventStreamer;
 
 mod aws;
 mod error;
@@ -27,10 +22,6 @@ pub use websocket::WebsocketClient;
 impl Contract for WebsocketClient {
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<BlockSubmissionTx> {
         self.submit(block).await
-    }
-
-    fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
-        Box::new(self.event_streamer(height.into()))
     }
 
     fn commit_interval(&self) -> NonZeroU32 {
@@ -60,16 +51,5 @@ impl Api for WebsocketClient {
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
         Ok(self.get_transaction_response(tx_hash).await?)
-    }
-}
-
-#[async_trait::async_trait]
-impl EventStreamer for EthEventStreamer {
-    async fn establish_stream(
-        &self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommittedOnL1>> + '_ + Send>>> {
-        let stream = self.establish_stream().await?.map_err(Into::into);
-
-        Ok(Box::pin(stream))
     }
 }

@@ -17,7 +17,7 @@ use alloy::{
 use ports::types::{BlockSubmissionTx, TransactionResponse, ValidatedFuelBlock};
 use url::Url;
 
-use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
+use super::health_tracking_middleware::EthApi;
 use crate::error::{Error, Result};
 
 pub type WsProvider = FillProvider<
@@ -108,15 +108,6 @@ impl EthApi for WsConnection {
 
     fn commit_interval(&self) -> NonZeroU32 {
         self.commit_interval
-    }
-
-    fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
-        let filter = self
-            .contract
-            .CommitSubmitted_filter()
-            .from_block(eth_block_height)
-            .filter;
-        EthEventStreamer::new(filter, self.contract.provider().clone())
     }
 
     async fn get_transaction_response(

@@ -67,7 +67,7 @@ mod tests {
 
                 if let Some(is_completed) = submission_status {
                     let latest_submission = BlockSubmission {
-                        final_tx_id: if is_completed { Some(1) } else { None },
+                        completed: is_completed,
                         ..rng.gen()
                     };
                     db.record_block_submission(BlockSubmissionTx::default(), latest_submission)

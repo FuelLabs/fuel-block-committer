@@ -8,7 +8,6 @@ use ports::{
 };
 use url::Url;
 
-pub use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
@@ -16,7 +15,6 @@ use self::{
 use crate::AwsClient;
 
 mod connection;
-mod event_streamer;
 mod health_tracking_middleware;
 
 #[derive(Clone)]
@@ -52,10 +50,6 @@ impl WebsocketClient {
     #[must_use]
     pub fn connection_health_checker(&self) -> HealthChecker {
         self.inner.connection_health_checker()
-    }
-
-    pub(crate) fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
-        self.inner.event_streamer(eth_block_height)
     }
 
     pub(crate) async fn submit(&self, block: ValidatedFuelBlock) -> Result<BlockSubmissionTx> {

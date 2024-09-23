@@ -25,7 +25,6 @@ impl From<InvalidL1Height> for Error {
 #[async_trait::async_trait]
 pub trait Contract: Send + Sync {
     async fn submit(&self, block: ValidatedFuelBlock) -> Result<BlockSubmissionTx>;
-    fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
     fn commit_interval(&self) -> std::num::NonZeroU32;
 }
 
