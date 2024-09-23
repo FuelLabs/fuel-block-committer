@@ -84,21 +84,13 @@ where
 
     /// Determines the starting height based on the latest chain height and the lookback window.
     async fn determine_starting_height(&self, chain_height: u32) -> Result<Option<u32>> {
-        eprintln!("chain_height: {:?}", chain_height);
         let starting_height = chain_height.saturating_sub(self.config.lookback_window);
-        eprintln!("starting_height: {:?}", starting_height);
 
         let Some(available_blocks) = self.storage.available_blocks().await? else {
-            eprintln!(
-                "No available blocks in the database; starting from height {starting_height}"
-            );
-
             return Ok(Some(starting_height));
         };
-        eprintln!("available_blocks: {:?}", available_blocks);
 
         let latest_db_block = *available_blocks.end();
-        eprintln!("latest_db_block: {:?}", latest_db_block);
 
         match latest_db_block.cmp(&chain_height) {
             std::cmp::Ordering::Greater => {
@@ -155,7 +147,6 @@ where
             info!("Database is up to date with the chain({chain_height}); no import necessary.");
             return Ok(());
         };
-        println!("starting_height: {:?}", starting_height);
 
         self.fuel_api
             .full_blocks_in_height_range(starting_height..=chain_height)

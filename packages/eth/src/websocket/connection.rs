@@ -182,7 +182,7 @@ impl EthApi for WsConnection {
             };
 
         // we only want to add it to the metrics if the submission succeeds
-        let used_bytes_per_fragment = fragments.iter().map(|f| f.total_bytes).collect_vec();
+        let used_bytes_per_fragment = fragments.iter().map(|f| f.used_bytes()).collect_vec();
 
         let (sidecar, num_fragments) = Eip4844BlobEncoder::decode(fragments)?;
 
@@ -196,7 +196,7 @@ impl EthApi for WsConnection {
             .observe(num_fragments.get() as f64);
 
         for bytes in used_bytes_per_fragment {
-            self.metrics.blob_used_bytes.observe(bytes.get() as f64);
+            self.metrics.blob_used_bytes.observe(bytes as f64);
         }
 
         Ok(FragmentsSubmitted {

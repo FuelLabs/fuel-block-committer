@@ -112,16 +112,10 @@ impl SingleBlob {
         bytes.extend_from_slice(self.proof.as_ref());
         let data = NonEmpty::collect(bytes).expect("cannot be empty");
 
-        let total_bytes = self
-            .unused_bytes
-            .saturating_add(BYTES_PER_BLOB as u32)
-            .try_into()
-            .expect("not zero");
-
         Fragment {
             data,
             unused_bytes: self.unused_bytes,
-            total_bytes,
+            total_bytes: (BYTES_PER_BLOB as u32).try_into().expect("not zero"),
         }
     }
 }

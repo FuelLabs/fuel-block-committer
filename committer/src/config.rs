@@ -1,4 +1,9 @@
-use std::{net::Ipv4Addr, num::{NonZeroU32, NonZeroUsize}, str::FromStr, time::Duration};
+use std::{
+    net::Ipv4Addr,
+    num::{NonZeroU32, NonZeroUsize},
+    str::FromStr,
+    time::Duration,
+};
 
 use clap::{command, Parser};
 use eth::Address;
@@ -112,9 +117,23 @@ pub struct BundleConfig {
     #[serde(deserialize_with = "human_readable_duration")]
     pub optimization_timeout: Duration,
 
-    /// At startup, the current block height is determined and `block_height_lookback` is subtracted from it to set the
-    /// minimum block height. From this point forward, only blocks with a height equal to or greater than the resulting
+    /// Only blocks within the `block_height_lookback` window
     /// value will be considered for importing, bundling, fragmenting, and submitting to L1.
+    ///
+    /// This parameter defines a sliding window based on block height to determine which blocks are
+    /// eligible for processing. Specifically:
+    ///
+    /// - **Exclusion of Stale Blocks:** If a block arrives with a height less than the current
+    ///   height minus the `block_height_lookback`, it will be excluded from the bundling process.
+    ///
+    /// - **Bundling Behavior:**
+    ///   - **Unbundled Blocks:** Blocks outside the lookback window will not be bundled.
+    ///   - **Already Bundled Blocks:** If a block has already been bundled, its fragments will
+    ///     not be sent to L1.
+    ///   - **Failed Submissions:** If fragments of a bundled block were sent to L1 but failed,
+    ///     they will not be retried.
+    ///
+    /// This approach effectively "gives up" on blocks that fall outside the defined window.
     pub block_height_lookback: u32,
 
     /// Valid values: "disabled", "min", "1" to "9", "max"
@@ -139,7 +158,7 @@ pub struct Internal {
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
     pub new_bundle_check_interval: Duration,
-    pub max_full_blocks_per_request: NonZeroU32
+    pub max_full_blocks_per_request: NonZeroU32,
 }
 
 impl Default for Internal {
@@ -150,7 +169,7 @@ impl Default for Internal {
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
             new_bundle_check_interval: Duration::from_secs(10),
-            max_full_blocks_per_request: 100.try_into().unwrap()
+            max_full_blocks_per_request: 100.try_into().unwrap(),
         }
     }
 }

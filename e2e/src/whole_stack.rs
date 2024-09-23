@@ -111,7 +111,7 @@ impl WholeStack {
 
         let committer = {
             let committer_builder = Committer::default()
-                .with_show_logs(logs)
+                .with_show_logs(true)
                 .with_eth_rpc((eth_node).ws_url().clone())
                 .with_fuel_rpc(fuel_node.url())
                 .with_db_port(db.port())
@@ -121,7 +121,7 @@ impl WholeStack {
                 .with_main_key_arn(main_key.id.clone())
                 .with_kms_url(main_key.url.clone())
                 .with_bundle_accumulation_timeout("1000s".to_owned())
-                .with_bundle_blocks_to_accumulate("3000".to_string())
+                .with_bundle_blocks_to_accumulate("2500".to_string())
                 .with_bundle_optimization_timeout("10s".to_owned())
                 .with_bundle_block_height_lookback("3000".to_owned())
                 .with_bundle_compression_level("level6".to_owned());
