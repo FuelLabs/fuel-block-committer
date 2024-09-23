@@ -106,7 +106,7 @@ pub(crate) fn encode_blocks(
 }
 
 fn encode_block_data(block: FullFuelBlock) -> NonEmpty<u8> {
-    let tx_num = u64::try_from(block.raw_transactions.len()).unwrap();
+    let tx_num = u64::try_from(block.raw_transactions.len()).unwrap_or(u64::MAX);
 
     chain!(
         tx_num.to_be_bytes(),

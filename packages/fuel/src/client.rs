@@ -17,7 +17,7 @@ use futures::{stream, Stream};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{CollectNonEmpty, NonEmpty};
+use ports::types::{NonEmpty, TryCollectNonEmpty};
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
@@ -168,9 +168,9 @@ impl HttpClient {
             let results = current_progress
                 .consume(response)
                 .into_iter()
-                .map(|b| b.into());
+                .map(ports::fuel::FullFuelBlock::try_from);
 
-            if let Some(non_empty) = results.collect_nonempty() {
+            if let Some(non_empty) = results.try_collect_nonempty()? {
                 Ok(Some((non_empty, current_progress)))
             } else {
                 Ok(None)

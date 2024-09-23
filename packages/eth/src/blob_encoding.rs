@@ -4,8 +4,8 @@ use alloy::{
     consensus::{BlobTransactionSidecar, SidecarBuilder, SimpleCoder},
     eips::eip4844::{self, BYTES_PER_BLOB, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB},
 };
-use itertools::{izip, Itertools};
-use ports::types::{CollectNonEmpty, Fragment, NonEmpty};
+use itertools::izip;
+use ports::types::{CollectNonEmpty, Fragment, NonEmpty, TryCollectNonEmpty};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Eip4844BlobEncoder;
@@ -18,15 +18,15 @@ impl Eip4844BlobEncoder {
     pub(crate) fn decode(
         fragments: NonEmpty<Fragment>,
     ) -> crate::error::Result<(BlobTransactionSidecar, NonZeroUsize)> {
-        let fragments: Vec<_> = fragments
+        let fragments = fragments
             .into_iter()
             .take(6)
             .map(SingleBlob::decode)
-            .try_collect()?;
+            .try_collect_nonempty()?
+            .expect("cannot be empty");
 
-        let fragments_num = NonZeroUsize::try_from(fragments.len()).expect("cannot be 0");
-
-        Ok((merge_into_sidecar(fragments), fragments_num))
+        let num_fragments = fragments.len_nonzero();
+        Ok((merge_into_sidecar(fragments), num_fragments))
     }
 }
 
@@ -46,8 +46,7 @@ impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
     }
 
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64 {
-        let num_bytes =
-            u64::try_from(num_bytes.get()).expect("to not have more than u64::MAX of storage data");
+        let num_bytes = u64::try_from(num_bytes.get()).unwrap_or(u64::MAX);
 
         // Taken from the SimpleCoder impl
         let required_fe = num_bytes.div_ceil(31).saturating_add(1);
@@ -80,17 +79,23 @@ impl SingleBlob {
             ))
         })?;
 
-        let data = Box::new(bytes[..eip4844::BYTES_PER_BLOB].try_into().unwrap());
+        let len_checked = "checked earlier that enough bytes are available";
+
+        let data = Box::new(
+            bytes[..eip4844::BYTES_PER_BLOB]
+                .try_into()
+                .expect(len_checked),
+        );
         let remaining_bytes = &bytes[eip4844::BYTES_PER_BLOB..];
 
         let committment: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_COMMITMENT]
             .try_into()
-            .unwrap();
+            .expect(len_checked);
         let remaining_bytes = &remaining_bytes[eip4844::BYTES_PER_COMMITMENT..];
 
         let proof: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_PROOF]
             .try_into()
-            .unwrap();
+            .expect(len_checked);
 
         Ok(Self {
             data,
@@ -107,15 +112,21 @@ impl SingleBlob {
         bytes.extend_from_slice(self.proof.as_ref());
         let data = NonEmpty::collect(bytes).expect("cannot be empty");
 
+        let total_bytes = self
+            .unused_bytes
+            .saturating_add(BYTES_PER_BLOB as u32)
+            .try_into()
+            .expect("not zero");
+
         Fragment {
             data,
             unused_bytes: self.unused_bytes,
-            total_bytes: (BYTES_PER_BLOB as u32).try_into().expect("not zero"),
+            total_bytes,
         }
     }
 }
 
-fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<Vec<SingleBlob>> {
+fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<SingleBlob>> {
     let num_bytes = u32::try_from(builder.len()).map_err(|_| {
         crate::error::Error::Other("cannot handle more than u32::MAX bytes".to_string())
     })?;
@@ -132,6 +143,10 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<Vec<SingleBlob
     let num_blobs = u32::try_from(sidecar.blobs.len()).map_err(|_| {
         crate::error::Error::Other("cannot handle more than u32::MAX blobs".to_string())
     })?;
+
+    if num_blobs == 0 {
+        return Err(crate::error::Error::Other("no blobs to split".to_string()));
+    }
 
     let unused_data_in_last_blob =
         (BYTES_PER_BLOB as u32).saturating_sub(num_bytes % BYTES_PER_BLOB as u32);
@@ -155,7 +170,8 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<Vec<SingleBlob
                 unused_bytes: unused_data,
             }
         })
-        .collect();
+        .collect_nonempty()
+        .expect("checked is not empty");
 
     Ok(single_blobs)
 }
@@ -168,7 +184,7 @@ fn merge_into_sidecar(
     let mut proofs = vec![];
 
     for blob in single_blobs {
-        blobs.push(blob.data.as_slice().try_into().unwrap());
+        blobs.push(*blob.data);
         commitments.push(blob.committment);
         proofs.push(blob.proof);
     }
@@ -183,6 +199,7 @@ fn merge_into_sidecar(
 #[cfg(test)]
 mod tests {
     use alloy::consensus::{SidecarBuilder, SimpleCoder};
+    use itertools::Itertools;
     use ports::l1::FragmentEncoder;
     use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
     use test_case::test_case;

@@ -369,7 +369,11 @@ where
             self.advance().await?;
         }
 
-        let best_proposal = self.best_proposal.take().unwrap();
+        let best_proposal = self
+            .best_proposal
+            .take()
+            .expect("advance should have set the best proposal");
+
         let compression_ratio = best_proposal.compression_ratio();
 
         let fragments = self

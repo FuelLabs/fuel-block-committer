@@ -47,24 +47,46 @@ pub struct FullBlock {
     pub transactions: Vec<OpaqueTransaction>,
 }
 
-impl From<FullBlock> for ports::fuel::FullFuelBlock {
-    fn from(value: FullBlock) -> Self {
-        Self {
-            id: value.id.into(),
-            header: value.header.try_into().unwrap(),
-            consensus: value.consensus.into(),
-            raw_transactions: value
-                .transactions
-                .into_iter()
-                .map(|t| {
-                    let payload = t.raw_payload.to_vec();
-                    // TODO: segfault turn into error later
-                    NonEmpty::collect(payload).expect("turn into an error later")
+impl TryFrom<FullBlock> for ports::fuel::FullFuelBlock {
+    type Error = crate::Error;
+
+    fn try_from(value: FullBlock) -> Result<Self, Self::Error> {
+        let raw_transactions = value
+            .transactions
+            .into_iter()
+            .map(|t| {
+                NonEmpty::collect(t.raw_payload.to_vec()).ok_or_else(|| {
+                    crate::Error::Other(format!(
+                        "encountered empty transaction in block: {}",
+                        value.id
+                    ))
                 })
-                .collect(),
-        }
+            })
+            .collect::<Result<Vec<_>, Self::Error>>()?;
+
+        let header = value.header.try_into().map_err(|e| {
+            crate::Error::Other(format!(
+                "failed to convert block header of fuel block {}: {e}",
+                value.id
+            ))
+        })?;
+
+        Ok(Self {
+            id: value.id.into(),
+            header,
+            consensus: value.consensus.into(),
+            raw_transactions,
+        })
     }
 }
+
+// impl TryFrom<FullBlock> for ports::fuel::FullFuelBlock {
+//     type Error = crate::Error;
+//
+//     fn try_from(value: FullBlock) -> Result<Self, Self::Error> {
+//         todo!()
+//     }
+// }
 
 impl FullBlock {
     /// Returns the block producer public key, if any.
