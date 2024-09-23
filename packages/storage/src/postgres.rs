@@ -131,7 +131,7 @@ impl Postgres {
             tables::L1FuelBlockSubmissionTx,
             "SELECT * FROM l1_transaction WHERE state = $1 AND submission_id = $2",
             TransactionState::Pending.into_i16(),
-            submission_id
+            submission_id as i64
         )
         .fetch_all(&self.connection_pool)
         .await?

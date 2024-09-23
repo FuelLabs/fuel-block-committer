@@ -24,6 +24,15 @@ pub struct BlockCommitter<L1, Db, Fuel, BlockValidator> {
     metrics: Metrics,
 }
 
+enum Action {
+    UpdateTx {
+        submission_id: u32,
+        block_height: u32,
+    },
+    Post,
+    DoNothing,
+}
+
 struct Metrics {
     latest_fuel_block: IntGauge,
     latest_committed_block: IntGauge,
@@ -108,12 +117,16 @@ where
         Ok(validated_block)
     }
 
-    async fn check_if_stale(
+    fn check_if_stale(
         &self,
         block_height: u32,
-        submitted_height: Option<u32>,
-    ) -> Result<bool> {
-        Ok(submitted_height >= block_height)
+        latest_submission: Option<&BlockSubmission>,
+    ) -> bool {
+        if let Some(submission) = latest_submission {
+            submission.block_height >= block_height
+        } else {
+            return false;
+        }
     }
 
     fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
@@ -133,42 +146,33 @@ where
 
         Ok(self.block_validator.validate(&fuel_block)?)
     }
-}
 
-#[async_trait]
-impl<L1, Db, Fuel, BlockValidator> Runner for BlockCommitter<L1, Db, Fuel, BlockValidator>
-where
-    L1: ports::l1::Contract + ports::l1::Api,
-    Db: Storage,
-    Fuel: ports::fuel::Api,
-    BlockValidator: Validator,
-{
-    async fn run(&mut self) -> Result<()> {
-        let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
-        let latest_submission = self.storage.submission_w_latest_block().await?;
-
-        let current_block = self.fetch_latest_block().await?;
-        let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
-
-        if self
-            .check_if_stale(current_epoch_block_height, latest_submission)
-            .await?
-        {
-            return Ok(());
+    fn decide_action(
+        &self,
+        latest_submission: Option<&BlockSubmission>,
+        fuel_block_height: u32,
+    ) -> Action {
+        match latest_submission {
+            Some(submission) if !submission.completed => Action::UpdateTx {
+                submission_id: submission.id.expect("submission to have id"),
+                block_height: submission.block_height,
+            },
+            _ => {
+                if self.check_if_stale(fuel_block_height, latest_submission) {
+                    Action::DoNothing
+                } else {
+                    Action::Post
+                }
+            }
         }
+    }
 
-        let block = if current_block.height() == current_epoch_block_height {
-            current_block
-        } else {
-            self.fetch_block(current_epoch_block_height).await?
-        };
-
-        self.submit_block(block)
-            .await
-            .map_err(|e| Error::Other(e.to_string()))?;
-        info!("submitted {block:?}!");
-
-        let transactions = self.storage.get_pending_block_submission_txs().await?;
+    async fn update_transactions(&self, submission_id: u32, block_height: u32) -> Result<()> {
+        let transactions = self
+            .storage
+            .get_pending_block_submission_txs(submission_id)
+            .await?;
+        let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
         for tx in transactions {
             let tx_hash = tx.hash;
@@ -188,8 +192,8 @@ where
                 continue;
             }
 
-            if !tx_response.confirmations(current_block_number) < 10
             //TODO: self.num_blocks_to_finalize
+            if !tx_response.confirmations(current_block_number) < 10
             {
                 continue; // not finalized
             }
@@ -212,6 +216,49 @@ where
     }
 }
 
+#[async_trait]
+impl<L1, Db, Fuel, BlockValidator> Runner for BlockCommitter<L1, Db, Fuel, BlockValidator>
+where
+    L1: ports::l1::Contract + ports::l1::Api,
+    Db: Storage,
+    Fuel: ports::fuel::Api,
+    BlockValidator: Validator,
+{
+    async fn run(&mut self) -> Result<()> {
+        let latest_submission = self.storage.submission_w_latest_block().await?;
+
+        let current_block = self.fetch_latest_block().await?;
+        let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
+
+        let action = self.decide_action(latest_submission.as_ref(), current_epoch_block_height);
+
+        match action {
+            Action::DoNothing => {}
+            Action::Post => {
+                let block = if current_block.height() == current_epoch_block_height {
+                    current_block
+                } else {
+                    self.fetch_block(current_epoch_block_height).await?
+                };
+
+                self.submit_block(block)
+                    .await
+                    .map_err(|e| Error::Other(e.to_string()))?;
+                info!("submitted {block:?}!");
+            }
+            Action::UpdateTx {
+                submission_id,
+                block_height,
+            } => {
+                self.update_transactions(submission_id, block_height)
+                    .await?
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -221,8 +268,8 @@ mod tests {
     use mockall::predicate::{self, eq};
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
-        l1::{Contract, EventStreamer, MockContract},
-        types::{L1Height, TransactionResponse, U256},
+        l1::{Contract, MockContract},
+        types::{BlockSubmissionTx, L1Height, TransactionResponse, U256},
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{Postgres, PostgresProcess};
@@ -245,11 +292,8 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Contract for MockL1 {
-        async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<[u8; 32]> {
+        async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<BlockSubmissionTx> {
             self.contract.submit(block).await
-        }
-        fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
-            self.contract.event_streamer(height)
         }
 
         fn commit_interval(&self) -> NonZeroU32 {
@@ -282,10 +326,14 @@ mod tests {
     fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> MockL1 {
         let mut l1 = MockL1::new();
 
+        let submission_tx = BlockSubmissionTx {
+            hash: [1u8; 32],
+            ..Default::default()
+        };
         l1.contract
             .expect_submit()
             .with(predicate::eq(block))
-            .return_once(move |_| Ok([1u8; 32]));
+            .return_once(move |_| Ok(submission_tx));
 
         l1.api
             .expect_get_block_number()
@@ -428,8 +476,12 @@ mod tests {
     ) -> Postgres {
         let db = process.create_random_db().await.unwrap();
         for height in pending_submissions {
-            let tx_hash = [height as u8; 32];
-            db.record_block_submission(tx_hash, given_a_pending_submission(height))
+            let submission_tx = BlockSubmissionTx {
+                hash: [height as u8; 32],
+                nonce: height,
+                ..Default::default()
+            };
+            db.record_block_submission(submission_tx, given_a_pending_submission(height))
                 .await
                 .unwrap();
         }
