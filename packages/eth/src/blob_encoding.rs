@@ -3,14 +3,12 @@ use std::num::NonZeroUsize;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use itertools::izip;
 use itertools::Itertools;
+use ports::types::Fragment;
 use ports::types::NonEmptyVec;
 
 use alloy::{
     consensus::{BlobTransactionSidecar, SidecarBuilder, SimpleCoder},
-    eips::eip4844::{
-        self, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES, MAX_BLOBS_PER_BLOCK,
-        MAX_DATA_GAS_PER_BLOCK,
-    },
+    eips::eip4844::{self, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES},
 };
 
 /// Intrinsic gas cost of a eth transaction.
@@ -25,7 +23,7 @@ impl Eip4844BlobEncoder {
         FIELD_ELEMENTS_PER_BLOB as usize * FIELD_ELEMENT_BYTES as usize;
 
     pub(crate) fn decode(
-        fragments: &NonEmptyVec<NonEmptyVec<u8>>,
+        fragments: &NonEmptyVec<Fragment>,
     ) -> crate::error::Result<(BlobTransactionSidecar, NonZeroUsize)> {
         let fragments: Vec<_> = fragments
             .inner()
@@ -41,13 +39,11 @@ impl Eip4844BlobEncoder {
 }
 
 impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
-    fn encode(&self, data: NonEmptyVec<u8>) -> ports::l1::Result<NonEmptyVec<NonEmptyVec<u8>>> {
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data.inner())
-            .build()
-            .map_err(|e| ports::l1::Error::Other(format!("failed to build sidecar: {:?}", e)))?;
+    fn encode(&self, data: NonEmptyVec<u8>) -> ports::l1::Result<NonEmptyVec<Fragment>> {
+        let builder = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data.inner());
 
         let single_blobs =
-            split_sidecar(sidecar).map_err(|e| ports::l1::Error::Other(e.to_string()))?;
+            split_sidecar(builder).map_err(|e| ports::l1::Error::Other(e.to_string()))?;
 
         Ok(single_blobs
             .into_iter()
@@ -75,20 +71,22 @@ struct SingleBlob {
     data: Box<eip4844::Blob>,
     committment: eip4844::Bytes48,
     proof: eip4844::Bytes48,
+    unused_bytes: u32,
 }
 
 impl SingleBlob {
     const SIZE: usize =
         eip4844::BYTES_PER_BLOB + eip4844::BYTES_PER_COMMITMENT + eip4844::BYTES_PER_PROOF;
 
-    fn decode(bytes: &NonEmptyVec<u8>) -> crate::error::Result<Self> {
-        let bytes: &[u8; Self::SIZE] = bytes.inner().as_slice().try_into().map_err(|_| {
-            crate::error::Error::Other(format!(
-                "Failed to decode blob: expected {} bytes, got {}",
-                Self::SIZE,
-                bytes.len().get()
-            ))
-        })?;
+    fn decode(fragment: &Fragment) -> crate::error::Result<Self> {
+        let bytes: &[u8; Self::SIZE] =
+            fragment.data.inner().as_slice().try_into().map_err(|_| {
+                crate::error::Error::Other(format!(
+                    "Failed to decode blob: expected {} bytes, got {}",
+                    Self::SIZE,
+                    fragment.data.len().get()
+                ))
+            })?;
 
         let data = Box::new(bytes[..eip4844::BYTES_PER_BLOB].try_into().unwrap());
         let remaining_bytes = &bytes[eip4844::BYTES_PER_BLOB..];
@@ -106,19 +104,31 @@ impl SingleBlob {
             data,
             committment: committment.into(),
             proof: proof.into(),
+            unused_bytes: fragment.unused_bytes,
         })
     }
 
-    fn encode(&self) -> NonEmptyVec<u8> {
+    fn encode(&self) -> Fragment {
         let mut bytes = Vec::with_capacity(Self::SIZE);
         bytes.extend_from_slice(self.data.as_slice());
         bytes.extend_from_slice(self.committment.as_ref());
         bytes.extend_from_slice(self.proof.as_ref());
-        NonEmptyVec::try_from(bytes).expect("cannot be empty")
+        let data = NonEmptyVec::try_from(bytes).expect("cannot be empty");
+
+        Fragment {
+            data,
+            unused_bytes: self.unused_bytes,
+            total_bytes: (BYTES_PER_BLOB as u32).try_into().expect("not zero"),
+        }
     }
 }
 
-fn split_sidecar(sidecar: BlobTransactionSidecar) -> crate::error::Result<Vec<SingleBlob>> {
+fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<Vec<SingleBlob>> {
+    let num_bytes = u32::try_from(builder.len()).map_err(|_| {
+        crate::error::Error::Other("cannot handle more than u32::MAX bytes".to_string())
+    })?;
+    let sidecar = builder.build()?;
+
     if sidecar.blobs.len() != sidecar.commitments.len()
         || sidecar.blobs.len() != sidecar.proofs.len()
     {
@@ -127,11 +137,31 @@ fn split_sidecar(sidecar: BlobTransactionSidecar) -> crate::error::Result<Vec<Si
         ));
     }
 
+    let num_blobs = u32::try_from(sidecar.blobs.len()).map_err(|_| {
+        crate::error::Error::Other("cannot handle more than u32::MAX blobs".to_string())
+    })?;
+
+    let unused_data_in_last_blob =
+        (BYTES_PER_BLOB as u32).saturating_sub(num_bytes % BYTES_PER_BLOB as u32);
+
     let single_blobs = izip!(sidecar.blobs, sidecar.commitments, sidecar.proofs)
-        .map(|(data, committment, proof)| SingleBlob {
-            data: Box::new(data),
-            committment,
-            proof,
+        .enumerate()
+        .map(|(index, (data, committment, proof))| {
+            let index = u32::try_from(index)
+                .expect("checked earlier there are no more than u32::MAX blobs");
+
+            let unused_data = if index == num_blobs.saturating_sub(1) {
+                unused_data_in_last_blob
+            } else {
+                0
+            };
+
+            SingleBlob {
+                data: Box::new(data),
+                committment,
+                proof,
+                unused_bytes: unused_data,
+            }
         })
         .collect();
 
@@ -199,45 +229,23 @@ mod tests {
     }
 
     #[test]
-    fn splitting_fails_if_uneven_proofs() {
-        let invalid_sidecar = BlobTransactionSidecar {
-            blobs: vec![Default::default()],
-            commitments: vec![Default::default()],
-            proofs: vec![],
-        };
-        assert!(split_sidecar(invalid_sidecar).is_err());
-    }
-
-    #[test]
-    fn splitting_fails_if_uneven_commitments() {
-        let invalid_sidecar = BlobTransactionSidecar {
-            blobs: vec![Default::default()],
-            commitments: vec![],
-            proofs: vec![Default::default()],
-        };
-        assert!(split_sidecar(invalid_sidecar).is_err());
-    }
-
-    #[test]
-    fn splitting_fails_if_uneven_blobs() {
-        let invalid_sidecar = BlobTransactionSidecar {
-            blobs: vec![],
-            commitments: vec![Default::default()],
-            proofs: vec![Default::default()],
-        };
-        assert!(split_sidecar(invalid_sidecar).is_err());
-    }
-
-    #[test]
     fn decoding_fails_if_extra_bytes_present() {
-        let data = NonEmptyVec::try_from(vec![0; SingleBlob::SIZE + 1]).unwrap();
+        let data = Fragment {
+            data: NonEmptyVec::try_from(vec![0; SingleBlob::SIZE + 1]).unwrap(),
+            unused_bytes: 0,
+            total_bytes: 1.try_into().unwrap(),
+        };
 
         assert!(SingleBlob::decode(&data).is_err());
     }
 
     #[test]
     fn decoding_fails_if_bytes_missing() {
-        let data = NonEmptyVec::try_from(vec![0; SingleBlob::SIZE - 1]).unwrap();
+        let data = Fragment {
+            data: NonEmptyVec::try_from(vec![0; SingleBlob::SIZE - 1]).unwrap(),
+            unused_bytes: 0,
+            total_bytes: 1.try_into().unwrap(),
+        };
 
         assert!(SingleBlob::decode(&data).is_err());
     }
@@ -248,9 +256,7 @@ mod tests {
         let mut rng = rand::rngs::SmallRng::from_seed([0; 32]);
         rng.fill_bytes(&mut random_data);
 
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &random_data)
-            .build()
-            .unwrap();
+        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &random_data);
 
         let single_blobs = split_sidecar(sidecar.clone()).unwrap();
 
@@ -266,6 +272,20 @@ mod tests {
 
         let reassmbled_sidecar = merge_into_sidecar(reassmbled_single_blobs);
 
-        assert_eq!(sidecar, reassmbled_sidecar);
+        assert_eq!(sidecar.build().unwrap(), reassmbled_sidecar);
+    }
+
+    #[test]
+    fn shows_unused_bytes() {
+        let mut random_data = vec![0; 1000];
+        let mut rng = rand::rngs::SmallRng::from_seed([0; 32]);
+        rng.fill_bytes(&mut random_data);
+
+        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &random_data);
+
+        let single_blobs = split_sidecar(sidecar.clone()).unwrap();
+
+        assert_eq!(single_blobs.len(), 1);
+        assert_eq!(single_blobs[0].unused_bytes, 129984);
     }
 }

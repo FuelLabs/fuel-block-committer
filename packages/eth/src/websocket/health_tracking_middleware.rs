@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{NonEmptyVec, TransactionResponse, U256};
+use ports::types::{Fragment, NonEmptyVec, TransactionResponse, U256};
 
 use crate::{
     error::{Error, Result},
@@ -26,12 +26,19 @@ pub trait EthApi {
     ) -> Result<Option<TransactionResponse>>;
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+        fragments: NonEmptyVec<ports::types::Fragment>,
     ) -> Result<ports::l1::FragmentsSubmitted>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
     async fn block_hash_at_commit_height(&self, commit_height: u32) -> Result<[u8; 32]>;
+}
+
+#[cfg(test)]
+impl RegistersMetrics for MockEthApi {
+    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+        vec![]
+    }
 }
 
 #[derive(Clone)]
@@ -68,10 +75,13 @@ impl<T> HealthTrackingMiddleware<T> {
     }
 }
 
-// User responsible for registering any metrics T might have
-impl<T> RegistersMetrics for HealthTrackingMiddleware<T> {
+impl<T: RegistersMetrics> RegistersMetrics for HealthTrackingMiddleware<T> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        self.metrics.metrics()
+        self.metrics
+            .metrics()
+            .into_iter()
+            .chain(self.adapter.metrics())
+            .collect()
     }
 }
 
@@ -116,7 +126,7 @@ where
 
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+        fragments: NonEmptyVec<Fragment>,
     ) -> Result<ports::l1::FragmentsSubmitted> {
         let response = self.adapter.submit_state_fragments(fragments).await;
         self.note_network_status(&response);

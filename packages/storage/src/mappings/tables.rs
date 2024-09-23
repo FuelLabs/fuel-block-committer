@@ -1,4 +1,6 @@
-use ports::types::{DateTime, NonEmptyVec, TransactionState, Utc};
+use std::num::NonZeroU32;
+
+use ports::types::{DateTime, NonEmptyVec, NonNegative, TransactionState, Utc};
 use sqlx::{postgres::PgRow, Row};
 
 macro_rules! bail {
@@ -62,6 +64,8 @@ pub struct BundleFragment {
     pub idx: i32,
     pub bundle_id: i32,
     pub data: Vec<u8>,
+    pub unused_bytes: i64,
+    pub total_bytes: i64,
 }
 
 impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
@@ -88,11 +92,52 @@ impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
             crate::error::Error::Conversion(format!("Invalid db `id` ({}). Reason: {e}", value.id))
         })?;
 
+        let unused_bytes: NonNegative<i64> = value.unused_bytes.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `unused_bytes` ({}). Reason: {e}",
+                value.unused_bytes
+            ))
+        })?;
+
+        let unused_bytes: u32 = unused_bytes.as_u64().try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `unused_bytes` ({}). Reason: {e}",
+                value.unused_bytes
+            ))
+        })?;
+
+        let total_bytes: NonNegative<i64> = value.total_bytes.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `total_bytes` ({}). Reason: {e}",
+                value.total_bytes
+            ))
+        })?;
+
+        let total_bytes: u32 = total_bytes.as_u64().try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `total_bytes` ({}). Reason: {e}",
+                value.total_bytes
+            ))
+        })?;
+
+        let total_bytes: NonZeroU32 = total_bytes.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `total_bytes` ({}). Reason: {e}",
+                value.total_bytes
+            ))
+        })?;
+
+        let fragment = ports::types::Fragment {
+            data,
+            unused_bytes,
+            total_bytes,
+        };
+
         Ok(Self {
             id,
             idx,
             bundle_id,
-            data,
+            fragment,
         })
     }
 }

@@ -120,9 +120,9 @@ impl WholeStack {
                 .with_main_key_arn(main_key.id.clone())
                 .with_kms_url(main_key.url.clone())
                 .with_bundle_accumulation_timeout("1000s".to_owned())
-                .with_bundle_blocks_to_accumulate("5000".to_string())
-                .with_bundle_optimization_timeout("120s".to_owned())
-                .with_bundle_block_height_lookback("5000".to_owned())
+                .with_bundle_blocks_to_accumulate("3000".to_string())
+                .with_bundle_optimization_timeout("10s".to_owned())
+                .with_bundle_block_height_lookback("3000".to_owned())
                 .with_bundle_compression_level("level6".to_owned());
 
             let committer = if blob_support {

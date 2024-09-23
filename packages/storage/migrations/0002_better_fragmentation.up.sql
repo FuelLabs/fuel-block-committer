@@ -16,10 +16,11 @@ CREATE TABLE IF NOT EXISTS bundles (
 
 CREATE INDEX idx_bundles_start_end ON bundles (start_height, end_height);
 
--- Drop 'submission_id' from 'l1_fragments' and add 'bundle_id'
 ALTER TABLE l1_fragments
 DROP COLUMN submission_id,
 DROP COLUMN created_at,
+ADD COLUMN total_bytes BIGINT NOT NULL CHECK (total_bytes > 0),
+ADD COLUMN unused_bytes BIGINT NOT NULL CHECK (unused_bytes >= 0),
 ADD COLUMN bundle_id INTEGER REFERENCES bundles(id) NOT NULL,
 ADD CONSTRAINT check_data_not_empty CHECK (octet_length(data) > 0),
 ALTER COLUMN fragment_idx TYPE INTEGER;

@@ -104,7 +104,7 @@ pub(crate) mod test_utils {
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
     use mocks::l1::TxStatus;
-    use ports::{storage::Storage, types::{DateTime, NonEmptyVec, Utc}};
+    use ports::{storage::Storage, types::{DateTime, Fragment, NonEmptyVec, Utc}};
     use storage::{DbWithProcess, PostgresProcess};
 
     use crate::{
@@ -121,7 +121,7 @@ pub(crate) mod test_utils {
             use delegate::delegate;
             use mockall::{predicate::eq, Sequence};
             use ports::{
-                l1::FragmentsSubmitted, types::{L1Height, NonEmptyVec, TransactionResponse, U256}
+                l1::FragmentsSubmitted, types::{Fragment, L1Height, NonEmptyVec, TransactionResponse, U256}
             };
 
             pub struct FullL1Mock {
@@ -159,7 +159,7 @@ pub(crate) mod test_utils {
                     to self.api {
                         async fn submit_state_fragments(
                             &self,
-                            fragments: NonEmptyVec<NonEmptyVec<u8>>,
+                            fragments: NonEmptyVec<Fragment>,
                         ) -> ports::l1::Result<FragmentsSubmitted>;
                         async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
                         async fn balance(&self) -> ports::l1::Result<U256>;
@@ -174,7 +174,7 @@ pub(crate) mod test_utils {
             }
 
             pub fn expects_state_submissions(
-                expectations: impl IntoIterator<Item = (Option<NonEmptyVec<NonEmptyVec<u8>>>, [u8; 32])>,
+                expectations: impl IntoIterator<Item = (Option<NonEmptyVec<Fragment>>, [u8; 32])>,
             ) -> ports::l1::MockApi {
                 let mut sequence = Sequence::new();
 
@@ -427,7 +427,7 @@ pub(crate) mod test_utils {
                 .unwrap();
         }
 
-        pub async fn insert_fragments(&self, amount: usize) -> Vec<NonEmptyVec<u8>> {
+        pub async fn insert_fragments(&self, amount: usize) -> Vec<Fragment> {
             let max_per_blob = (Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
             self.import_blocks(Blocks::WithHeights { range: 0..=0, tx_per_block: amount, size_per_tx: max_per_blob  }).await;
 
@@ -445,7 +445,7 @@ pub(crate) mod test_utils {
             let fragments = self.db.oldest_nonfinalized_fragments(amount).await.unwrap();
             assert_eq!(fragments.len(), amount);
 
-            fragments.into_iter().map(|f| f.data).collect()
+            fragments.into_iter().map(|f| f.fragment).collect()
         }
 
         pub async fn import_blocks(&self, blocks: Blocks) -> ImportedBlocks {

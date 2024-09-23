@@ -12,7 +12,9 @@ mod error;
 mod postgres;
 use ports::{
     storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
-    types::{BlockSubmission, DateTime, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc},
+    types::{
+        BlockSubmission, DateTime, Fragment, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc,
+    },
 };
 pub use postgres::{DbConfig, Postgres};
 
@@ -36,8 +38,8 @@ impl Storage for Postgres {
     async fn insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,
-        fragments: NonEmptyVec<NonEmptyVec<u8>>,
-    ) -> Result<NonEmptyVec<BundleFragment>> {
+        fragments: NonEmptyVec<Fragment>,
+    ) -> Result<()> {
         Ok(self
             ._insert_bundle_and_fragments(block_range, fragments)
             .await?)
@@ -187,16 +189,31 @@ mod tests {
         let ids = storage
             .insert_bundle_and_fragments(
                 0..=0,
-                non_empty_vec!(non_empty_vec![0], non_empty_vec![1]),
+                non_empty_vec!(
+                    Fragment {
+                        data: non_empty_vec![0],
+                        unused_bytes: 1000,
+                        total_bytes: 100.try_into().unwrap()
+                    },
+                    Fragment {
+                        data: non_empty_vec![1],
+                        unused_bytes: 1000,
+                        total_bytes: 100.try_into().unwrap()
+                    }
+                ),
             )
             .await
-            .unwrap()
-            .into_inner()
-            .into_iter()
-            .map(|fragment| fragment.id)
-            .collect_vec();
+            .unwrap();
 
-        ids.try_into().unwrap()
+        storage
+            .oldest_nonfinalized_fragments(2)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|f| f.id)
+            .collect_vec()
+            .try_into()
+            .unwrap()
     }
 
     #[tokio::test]
@@ -255,25 +272,38 @@ mod tests {
         let storage = start_db().await;
 
         let block_range = 1..=5;
-        let fragment_data1 = NonEmptyVec::try_from(vec![1u8, 2, 3]).unwrap();
-        let fragment_data2 = NonEmptyVec::try_from(vec![4u8, 5, 6]).unwrap();
+        let fragment_1 = Fragment {
+            data: NonEmptyVec::try_from(vec![1u8, 2, 3]).unwrap(),
+            unused_bytes: 1000,
+            total_bytes: 100.try_into().unwrap(),
+        };
+        let fragment_2 = Fragment {
+            data: NonEmptyVec::try_from(vec![4u8, 5, 6]).unwrap(),
+            unused_bytes: 1000,
+            total_bytes: 100.try_into().unwrap(),
+        };
         let fragments =
-            NonEmptyVec::try_from(vec![fragment_data1.clone(), fragment_data2.clone()]).unwrap();
+            NonEmptyVec::try_from(vec![fragment_1.clone(), fragment_2.clone()]).unwrap();
 
         // When
-        let inserted_fragments = storage
+        storage
             .insert_bundle_and_fragments(block_range.clone(), fragments.clone())
             .await
             .unwrap();
 
         // Then
-        assert_eq!(inserted_fragments.len().get(), 2);
-        for (inserted_fragment, fragment_data) in inserted_fragments
-            .inner()
-            .iter()
-            .zip(fragments.inner().iter())
+        let inserted_fragments = storage
+            .oldest_nonfinalized_fragments(2)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect_vec();
+
+        assert_eq!(inserted_fragments.len(), 2);
+        for (inserted_fragment, given_fragment) in
+            inserted_fragments.iter().zip(fragments.inner().iter())
         {
-            assert_eq!(inserted_fragment.data, fragment_data.clone());
+            assert_eq!(inserted_fragment.fragment, *given_fragment);
         }
     }
 
@@ -342,7 +372,14 @@ mod tests {
         insert_sequence_of_unbundled_blocks(&storage, range.clone()).await;
 
         storage
-            .insert_bundle_and_fragments(range, non_empty_vec![non_empty_vec![1]])
+            .insert_bundle_and_fragments(
+                range,
+                non_empty_vec![Fragment {
+                    data: non_empty_vec![1],
+                    unused_bytes: 1000,
+                    total_bytes: 100.try_into().unwrap()
+                }],
+            )
             .await
             .unwrap();
     }

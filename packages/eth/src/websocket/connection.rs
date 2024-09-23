@@ -2,7 +2,7 @@ use std::num::{NonZeroU32, NonZeroUsize};
 
 use alloy::{
     consensus::BlobTransactionSidecar,
-    eips::eip4844,
+    eips::eip4844::{self, BYTES_PER_BLOB},
     network::{Ethereum, EthereumWallet, TransactionBuilder, TxSigner},
     primitives::{Address, U256},
     providers::{
@@ -14,11 +14,13 @@ use alloy::{
     signers::aws::AwsSigner,
     sol,
 };
-use itertools::izip;
-use itertools::Itertools;
+use metrics::{
+    prometheus::{self, exponential_buckets, histogram_opts, linear_buckets, Opts},
+    RegistersMetrics,
+};
 use ports::{
     l1::FragmentsSubmitted,
-    types::{NonEmptyVec, TransactionResponse},
+    types::{Fragment, NonEmptyVec, TransactionResponse},
 };
 use url::Url;
 
@@ -70,6 +72,57 @@ pub struct WsConnection {
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
+    metrics: Metrics,
+}
+
+impl RegistersMetrics for WsConnection {
+    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+        vec![
+            Box::new(self.metrics.blobs_per_tx.clone()),
+            Box::new(self.metrics.blob_used_bytes.clone()),
+        ]
+    }
+}
+
+#[derive(Clone)]
+struct Metrics {
+    blobs_per_tx: prometheus::Histogram,
+    blob_used_bytes: prometheus::Histogram,
+}
+
+fn custom_exponential_buckets(start: f64, end: f64, steps: usize) -> Vec<f64> {
+    let factor = (end / start).powf(1.0 / (steps - 1) as f64);
+    let mut buckets = Vec::with_capacity(steps);
+
+    let mut value = start;
+    for _ in 0..(steps - 1) {
+        buckets.push(value.ceil());
+        value *= factor;
+    }
+
+    buckets.push(end.ceil());
+
+    buckets
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            blobs_per_tx: prometheus::Histogram::with_opts(histogram_opts!(
+                "blob_per_tx",
+                "Number of blobs per blob transaction",
+                vec![1.0f64, 2., 3., 4., 5., 6.]
+            ))
+            .expect("to be correctly configured"),
+
+            blob_used_bytes: prometheus::Histogram::with_opts(histogram_opts!(
+                "blob_utilization",
+                "% utilization of blobs",
+                custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
+            ))
+            .expect("to be correctly configured"),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -120,7 +173,7 @@ impl EthApi for WsConnection {
 
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+        fragments: NonEmptyVec<Fragment>,
     ) -> Result<ports::l1::FragmentsSubmitted> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
@@ -135,6 +188,15 @@ impl EthApi for WsConnection {
             .with_blob_sidecar(sidecar);
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
+        self.metrics
+            .blobs_per_tx
+            .observe(num_fragments.get() as f64);
+
+        for fragment in fragments.inner() {
+            self.metrics
+                .blob_used_bytes
+                .observe(fragment.total_bytes.get() as f64);
+        }
 
         Ok(FragmentsSubmitted {
             tx: tx.tx_hash().0,
@@ -204,6 +266,7 @@ impl WsConnection {
             blob_signer_address,
             contract,
             commit_interval,
+            metrics: Default::default(),
         })
     }
 

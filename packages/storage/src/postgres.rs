@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use itertools::Itertools;
 use ports::{
     storage::{BundleFragment, SequentialFuelBlocks},
-    types::{BlockSubmission, DateTime, NonEmptyVec, NonNegative, TransactionState, Utc},
+    types::{BlockSubmission, DateTime, Fragment, NonEmptyVec, NonNegative, TransactionState, Utc},
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -117,7 +117,7 @@ impl Postgres {
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
-                    SELECT f.id, f.bundle_id, f.idx, f.data
+                    SELECT f.*
                     FROM l1_fragments f
                     LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
                     LEFT JOIN l1_transactions t ON t.id = tf.transaction_id
@@ -398,8 +398,8 @@ impl Postgres {
     pub(crate) async fn _insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,
-        fragment_datas: NonEmptyVec<NonEmptyVec<u8>>,
-    ) -> Result<NonEmptyVec<BundleFragment>> {
+        fragments: NonEmptyVec<Fragment>,
+    ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
         let start = *block_range.start();
@@ -415,46 +415,31 @@ impl Postgres {
         .await?
         .id;
 
-        let mut fragments = Vec::with_capacity(fragment_datas.len().get());
         let bundle_id: NonNegative<i32> = bundle_id.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!("invalid bundle id received from db: {e}"))
         })?;
 
         // Insert fragments associated with the bundle
-        for (idx, fragment_data) in fragment_datas.into_inner().into_iter().enumerate() {
+        for (idx, fragment) in fragments.into_inner().into_iter().enumerate() {
             let idx = i32::try_from(idx).map_err(|_| {
                 crate::error::Error::Conversion(format!("invalid idx for fragment: {idx}"))
             })?;
-            let record = sqlx::query!(
-                "INSERT INTO l1_fragments (idx, data, bundle_id) VALUES ($1, $2, $3) RETURNING id",
+
+            sqlx::query!(
+                "INSERT INTO l1_fragments (idx, data, bundle_id, unused_bytes, total_bytes) VALUES ($1, $2, $3, $4, $5)",
                 idx,
-                fragment_data.inner(),
-                bundle_id.as_i32()
+                fragment.data.inner().as_slice(),
+                bundle_id.as_i32(),
+                i64::from(fragment.unused_bytes),
+                i64::from(fragment.total_bytes.get())
             )
-            .fetch_one(&mut *tx)
+            .execute(&mut *tx)
             .await?;
-
-            let id = record.id.try_into().map_err(|e| {
-                crate::error::Error::Conversion(format!(
-                    "invalid fragment id received from db: {e}"
-                ))
-            })?;
-
-            fragments.push(BundleFragment {
-                id,
-                idx: idx
-                    .try_into()
-                    .expect("guaranteed to be positive since it came from an usize"),
-                bundle_id,
-                data: fragment_data.clone(),
-            });
         }
 
         // Commit the transaction
         tx.commit().await?;
 
-        Ok(fragments.try_into().expect(
-            "guaranteed to have at least one element since the data also came from a non empty vec",
-        ))
+        Ok(())
     }
 }

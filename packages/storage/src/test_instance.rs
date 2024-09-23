@@ -7,7 +7,9 @@ use std::{
 
 use ports::{
     storage::{BundleFragment, FuelBlock, SequentialFuelBlocks, Storage},
-    types::{BlockSubmission, DateTime, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc},
+    types::{
+        BlockSubmission, DateTime, Fragment, L1Tx, NonEmptyVec, NonNegative, TransactionState, Utc,
+    },
 };
 use testcontainers::{
     core::{ContainerPort, WaitFor},
@@ -169,8 +171,8 @@ impl Storage for DbWithProcess {
             async fn insert_bundle_and_fragments(
                 &self,
                 block_range: RangeInclusive<u32>,
-                fragments: NonEmptyVec<NonEmptyVec<u8>>,
-            ) -> ports::storage::Result<NonEmptyVec<BundleFragment>>;
+                fragments: NonEmptyVec<Fragment>,
+            ) -> ports::storage::Result<()>;
             async fn record_pending_tx(
                 &self,
                 tx_hash: [u8; 32],

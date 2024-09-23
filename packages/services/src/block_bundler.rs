@@ -67,7 +67,7 @@ where
     C: Clock,
     BF: BundlerFactory,
 {
-    async fn bundle_and_fragment_blocks(&self) -> Result<Option<NonEmptyVec<BundleFragment>>> {
+    async fn bundle_and_fragment_blocks(&self) -> Result<()> {
         let Some(blocks) = self
             .storage
             .lowest_sequence_of_unbundled_blocks(
@@ -76,7 +76,7 @@ where
             )
             .await?
         else {
-            return Ok(None);
+            return Ok(());
         };
 
         let still_time_to_accumulate_more = self.still_time_to_accumulate_more().await?;
@@ -87,7 +87,7 @@ where
                 self.config.num_blocks_to_accumulate.get()
             );
 
-            return Ok(None);
+            return Ok(());
         }
 
         if !still_time_to_accumulate_more {
@@ -110,12 +110,11 @@ where
 
         info!("Bundler proposed: known_to_be_optimal={optimal}, optimization_attempts={optimization_attempts}, compression_ratio={compression_ratio}, heights={block_heights:?}, num_blocks={}, num_fragments={}, gas_usage={gas_usage:?}",  block_heights.clone().count(), fragments.len());
 
-        let fragments = self
-            .storage
+        self.storage
             .insert_bundle_and_fragments(block_heights, fragments)
             .await?;
 
-        Ok(Some(fragments))
+        Ok(())
     }
 
     /// Finds the optimal bundle based on the current state and time constraints.
@@ -186,6 +185,7 @@ mod tests {
     use ports::l1::{FragmentEncoder, FragmentsSubmitted};
     use ports::non_empty_vec;
     use ports::storage::SequentialFuelBlocks;
+    use ports::types::Fragment;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
     use tokio::sync::Mutex;
 
@@ -335,7 +335,7 @@ mod tests {
             .oldest_nonfinalized_fragments(1)
             .await?
             .into_iter()
-            .map(|f| f.data)
+            .map(|f| f.fragment)
             .collect_vec();
 
         assert_eq!(fragments, expected_fragments.into_inner());
@@ -391,7 +391,7 @@ mod tests {
             .oldest_nonfinalized_fragments(1)
             .await?
             .into_iter()
-            .map(|f| f.data)
+            .map(|f| f.fragment)
             .collect_vec();
 
         assert_eq!(unsubmitted_fragments, expected_fragments.into_inner());
@@ -438,7 +438,7 @@ mod tests {
             .oldest_nonfinalized_fragments(10)
             .await?
             .into_iter()
-            .map(|f| f.data)
+            .map(|f| f.fragment)
             .collect_vec();
         assert_eq!(unsubmitted_fragments, fragments.into_inner());
 
@@ -488,7 +488,7 @@ mod tests {
         let unsubmitted_fragments = setup.db().oldest_nonfinalized_fragments(usize::MAX).await?;
         let fragments = unsubmitted_fragments
             .iter()
-            .map(|f| f.data.clone())
+            .map(|f| f.fragment.clone())
             .collect::<Vec<_>>();
         let all_fragments = fragments_1
             .into_inner()
@@ -512,7 +512,11 @@ mod tests {
             })
             .await;
 
-        let unoptimal_fragments = non_empty_vec![test_utils::random_data(100usize)];
+        let unoptimal_fragments = non_empty_vec![Fragment {
+            data: test_utils::random_data(100usize),
+            unused_bytes: 1000,
+            total_bytes: 50.try_into().unwrap(),
+        }];
 
         let unoptimal_bundle = BundleProposal {
             fragments: unoptimal_fragments.clone(),

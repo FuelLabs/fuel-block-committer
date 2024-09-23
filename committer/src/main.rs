@@ -103,7 +103,6 @@ async fn main() -> Result<()> {
             storage.clone(),
             cancel_token.clone(),
             &config,
-            starting_height,
         );
 
         let state_importer_handle = setup::block_importer(

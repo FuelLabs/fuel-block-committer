@@ -190,7 +190,7 @@ mod tests {
 
         let expected_block = encode_blocks(non_empty_vec![block]);
 
-        assert_eq!(*all_blocks, expected_block);
+        assert_eq!(all_blocks.into_inner(), expected_block);
 
         Ok(())
     }
@@ -271,7 +271,7 @@ mod tests {
 
         let expected_blocks = encode_blocks(all_blocks.try_into().unwrap());
 
-        pretty_assertions::assert_eq!(*stored_blocks, expected_blocks);
+        pretty_assertions::assert_eq!(stored_blocks.into_inner(), expected_blocks);
 
         Ok(())
     }
@@ -347,7 +347,7 @@ mod tests {
             .unwrap();
         let expected_blocks = encode_blocks(new_blocks.try_into().unwrap());
 
-        pretty_assertions::assert_eq!(*stored_new_blocks, expected_blocks);
+        pretty_assertions::assert_eq!(stored_new_blocks.into_inner(), expected_blocks);
 
         Ok(())
     }
@@ -386,7 +386,7 @@ mod tests {
             .await?
             .unwrap();
 
-        assert_eq!(*stored_blocks, storage_blocks);
+        assert_eq!(stored_blocks.into_inner(), storage_blocks);
 
         Ok(())
     }

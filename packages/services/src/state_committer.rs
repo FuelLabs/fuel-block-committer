@@ -4,7 +4,7 @@ use itertools::Itertools;
 use ports::{
     clock::Clock,
     storage::{BundleFragment, Storage},
-    types::{DateTime, NonEmptyVec, Utc},
+    types::{DateTime, Fragment, NonEmptyVec, Utc},
 };
 use tracing::info;
 
@@ -46,7 +46,7 @@ where
         let data = fragments
             .inner()
             .iter()
-            .map(|f| f.data.clone())
+            .map(|f| f.fragment.clone())
             .collect::<Vec<_>>()
             .try_into()
             .expect("non-empty vec");

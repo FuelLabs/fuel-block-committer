@@ -2,14 +2,14 @@ use delegate::delegate;
 use std::{
     fmt::{Display, Formatter},
     num::NonZeroUsize,
-    ops::{Deref, RangeInclusive},
+    ops::{Deref, Index, RangeInclusive},
     sync::Arc,
 };
 
 pub use futures::stream::BoxStream;
 pub use sqlx::types::chrono::{DateTime, Utc};
 
-use crate::types::{BlockSubmission, L1Tx, NonEmptyVec, NonNegative, TransactionState};
+use crate::types::{BlockSubmission, Fragment, L1Tx, NonEmptyVec, NonNegative, TransactionState};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -31,7 +31,7 @@ pub struct BundleFragment {
     pub id: NonNegative<i32>,
     pub idx: NonNegative<i32>,
     pub bundle_id: NonNegative<i32>,
-    pub data: NonEmptyVec<u8>,
+    pub fragment: Fragment,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -43,16 +43,16 @@ pub struct SequentialFuelBlocks {
 
 impl IntoIterator for SequentialFuelBlocks {
     type Item = FuelBlock;
-    type IntoIter = <Vec<FuelBlock> as IntoIterator>::IntoIter;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.blocks.into_inner().into_iter()
     }
 }
 
-impl Deref for SequentialFuelBlocks {
-    type Target = NonEmptyVec<FuelBlock>;
-    fn deref(&self) -> &Self::Target {
-        &self.blocks
+impl Index<usize> for SequentialFuelBlocks {
+    type Output = FuelBlock;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.blocks[index]
     }
 }
 
@@ -154,8 +154,8 @@ pub trait Storage: Send + Sync {
     async fn insert_bundle_and_fragments(
         &self,
         block_range: RangeInclusive<u32>,
-        fragments: NonEmptyVec<NonEmptyVec<u8>>,
-    ) -> Result<NonEmptyVec<BundleFragment>>;
+        fragments: NonEmptyVec<Fragment>,
+    ) -> Result<()>;
 
     async fn record_pending_tx(
         &self,
@@ -182,11 +182,11 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     starting_height: u32,
                     limit: usize,
                 ) -> Result<Option<SequentialFuelBlocks>>;
-                async fn insert_bundle_and_fragments(
-                    &self,
-                    block_range: RangeInclusive<u32>,
-                    fragments: NonEmptyVec<NonEmptyVec<u8>>,
-                ) -> Result<NonEmptyVec<BundleFragment>>;
+            async fn insert_bundle_and_fragments(
+                &self,
+                block_range: RangeInclusive<u32>,
+                fragments: NonEmptyVec<Fragment>,
+            ) -> Result<()>;
 
                 async fn record_pending_tx(
                     &self,
@@ -218,9 +218,8 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn insert_bundle_and_fragments(
                     &self,
                     block_range: RangeInclusive<u32>,
-                    fragments: NonEmptyVec<NonEmptyVec<u8>>,
-                ) -> Result<NonEmptyVec<BundleFragment>>;
-
+                    fragments: NonEmptyVec<Fragment>,
+                ) -> Result<()>;
                 async fn record_pending_tx(
                     &self,
                     tx_hash: [u8; 32],

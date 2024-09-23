@@ -4,7 +4,7 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::primitives::Address;
 use ports::{
     l1::{FragmentsSubmitted, Result},
-    types::{NonEmptyVec, TransactionResponse, U256},
+    types::{Fragment, NonEmptyVec, TransactionResponse, U256},
 };
 use url::Url;
 
@@ -83,7 +83,7 @@ impl WebsocketClient {
 
     pub(crate) async fn submit_state_fragments(
         &self,
-        fragments: NonEmptyVec<NonEmptyVec<u8>>,
+        fragments: NonEmptyVec<Fragment>,
     ) -> ports::l1::Result<FragmentsSubmitted> {
         Ok(self.inner.submit_state_fragments(fragments).await?)
     }

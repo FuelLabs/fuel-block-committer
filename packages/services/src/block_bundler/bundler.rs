@@ -2,7 +2,10 @@ use crate::Result;
 use itertools::Itertools;
 
 use flate2::{write::GzEncoder, Compression};
-use ports::{storage::SequentialFuelBlocks, types::NonEmptyVec};
+use ports::{
+    storage::SequentialFuelBlocks,
+    types::{Fragment, NonEmptyVec},
+};
 use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive, str::FromStr};
 
 #[derive(Debug, Clone, Copy)]
@@ -150,7 +153,7 @@ impl Compressor {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BundleProposal {
-    pub fragments: NonEmptyVec<NonEmptyVec<u8>>,
+    pub fragments: NonEmptyVec<Fragment>,
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
     pub optimization_attempts: u64,

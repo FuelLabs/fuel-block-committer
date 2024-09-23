@@ -108,7 +108,6 @@ pub fn state_committer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
-    starting_fuel_height: u32,
 ) -> tokio::task::JoinHandle<()> {
     let state_committer = services::StateCommitter::new(l1, storage, SystemClock);
 
