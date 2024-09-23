@@ -1,9 +1,9 @@
-use delegate::delegate;
 use std::num::NonZeroU32;
 
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
+use delegate::delegate;
 use ports::types::{Fragment, NonEmpty, TransactionResponse, U256};
 
 use crate::{

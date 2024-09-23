@@ -182,9 +182,8 @@ mod tests {
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{DbWithProcess, PostgresProcess};
 
-    use crate::{test_utils::mocks::l1::FullL1Mock, validator::BlockValidator};
-
     use super::*;
+    use crate::{test_utils::mocks::l1::FullL1Mock, validator::BlockValidator};
 
     fn given_l1_that_expects_submission(
         expected_hash: [u8; 32],

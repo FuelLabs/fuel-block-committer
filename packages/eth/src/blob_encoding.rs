@@ -1,16 +1,11 @@
 use std::num::NonZeroUsize;
 
-use alloy::eips::eip4844::BYTES_PER_BLOB;
-use itertools::izip;
-use itertools::Itertools;
-use ports::types::CollectNonEmpty;
-use ports::types::Fragment;
-use ports::types::NonEmpty;
-
 use alloy::{
     consensus::{BlobTransactionSidecar, SidecarBuilder, SimpleCoder},
-    eips::eip4844::{self, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB},
+    eips::eip4844::{self, BYTES_PER_BLOB, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB},
 };
+use itertools::{izip, Itertools};
+use ports::types::{CollectNonEmpty, Fragment, NonEmpty};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Eip4844BlobEncoder;
@@ -188,7 +183,6 @@ fn merge_into_sidecar(
 #[cfg(test)]
 mod tests {
     use alloy::consensus::{SidecarBuilder, SimpleCoder};
-
     use ports::l1::FragmentEncoder;
     use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
     use test_case::test_case;

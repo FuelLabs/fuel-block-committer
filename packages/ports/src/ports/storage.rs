@@ -1,5 +1,3 @@
-use delegate::delegate;
-use itertools::Itertools;
 use std::{
     fmt::{Display, Formatter},
     iter::{Chain, Once},
@@ -8,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
+use delegate::delegate;
 pub use futures::stream::BoxStream;
+use itertools::Itertools;
 pub use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{

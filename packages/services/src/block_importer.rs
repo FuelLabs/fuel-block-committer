@@ -154,12 +154,11 @@ mod tests {
     use ports::types::nonempty;
     use rand::{rngs::StdRng, SeedableRng};
 
+    use super::*;
     use crate::{
         test_utils::{self, Blocks, ImportedBlocks},
         BlockValidator, Error,
     };
-
-    use super::*;
 
     #[tokio::test]
     async fn imports_first_block_when_db_is_empty() -> Result<()> {

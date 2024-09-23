@@ -1,10 +1,10 @@
-use delegate::delegate;
 use std::{
     borrow::Cow,
     ops::RangeInclusive,
     sync::{Arc, Weak},
 };
 
+use delegate::delegate;
 use ports::{
     storage::{BundleFragment, FuelBlock, SequentialFuelBlocks, Storage},
     types::{

@@ -9,8 +9,10 @@ mod status_reporter;
 mod validator;
 mod wallet_balance_tracker;
 
-pub use block_bundler::bundler::{CompressionLevel, Factory as BundlerFactory};
-pub use block_bundler::{BlockBundler, Config as BlockBundlerConfig};
+pub use block_bundler::{
+    bundler::{CompressionLevel, Factory as BundlerFactory},
+    BlockBundler, Config as BlockBundlerConfig,
+};
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
@@ -101,7 +103,6 @@ pub(crate) mod test_utils {
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
-
     use mocks::l1::TxStatus;
     use ports::{
         storage::Storage,
@@ -109,14 +110,13 @@ pub(crate) mod test_utils {
     };
     use storage::{DbWithProcess, PostgresProcess};
 
+    use super::Runner;
     use crate::{
         block_bundler::bundler::Factory,
         block_importer::{self, encode_blocks},
         BlockBundler, BlockBundlerConfig, BlockImporter, BlockValidator, StateCommitter,
         StateListener,
     };
-
-    use super::Runner;
 
     pub mod mocks {
         pub mod l1 {

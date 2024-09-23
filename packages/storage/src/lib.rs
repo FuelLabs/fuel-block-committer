@@ -90,13 +90,14 @@ impl Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use itertools::Itertools;
     use ports::{
         storage::{Error, Storage},
         types::{nonempty, CollectNonEmpty},
     };
     use rand::{thread_rng, Rng, SeedableRng};
+
+    use super::*;
 
     // Helper function to create a storage instance for testing
     async fn start_db() -> DbWithProcess {
@@ -491,7 +492,6 @@ mod tests {
         // u16::MAX because of implementation details
         insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2).await;
     }
-    //
     // #[tokio::test]
     // async fn something() {
     //     let port = 5432;

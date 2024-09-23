@@ -102,12 +102,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test_utils::mocks::l1::TxStatus;
-    use crate::{test_utils, Runner, StateCommitter};
+    use ports::{l1::FragmentsSubmitted, types::nonempty};
 
-    use ports::l1::FragmentsSubmitted;
-    use ports::types::nonempty;
+    use super::*;
+    use crate::{test_utils, test_utils::mocks::l1::TxStatus, Runner, StateCommitter};
 
     #[tokio::test]
     async fn sends_fragments_in_order() -> Result<()> {

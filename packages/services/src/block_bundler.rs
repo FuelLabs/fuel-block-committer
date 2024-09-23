@@ -176,17 +176,24 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test_utils::{self, encode_and_merge, Blocks, ImportedBlocks};
-    use crate::CompressionLevel;
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
     use itertools::Itertools;
-    use ports::l1::FragmentEncoder;
-    use ports::storage::SequentialFuelBlocks;
-    use ports::types::{nonempty, CollectNonEmpty, Fragment};
-    use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-    use tokio::sync::Mutex;
+    use ports::{
+        l1::FragmentEncoder,
+        storage::SequentialFuelBlocks,
+        types::{nonempty, CollectNonEmpty, Fragment},
+    };
+    use tokio::sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        Mutex,
+    };
+
+    use super::*;
+    use crate::{
+        test_utils::{self, encode_and_merge, Blocks, ImportedBlocks},
+        CompressionLevel,
+    };
 
     /// Define a TestBundlerWithControl that uses channels to control bundle proposals
     struct ControllableBundler {

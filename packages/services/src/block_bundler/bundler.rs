@@ -1,11 +1,12 @@
-use crate::Result;
+use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive, str::FromStr};
 
 use flate2::{write::GzEncoder, Compression};
 use ports::{
     storage::SequentialFuelBlocks,
     types::{CollectNonEmpty, Fragment, NonEmpty},
 };
-use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive, str::FromStr};
+
+use crate::Result;
 
 #[derive(Debug, Clone, Copy)]
 struct Compressor {
@@ -390,13 +391,11 @@ where
 mod tests {
 
     use eth::Eip4844BlobEncoder;
-
     use fuel_crypto::SecretKey;
     use ports::{l1::FragmentEncoder, types::nonempty};
 
-    use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
-
     use super::*;
+    use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
 
     #[test]
     fn can_disable_compression() {
