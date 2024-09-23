@@ -103,6 +103,8 @@ where
         tx.submission_id = submission.id;
         self.storage.record_block_submission(tx, submission).await?;
 
+        info!("submitted {fuel_block:?}!");
+
         Ok(())
     }
 
@@ -158,6 +160,7 @@ where
                 block_height: submission.block_height,
             },
             _ => {
+                dbg!("what");
                 if self.check_if_stale(fuel_block_height, latest_submission) {
                     Action::DoNothing
                 } else {
@@ -230,7 +233,6 @@ where
         let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
 
         let action = self.decide_action(latest_submission.as_ref(), current_epoch_block_height);
-
         match action {
             Action::DoNothing => {}
             Action::Post => {
@@ -240,15 +242,13 @@ where
                     self.fetch_block(current_epoch_block_height).await?
                 };
 
-                self.submit_block(block)
-                    .await
-                    .map_err(|e| Error::Other(e.to_string()))?;
-                info!("submitted {block:?}!");
+                self.submit_block(block).await?;
             }
             Action::UpdateTx {
                 submission_id,
                 block_height,
             } => {
+                dbg!("updating txs ", block_height);
                 self.update_transactions(submission_id, block_height)
                     .await?
             }
@@ -339,6 +339,80 @@ mod tests {
             .return_once(move || Ok(0u32.into()));
 
         l1
+    }
+
+    #[tokio::test]
+    async fn will_do_nothing_if_latest_block_is_stale_and_completed() {
+        // given
+        let secret_key = given_secret_key();
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+        let latest_block = given_a_block(10, &secret_key);
+        let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
+
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![10]).await;
+        db.update_block_submission_tx([10; 32], TransactionState::Finalized)
+            .await
+            .unwrap();
+
+        let mut l1 = MockL1::new();
+        l1.contract.expect_submit().never();
+
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+
+        // when
+        block_committer.run().await.unwrap();
+
+        // MockL1 verifies that submit was not called
+    }
+
+    #[tokio::test]
+    async fn will_submit_on_latest_epoch() {
+        // given
+        let secret_key = given_secret_key();
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+        let latest_block = given_a_block(10, &secret_key);
+        let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
+
+        let validated_latest_block = ValidatedFuelBlock::new(*latest_block.id, 10);
+        let l1 = given_l1_that_expects_submission(validated_latest_block);
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![]).await;
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+
+        // when
+        block_committer.run().await.unwrap();
+
+        // MockL1 validates the expected calls are made
+    }
+
+    #[tokio::test]
+    async fn will_skip_incomplete_submission_to_submit_latest() {
+        // given
+        let secret_key = given_secret_key();
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+        let latest_block = given_a_block(10, &secret_key);
+        let all_blocks = vec![
+            given_a_block(8, &secret_key),
+            given_a_block(9, &secret_key),
+            latest_block.clone(),
+        ];
+        let fuel_adapter = given_fetcher(all_blocks);
+
+        let validated_latest_block = ValidatedFuelBlock::new(*latest_block.id, 10);
+        let l1 = given_l1_that_expects_submission(validated_latest_block);
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = db_with_submissions(&process, vec![8]).await;
+
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+
+        // when
+        block_committer.run().await.unwrap();
+
+        // MockL1 validates the expected calls are made
     }
 
     #[tokio::test]
@@ -480,7 +554,7 @@ mod tests {
                 nonce: height,
                 ..Default::default()
             };
-            db.record_block_submission(submission_tx, given_a_pending_submission(height))
+            db.record_block_submission(submission_tx, given_incomplete_submission(height))
                 .await
                 .unwrap();
         }
@@ -508,7 +582,7 @@ mod tests {
         fetcher
     }
 
-    fn given_a_pending_submission(block_height: u32) -> BlockSubmission {
+    fn given_incomplete_submission(block_height: u32) -> BlockSubmission {
         let mut submission: BlockSubmission = rand::thread_rng().gen();
         submission.block_height = block_height;
 
