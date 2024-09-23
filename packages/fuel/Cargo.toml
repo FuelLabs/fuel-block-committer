@@ -11,14 +11,14 @@ rust-version = { workspace = true }
 build = "build.rs"
 
 [dependencies]
-delegate = { workspace = true }
 cynic = { version = "2.2", features = ["http-reqwest"] }
-trait-variant = { workspace = true }
+delegate = { workspace = true }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
 fuel-core-types = { workspace = true }
 futures = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["fuel"] }
+trait-variant = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]

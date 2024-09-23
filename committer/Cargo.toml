@@ -12,6 +12,7 @@ rust-version = { workspace = true }
 [dependencies]
 actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["default", "derive"] }
+clock = { workspace = true }
 config = { workspace = true, features = ["toml", "async"] }
 eth = { workspace = true }
 fuel = { workspace = true }
@@ -27,7 +28,6 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
-clock = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]

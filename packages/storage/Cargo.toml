@@ -10,6 +10,8 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+delegate = { workspace = true, optional = true }
+futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 ports = { workspace = true, features = ["storage"] }
@@ -30,8 +32,6 @@ testcontainers = { workspace = true, optional = true, features = [
 ] }
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
-futures = { workspace = true }
-delegate = { workspace = true, optional = true }
 
 [dev-dependencies]
 ports = { workspace = true, features = ["storage"] }

@@ -10,7 +10,6 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-delegate = { workspace = true }
 alloy = { workspace = true, features = [
   "consensus",
   "network",
@@ -21,23 +20,24 @@ alloy = { workspace = true, features = [
   "rpc-types",
   "reqwest-rustls-tls",
 ] }
-aws-config = { workspace = true, features = ["default"] }
 async-trait = { workspace = true }
+aws-config = { workspace = true, features = ["default"] }
 aws-sdk-kms = { workspace = true, features = ["default"] }
 c-kzg = { workspace = true }
+delegate = { workspace = true }
 futures = { workspace = true }
+itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
-itertools = { workspace = true, features = ["use_alloc"] }
 
 [dev-dependencies]
-rand = { workspace = true, features = ["small_rng"] }
-test-case = { workspace = true }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["l1", "test-helpers"] }
+rand = { workspace = true, features = ["small_rng"] }
+test-case = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 
 [features]

@@ -25,25 +25,25 @@ walkdir = { workspace = true }
 zip = { workspace = true, features = ["deflate"] }
 
 [dev-dependencies]
-itertools = { workspace = true, features = ["use_alloc"] }
-futures = { workspace = true }
-fs_extra = { workspace = true }
 alloy = { workspace = true, features = [
   "signer-aws",
   "signer-mnemonic",
   "serde",
 ] }
 anyhow = { workspace = true, features = ["std"] }
-aws-sdk-kms = { workspace = true, features = ["rustls"] }
 aws-config = { workspace = true, features = ["rustls"] }
+aws-sdk-kms = { workspace = true, features = ["rustls"] }
 eth = { workspace = true, features = ["test-helpers"] }
+fs_extra = { workspace = true }
 fuel = { workspace = true, features = ["test-helpers"] }
 fuel-core-chain-config = { workspace = true, features = [
   "std",
   "test-helpers",
 ] }
 fuel-core-types = { workspace = true }
+futures = { workspace = true }
 hex = { workspace = true }
+itertools = { workspace = true, features = ["use_alloc"] }
 portpicker = { workspace = true }
 ports = { workspace = true, features = ["fuel", "l1"] }
 rand = { workspace = true, features = ["std"] }

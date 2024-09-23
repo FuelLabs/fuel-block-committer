@@ -10,21 +10,21 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-delegate = { workspace = true, optional = true }
-trait-variant = { workspace = true, optional = true }
 alloy = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+delegate = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+hex = { workspace = true }
 impl-tools = { workspace = true, optional = true }
+itertools = { workspace = true, features = ["use_std"] }
 mockall = { workspace = true, optional = true }
+nonempty = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
-hex = { workspace = true }
-async-trait = { workspace = true, optional = true }
-nonempty = { workspace = true }
-itertools = { workspace = true, features = ["use_std"] }
+trait-variant = { workspace = true, optional = true }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand"]
@@ -52,4 +52,4 @@ clock = []
 full = ["l1", "fuel", "storage", "clock"]
 
 [dev-dependencies]
-rand = {workspace=true, features = ["std", "std_rng"]}
+rand = { workspace = true, features = ["std", "std_rng"] }
