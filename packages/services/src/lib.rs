@@ -91,11 +91,9 @@ pub(crate) mod test_utils {
             panic!("random data size must be greater than 0");
         }
 
-        // TODO: segfault use better random data generation
-        (0..size)
-            .map(|_| rand::random::<u8>())
-            .collect_nonempty()
-            .expect("is not empty")
+        let mut buffer = vec![0; size];
+        rand::thread_rng().fill_bytes(&mut buffer[..]);
+        NonEmpty::collect(buffer).expect("checked size, not empty")
     }
 
     use std::{ops::RangeInclusive, time::Duration};
@@ -108,6 +106,7 @@ pub(crate) mod test_utils {
         storage::Storage,
         types::{CollectNonEmpty, DateTime, Fragment, NonEmpty, Utc},
     };
+    use rand::RngCore;
     use storage::{DbWithProcess, PostgresProcess};
 
     use super::Runner;

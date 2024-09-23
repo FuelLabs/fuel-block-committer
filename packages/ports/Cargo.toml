@@ -50,3 +50,6 @@ storage = [
 ]
 clock = []
 full = ["l1", "fuel", "storage", "clock"]
+
+[dev-dependencies]
+rand = {workspace=true, features = ["std", "std_rng"]}

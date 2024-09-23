@@ -26,7 +26,6 @@ zip = { workspace = true, features = ["deflate"] }
 
 [dev-dependencies]
 itertools = { workspace = true, features = ["use_alloc"] }
-# TODO: segfault remove
 futures = { workspace = true }
 fs_extra = { workspace = true }
 alloy = { workspace = true, features = [

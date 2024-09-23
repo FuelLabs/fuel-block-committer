@@ -48,7 +48,6 @@ where
     async fn import_blocks(&self, blocks: NonEmpty<FullFuelBlock>) -> Result<()> {
         let db_blocks = encode_blocks(blocks);
 
-        // TODO: segfault validate these blocks
         let starting_height = db_blocks.first().height;
         let ending_height = db_blocks.last().height;
 

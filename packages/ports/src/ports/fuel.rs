@@ -31,8 +31,6 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-// TODO: segfault
-// https://github.com/FuelLabs/fuel-core-client-ext/blob/master/src/lib.rs
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]

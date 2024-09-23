@@ -69,7 +69,7 @@ where
 
             self.metrics
                 .last_eth_block_w_blob
-                .set(tx_response.block_number() as i64); // TODO: conversion
+                .set(i64::try_from(tx_response.block_number()).unwrap_or(i64::MAX))
         }
 
         Ok(())
