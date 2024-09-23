@@ -24,7 +24,6 @@ pub trait TryCollectNonEmpty: Iterator<Item = std::result::Result<Self::Ok, Self
     }
 }
 
-// Now implement the trait for any iterator that produces `Result` items
 impl<I, T, E> TryCollectNonEmpty for I
 where
     I: Iterator<Item = Result<T, E>>,

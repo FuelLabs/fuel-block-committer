@@ -80,14 +80,6 @@ impl TryFrom<FullBlock> for ports::fuel::FullFuelBlock {
     }
 }
 
-// impl TryFrom<FullBlock> for ports::fuel::FullFuelBlock {
-//     type Error = crate::Error;
-//
-//     fn try_from(value: FullBlock) -> Result<Self, Self::Error> {
-//         todo!()
-//     }
-// }
-
 impl FullBlock {
     /// Returns the block producer public key, if any.
     pub fn block_producer(&self) -> Option<PublicKey> {

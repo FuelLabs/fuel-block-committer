@@ -130,7 +130,7 @@ mod tests {
 
     #[tokio::test]
     async fn can_insert_and_find_latest_block_submission() {
-        // Given
+        // given
         let storage = start_db().await;
         let latest_height = random_non_zero_height();
 
@@ -140,16 +140,16 @@ mod tests {
         let older_submission = given_incomplete_submission(latest_height - 1);
         storage.insert(older_submission).await.unwrap();
 
-        // When
+        // when
         let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
 
-        // Then
+        // then
         assert_eq!(actual, latest_submission);
     }
 
     #[tokio::test]
     async fn can_update_completion_status() {
-        // Given
+        // given
         let storage = start_db().await;
 
         let height = random_non_zero_height();
@@ -157,26 +157,26 @@ mod tests {
         let block_hash = submission.block_hash;
         storage.insert(submission).await.unwrap();
 
-        // When
+        // when
         let submission = storage.set_submission_completed(block_hash).await.unwrap();
 
-        // Then
+        // then
         assert!(submission.completed);
     }
 
     #[tokio::test]
     async fn updating_a_missing_submission_causes_an_error() {
-        // Given
+        // given
         let storage = start_db().await;
 
         let height = random_non_zero_height();
         let submission = given_incomplete_submission(height);
         let block_hash = submission.block_hash;
 
-        // When
+        // when
         let result = storage.set_submission_completed(block_hash).await;
 
-        // Then
+        // then
         if let Err(Error::Database(msg)) = result {
             let block_hash_hex = hex::encode(block_hash);
             assert_eq!(
@@ -225,7 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn can_record_and_get_pending_txs() {
-        // Given
+        // given
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
@@ -236,11 +236,11 @@ mod tests {
             .await
             .unwrap();
 
-        // When
+        // when
         let has_pending = storage.has_pending_txs().await.unwrap();
         let pending_txs = storage.get_pending_txs().await.unwrap();
 
-        // Then
+        // then
         assert!(has_pending);
         assert_eq!(pending_txs.len(), 1);
         assert_eq!(pending_txs[0].hash, tx_hash);
@@ -249,7 +249,7 @@ mod tests {
 
     #[tokio::test]
     async fn can_update_tx_state() {
-        // Given
+        // given
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
@@ -259,13 +259,13 @@ mod tests {
             .await
             .unwrap();
 
-        // When
+        // when
         storage
             .update_tx_state(tx_hash, TransactionState::Finalized(Utc::now()))
             .await
             .unwrap();
 
-        // Then
+        // then
         let has_pending = storage.has_pending_txs().await.unwrap();
         let pending_txs = storage.get_pending_txs().await.unwrap();
 
@@ -275,7 +275,7 @@ mod tests {
 
     #[tokio::test]
     async fn can_insert_bundle_and_fragments() {
-        // Given
+        // given
         let storage = start_db().await;
 
         let block_range = 1..=5;
@@ -291,13 +291,13 @@ mod tests {
         };
         let fragments = nonempty![fragment_1.clone(), fragment_2.clone()];
 
-        // When
+        // when
         storage
             .insert_bundle_and_fragments(block_range.clone(), fragments.clone())
             .await
             .unwrap();
 
-        // Then
+        // then
         let inserted_fragments = storage
             .oldest_nonfinalized_fragments(0, 2)
             .await
@@ -317,7 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_last_time_a_fragment_was_finalized() {
-        // Given
+        // given
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
@@ -329,13 +329,13 @@ mod tests {
 
         let finalization_time = Utc::now();
 
-        // When
+        // when
         storage
             .update_tx_state(tx_hash, TransactionState::Finalized(finalization_time))
             .await
             .unwrap();
 
-        // Then
+        // then
         let last_time = storage
             .last_time_a_fragment_was_finalized()
             .await
@@ -407,22 +407,22 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_lowest_sequence_of_unbundled_blocks() {
-        // Given
+        // given
         let storage = start_db().await;
 
         // Insert blocks 1 to 10
         insert_sequence_of_unbundled_blocks(&storage, 1..=10).await;
 
-        // When
+        // when
         let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
 
-        // Then
+        // then
         assert_eq!(height_range, 1..=10);
     }
 
     #[tokio::test]
     async fn handles_holes_in_sequences() {
-        // Given
+        // given
         let storage = start_db().await;
 
         insert_sequence_of_unbundled_blocks(&storage, 0..=2).await;
@@ -437,7 +437,7 @@ mod tests {
 
     #[tokio::test]
     async fn respects_starting_height() {
-        // Given
+        // given
         let storage = start_db().await;
 
         insert_sequence_of_unbundled_blocks(&storage, 0..=10).await;
@@ -451,7 +451,7 @@ mod tests {
 
     #[tokio::test]
     async fn respects_limit() {
-        // Given
+        // given
         let storage = start_db().await;
 
         insert_sequence_of_unbundled_blocks(&storage, 0..=10).await;
@@ -465,7 +465,7 @@ mod tests {
 
     #[tokio::test]
     async fn ignores_bundled_blocks() {
-        // Given
+        // given
         let storage = start_db().await;
 
         insert_sequence_of_bundled_blocks(&storage, 0..=2, 1).await;
@@ -481,7 +481,7 @@ mod tests {
     /// This can happen if we change the lookback config a couple of times in a short period of time
     #[tokio::test]
     async fn can_handle_bundled_blocks_appearing_after_unbundled_ones() {
-        // Given
+        // given
         let storage = start_db().await;
 
         insert_sequence_of_unbundled_blocks(&storage, 0..=2).await;
@@ -507,7 +507,7 @@ mod tests {
 
     #[tokio::test]
     async fn excludes_fragments_from_bundles_ending_before_starting_height() {
-        // Given
+        // given
         let storage = start_db().await;
         let starting_height = 10;
 
@@ -538,20 +538,20 @@ mod tests {
             .await
             .unwrap();
 
-        // When
+        // when
         let fragments = storage
             .oldest_nonfinalized_fragments(starting_height, 10)
             .await
             .unwrap();
 
-        // Then
+        // then
         assert_eq!(fragments.len(), 1);
         assert_eq!(fragments[0].fragment, fragment);
     }
 
     #[tokio::test]
     async fn includes_fragments_from_bundles_ending_at_starting_height() {
-        // Given
+        // given
         let storage = start_db().await;
         let starting_height = 10;
 
@@ -569,13 +569,13 @@ mod tests {
             .await
             .unwrap();
 
-        // When
+        // when
         let fragments = storage
             .oldest_nonfinalized_fragments(starting_height, 10)
             .await
             .unwrap();
 
-        // Then
+        // then
         assert_eq!(fragments.len(), 1);
         assert_eq!(fragments[0].fragment, fragment);
     }

@@ -11,7 +11,6 @@ use tracing::info;
 
 use crate::{validator::Validator, Error, Result, Runner};
 
-/// Configuration for the `BlockImporter`.
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub lookback_window: u32,
@@ -59,7 +58,6 @@ where
     FuelApi: ports::fuel::Api,
     BlockValidator: Validator,
 {
-    /// Imports a block into storage if it's not already available.
     async fn import_blocks(&self, blocks: NonEmpty<FullFuelBlock>) -> Result<()> {
         let db_blocks = encode_blocks(blocks);
 
@@ -82,7 +80,6 @@ where
         Ok(())
     }
 
-    /// Determines the starting height based on the latest chain height and the lookback window.
     async fn determine_starting_height(&self, chain_height: u32) -> Result<Option<u32>> {
         let starting_height = chain_height.saturating_sub(self.config.lookback_window);
 
@@ -139,7 +136,6 @@ where
     FuelApi: ports::fuel::Api + Send + Sync,
     BlockValidator: Validator + Send + Sync,
 {
-    /// Runs the block importer, fetching and importing blocks as needed.
     async fn run(&mut self) -> Result<()> {
         let chain_height = self.fuel_api.latest_height().await?;
 
@@ -179,7 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn imports_first_block_when_db_is_empty() -> Result<()> {
-        // Given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let mut rng = StdRng::from_seed([0; 32]);
@@ -196,10 +192,10 @@ mod tests {
             Config { lookback_window: 0 },
         );
 
-        // When
+        // when
         importer.run().await?;
 
-        // Then
+        // then
         let all_blocks = setup
             .db()
             .lowest_sequence_of_unbundled_blocks(0, 10)
@@ -215,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn wont_import_invalid_blocks() -> Result<()> {
-        // Given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let mut rng = StdRng::from_seed([0; 32]);
@@ -234,10 +230,10 @@ mod tests {
             Config { lookback_window: 0 },
         );
 
-        // When
+        // when
         let result = importer.run().await;
 
-        // Then
+        // then
         let Err(Error::BlockValidation(msg)) = result else {
             panic!("expected a validation error, got: {:?}", result);
         };
@@ -252,7 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
-        // Given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let ImportedBlocks {
@@ -283,10 +279,10 @@ mod tests {
         let mut importer =
             BlockImporter::new(setup.db(), fuel_mock, block_validator, Config::default());
 
-        // When
+        // when
         importer.run().await?;
 
-        // Then
+        // then
         let stored_blocks = setup
             .db()
             .lowest_sequence_of_unbundled_blocks(0, 100)
@@ -302,7 +298,7 @@ mod tests {
 
     #[tokio::test]
     async fn fails_if_db_height_is_greater_than_chain_height() -> Result<()> {
-        // Given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let secret_key = setup
@@ -328,10 +324,10 @@ mod tests {
             Config { lookback_window: 0 },
         );
 
-        // When
+        // when
         let result = importer.run().await;
 
-        // Then
+        // then
         if let Err(Error::Other(err)) = result {
             assert_eq!(
                 err,
@@ -346,7 +342,7 @@ mod tests {
 
     #[tokio::test]
     async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
-        // Given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let ImportedBlocks { secret_key, .. } = setup
@@ -375,10 +371,10 @@ mod tests {
             },
         );
 
-        // When
+        // when
         importer.run().await?;
 
-        // Then
+        // then
         let stored_new_blocks = setup
             .db()
             .lowest_sequence_of_unbundled_blocks(starting_height, 100)
@@ -393,7 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn handles_chain_with_no_new_blocks() -> Result<()> {
-        // Given
+        // given
         let setup = test_utils::Setup::init().await;
 
         let ImportedBlocks {
@@ -419,10 +415,10 @@ mod tests {
             Config { lookback_window: 0 },
         );
 
-        // When
+        // when
         importer.run().await?;
 
-        // Then
+        // then
         // Database should remain unchanged
         let stored_blocks = setup
             .db()
@@ -438,7 +434,7 @@ mod tests {
     /// New Test: Ensures that blocks outside the lookback window are not bundled.
     #[tokio::test]
     async fn skips_blocks_outside_lookback_window() -> Result<()> {
-        // Given
+        // given
         let setup = test_utils::Setup::init().await;
         let lookback_window = 2;
 
@@ -456,10 +452,10 @@ mod tests {
             Config { lookback_window },
         );
 
-        // When
+        // when
         importer.run().await?;
 
-        // Then
+        // then
         let unbundled_blocks = setup
             .db()
             .lowest_sequence_of_unbundled_blocks(0, 10)

@@ -52,7 +52,6 @@ where
     F: ports::fuel::Api,
     Db: Storage,
 {
-    /// Submits a fragment to the L1 adapter and records the tx in storage.
     async fn submit_fragments(&self, fragments: NonEmpty<BundleFragment>) -> Result<()> {
         let data = fragments
             .iter()

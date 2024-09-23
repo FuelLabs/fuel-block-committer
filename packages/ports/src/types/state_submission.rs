@@ -10,19 +10,6 @@ pub struct StateSubmission {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone)]
-pub struct InvalidRange {
-    pub message: String,
-}
-
-impl std::fmt::Display for InvalidRange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Invalid range: {}", self.message)
-    }
-}
-
-impl std::error::Error for InvalidRange {}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct L1Tx {
     pub id: Option<u64>,

@@ -60,7 +60,7 @@ impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
 struct SingleBlob {
     // needs to be heap allocated because it's large enough to cause a stack overflow
     data: Box<eip4844::Blob>,
-    committment: eip4844::Bytes48,
+    commitment: eip4844::Bytes48,
     proof: eip4844::Bytes48,
     unused_bytes: u32,
 }
@@ -88,7 +88,7 @@ impl SingleBlob {
         );
         let remaining_bytes = &bytes[eip4844::BYTES_PER_BLOB..];
 
-        let committment: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_COMMITMENT]
+        let commitment: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_COMMITMENT]
             .try_into()
             .expect(len_checked);
         let remaining_bytes = &remaining_bytes[eip4844::BYTES_PER_COMMITMENT..];
@@ -99,7 +99,7 @@ impl SingleBlob {
 
         Ok(Self {
             data,
-            committment: committment.into(),
+            commitment: commitment.into(),
             proof: proof.into(),
             unused_bytes: fragment.unused_bytes,
         })
@@ -108,7 +108,7 @@ impl SingleBlob {
     fn encode(&self) -> Fragment {
         let mut bytes = Vec::with_capacity(Self::SIZE);
         bytes.extend_from_slice(self.data.as_slice());
-        bytes.extend_from_slice(self.committment.as_ref());
+        bytes.extend_from_slice(self.commitment.as_ref());
         bytes.extend_from_slice(self.proof.as_ref());
         let data = NonEmpty::collect(bytes).expect("cannot be empty");
 
@@ -124,7 +124,9 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<Singl
     let num_bytes = u32::try_from(builder.len()).map_err(|_| {
         crate::error::Error::Other("cannot handle more than u32::MAX bytes".to_string())
     })?;
-    let sidecar = builder.build()?;
+    let sidecar = builder
+        .build()
+        .map_err(|e| crate::error::Error::Other(e.to_string()))?;
 
     if sidecar.blobs.len() != sidecar.commitments.len()
         || sidecar.blobs.len() != sidecar.proofs.len()
@@ -149,7 +151,7 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<Singl
     // type being huge it then causes a stack overflow
     let single_blobs = izip!(&sidecar.blobs, sidecar.commitments, sidecar.proofs)
         .enumerate()
-        .map(|(index, (data, committment, proof))| {
+        .map(|(index, (data, commitment, proof))| {
             let index = u32::try_from(index)
                 .expect("checked earlier there are no more than u32::MAX blobs");
 
@@ -161,7 +163,7 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<Singl
 
             SingleBlob {
                 data: Box::new(data.as_slice().try_into().expect("number of bytes match")),
-                committment,
+                commitment,
                 proof,
                 unused_bytes: unused_data,
             }
@@ -181,7 +183,7 @@ fn merge_into_sidecar(
 
     for blob in single_blobs {
         blobs.push(*blob.data);
-        commitments.push(blob.committment);
+        commitments.push(blob.commitment);
         proofs.push(blob.proof);
     }
 
@@ -260,9 +262,9 @@ mod tests {
         let mut rng = rand::rngs::SmallRng::from_seed([0; 32]);
         rng.fill_bytes(&mut random_data);
 
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &random_data);
+        let builder = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &random_data);
 
-        let single_blobs = split_sidecar(sidecar.clone()).unwrap();
+        let single_blobs = split_sidecar(builder.clone()).unwrap();
 
         let fragments = single_blobs
             .into_iter()
@@ -276,7 +278,7 @@ mod tests {
 
         let reassmbled_sidecar = merge_into_sidecar(reassmbled_single_blobs);
 
-        assert_eq!(sidecar.build().unwrap(), reassmbled_sidecar);
+        assert_eq!(builder.build().unwrap(), reassmbled_sidecar);
     }
 
     #[test]

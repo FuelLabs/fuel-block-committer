@@ -132,7 +132,6 @@ where
         Ok(starting_height)
     }
 
-    /// Finds the optimal bundle based on the current state and time constraints.
     async fn find_optimal_bundle<B: Bundle>(&self, mut bundler: B) -> Result<BundleProposal> {
         let optimization_start = self.clock.now();
 
@@ -212,7 +211,6 @@ mod tests {
         CompressionLevel,
     };
 
-    /// Define a ControllableBundler that uses channels to control bundle proposals
     struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,
         notify_advanced: UnboundedSender<()>,

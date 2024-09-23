@@ -2515,7 +2515,6 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
- "c-kzg",
  "delegate",
  "futures",
  "itertools 0.13.0",

@@ -10,7 +10,6 @@ pub trait HealthCheck: Send + Sync {
 pub use prometheus;
 
 pub trait RegistersMetrics {
-    #[allow(clippy::expect_used)]
     fn register_metrics(&self, registry: &crate::prometheus::Registry) {
         self.metrics().into_iter().for_each(|metric| {
             registry

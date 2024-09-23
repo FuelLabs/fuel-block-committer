@@ -26,12 +26,6 @@ impl From<alloy::contract::Error> for Error {
     }
 }
 
-impl From<c_kzg::Error> for Error {
-    fn from(value: c_kzg::Error) -> Self {
-        Self::Other(value.to_string())
-    }
-}
-
 impl From<alloy::sol_types::Error> for Error {
     fn from(value: alloy::sol_types::Error) -> Self {
         Self::Other(value.to_string())

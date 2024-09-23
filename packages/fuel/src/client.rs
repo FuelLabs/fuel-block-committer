@@ -29,12 +29,16 @@ pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
-    full_blocks_req_size: NonZeroU32
+    full_blocks_req_size: NonZeroU32,
 }
 
 impl HttpClient {
     #[must_use]
-    pub fn new(url: &Url, unhealthy_after_n_errors: usize, full_blocks_req_size: NonZeroU32) -> Self {
+    pub fn new(
+        url: &Url,
+        unhealthy_after_n_errors: usize,
+        full_blocks_req_size: NonZeroU32,
+    ) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
         Self {
             client,
@@ -151,7 +155,13 @@ impl HttpClient {
         stream::try_unfold(initial_progress, move |mut current_progress| async move {
             let request = PaginationRequest {
                 cursor: current_progress.take_cursor(),
-                results: min(current_progress.remaining(), self.full_blocks_req_size.get().try_into().unwrap_or(i32::MAX)),
+                results: min(
+                    current_progress.remaining(),
+                    self.full_blocks_req_size
+                        .get()
+                        .try_into()
+                        .unwrap_or(i32::MAX),
+                ),
                 direction: PageDirection::Forward,
             };
 

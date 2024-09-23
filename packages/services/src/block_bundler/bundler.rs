@@ -210,7 +210,6 @@ where
     }
 }
 
-/// Represents a bundle configuration and its associated gas usage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Proposal {
     block_heights: RangeInclusive<u32>,
@@ -270,7 +269,6 @@ where
         }
     }
 
-    /// Calculates the block heights range based on the number of blocks.
     fn calculate_block_heights(&self, num_blocks: NonZeroUsize) -> Result<RangeInclusive<u32>> {
         if num_blocks > self.blocks.len_nonzero() {
             return Err(crate::Error::Other(
@@ -284,7 +282,6 @@ where
         Ok(first_block.height..=last_block.height)
     }
 
-    /// Merges the data from multiple blocks into a single `NonEmpty<u8>`.
     fn merge_block_data(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> NonEmpty<u8> {
         blocks
             .into_iter()
@@ -293,7 +290,6 @@ where
             .expect("non-empty")
     }
 
-    /// Retrieves the next bundle configuration.
     fn blocks_for_new_proposal(&self) -> NonEmpty<ports::storage::FuelBlock> {
         self.blocks
             .iter()
@@ -303,7 +299,6 @@ where
             .expect("non-empty")
     }
 
-    /// Creates a proposal for the given bundle configuration.
     async fn create_proposal(
         &self,
         bundle_blocks: NonEmpty<ports::storage::FuelBlock>,
@@ -311,10 +306,8 @@ where
         let uncompressed_data = self.merge_block_data(bundle_blocks.clone());
         let uncompressed_data_size = uncompressed_data.len_nonzero();
 
-        // Compress the data to get compressed_size
         let compressed_data = self.compressor.compress(uncompressed_data.clone()).await?;
 
-        // Estimate gas usage based on compressed data
         let gas_usage = self
             .fragment_encoder
             .gas_usage(compressed_data.len_nonzero());
@@ -334,9 +327,6 @@ impl<T> Bundle for Bundler<T>
 where
     T: ports::l1::FragmentEncoder + Send + Sync,
 {
-    /// Advances the bundler by trying the next bundle configuration.
-    ///
-    /// Returns `true` if there are more configurations to process, or `false` otherwise.
     async fn advance(&mut self) -> Result<bool> {
         let bundle_blocks = self.blocks_for_new_proposal();
 
@@ -357,13 +347,9 @@ where
         self.attempts_exhausted = !more_attempts;
         self.number_of_attempts += 1;
 
-        // Return whether there are more configurations to process
         Ok(more_attempts)
     }
 
-    /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
-    ///
-    /// Consumes the bundler.
     async fn finish(mut self) -> Result<BundleProposal> {
         if self.best_proposal.is_none() {
             self.advance().await?;
@@ -490,46 +476,13 @@ mod tests {
         bundler.clone().finish().await.unwrap()
     }
 
-    // This can happen when you've already paying for a blob but are not utilizing it. Adding
-    // more data is going to increase the bytes per gas but keep the storage price the same.
-    #[tokio::test]
-    async fn wont_constrict_bundle_because_gas_remained_unchanged() -> Result<()> {
-        // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = generate_storage_block_sequence(0..=1, &secret_key, 10, 100);
-
-        let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
-            blocks.clone(),
-            Compressor::no_compression(),
-        );
-
-        while bundler.advance().await? {}
-
-        // when
-        let bundle = bundler.finish().await?;
-
-        // then
-        let bundle_data = blocks
-            .into_iter()
-            .flat_map(|b| b.data)
-            .collect_nonempty()
-            .unwrap();
-        let expected_fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
-
-        assert!(bundle.known_to_be_optimal);
-        assert_eq!(bundle.block_heights, 0..=1);
-        assert_eq!(bundle.fragments, expected_fragments);
-
-        Ok(())
-    }
-
     fn enough_bytes_to_almost_fill_a_blob() -> usize {
         let encoding_overhead = Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
         Eip4844BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
     }
 
-    // Because, for example, you've used up more of a whole blob you paid for
+    // This can happen when you've already paying for a blob but are not utilizing it. Adding
+    // more data is going to increase the bytes per gas but keep the storage price the same.
     #[tokio::test]
     async fn bigger_bundle_will_have_same_storage_gas_usage() -> Result<()> {
         // given

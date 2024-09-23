@@ -89,7 +89,7 @@ pub struct App {
 /// Configuration settings for managing fuel block bundling operations.
 ///
 /// This struct encapsulates various timeouts and window settings that govern
-/// how fuel blocks are accumulated, optimized, and submitted to Layer 1 (L1).
+/// how fuel blocks are accumulated, optimized, and submitted to L1.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BundleConfig {
     /// Duration to wait for additional fuel blocks before initiating the bundling process.
