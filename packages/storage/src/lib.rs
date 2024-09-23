@@ -1,4 +1,3 @@
-// #![deny(unused_crate_dependencies)]
 mod mappings;
 #[cfg(feature = "test-helpers")]
 mod test_instance;

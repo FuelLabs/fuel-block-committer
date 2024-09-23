@@ -38,7 +38,6 @@ trait-variant = { version = "0.1", default-features = false }
 actix-web = { version = "4", default-features = false }
 pretty_assertions = { version = "1.4", default-features = false }
 alloy = { version = "0.2.1", default-features = false }
-alloy-chains = { version = "0.1.0", default-features = false }
 anyhow = { version = "1.0", default-features = false }
 aws-config = { version = "1.5.5", default-features = false }
 aws-sdk-kms = { version = "1.36", default-features = false }
@@ -52,17 +51,14 @@ fuel-core-client = { version = "0.31", default-features = false }
 fuel-core-types = { version = "0.31", default-features = false }
 fuel-crypto = { version = "0.55", default-features = false }
 futures = { version = "0.3", default-features = false }
-futures-util = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 humantime = { version = "2.1", default-features = false }
-impl-tools = { version = "0.10.0", default-features = false }
 itertools = { version = "0.13", default-features = false }
 mockall = { version = "0.12", default-features = false }
 portpicker = { version = "0.1", default-features = false }
 prometheus = { version = "0.13", default-features = false }
 rand = { version = "0.8", default-features = false }
 reqwest = { version = "0.12", default-features = false }
-rlp = { version = "0.5.2", default-features = false }
 secp256k1 = { version = "0.29", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }

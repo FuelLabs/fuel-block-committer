@@ -38,7 +38,7 @@ services = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
-tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
+# tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 
 [features]
 test-helpers = ["dep:mockall"]
