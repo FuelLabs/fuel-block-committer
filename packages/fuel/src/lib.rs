@@ -104,7 +104,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("localhost:12344").unwrap();
 
-        let fuel_adapter = HttpClient::new(&url, 1);
+        let fuel_adapter = HttpClient::new(&url, 1, 1.try_into().unwrap());
 
         let registry = Registry::default();
         fuel_adapter.register_metrics(&registry);
@@ -131,7 +131,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("http://localhost:12344").unwrap();
 
-        let fuel_adapter = client::HttpClient::new(&url, 3);
+        let fuel_adapter = client::HttpClient::new(&url, 3, 1.try_into().unwrap());
         let health_check = fuel_adapter.connection_health_checker();
 
         assert!(health_check.healthy());

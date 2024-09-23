@@ -1,4 +1,4 @@
-use std::{cmp::min, ops::RangeInclusive};
+use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
 
 use block_ext::{ClientExt, FullBlock};
 #[cfg(feature = "test-helpers")]
@@ -29,16 +29,18 @@ pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
+    full_blocks_req_size: NonZeroU32
 }
 
 impl HttpClient {
     #[must_use]
-    pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
+    pub fn new(url: &Url, unhealthy_after_n_errors: usize, full_blocks_req_size: NonZeroU32) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
         Self {
             client,
             metrics: Metrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
+            full_blocks_req_size,
         }
     }
 
@@ -109,8 +111,6 @@ impl HttpClient {
         &self,
         range: RangeInclusive<u32>,
     ) -> impl Stream<Item = Result<NonEmpty<ports::fuel::FullFuelBlock>>> + '_ {
-        const MAX_BLOCKS_PER_REQUEST: i32 = 100; // TODO: @hal3e make this configurable
-
         struct Progress {
             cursor: Option<String>,
             blocks_so_far: usize,
@@ -151,7 +151,7 @@ impl HttpClient {
         stream::try_unfold(initial_progress, move |mut current_progress| async move {
             let request = PaginationRequest {
                 cursor: current_progress.take_cursor(),
-                results: min(current_progress.remaining(), MAX_BLOCKS_PER_REQUEST),
+                results: min(current_progress.remaining(), self.full_blocks_req_size.get().try_into().unwrap_or(i32::MAX)),
                 direction: PageDirection::Forward,
             };
 

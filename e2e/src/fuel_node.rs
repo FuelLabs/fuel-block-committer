@@ -144,7 +144,7 @@ impl FuelNode {
 
 impl FuelNodeProcess {
     pub fn client(&self) -> HttpClient {
-        HttpClient::new(&self.url, 5)
+        HttpClient::new(&self.url, 5, 100.try_into().unwrap())
     }
 
     pub async fn produce_transactions(&self, amount: usize) -> anyhow::Result<()> {

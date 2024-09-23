@@ -38,7 +38,7 @@ impl FuelNodeType {
     pub fn client(&self) -> HttpClient {
         match self {
             FuelNodeType::Local(fuel_node) => fuel_node.client(),
-            FuelNodeType::Testnet { .. } => HttpClient::new(&self.url(), 10),
+            FuelNodeType::Testnet { .. } => HttpClient::new(&self.url(), 10, 100.try_into().unwrap()),
         }
     }
 }

@@ -115,7 +115,6 @@ impl Display for InvalidSequence {
 
 impl std::error::Error for InvalidSequence {}
 
-// TODO: segfault needs testing
 impl TryFrom<NonEmpty<FuelBlock>> for SequentialFuelBlocks {
     type Error = InvalidSequence;
 
