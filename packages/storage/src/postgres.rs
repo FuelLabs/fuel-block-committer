@@ -428,11 +428,11 @@ impl Postgres {
                     crate::error::Error::Conversion(format!("invalid idx for fragment: {}", idx))
                 })?;
                 Ok((
-                     idx,
-                     Vec::from(fragment.data),
-                     bundle_id.as_i32(),
-                     i64::from(fragment.unused_bytes),
-                     i64::from(fragment.total_bytes.get()),
+                    idx,
+                    Vec::from(fragment.data),
+                    bundle_id.as_i32(),
+                    i64::from(fragment.unused_bytes),
+                    i64::from(fragment.total_bytes.get()),
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -443,8 +443,9 @@ impl Postgres {
             .chunks(MAX_FRAGMENTS_PER_QUERY)
             .into_iter()
             .map(|chunk| {
-                let mut query_builder =
-                    QueryBuilder::new("INSERT INTO l1_fragments (idx, data, bundle_id, unused_bytes, total_bytes)");
+                let mut query_builder = QueryBuilder::new(
+                    "INSERT INTO l1_fragments (idx, data, bundle_id, unused_bytes, total_bytes)",
+                );
 
                 query_builder.push_values(chunk, |mut b, values| {
                     b.push_bind(values.0);
@@ -467,5 +468,5 @@ impl Postgres {
         tx.commit().await?;
 
         Ok(())
-}
+    }
 }

@@ -151,7 +151,9 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<Singl
     let unused_data_in_last_blob =
         (BYTES_PER_BLOB as u32).saturating_sub(num_bytes % BYTES_PER_BLOB as u32);
 
-    let single_blobs = izip!(sidecar.blobs, sidecar.commitments, sidecar.proofs)
+    // blobs not consumed here because that would place them on the stack at some point. the aloy
+    // type being huge it then causes a stack overflow
+    let single_blobs = izip!(&sidecar.blobs, sidecar.commitments, sidecar.proofs)
         .enumerate()
         .map(|(index, (data, committment, proof))| {
             let index = u32::try_from(index)
@@ -164,7 +166,7 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<Singl
             };
 
             SingleBlob {
-                data: Box::new(data),
+                data: Box::new(data.as_slice().try_into().expect("number of bytes match")),
                 committment,
                 proof,
                 unused_bytes: unused_data,

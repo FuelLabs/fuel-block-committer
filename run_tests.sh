@@ -9,4 +9,4 @@ workspace_cargo_manifest="$script_location/Cargo.toml"
 cargo build --manifest-path "$workspace_cargo_manifest" --bin fuel-block-committer
 
 PATH="$script_location/target/debug:$PATH" cargo test --manifest-path "$workspace_cargo_manifest" --workspace
-# PATH="$script_location/target/debug:$PATH" cargo test --manifest-path "$workspace_cargo_manifest" --package e2e -- connecting_to_testnet --nocapture
+# PATH="$script_location/target/debug:$PATH" cargo test --manifest-path "$workspace_cargo_manifest" --package e2e -- state --nocapture

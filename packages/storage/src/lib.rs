@@ -365,16 +365,24 @@ mod tests {
         storage.insert_blocks(blocks).await.unwrap();
     }
 
-    async fn insert_sequence_of_bundled_blocks(storage: impl Storage, range: RangeInclusive<u32>, num_fragments: usize) {
+    async fn insert_sequence_of_bundled_blocks(
+        storage: impl Storage,
+        range: RangeInclusive<u32>,
+        num_fragments: usize,
+    ) {
         insert_sequence_of_unbundled_blocks(&storage, range.clone()).await;
 
-        let fragments = std::iter::repeat(Fragment{ data: nonempty![0], unused_bytes: 1000, total_bytes: 100.try_into().unwrap() }).take(num_fragments).collect_nonempty().unwrap();
+        let fragments = std::iter::repeat(Fragment {
+            data: nonempty![0],
+            unused_bytes: 1000,
+            total_bytes: 100.try_into().unwrap(),
+        })
+        .take(num_fragments)
+        .collect_nonempty()
+        .unwrap();
 
         storage
-            .insert_bundle_and_fragments(
-                range,
-                fragments
-            )
+            .insert_bundle_and_fragments(range, fragments)
             .await
             .unwrap();
     }
@@ -488,26 +496,7 @@ mod tests {
         let storage = start_db().await;
 
         // u16::MAX because of implementation details
-        insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2, u16::MAX as usize * 2).await;
+        insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2, u16::MAX as usize * 2)
+            .await;
     }
-    // #[tokio::test]
-    // async fn something() {
-    //     let port = 5432;
-    //
-    //     let mut config = DbConfig {
-    //         host: "localhost".to_string(),
-    //         port,
-    //         username: "username".to_owned(),
-    //         password: "password".to_owned(),
-    //         database: "test".to_owned(),
-    //         max_connections: 5,
-    //         use_ssl: false,
-    //     };
-    //     let db = Postgres::connect(&config).await.unwrap();
-    //
-    //     // u16::MAX because of implementation details
-    //     insert_sequence_of_bundled_blocks(&db, 5..=500_000).await;
-    //     insert_sequence_of_unbundled_blocks(&db, 500_001..=1_000_000).await;
-    //     insert_sequence_of_bundled_blocks(&db, 1_000_001..=1_200_000).await;
-    // }
 }
