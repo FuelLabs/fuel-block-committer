@@ -240,7 +240,6 @@ pub(crate) mod test_utils {
         }
 
         pub mod fuel {
-
             use std::{iter, ops::RangeInclusive};
 
             use fuel_crypto::{Message, SecretKey, Signature};
@@ -381,6 +380,14 @@ pub(crate) mod test_utils {
 
                 fuel_mock
             }
+
+            pub fn latest_height_is(height: u32) -> ports::fuel::MockApi {
+                let mut fuel_mock = ports::fuel::MockApi::default();
+                fuel_mock
+                    .expect_latest_height()
+                    .returning(move || Box::pin(async move { Ok(height) }));
+                fuel_mock
+            }
         }
     }
 
@@ -431,16 +438,24 @@ pub(crate) mod test_utils {
 
         pub async fn insert_fragments(&self, amount: usize) -> Vec<Fragment> {
             let max_per_blob = (Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
-            self.import_blocks(Blocks::WithHeights {
-                range: 0..=0,
-                tx_per_block: amount,
-                size_per_tx: max_per_blob,
-            })
-            .await;
+            let ImportedBlocks { fuel_blocks, .. } = self
+                .import_blocks(Blocks::WithHeights {
+                    range: 0..=0,
+                    tx_per_block: amount,
+                    size_per_tx: max_per_blob,
+                })
+                .await;
 
             let factory = Factory::new(Eip4844BlobEncoder, crate::CompressionLevel::Level6);
+
+            let mut fuel_api = ports::fuel::MockApi::new();
+            let latest_height = fuel_blocks.last().header.height;
+            fuel_api
+                .expect_latest_height()
+                .returning(move || Box::pin(async move { Ok(latest_height) }));
+
             let mut bundler = BlockBundler::new(
-                ports::fuel::MockApi::new(),
+                fuel_api,
                 self.db(),
                 TestClock::default(),
                 factory,
@@ -448,7 +463,7 @@ pub(crate) mod test_utils {
                     optimization_time_limit: Duration::ZERO,
                     block_accumulation_time_limit: Duration::ZERO,
                     num_blocks_to_accumulate: 1.try_into().unwrap(),
-                    starting_fuel_height: 0,
+                    lookback_window: 100,
                 },
             );
 

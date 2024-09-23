@@ -17,7 +17,7 @@ pub struct Config {
     pub optimization_time_limit: Duration,
     pub block_accumulation_time_limit: Duration,
     pub num_blocks_to_accumulate: NonZeroUsize,
-    pub starting_fuel_height: u32,
+    pub lookback_window: u32,
 }
 
 #[cfg(test)]
@@ -27,7 +27,7 @@ impl Default for Config {
             optimization_time_limit: Duration::from_secs(100),
             block_accumulation_time_limit: Duration::from_secs(100),
             num_blocks_to_accumulate: NonZeroUsize::new(1).unwrap(),
-            starting_fuel_height: 0,
+            lookback_window: 1000,
         }
     }
 }
@@ -76,10 +76,11 @@ where
     BF: BundlerFactory,
 {
     async fn bundle_and_fragment_blocks(&self) -> Result<()> {
+        let starting_height = self.get_starting_height().await?;
         let Some(blocks) = self
             .storage
             .lowest_sequence_of_unbundled_blocks(
-                self.config.starting_fuel_height,
+                starting_height,
                 self.config.num_blocks_to_accumulate.get(),
             )
             .await?
@@ -123,6 +124,12 @@ where
             .await?;
 
         Ok(())
+    }
+
+    async fn get_starting_height(&self) -> Result<u32> {
+        let current_height = self.fuel_api.latest_height().await?;
+        let starting_height = current_height.saturating_sub(self.config.lookback_window);
+        Ok(starting_height)
     }
 
     /// Finds the optimal bundle based on the current state and time constraints.
@@ -192,7 +199,7 @@ mod tests {
     use ports::{
         l1::FragmentEncoder,
         storage::SequentialFuelBlocks,
-        types::{nonempty, CollectNonEmpty, Fragment},
+        types::{nonempty, CollectNonEmpty, Fragment, NonEmpty},
     };
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -205,7 +212,7 @@ mod tests {
         CompressionLevel,
     };
 
-    /// Define a TestBundlerWithControl that uses channels to control bundle proposals
+    /// Define a ControllableBundler that uses channels to control bundle proposals
     struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,
         notify_advanced: UnboundedSender<()>,
@@ -272,6 +279,10 @@ mod tests {
         }
     }
 
+    fn default_bundler_factory() -> bundler::Factory<Eip4844BlobEncoder> {
+        bundler::Factory::new(Eip4844BlobEncoder, CompressionLevel::Disabled)
+    }
+
     #[tokio::test]
     async fn does_nothing_if_not_enough_blocks() -> Result<()> {
         // given
@@ -286,13 +297,16 @@ mod tests {
 
         let num_blocks_to_accumulate = 2.try_into().unwrap();
 
+        let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(0);
+
         let mut block_bundler = BlockBundler::new(
-            ports::fuel::MockApi::new(),
+            mock_fuel_api,
             setup.db(),
             TestClock::default(),
             default_bundler_factory(),
             Config {
                 num_blocks_to_accumulate,
+                lookback_window: 0, // Adjust lookback_window as needed
                 ..Config::default()
             },
         );
@@ -326,18 +340,23 @@ mod tests {
                 size_per_tx: 100,
             })
             .await;
-        let data = encode_and_merge(blocks).await;
+        let data = encode_and_merge(blocks.clone()).await;
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let clock = TestClock::default();
+
+        let latest_height = blocks.last().header.height;
+        let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
+
         let mut block_bundler = BlockBundler::new(
-            ports::fuel::MockApi::new(),
+            mock_fuel_api,
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
             Config {
                 block_accumulation_time_limit: Duration::from_secs(1),
                 num_blocks_to_accumulate: 2.try_into().unwrap(),
+                lookback_window: 0,
                 ..Default::default()
             },
         );
@@ -361,7 +380,7 @@ mod tests {
 
         assert!(setup
             .db()
-            .lowest_sequence_of_unbundled_blocks(0, 1)
+            .lowest_sequence_of_unbundled_blocks(blocks.last().header.height, 1)
             .await?
             .is_none());
 
@@ -385,11 +404,14 @@ mod tests {
                 size_per_tx: 100,
             })
             .await;
-        let data = encode_and_merge(fuel_blocks).await;
+        let data = encode_and_merge(fuel_blocks.clone()).await;
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
+        let latest_height = fuel_blocks.last().header.height;
+        let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
+
         let mut block_bundler = BlockBundler::new(
-            ports::fuel::MockApi::new(),
+            mock_fuel_api,
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
@@ -404,14 +426,14 @@ mod tests {
         block_bundler.run().await?;
 
         // then
-        // we will bundle and fragment because the time limit (10s) is measured from the last finalized fragment
+        // We will bundle and fragment because the time limit (10s) is measured from the last finalized fragment
 
         let unsubmitted_fragments = setup
             .db()
             .oldest_nonfinalized_fragments(1)
             .await?
             .into_iter()
-            .map(|f| f.fragment)
+            .map(|f| f.fragment.clone())
             .collect_nonempty()
             .unwrap();
 
@@ -436,12 +458,12 @@ mod tests {
             })
             .await;
 
-        let first_two_blocks = blocks.into_iter().take(2).collect_nonempty().unwrap();
-        let bundle_data = test_utils::encode_and_merge(first_two_blocks).await;
+        let first_two_blocks = blocks.iter().take(2).cloned().collect_nonempty().unwrap();
+        let bundle_data = test_utils::encode_and_merge(first_two_blocks.clone()).await;
         let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
         let mut block_bundler = BlockBundler::new(
-            ports::fuel::MockApi::new(),
+            test_utils::mocks::fuel::latest_height_is(2),
             setup.db(),
             TestClock::default(),
             default_bundler_factory(),
@@ -486,15 +508,15 @@ mod tests {
             .await;
 
         let block_1 = nonempty![blocks.first().clone()];
-        let bundle_1 = test_utils::encode_and_merge(block_1).await;
+        let bundle_1 = test_utils::encode_and_merge(block_1.clone()).await;
         let fragments_1 = Eip4844BlobEncoder.encode(bundle_1).unwrap();
 
         let block_2 = nonempty![blocks.last().clone()];
-        let bundle_2 = test_utils::encode_and_merge(block_2).await;
+        let bundle_2 = test_utils::encode_and_merge(block_2.clone()).await;
         let fragments_2 = Eip4844BlobEncoder.encode(bundle_2).unwrap();
 
         let mut bundler = BlockBundler::new(
-            ports::fuel::MockApi::new(),
+            test_utils::mocks::fuel::latest_height_is(1),
             setup.db(),
             TestClock::default(),
             default_bundler_factory(),
@@ -554,8 +576,9 @@ mod tests {
         let test_clock = TestClock::default();
 
         let optimization_timeout = Duration::from_secs(1);
+
         let mut block_bundler = BlockBundler::new(
-            ports::fuel::MockApi::new(),
+            test_utils::mocks::fuel::latest_height_is(0),
             setup.db(),
             test_clock.clone(),
             bundler_factory,
@@ -606,13 +629,15 @@ mod tests {
 
         // Create the BlockBundler
         let optimization_timeout = Duration::from_secs(1);
+
         let mut block_bundler = BlockBundler::new(
-            ports::fuel::MockApi::new(),
+            test_utils::mocks::fuel::latest_height_is(0),
             setup.db(),
             test_clock.clone(),
             bundler_factory,
             Config {
                 optimization_time_limit: optimization_timeout,
+                lookback_window: 0,
                 ..Config::default()
             },
         );
@@ -637,7 +662,94 @@ mod tests {
         Ok(())
     }
 
-    fn default_bundler_factory() -> bundler::Factory<Eip4844BlobEncoder> {
-        bundler::Factory::new(Eip4844BlobEncoder, CompressionLevel::Disabled)
+    #[tokio::test]
+    async fn skips_blocks_outside_lookback_window() -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..=3,
+                tx_per_block: 1,
+                size_per_tx: 100,
+            })
+            .await;
+
+        let lookback_window = 2;
+        let latest_height = 5u32;
+
+        let starting_height = latest_height.saturating_sub(lookback_window);
+
+        let blocks_to_bundle: Vec<_> = blocks
+            .iter()
+            .filter(|block| block.header.height >= starting_height)
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            blocks_to_bundle.len(),
+            1,
+            "Expected only one block to be within the lookback window"
+        );
+        assert_eq!(
+            blocks_to_bundle[0].header.height, 3,
+            "Expected block at height 3 to be within the lookback window"
+        );
+
+        // Encode the blocks to be bundled
+        let data = encode_and_merge(NonEmpty::from_vec(blocks_to_bundle.clone()).unwrap()).await;
+        let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
+
+        let mut block_bundler = BlockBundler::new(
+            test_utils::mocks::fuel::latest_height_is(latest_height),
+            setup.db(),
+            TestClock::default(),
+            default_bundler_factory(),
+            Config {
+                num_blocks_to_accumulate: 1.try_into().unwrap(),
+                lookback_window,
+                ..Default::default()
+            },
+        );
+
+        // when
+        block_bundler.run().await?;
+
+        // then
+        let unsubmitted_fragments = setup.db().oldest_nonfinalized_fragments(usize::MAX).await?;
+        let fragments = unsubmitted_fragments
+            .iter()
+            .map(|f| f.fragment.clone())
+            .collect_nonempty()
+            .unwrap();
+
+        assert_eq!(
+            fragments, expected_fragments,
+            "Only blocks within the lookback window should be bundled"
+        );
+
+        // Ensure that blocks outside the lookback window are still unbundled
+        let unbundled_blocks = setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(0, 10)
+            .await?
+            .unwrap();
+
+        let unbundled_block_heights: Vec<_> = unbundled_blocks
+            .into_inner()
+            .iter()
+            .map(|b| b.height)
+            .collect();
+
+        assert_eq!(
+            unbundled_block_heights,
+            vec![0, 1, 2],
+            "Blocks outside the lookback window should remain unbundled"
+        );
+
+        Ok(())
     }
 }

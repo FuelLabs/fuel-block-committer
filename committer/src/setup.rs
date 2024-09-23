@@ -79,7 +79,6 @@ pub fn block_bundler(
     cancel_token: CancellationToken,
     config: &config::Config,
     internal_config: &config::Internal,
-    starting_fuel_height: u32,
 ) -> tokio::task::JoinHandle<()> {
     let bundler_factory =
         services::BundlerFactory::new(Eip4844BlobEncoder, config.app.bundle.compression_level);
@@ -93,7 +92,7 @@ pub fn block_bundler(
             optimization_time_limit: config.app.bundle.optimization_timeout,
             block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
             num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
-            starting_fuel_height,
+            lookback_window: config.app.bundle.block_height_lookback,
         },
     );
 
