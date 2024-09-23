@@ -1,8 +1,7 @@
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroU32;
 
 use alloy::{
-    consensus::BlobTransactionSidecar,
-    eips::eip4844::{self, BYTES_PER_BLOB},
+    eips::eip4844::BYTES_PER_BLOB,
     network::{Ethereum, EthereumWallet, TransactionBuilder, TxSigner},
     primitives::{Address, U256},
     providers::{
@@ -15,7 +14,7 @@ use alloy::{
     sol,
 };
 use metrics::{
-    prometheus::{self, exponential_buckets, histogram_opts, linear_buckets, Opts},
+    prometheus::{self, histogram_opts},
     RegistersMetrics,
 };
 use ports::{

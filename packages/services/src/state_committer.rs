@@ -1,45 +1,31 @@
-use std::{num::NonZeroUsize, time::Duration};
-
 use itertools::Itertools;
 use ports::{
-    clock::Clock,
     storage::{BundleFragment, Storage},
-    types::{DateTime, Fragment, NonEmptyVec, Utc},
+    types::NonEmptyVec,
 };
-use tracing::info;
 
-use crate::{Error, Result, Runner};
+use crate::{Result, Runner};
 
 /// The `StateCommitter` is responsible for committing state fragments to L1.
-pub struct StateCommitter<L1, Storage, Clock> {
+pub struct StateCommitter<L1, Storage> {
     l1_adapter: L1,
     storage: Storage,
-    clock: Clock,
-    component_created_at: DateTime<Utc>,
 }
 
-impl<L1, Storage, C> StateCommitter<L1, Storage, C>
-where
-    C: Clock,
-{
+impl<L1, Storage> StateCommitter<L1, Storage> {
     /// Creates a new `StateCommitter`.
-    pub fn new(l1_adapter: L1, storage: Storage, clock: C) -> Self {
-        let now = clock.now();
-
+    pub fn new(l1_adapter: L1, storage: Storage) -> Self {
         Self {
             l1_adapter,
             storage,
-            clock,
-            component_created_at: now,
         }
     }
 }
 
-impl<L1, Db, C> StateCommitter<L1, Db, C>
+impl<L1, Db> StateCommitter<L1, Db>
 where
     L1: ports::l1::Api,
     Db: Storage,
-    C: Clock,
 {
     /// Submits a fragment to the L1 adapter and records the tx in storage.
     async fn submit_fragments(&self, fragments: NonEmptyVec<BundleFragment>) -> Result<()> {
@@ -109,11 +95,10 @@ where
     }
 }
 
-impl<L1, Db, C> Runner for StateCommitter<L1, Db, C>
+impl<L1, Db> Runner for StateCommitter<L1, Db>
 where
     L1: ports::l1::Api + Send + Sync,
     Db: Storage + Clone + Send + Sync,
-    C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         if self.has_pending_transactions().await? {
@@ -132,11 +117,9 @@ where
 mod tests {
     use super::*;
     use crate::test_utils::mocks::l1::TxStatus;
-    use crate::test_utils::{Blocks, ImportedBlocks};
     use crate::{test_utils, Runner, StateCommitter};
-    use clock::TestClock;
-    use eth::Eip4844BlobEncoder;
-    use ports::l1::{FragmentEncoder, FragmentsSubmitted};
+
+    use ports::l1::FragmentsSubmitted;
     use ports::non_empty_vec;
 
     #[tokio::test]
@@ -155,8 +138,7 @@ mod tests {
             (Some(second_tx_fragments), fragment_tx_ids[1]),
         ]);
 
-        let mut state_committer =
-            StateCommitter::new(l1_mock_submit, setup.db(), TestClock::default());
+        let mut state_committer = StateCommitter::new(l1_mock_submit, setup.db());
 
         // when
         // Send the first fragments
@@ -189,8 +171,7 @@ mod tests {
             (Some(fragments.clone()), retry_tx),
         ]);
 
-        let mut state_committer =
-            StateCommitter::new(l1_mock_submit, setup.db(), TestClock::default());
+        let mut state_committer = StateCommitter::new(l1_mock_submit, setup.db());
 
         // when
         // Send the first fragment (which will fail)
@@ -228,8 +209,7 @@ mod tests {
                 })
             });
 
-        let mut state_committer =
-            StateCommitter::new(l1_mock_submit, setup.db(), TestClock::default());
+        let mut state_committer = StateCommitter::new(l1_mock_submit, setup.db());
 
         // when
         // First run: bundles and sends the first fragment
@@ -258,7 +238,7 @@ mod tests {
             Box::pin(async { Err(ports::l1::Error::Other("Submission failed".into())) })
         });
 
-        let mut state_committer = StateCommitter::new(l1_mock, setup.db(), TestClock::default());
+        let mut state_committer = StateCommitter::new(l1_mock, setup.db());
 
         // when
         let result = state_committer.run().await;

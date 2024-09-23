@@ -41,8 +41,6 @@ mod tests {
         prometheus::{proto::Metric, Registry},
         RegistersMetrics,
     };
-    use futures::TryStreamExt;
-    use ports::fuel::Api;
     use url::Url;
 
     use super::*;

@@ -3,11 +3,10 @@ use std::{num::NonZeroUsize, time::Duration};
 pub mod bundler;
 
 use bundler::{Bundle, BundleProposal, BundlerFactory};
-use itertools::Itertools;
 use ports::{
     clock::Clock,
-    storage::{BundleFragment, Storage},
-    types::{DateTime, NonEmptyVec, Utc},
+    storage::Storage,
+    types::{DateTime, Utc},
 };
 use tracing::info;
 
@@ -182,7 +181,8 @@ mod tests {
     use crate::CompressionLevel;
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
-    use ports::l1::{FragmentEncoder, FragmentsSubmitted};
+    use itertools::Itertools;
+    use ports::l1::FragmentEncoder;
     use ports::non_empty_vec;
     use ports::storage::SequentialFuelBlocks;
     use ports::types::Fragment;

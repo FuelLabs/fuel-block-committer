@@ -1,11 +1,10 @@
-use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
+use std::num::NonZeroU32;
 
 use super::NonEmptyVec;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fragment {
     pub data: NonEmptyVec<u8>,
-    // TODO: segfault maybe this should be removed
     pub unused_bytes: u32,
     pub total_bytes: NonZeroU32,
 }

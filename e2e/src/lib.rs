@@ -107,7 +107,7 @@ mod tests {
         // given
         let show_logs = false;
         let blob_support = true;
-        let stack = WholeStack::connect_to_testnet(show_logs, blob_support).await?;
+        let _stack = WholeStack::connect_to_testnet(show_logs, blob_support).await?;
 
         tokio::time::sleep(Duration::from_secs(10000)).await;
 

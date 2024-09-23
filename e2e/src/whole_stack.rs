@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use fuel::HttpClient;
-use storage::{DbWithProcess, Postgres, PostgresProcess};
+use storage::DbWithProcess;
 use url::Url;
 
 use crate::{

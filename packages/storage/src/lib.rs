@@ -186,7 +186,7 @@ mod tests {
     async fn ensure_some_fragments_exists_in_the_db(
         storage: impl Storage,
     ) -> NonEmptyVec<NonNegative<i32>> {
-        let ids = storage
+        storage
             .insert_bundle_and_fragments(
                 0..=0,
                 non_empty_vec!(

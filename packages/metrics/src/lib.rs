@@ -8,7 +8,6 @@ pub trait HealthCheck: Send + Sync {
 }
 
 pub use prometheus;
-use prometheus::proto::Summary;
 
 pub trait RegistersMetrics {
     fn register_metrics(&self, registry: &crate::prometheus::Registry) {

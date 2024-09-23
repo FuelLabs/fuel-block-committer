@@ -1,24 +1,24 @@
+mod block_bundler;
 mod block_committer;
 mod block_importer;
-mod block_bundler;
 mod commit_listener;
 mod health_reporter;
 mod state_committer;
 mod state_listener;
 mod status_reporter;
-mod wallet_balance_tracker;
 mod validator;
+mod wallet_balance_tracker;
 
-pub use validator::BlockValidator;
+pub use block_bundler::bundler::{CompressionLevel, Factory as BundlerFactory};
+pub use block_bundler::{BlockBundler, Config as BlockBundlerConfig};
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
-pub use block_bundler::bundler::{CompressionLevel, Factory as BundlerFactory};
-pub use block_bundler::{Config as BlockBundlerConfig, BlockBundler};
-pub use state_committer::StateCommitter ;
+pub use state_committer::StateCommitter;
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
+pub use validator::BlockValidator;
 pub use wallet_balance_tracker::WalletBalanceTracker;
 
 #[derive(thiserror::Error, Debug)]
@@ -78,9 +78,11 @@ pub(crate) mod test_utils {
     pub async fn encode_and_merge(
         blocks: NonEmptyVec<ports::fuel::FullFuelBlock>,
     ) -> NonEmptyVec<u8> {
-
-
-        let bytes = block_importer::encode_blocks(blocks).into_inner().into_iter().flat_map(|b|b.data.into_inner()).collect_vec();
+        let bytes = block_importer::encode_blocks(blocks)
+            .into_inner()
+            .into_iter()
+            .flat_map(|b| b.data.into_inner())
+            .collect_vec();
 
         bytes.try_into().expect("is not empty")
     }
@@ -104,11 +106,17 @@ pub(crate) mod test_utils {
     use fuel_crypto::SecretKey;
     use itertools::Itertools;
     use mocks::l1::TxStatus;
-    use ports::{storage::Storage, types::{DateTime, Fragment, NonEmptyVec, Utc}};
+    use ports::{
+        storage::Storage,
+        types::{DateTime, Fragment, NonEmptyVec, Utc},
+    };
     use storage::{DbWithProcess, PostgresProcess};
 
     use crate::{
-        block_bundler::bundler::Factory, block_importer::{self, encode_blocks}, BlockBundler, BlockBundlerConfig, BlockImporter, BlockValidator, BundlerFactory, StateCommitter, StateListener
+        block_bundler::bundler::Factory,
+        block_importer::{self, encode_blocks},
+        BlockBundler, BlockBundlerConfig, BlockImporter, BlockValidator, StateCommitter,
+        StateListener,
     };
 
     use super::Runner;
@@ -116,12 +124,13 @@ pub(crate) mod test_utils {
     pub mod mocks {
         pub mod l1 {
 
-            use std::cmp::{max, min};
+            use std::cmp::min;
 
             use delegate::delegate;
             use mockall::{predicate::eq, Sequence};
             use ports::{
-                l1::FragmentsSubmitted, types::{Fragment, L1Height, NonEmptyVec, TransactionResponse, U256}
+                l1::FragmentsSubmitted,
+                types::{Fragment, L1Height, NonEmptyVec, TransactionResponse, U256},
             };
 
             pub struct FullL1Mock {
@@ -192,7 +201,12 @@ pub(crate) mod test_utils {
                         })
                         .once()
                         .return_once(move |fragments| {
-                            Box::pin(async move { Ok(FragmentsSubmitted{tx: tx_id, num_fragments: min(fragments.len(), 6.try_into().unwrap())}) })
+                            Box::pin(async move {
+                                Ok(FragmentsSubmitted {
+                                    tx: tx_id,
+                                    num_fragments: min(fragments.len(), 6.try_into().unwrap()),
+                                })
+                            })
                         })
                         .in_sequence(&mut sequence);
                 }
@@ -231,18 +245,18 @@ pub(crate) mod test_utils {
 
         pub mod fuel {
 
-            use std::{
-                iter,
-                ops::RangeInclusive,
-            };
+            use std::{iter, ops::RangeInclusive};
 
             use fuel_crypto::{Message, SecretKey, Signature};
             use futures::{stream, StreamExt};
             use itertools::Itertools;
             use ports::{
-                fuel::{ FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock}, non_empty_vec, storage::SequentialFuelBlocks, types::NonEmptyVec
+                fuel::{FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock},
+                non_empty_vec,
+                storage::SequentialFuelBlocks,
+                types::NonEmptyVec,
             };
-            use rand::{ RngCore, SeedableRng};
+            use rand::{RngCore, SeedableRng};
 
             use crate::block_importer;
 
@@ -250,7 +264,7 @@ pub(crate) mod test_utils {
                 height: u32,
                 secret_key: &SecretKey,
                 num_tx: usize,
-                tx_size: usize
+                tx_size: usize,
             ) -> ports::fuel::FullFuelBlock {
                 let header = given_header(height);
 
@@ -270,8 +284,8 @@ pub(crate) mod test_utils {
                     small_rng.fill_bytes(&mut buf);
                     NonEmptyVec::try_from(buf).unwrap()
                 })
-                    .take(num_tx)
-                    .collect::<Vec<_>>();
+                .take(num_tx)
+                .collect::<Vec<_>>();
 
                 FullFuelBlock {
                     id,
@@ -285,7 +299,7 @@ pub(crate) mod test_utils {
                 heights: RangeInclusive<u32>,
                 secret_key: &SecretKey,
                 num_tx: usize,
-                tx_size: usize
+                tx_size: usize,
             ) -> SequentialFuelBlocks {
                 let blocks = heights
                     .map(|height| generate_storage_block(height, secret_key, num_tx, tx_size))
@@ -303,7 +317,7 @@ pub(crate) mod test_utils {
                 height: u32,
                 secret_key: &SecretKey,
                 num_tx: usize,
-                tx_size: usize
+                tx_size: usize,
             ) -> ports::storage::FuelBlock {
                 let block = generate_block(height, secret_key, num_tx, tx_size);
                 block_importer::encode_blocks(non_empty_vec![block]).take_first()
@@ -368,8 +382,7 @@ pub(crate) mod test_utils {
                             .filter(move |b| range.contains(&b.header.height))
                             .cloned()
                             .collect_vec().try_into().expect("is not empty");
-                                                    
-                        
+
                         stream::iter(iter::once(Ok(blocks_batch))).boxed()
                     });
 
@@ -412,11 +425,7 @@ pub(crate) mod test_utils {
 
             let tx = [1; 32];
             let l1_mock = mocks::l1::expects_state_submissions(vec![(None, tx)]);
-            let mut committer = StateCommitter::new(
-                l1_mock,
-                self.db(),
-                clock.clone(),
-            );
+            let mut committer = StateCommitter::new(l1_mock, self.db());
             committer.run().await.unwrap();
 
             let l1_mock = mocks::l1::txs_finished([(tx, TxStatus::Success)]);
@@ -429,16 +438,25 @@ pub(crate) mod test_utils {
 
         pub async fn insert_fragments(&self, amount: usize) -> Vec<Fragment> {
             let max_per_blob = (Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
-            self.import_blocks(Blocks::WithHeights { range: 0..=0, tx_per_block: amount, size_per_tx: max_per_blob  }).await;
-
+            self.import_blocks(Blocks::WithHeights {
+                range: 0..=0,
+                tx_per_block: amount,
+                size_per_tx: max_per_blob,
+            })
+            .await;
 
             let factory = Factory::new(Eip4844BlobEncoder, crate::CompressionLevel::Level6);
-            let mut bundler = BlockBundler::new(self.db(), TestClock::default(), factory, BlockBundlerConfig{
-                optimization_time_limit: Duration::ZERO,
-                block_accumulation_time_limit: Duration::ZERO,
-                num_blocks_to_accumulate: 1.try_into().unwrap(),
-                starting_fuel_height: 0
-            });
+            let mut bundler = BlockBundler::new(
+                self.db(),
+                TestClock::default(),
+                factory,
+                BlockBundlerConfig {
+                    optimization_time_limit: Duration::ZERO,
+                    block_accumulation_time_limit: Duration::ZERO,
+                    num_blocks_to_accumulate: 1.try_into().unwrap(),
+                    starting_fuel_height: 0,
+                },
+            );
 
             bundler.run().await.unwrap();
 
@@ -487,7 +505,12 @@ pub(crate) mod test_utils {
 
                     let blocks = range
                         .map(|height| {
-                            mocks::fuel::generate_block(height, &secret_key, tx_per_block, size_per_tx)
+                            mocks::fuel::generate_block(
+                                height,
+                                &secret_key,
+                                tx_per_block,
+                                size_per_tx,
+                            )
                         })
                         .collect::<Vec<_>>();
 

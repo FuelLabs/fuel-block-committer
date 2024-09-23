@@ -109,7 +109,7 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_committer = services::StateCommitter::new(l1, storage, SystemClock);
+    let state_committer = services::StateCommitter::new(l1, storage);
 
     schedule_polling(
         config.app.tx_finalization_check_interval,

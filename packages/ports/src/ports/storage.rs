@@ -2,7 +2,7 @@ use delegate::delegate;
 use std::{
     fmt::{Display, Formatter},
     num::NonZeroUsize,
-    ops::{Deref, Index, RangeInclusive},
+    ops::{Index, RangeInclusive},
     sync::Arc,
 };
 

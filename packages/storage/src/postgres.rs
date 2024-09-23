@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use itertools::Itertools;
 use ports::{
-    storage::{BundleFragment, SequentialFuelBlocks},
+    storage::SequentialFuelBlocks,
     types::{BlockSubmission, DateTime, Fragment, NonEmptyVec, NonNegative, TransactionState, Utc},
 };
 use sqlx::{

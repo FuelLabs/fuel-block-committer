@@ -8,11 +8,8 @@ use ports::types::NonEmptyVec;
 
 use alloy::{
     consensus::{BlobTransactionSidecar, SidecarBuilder, SimpleCoder},
-    eips::eip4844::{self, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES},
+    eips::eip4844::{self, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB},
 };
-
-/// Intrinsic gas cost of a eth transaction.
-const BASE_TX_COST: u64 = 21_000;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Eip4844BlobEncoder;
@@ -20,7 +17,7 @@ pub struct Eip4844BlobEncoder;
 impl Eip4844BlobEncoder {
     #[cfg(feature = "test-helpers")]
     pub const FRAGMENT_SIZE: usize =
-        FIELD_ELEMENTS_PER_BLOB as usize * FIELD_ELEMENT_BYTES as usize;
+        FIELD_ELEMENTS_PER_BLOB as usize * eip4844::FIELD_ELEMENT_BYTES as usize;
 
     pub(crate) fn decode(
         fragments: &NonEmptyVec<Fragment>,
@@ -191,7 +188,7 @@ fn merge_into_sidecar(
 #[cfg(test)]
 mod tests {
     use alloy::consensus::{SidecarBuilder, SimpleCoder};
-    use eip4844::BlobTransactionSidecar;
+
     use ports::l1::FragmentEncoder;
     use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
     use test_case::test_case;

@@ -559,10 +559,4 @@ mod tests {
 
         Ok(())
     }
-
-    fn enough_bytes_to_almost_fill_entire_l1_tx() -> usize {
-        let encoding_overhead = 20;
-        let max_bytes_per_tx = Eip4844BlobEncoder::FRAGMENT_SIZE * 6;
-        max_bytes_per_tx - encoding_overhead
-    }
 }
