@@ -365,17 +365,15 @@ mod tests {
         storage.insert_blocks(blocks).await.unwrap();
     }
 
-    async fn insert_sequence_of_bundled_blocks(storage: impl Storage, range: RangeInclusive<u32>) {
+    async fn insert_sequence_of_bundled_blocks(storage: impl Storage, range: RangeInclusive<u32>, num_fragments: usize) {
         insert_sequence_of_unbundled_blocks(&storage, range.clone()).await;
+
+        let fragments = std::iter::repeat(Fragment{ data: nonempty![0], unused_bytes: 1000, total_bytes: 100.try_into().unwrap() }).take(num_fragments).collect_nonempty().unwrap();
 
         storage
             .insert_bundle_and_fragments(
                 range,
-                nonempty![Fragment {
-                    data: nonempty![1],
-                    unused_bytes: 1000,
-                    total_bytes: 100.try_into().unwrap()
-                }],
+                fragments
             )
             .await
             .unwrap();
@@ -457,7 +455,7 @@ mod tests {
         // Given
         let storage = start_db().await;
 
-        insert_sequence_of_bundled_blocks(&storage, 0..=2).await;
+        insert_sequence_of_bundled_blocks(&storage, 0..=2, 1).await;
         insert_sequence_of_unbundled_blocks(&storage, 3..=4).await;
 
         // when
@@ -474,7 +472,7 @@ mod tests {
         let storage = start_db().await;
 
         insert_sequence_of_unbundled_blocks(&storage, 0..=2).await;
-        insert_sequence_of_bundled_blocks(&storage, 7..=10).await;
+        insert_sequence_of_bundled_blocks(&storage, 7..=10, 1).await;
         insert_sequence_of_unbundled_blocks(&storage, 11..=15).await;
 
         // when
@@ -490,7 +488,7 @@ mod tests {
         let storage = start_db().await;
 
         // u16::MAX because of implementation details
-        insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2).await;
+        insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2, u16::MAX as usize * 2).await;
     }
     // #[tokio::test]
     // async fn something() {

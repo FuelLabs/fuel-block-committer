@@ -401,9 +401,9 @@ impl Postgres {
         let start = *block_range.start();
         let end = *block_range.end();
 
-        // Insert a new bundle
+        // Insert a new bundle and retrieve its ID
         let bundle_id = sqlx::query!(
-            "INSERT INTO bundles(start_height, end_height) VALUES ($1,$2) RETURNING id",
+            "INSERT INTO bundles(start_height, end_height) VALUES ($1, $2) RETURNING id",
             i64::from(start),
             i64::from(end)
         )
@@ -412,31 +412,60 @@ impl Postgres {
         .id;
 
         let bundle_id: NonNegative<i32> = bundle_id.try_into().map_err(|e| {
-            crate::error::Error::Conversion(format!("invalid bundle id received from db: {e}"))
+            crate::error::Error::Conversion(format!("invalid bundle id received from db: {}", e))
         })?;
 
-        // Insert fragments associated with the bundle
-        for (idx, fragment) in fragments.into_iter().enumerate() {
-            let idx = i32::try_from(idx).map_err(|_| {
-                crate::error::Error::Conversion(format!("invalid idx for fragment: {idx}"))
-            })?;
+        // Define constants for batching
+        const FIELDS_PER_FRAGMENT: u16 = 5; // idx, data, bundle_id, unused_bytes, total_bytes
+        const MAX_FRAGMENTS_PER_QUERY: usize = (u16::MAX / FIELDS_PER_FRAGMENT) as usize;
 
-            let data = Vec::from(fragment.data);
-            sqlx::query!(
-                "INSERT INTO l1_fragments (idx, data, bundle_id, unused_bytes, total_bytes) VALUES ($1, $2, $3, $4, $5)",
-                idx,
-                data.as_slice(),
-                bundle_id.as_i32(),
-                i64::from(fragment.unused_bytes),
-                i64::from(fragment.total_bytes.get())
-            )
-            .execute(&mut *tx)
-            .await?;
+        // Prepare fragments for insertion
+        let fragment_rows = fragments
+            .into_iter()
+            .enumerate()
+            .map(|(idx, fragment)| {
+                let idx = i32::try_from(idx).map_err(|_| {
+                    crate::error::Error::Conversion(format!("invalid idx for fragment: {}", idx))
+                })?;
+                Ok((
+                     idx,
+                     Vec::from(fragment.data),
+                     bundle_id.as_i32(),
+                     i64::from(fragment.unused_bytes),
+                     i64::from(fragment.total_bytes.get()),
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Batch insert fragments
+        let queries = fragment_rows
+            .into_iter()
+            .chunks(MAX_FRAGMENTS_PER_QUERY)
+            .into_iter()
+            .map(|chunk| {
+                let mut query_builder =
+                    QueryBuilder::new("INSERT INTO l1_fragments (idx, data, bundle_id, unused_bytes, total_bytes)");
+
+                query_builder.push_values(chunk, |mut b, values| {
+                    b.push_bind(values.0);
+                    b.push_bind(values.1);
+                    b.push_bind(values.2);
+                    b.push_bind(values.3);
+                    b.push_bind(values.4);
+                });
+
+                query_builder
+            })
+            .collect::<Vec<_>>();
+
+        // Execute all fragment insertion queries
+        for mut query in queries {
+            query.build().execute(&mut *tx).await?;
         }
 
         // Commit the transaction
         tx.commit().await?;
 
         Ok(())
-    }
+}
 }
