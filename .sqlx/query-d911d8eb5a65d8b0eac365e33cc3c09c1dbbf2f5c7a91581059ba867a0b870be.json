@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                SELECT 1\n                FROM l1_fragments\n                JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id\n                JOIN l1_blob_transaction ON l1_transaction_fragments.transaction_id = l1_blob_transaction.id\n                WHERE l1_blob_transaction.state = $1\n            ) AS has_pending_fragments;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_pending_fragments",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d911d8eb5a65d8b0eac365e33cc3c09c1dbbf2f5c7a91581059ba867a0b870be"
+}

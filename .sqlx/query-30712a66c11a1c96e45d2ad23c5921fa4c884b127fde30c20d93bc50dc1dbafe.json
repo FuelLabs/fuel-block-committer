@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT l1_fragments.*\n            FROM l1_fragments\n            WHERE l1_fragments.id NOT IN (\n                SELECT l1_fragments.id\n                FROM l1_fragments\n                JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id\n                JOIN l1_transactions ON l1_transaction_fragments.transaction_id = l1_transactions.id\n                WHERE l1_transactions.state IN ($1, $2)\n            )\n            ORDER BY l1_fragments.created_at\n            LIMIT $3;",
+  "query": "SELECT l1_fragments.*\n            FROM l1_fragments\n            WHERE l1_fragments.id NOT IN (\n                SELECT l1_fragments.id\n                FROM l1_fragments\n                JOIN l1_transaction_fragments ON l1_fragments.id = l1_transaction_fragments.fragment_id\n                JOIN l1_blob_transaction ON l1_transaction_fragments.transaction_id = l1_blob_transaction.id\n                WHERE l1_blob_transaction.state IN ($1, $2)\n            )\n            ORDER BY l1_fragments.created_at\n            LIMIT $3;",
   "describe": {
     "columns": [
       {
@@ -44,5 +44,5 @@
       false
     ]
   },
-  "hash": "f258b9822f1b060c13cd895fdbe61020fa605fdba844cb8c0071111f78342b5e"
+  "hash": "30712a66c11a1c96e45d2ad23c5921fa4c884b127fde30c20d93bc50dc1dbafe"
 }
