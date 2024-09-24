@@ -184,13 +184,15 @@ pub trait BundlerFactory {
 pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
     compression_level: CompressionLevel,
+    step_size: NonZeroUsize,
 }
 
 impl<L1> Factory<L1> {
-    pub fn new(gas_calc: L1, compression_level: CompressionLevel) -> Self {
+    pub fn new(gas_calc: L1, compression_level: CompressionLevel, step_size: NonZeroUsize) -> Self {
         Self {
             gas_calc,
             compression_level,
+            step_size,
         }
     }
 }
@@ -206,6 +208,7 @@ where
             self.gas_calc.clone(),
             blocks,
             Compressor::new(self.compression_level),
+            self.step_size,
         )
     }
 }
@@ -217,6 +220,7 @@ struct Proposal {
     compressed_data: NonEmpty<u8>,
     gas_usage: u64,
 }
+
 impl Proposal {
     fn gas_per_uncompressed_byte(&self) -> f64 {
         self.gas_usage as f64 / self.uncompressed_data_size.get() as f64
@@ -236,13 +240,19 @@ pub struct Bundler<FragmentEncoder> {
     current_block_count: NonZeroUsize,
     attempts_exhausted: bool,
     compressor: Compressor,
+    step_size: NonZeroUsize,
 }
 
 impl<T> Bundler<T>
 where
     T: ports::l1::FragmentEncoder + Send + Sync,
 {
-    fn new(cost_calculator: T, blocks: SequentialFuelBlocks, compressor: Compressor) -> Self {
+    fn new(
+        cost_calculator: T,
+        blocks: SequentialFuelBlocks,
+        compressor: Compressor,
+        step_size: NonZeroUsize,
+    ) -> Self {
         Self {
             fragment_encoder: cost_calculator,
             current_block_count: blocks.len(),
@@ -251,6 +261,7 @@ where
             compressor,
             attempts_exhausted: false,
             number_of_attempts: 0,
+            step_size,
         }
     }
 
@@ -328,30 +339,37 @@ where
     T: ports::l1::FragmentEncoder + Send + Sync,
 {
     async fn advance(&mut self) -> Result<bool> {
+        if self.attempts_exhausted {
+            return Ok(false);
+        }
+
         let bundle_blocks = self.blocks_for_new_proposal();
 
         let proposal = self.create_proposal(bundle_blocks).await?;
         self.save_if_best_so_far(proposal);
 
-        let more_attempts = if self.current_block_count.get() > 1 {
-            let new_block_count = self.current_block_count.get().saturating_sub(1);
+        // Calculate new block count by subtracting step_size
+        let new_block_count = self
+            .current_block_count
+            .get()
+            .saturating_sub(self.step_size.get());
 
-            self.current_block_count =
-                NonZeroUsize::try_from(new_block_count).expect("greater than 0");
-
-            true
+        if new_block_count < 1 {
+            self.current_block_count = NonZeroUsize::new(1).unwrap();
+            self.attempts_exhausted = true;
+            self.number_of_attempts += 1;
+            Ok(false)
         } else {
-            false
-        };
-
-        self.attempts_exhausted = !more_attempts;
-        self.number_of_attempts += 1;
-
-        Ok(more_attempts)
+            self.current_block_count = NonZeroUsize::new(new_block_count).unwrap();
+            self.number_of_attempts += 1;
+            // Check if more attempts are possible
+            self.attempts_exhausted = false;
+            Ok(true)
+        }
     }
 
     async fn finish(mut self) -> Result<BundleProposal> {
-        if self.best_proposal.is_none() {
+        if self.best_proposal.is_none() && !self.attempts_exhausted {
             self.advance().await?;
         }
 
@@ -383,6 +401,7 @@ mod tests {
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
     use ports::{l1::FragmentEncoder, types::nonempty};
+    use std::num::NonZeroUsize;
 
     use super::*;
     use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
@@ -419,6 +438,7 @@ mod tests {
             Eip4844BlobEncoder,
             blocks.clone(),
             Compressor::no_compression(),
+            NonZeroUsize::new(1).unwrap(),
         );
 
         // when
@@ -453,6 +473,7 @@ mod tests {
             Eip4844BlobEncoder,
             blocks.clone(),
             Compressor::no_compression(),
+            NonZeroUsize::new(1).unwrap(),
         );
 
         bundler.advance().await?;
@@ -469,6 +490,63 @@ mod tests {
         assert_eq!(optimal_bundle.block_heights, 0..=0);
         assert!(optimal_bundle.known_to_be_optimal);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn will_advance_in_steps() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+
+        let blocks = generate_storage_block_sequence(0..=9, &secret_key, 10, 100);
+
+        let step_size = NonZeroUsize::new(3).unwrap();
+
+        let mut bundler = Bundler::new(
+            Eip4844BlobEncoder,
+            blocks.clone(),
+            Compressor::no_compression(),
+            step_size,
+        );
+
+        // when
+        let mut attempts = 0;
+        while bundler.advance().await? {
+            attempts += 1;
+        }
+        let proposal = bundler.finish().await?;
+
+        // then
+        assert_eq!(attempts, 3); // 10 -> 7 -> 4 -> 1
+        assert!(proposal.known_to_be_optimal);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn will_not_step_below_one() -> Result<()> {
+        // given
+        let secret_key = SecretKey::random(&mut rand::thread_rng());
+
+        let blocks = generate_storage_block_sequence(0..=2, &secret_key, 3, 100);
+
+        let step_size = NonZeroUsize::new(5).unwrap(); // Step size larger than number of blocks
+
+        let mut bundler = Bundler::new(
+            Eip4844BlobEncoder,
+            blocks.clone(),
+            Compressor::no_compression(),
+            step_size,
+        );
+
+        // when
+        let more = bundler.advance().await?;
+        let bundle = bundler.finish().await?;
+
+        // then
+        assert!(!more);
+        assert!(bundle.known_to_be_optimal);
+        assert_eq!(bundle.block_heights, 0..=2);
+        assert_eq!(bundle.optimization_attempts, 1);
         Ok(())
     }
 
@@ -497,6 +575,7 @@ mod tests {
             Eip4844BlobEncoder,
             blocks.clone().try_into().unwrap(),
             Compressor::no_compression(),
+            NonZeroUsize::new(1).unwrap(), // Default step size
         );
 
         while bundler.advance().await? {}

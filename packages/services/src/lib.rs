@@ -467,7 +467,11 @@ pub(crate) mod test_utils {
                 })
                 .await;
 
-            let factory = Factory::new(Eip4844BlobEncoder, crate::CompressionLevel::Level6);
+            let factory = Factory::new(
+                Eip4844BlobEncoder,
+                crate::CompressionLevel::Level6,
+                1.try_into().unwrap(),
+            );
 
             let mut fuel_api = ports::fuel::MockApi::new();
             let latest_height = fuel_blocks.last().header.height;

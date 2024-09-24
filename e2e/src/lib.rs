@@ -105,7 +105,7 @@ mod tests {
         Ok(())
     }
 
-    #[ignore = "meant for running manually and tweaking configuration parameters"]
+    // #[ignore = "meant for running manually and tweaking configuration parameters"]
     #[tokio::test(flavor = "multi_thread")]
     async fn connecting_to_testnet() -> Result<()> {
         // given

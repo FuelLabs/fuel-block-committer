@@ -80,8 +80,11 @@ pub fn block_bundler(
     config: &config::Config,
     internal_config: &config::Internal,
 ) -> tokio::task::JoinHandle<()> {
-    let bundler_factory =
-        services::BundlerFactory::new(Eip4844BlobEncoder, config.app.bundle.compression_level);
+    let bundler_factory = services::BundlerFactory::new(
+        Eip4844BlobEncoder,
+        config.app.bundle.compression_level,
+        config.app.bundle.optimization_step,
+    );
 
     let block_bundler = BlockBundler::new(
         fuel,

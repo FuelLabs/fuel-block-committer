@@ -17,6 +17,7 @@ pub struct Committer {
     db_name: Option<String>,
     kms_url: Option<String>,
     bundle_accumulation_timeout: Option<String>,
+    bundle_optimization_step: Option<String>,
     bundle_blocks_to_accumulate: Option<String>,
     bundle_optimization_timeout: Option<String>,
     bundle_block_height_lookback: Option<String>,
@@ -112,6 +113,13 @@ impl Committer {
             );
         }
 
+        if let Some(optimizaiton_step) = self.bundle_optimization_step {
+            cmd.env(
+                "COMMITTER__APP__BUNDLE__OPTIMIZATION_STEP",
+                optimizaiton_step,
+            );
+        }
+
         let sink = if self.show_logs {
             std::process::Stdio::inherit
         } else {
@@ -125,6 +133,11 @@ impl Committer {
             _child: child,
             port: unused_port,
         })
+    }
+
+    pub fn with_bundle_optimization_step(mut self, step: String) -> Self {
+        self.bundle_optimization_step = Some(step);
+        self
     }
 
     pub fn with_bundle_accumulation_timeout(mut self, timeout: String) -> Self {

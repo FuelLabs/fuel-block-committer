@@ -278,7 +278,11 @@ mod tests {
     }
 
     fn default_bundler_factory() -> bundler::Factory<Eip4844BlobEncoder> {
-        bundler::Factory::new(Eip4844BlobEncoder, CompressionLevel::Disabled)
+        bundler::Factory::new(
+            Eip4844BlobEncoder,
+            CompressionLevel::Disabled,
+            1.try_into().unwrap(),
+        )
     }
 
     #[tokio::test]
