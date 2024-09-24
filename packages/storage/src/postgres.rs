@@ -349,14 +349,21 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
-        Ok(sqlx::query!(
-            "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
+    pub(crate) async fn _amount_of_pending_txs(&self) -> Result<u64> {
+        let count = sqlx::query!(
+            "SELECT COUNT(1) FROM l1_transactions WHERE state = $1",
             L1TxState::PENDING_STATE
         )
         .fetch_one(&self.connection_pool)
         .await?
-        .has_pending_transactions.unwrap_or(false))
+        .count
+        .ok_or_else(|| crate::error::Error::Database("No count returned".to_string()))?;
+
+        let non_negative_count = u64::try_from(count).map_err(|e| {
+            crate::error::Error::Conversion(format!("invalid count received from db: {}", e))
+        })?;
+
+        Ok(non_negative_count)
     }
 
     pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<ports::types::L1Tx>> {

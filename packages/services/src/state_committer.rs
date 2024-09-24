@@ -96,7 +96,11 @@ where
     }
 
     async fn has_pending_transactions(&self) -> Result<bool> {
-        self.storage.has_pending_txs().await.map_err(|e| e.into())
+        self.storage
+            .amount_of_pending_txs()
+            .await
+            .map(|amount| amount > 0)
+            .map_err(|e| e.into())
     }
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
