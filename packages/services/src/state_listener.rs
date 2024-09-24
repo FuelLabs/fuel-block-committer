@@ -124,12 +124,11 @@ impl Default for Metrics {
 mod tests {
     use clock::TestClock;
 
+    use super::*;
     use crate::test_utils::{
         self,
         mocks::{self, l1::TxStatus},
     };
-
-    use super::*;
 
     #[tokio::test]
     async fn state_listener_will_update_tx_state_if_finalized() -> crate::Result<()> {

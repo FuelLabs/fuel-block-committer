@@ -475,12 +475,11 @@ impl Postgres {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_instance;
+    use std::{env, fs, path::Path};
 
     use sqlx::{Executor, PgPool, Row};
-    use std::env;
-    use std::fs;
-    use std::path::Path;
+
+    use crate::test_instance;
 
     #[tokio::test]
     async fn test_second_migration_applies_successfully() {

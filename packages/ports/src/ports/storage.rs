@@ -253,8 +253,9 @@ impl<T: Storage + Send + Sync> Storage for &T {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use nonempty::{nonempty, NonEmpty};
+
+    use super::*;
 
     fn create_fuel_block(height: u32) -> FuelBlock {
         let mut hash = [0; 32];
