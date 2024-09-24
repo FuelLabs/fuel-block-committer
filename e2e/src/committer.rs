@@ -17,11 +17,13 @@ pub struct Committer {
     db_name: Option<String>,
     kms_url: Option<String>,
     bundle_accumulation_timeout: Option<String>,
-    bundle_optimization_step: Option<String>,
     bundle_blocks_to_accumulate: Option<String>,
+    bundle_optimization_step: Option<String>,
     bundle_optimization_timeout: Option<String>,
     bundle_block_height_lookback: Option<String>,
     bundle_compression_level: Option<String>,
+    bundle_fragments_to_accumulate: Option<String>,
+    bundle_fragment_accumulation_timeout: Option<String>,
 }
 
 impl Committer {
@@ -71,53 +73,43 @@ impl Committer {
             .env("COMMITTER__APP__BLOCK_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
+            .env(
+                "COMMITTER__APP__BUNDLE__ACCUMULATION_TIMEOUT",
+                get_field!(bundle_accumulation_timeout),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE",
+                get_field!(bundle_blocks_to_accumulate),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT",
+                get_field!(bundle_optimization_timeout),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__BLOCK_HEIGHT_LOOKBACK",
+                get_field!(bundle_block_height_lookback),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__COMPRESSION_LEVEL",
+                get_field!(bundle_compression_level),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__OPTIMIZATION_STEP",
+                get_field!(bundle_optimization_step),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__FRAGMENTS_TO_ACCUMULATE",
+                get_field!(bundle_fragments_to_accumulate),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__FRAGMENT_ACCUMULATION_TIMEOUT",
+                get_field!(bundle_fragment_accumulation_timeout),
+            )
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
         if let Some(blob_wallet_key_arn) = self.blob_key_arn {
             cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ARN", blob_wallet_key_arn);
-        }
-
-        if let Some(accumulation_timeout) = self.bundle_accumulation_timeout {
-            cmd.env(
-                "COMMITTER__APP__BUNDLE__ACCUMULATION_TIMEOUT",
-                accumulation_timeout,
-            );
-        }
-
-        if let Some(blocks_to_accumulate) = self.bundle_blocks_to_accumulate {
-            cmd.env(
-                "COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE",
-                blocks_to_accumulate,
-            );
-        }
-
-        if let Some(optimization_timeout) = self.bundle_optimization_timeout {
-            cmd.env(
-                "COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT",
-                optimization_timeout,
-            );
-        }
-
-        if let Some(block_height_lookback) = self.bundle_block_height_lookback {
-            cmd.env(
-                "COMMITTER__APP__BUNDLE__BLOCK_HEIGHT_LOOKBACK",
-                block_height_lookback,
-            );
-        }
-
-        if let Some(compression_level) = self.bundle_compression_level {
-            cmd.env(
-                "COMMITTER__APP__BUNDLE__COMPRESSION_LEVEL",
-                compression_level,
-            );
-        }
-
-        if let Some(optimizaiton_step) = self.bundle_optimization_step {
-            cmd.env(
-                "COMMITTER__APP__BUNDLE__OPTIMIZATION_STEP",
-                optimizaiton_step,
-            );
         }
 
         let sink = if self.show_logs {
@@ -133,6 +125,16 @@ impl Committer {
             _child: child,
             port: unused_port,
         })
+    }
+
+    pub fn with_bundle_fragment_accumulation_timeout(mut self, timeout: String) -> Self {
+        self.bundle_fragment_accumulation_timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_bundle_fragments_to_accumulate(mut self, fragments: String) -> Self {
+        self.bundle_fragments_to_accumulate = Some(fragments);
+        self
     }
 
     pub fn with_bundle_optimization_step(mut self, step: String) -> Self {

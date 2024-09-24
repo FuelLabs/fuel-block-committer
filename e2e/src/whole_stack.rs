@@ -121,10 +121,12 @@ impl WholeStack {
                 .with_main_key_arn(main_key.id.clone())
                 .with_kms_url(main_key.url.clone())
                 .with_bundle_accumulation_timeout("1000s".to_owned())
-                .with_bundle_blocks_to_accumulate("2500".to_string())
+                .with_bundle_blocks_to_accumulate("500".to_string())
                 .with_bundle_optimization_timeout("120s".to_owned())
-                .with_bundle_block_height_lookback("3000".to_owned())
+                .with_bundle_block_height_lookback("4000".to_owned())
                 .with_bundle_optimization_step("100".to_owned())
+                .with_bundle_fragments_to_accumulate("6".to_owned())
+                .with_bundle_fragment_accumulation_timeout("10m".to_owned())
                 .with_bundle_compression_level("level6".to_owned());
 
             let committer = if blob_support {
@@ -225,6 +227,8 @@ async fn start_committer(
         .with_bundle_blocks_to_accumulate("400".to_string())
         .with_bundle_optimization_timeout("5s".to_owned())
         .with_bundle_block_height_lookback("20000".to_owned())
+        .with_bundle_fragments_to_accumulate("3".to_owned())
+        .with_bundle_fragment_accumulation_timeout("5s".to_owned())
         .with_bundle_optimization_step("100".to_owned())
         .with_bundle_compression_level("level6".to_owned());
 
