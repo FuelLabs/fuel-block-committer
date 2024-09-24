@@ -29,6 +29,19 @@ impl Config {
             }
         }
 
+        if self.app.bundle.fragments_to_accumulate.get() > 6 {
+            return Err(crate::errors::Error::Other(
+                "Fragments to accumulate must be <= 6".to_string(),
+            ));
+        }
+
+        if self.app.bundle.block_height_lookback < self.app.bundle.blocks_to_accumulate.get() as u32
+        {
+            return Err(crate::errors::Error::Other(
+                "block_height_lookback must be >= blocks_to_accumulate".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
