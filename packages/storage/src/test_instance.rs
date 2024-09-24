@@ -191,7 +191,7 @@ impl Storage for DbWithProcess {
                 fragment_ids: NonEmpty<NonNegative<i32>>,
             ) -> ports::storage::Result<()>;
             async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
-            async fn amount_of_pending_txs(&self) -> ports::storage::Result<u64>;
+            async fn has_pending_txs(&self) -> ports::storage::Result<bool>;
             async fn oldest_nonfinalized_fragments(
                 &self,
                 starting_height: u32,

@@ -159,7 +159,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert_eq!(setup.db().amount_of_pending_txs().await?, 0);
+        assert!(!setup.db().has_pending_txs().await?);
         assert_eq!(
             setup
                 .db()
@@ -205,7 +205,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert_ne!(setup.db().amount_of_pending_txs().await?, 0);
+        assert!(setup.db().has_pending_txs().await?);
         assert!(setup
             .db()
             .last_time_a_fragment_was_finalized()
@@ -251,7 +251,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert_eq!(setup.db().amount_of_pending_txs().await?, 0);
+        assert!(!setup.db().has_pending_txs().await?);
         assert!(setup
             .db()
             .last_time_a_fragment_was_finalized()

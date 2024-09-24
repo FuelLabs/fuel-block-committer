@@ -84,8 +84,8 @@ impl Storage for Postgres {
         Ok(self._get_pending_txs().await?)
     }
 
-    async fn amount_of_pending_txs(&self) -> Result<u64> {
-        Ok(self._amount_of_pending_txs().await?)
+    async fn has_pending_txs(&self) -> Result<bool> {
+        Ok(self._has_pending_txs().await?)
     }
 
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()> {
@@ -237,7 +237,7 @@ mod tests {
             .unwrap();
 
         // when
-        let has_pending = storage.amount_of_pending_txs().await.unwrap() != 0;
+        let has_pending = storage.has_pending_txs().await.unwrap();
         let pending_txs = storage.get_pending_txs().await.unwrap();
 
         // then
@@ -266,7 +266,7 @@ mod tests {
             .unwrap();
 
         // then
-        let has_pending = storage.amount_of_pending_txs().await.unwrap() != 0;
+        let has_pending = storage.has_pending_txs().await.unwrap();
         let pending_txs = storage.get_pending_txs().await.unwrap();
 
         assert!(!has_pending);

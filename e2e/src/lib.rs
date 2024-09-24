@@ -88,7 +88,7 @@ mod tests {
                     .oldest_nonfinalized_fragments(0, 1)
                     .await?
                     .is_empty()
-                && stack.db.amount_of_pending_txs().await? == 0
+                && !stack.db.has_pending_txs().await?
                 && stack
                     .db
                     .available_blocks()
