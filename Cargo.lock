@@ -2731,6 +2731,7 @@ dependencies = [
  "fuel",
  "humantime",
  "metrics",
+ "num_cpus",
  "ports",
  "serde",
  "serde_json",

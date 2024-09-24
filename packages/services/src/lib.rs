@@ -489,6 +489,7 @@ pub(crate) mod test_utils {
                     block_accumulation_time_limit: Duration::ZERO,
                     num_blocks_to_accumulate: 1.try_into().unwrap(),
                     lookback_window: 100,
+                    ..Default::default()
                 },
             );
 

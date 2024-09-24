@@ -15,6 +15,7 @@ use crate::{Error, Result, Runner};
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub optimization_time_limit: Duration,
+    pub max_bundles_per_optimization_run: NonZeroUsize,
     pub block_accumulation_time_limit: Duration,
     pub num_blocks_to_accumulate: NonZeroUsize,
     pub lookback_window: u32,
@@ -28,6 +29,7 @@ impl Default for Config {
             block_accumulation_time_limit: Duration::from_secs(100),
             num_blocks_to_accumulate: NonZeroUsize::new(1).unwrap(),
             lookback_window: 1000,
+            max_bundles_per_optimization_run: 1.try_into().unwrap(),
         }
     }
 }
@@ -100,11 +102,10 @@ where
         }
 
         if !still_time_to_accumulate_more {
-            info!(
-                "Accumulation time limit reached. Giving {} blocks to the bundler.",
-                blocks.len()
-            );
+            info!("Accumulation time limit reached.",);
         }
+
+        info!("Giving {} blocks to the bundler", blocks.len());
 
         let bundler = self.bundler_factory.build(blocks).await;
 
@@ -131,7 +132,10 @@ where
     async fn find_optimal_bundle<B: Bundle>(&self, mut bundler: B) -> Result<BundleProposal> {
         let optimization_start = self.clock.now();
 
-        while bundler.advance(32.try_into().expect("not zero")).await? {
+        while bundler
+            .advance(self.config.max_bundles_per_optimization_run)
+            .await?
+        {
             if self.should_stop_optimizing(optimization_start)? {
                 info!("Optimization time limit reached! Finishing bundling.");
                 break;

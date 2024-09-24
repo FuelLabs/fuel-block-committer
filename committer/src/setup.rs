@@ -96,6 +96,9 @@ pub fn block_bundler(
             block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
             num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
             lookback_window: config.app.bundle.block_height_lookback,
+            max_bundles_per_optimization_run: num_cpus::get()
+                .try_into()
+                .expect("num cpus not zero"),
         },
     );
 
