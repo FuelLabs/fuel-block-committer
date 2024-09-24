@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{num::NonZeroUsize, time::Duration};
 
 use itertools::Itertools;
 use ports::{
@@ -15,6 +15,7 @@ pub struct Config {
     /// The lookback window in blocks to determine the starting height.
     pub lookback_window: u32,
     pub fragment_accumulation_timeout: Duration,
+    pub fragments_to_accumulate: NonZeroUsize,
 }
 
 #[cfg(test)]
@@ -23,6 +24,7 @@ impl Default for Config {
         Self {
             lookback_window: 1000,
             fragment_accumulation_timeout: Duration::from_secs(0),
+            fragments_to_accumulate: 1.try_into().unwrap(),
         }
     }
 }

@@ -124,6 +124,9 @@ pub struct BundleConfig {
     #[serde(deserialize_with = "human_readable_duration")]
     pub fragment_accumulation_timeout: Duration,
 
+    // TODO: segfault
+    pub fragments_to_accumulate: NonZeroUsize,
+
     /// Only blocks within the `block_height_lookback` window
     /// value will be considered for importing, bundling, fragmenting, and submitting to L1.
     ///
