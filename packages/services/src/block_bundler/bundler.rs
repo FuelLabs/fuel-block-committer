@@ -1,7 +1,11 @@
-use rayon::prelude::*;
 use std::{
-    cmp::min, collections::VecDeque, fmt::Display, io::Write, num::NonZeroUsize,
-    ops::RangeInclusive, str::FromStr,
+    cmp::min,
+    collections::{HashSet, VecDeque},
+    fmt::Display,
+    io::Write,
+    num::NonZeroUsize,
+    ops::RangeInclusive,
+    str::FromStr,
 };
 
 use bytesize::ByteSize;
@@ -11,10 +15,9 @@ use ports::{
     storage::SequentialFuelBlocks,
     types::{CollectNonEmpty, Fragment, NonEmpty},
 };
+use rayon::prelude::*;
 
 use crate::Result;
-
-use std::collections::HashSet;
 
 /// Generates a sequence of block counts based on the initial step size.
 /// For each step size, it creates a range from `max_blocks` down to `1`,
@@ -471,10 +474,11 @@ fn create_proposal(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
     use ports::{l1::FragmentEncoder, types::nonempty};
-    use std::num::NonZeroUsize;
 
     use super::*;
     use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
