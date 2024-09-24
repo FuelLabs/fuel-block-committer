@@ -1,12 +1,59 @@
-use std::{io::Write, num::NonZeroUsize, ops::RangeInclusive, str::FromStr};
+use rayon::prelude::*;
+use std::{
+    cmp::min, collections::VecDeque, fmt::Display, io::Write, num::NonZeroUsize,
+    ops::RangeInclusive, str::FromStr,
+};
 
+use bytesize::ByteSize;
 use flate2::{write::GzEncoder, Compression};
 use ports::{
+    l1::FragmentEncoder,
     storage::SequentialFuelBlocks,
     types::{CollectNonEmpty, Fragment, NonEmpty},
 };
 
 use crate::Result;
+
+use std::collections::HashSet;
+
+/// Generates a sequence of block counts based on the initial step size.
+/// For each step size, it creates a range from `max_blocks` down to `1`,
+/// decrementing by the current step. After exhausting a step size,
+/// the step is halved, and the process continues until the step size is `1`.
+fn generate_attempts(
+    max_blocks: NonZeroUsize,
+    initial_step: NonZeroUsize,
+) -> VecDeque<NonZeroUsize> {
+    let mut attempts = Vec::new();
+    let mut step = min(initial_step, max_blocks).get();
+
+    // Continue halving the step until it reaches 1
+    while step >= 1 {
+        // Generate block counts for the current step size
+        for count in (1..=max_blocks.get()).rev().step_by(step) {
+            attempts.push(count);
+        }
+
+        // Halve the step size for the next iteration
+        if step == 1 {
+            break;
+        }
+        step /= 2;
+    }
+
+    // Ensure that 1 is included
+    if !attempts.contains(&1) {
+        attempts.push(1);
+    }
+
+    // Deduplicate while preserving order
+    let mut seen = HashSet::new();
+    attempts
+        .into_iter()
+        .filter(|x| seen.insert(*x))
+        .map(|e| e.try_into().expect("not zero"))
+        .collect()
+}
 
 #[derive(Debug, Clone, Copy)]
 struct Compressor {
@@ -118,8 +165,8 @@ impl Compressor {
         }
     }
 
-    fn _compress(compression: Option<Compression>, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
-        let Some(level) = compression else {
+    pub fn compress(&self, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
+        let Some(level) = self.compression else {
             return Ok(data.clone());
         };
 
@@ -137,28 +184,47 @@ impl Compressor {
             .collect_nonempty()
             .ok_or_else(|| crate::Error::Other("compression resulted in no data".to_string()))
     }
+}
 
-    #[cfg(test)]
-    pub fn compress_blocking(&self, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
-        Self::_compress(self.compression, data)
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct Metadata {
+    pub block_heights: RangeInclusive<u32>,
+    pub known_to_be_optimal: bool,
+    pub optimization_attempts: u64,
+    pub gas_usage: u64,
+    pub compressed_data_size: NonZeroUsize,
+    pub uncompressed_data_size: NonZeroUsize,
+}
 
-    pub async fn compress(&self, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
-        let level = self.compression;
-        tokio::task::spawn_blocking(move || Self::_compress(level, data))
-            .await
-            .map_err(|e| crate::Error::Other(e.to_string()))?
+impl Display for Metadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Metadata")
+            .field("num_blocks", &self.block_heights.clone().count())
+            .field("block_heights", &self.block_heights)
+            .field("known_to_be_optimal", &self.known_to_be_optimal)
+            .field("optimization_attempts", &self.optimization_attempts)
+            .field("gas_usage", &self.gas_usage)
+            .field(
+                "compressed_data_size",
+                &ByteSize(self.compressed_data_size.get() as u64),
+            )
+            .field(
+                "uncompressed_data_size",
+                &ByteSize(self.uncompressed_data_size.get() as u64),
+            )
+            .field(
+                "compression_ratio",
+                &(self.uncompressed_data_size.get() as f64
+                    / self.compressed_data_size.get() as f64),
+            )
+            .finish()
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BundleProposal {
     pub fragments: NonEmpty<Fragment>,
-    pub block_heights: RangeInclusive<u32>,
-    pub known_to_be_optimal: bool,
-    pub optimization_attempts: u64,
-    pub compression_ratio: f64,
-    pub gas_usage: u64,
+    pub metadata: Metadata,
 }
 
 #[trait_variant::make(Send)]
@@ -167,7 +233,7 @@ pub trait Bundle {
     /// Attempts to advance the bundler by trying out a new bundle configuration.
     ///
     /// Returns `true` if there are more configurations to process, or `false` otherwise.
-    async fn advance(&mut self) -> Result<bool>;
+    async fn advance(&mut self, num_concurrent: NonZeroUsize) -> Result<bool>;
 
     /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
     ///
@@ -225,10 +291,6 @@ impl Proposal {
     fn gas_per_uncompressed_byte(&self) -> f64 {
         self.gas_usage as f64 / self.uncompressed_data_size.get() as f64
     }
-
-    fn compression_ratio(&self) -> f64 {
-        self.uncompressed_data_size.get() as f64 / self.compressed_data.len() as f64
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -236,36 +298,31 @@ pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
     blocks: NonEmpty<ports::storage::FuelBlock>,
     best_proposal: Option<Proposal>,
-    number_of_attempts: u64,
-    current_block_count: NonZeroUsize,
-    attempts_exhausted: bool,
     compressor: Compressor,
-    step_size: NonZeroUsize,
+    attempts: VecDeque<NonZeroUsize>,
 }
 
-impl<T> Bundler<T>
-where
-    T: ports::l1::FragmentEncoder + Send + Sync,
-{
+impl<T> Bundler<T> {
     fn new(
         cost_calculator: T,
         blocks: SequentialFuelBlocks,
         compressor: Compressor,
-        step_size: NonZeroUsize,
+        initial_step_size: NonZeroUsize,
     ) -> Self {
+        let max_blocks = blocks.len();
+        let initial_step = initial_step_size;
+
+        let attempts = generate_attempts(max_blocks, initial_step);
+
         Self {
             fragment_encoder: cost_calculator,
-            current_block_count: blocks.len(),
             blocks: blocks.into_inner(),
             best_proposal: None,
             compressor,
-            attempts_exhausted: false,
-            number_of_attempts: 0,
-            step_size,
+            attempts,
         }
     }
 
-    /// Selects the best proposal based on the current gas prices.
     fn save_if_best_so_far(&mut self, new_proposal: Proposal) {
         match &mut self.best_proposal {
             Some(best)
@@ -280,97 +337,75 @@ where
         }
     }
 
-    fn calculate_block_heights(&self, num_blocks: NonZeroUsize) -> Result<RangeInclusive<u32>> {
-        if num_blocks > self.blocks.len_nonzero() {
-            return Err(crate::Error::Other(
-                "Invalid number of blocks for proposal".to_string(),
-            ));
-        }
-
-        let first_block = &self.blocks[0];
-        let last_block = &self.blocks[num_blocks.get().saturating_sub(1)];
-
-        Ok(first_block.height..=last_block.height)
-    }
-
-    fn merge_block_data(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> NonEmpty<u8> {
-        blocks
-            .into_iter()
-            .flat_map(|b| b.data)
-            .collect_nonempty()
-            .expect("non-empty")
-    }
-
-    fn blocks_for_new_proposal(&self) -> NonEmpty<ports::storage::FuelBlock> {
+    fn blocks_for_new_proposal(
+        &self,
+        block_count: NonZeroUsize,
+    ) -> NonEmpty<ports::storage::FuelBlock> {
         self.blocks
             .iter()
-            .take(self.current_block_count.get())
+            .take(block_count.get())
             .cloned()
             .collect_nonempty()
             .expect("non-empty")
     }
 
-    async fn create_proposal(
-        &self,
-        bundle_blocks: NonEmpty<ports::storage::FuelBlock>,
-    ) -> Result<Proposal> {
-        let uncompressed_data = self.merge_block_data(bundle_blocks.clone());
-        let uncompressed_data_size = uncompressed_data.len_nonzero();
+    fn blocks_bundles_for_analyzing(
+        &mut self,
+        num_concurrent: std::num::NonZero<usize>,
+    ) -> Vec<NonEmpty<ports::storage::FuelBlock>> {
+        let mut blocks_for_attempts = vec![];
 
-        let compressed_data = self.compressor.compress(uncompressed_data.clone()).await?;
+        while !self.attempts.is_empty() && blocks_for_attempts.len() < num_concurrent.get() {
+            let block_count = self.attempts.pop_front().expect("not empty");
+            let blocks = self.blocks_for_new_proposal(block_count);
+            blocks_for_attempts.push(blocks);
+        }
+        blocks_for_attempts
+    }
 
-        let gas_usage = self
-            .fragment_encoder
-            .gas_usage(compressed_data.len_nonzero());
+    async fn analyze(&mut self, num_concurrent: std::num::NonZero<usize>) -> Result<Vec<Proposal>>
+    where
+        T: ports::l1::FragmentEncoder + Send + Sync + Clone + 'static,
+    {
+        let blocks_for_analyzing = self.blocks_bundles_for_analyzing(num_concurrent);
 
-        let block_heights = self.calculate_block_heights(self.current_block_count)?;
+        let compressor = self.compressor;
+        let fragment_encoder = self.fragment_encoder.clone();
 
-        Ok(Proposal {
-            uncompressed_data_size,
-            compressed_data,
-            gas_usage,
-            block_heights,
+        // Needs to be wrapped in a blocking task to avoid blocking the executor
+        tokio::task::spawn_blocking(move || {
+            blocks_for_analyzing
+                .into_par_iter()
+                .map(|blocks| {
+                    let fragment_encoder = fragment_encoder.clone();
+                    create_proposal(compressor, fragment_encoder, blocks)
+                })
+                .collect::<Result<Vec<_>>>()
         })
+        .await
+        .map_err(|e| crate::Error::Other(e.to_string()))?
     }
 }
 
 impl<T> Bundle for Bundler<T>
 where
-    T: ports::l1::FragmentEncoder + Send + Sync,
+    T: ports::l1::FragmentEncoder + Send + Sync + Clone + 'static,
 {
-    async fn advance(&mut self) -> Result<bool> {
-        if self.attempts_exhausted {
+    async fn advance(&mut self, optimization_runs: NonZeroUsize) -> Result<bool> {
+        if self.attempts.is_empty() {
             return Ok(false);
         }
 
-        let bundle_blocks = self.blocks_for_new_proposal();
-
-        let proposal = self.create_proposal(bundle_blocks).await?;
-        self.save_if_best_so_far(proposal);
-
-        // Calculate new block count by subtracting step_size
-        let new_block_count = self
-            .current_block_count
-            .get()
-            .saturating_sub(self.step_size.get());
-
-        if new_block_count < 1 {
-            self.current_block_count = NonZeroUsize::new(1).unwrap();
-            self.attempts_exhausted = true;
-            self.number_of_attempts += 1;
-            Ok(false)
-        } else {
-            self.current_block_count = NonZeroUsize::new(new_block_count).unwrap();
-            self.number_of_attempts += 1;
-            // Check if more attempts are possible
-            self.attempts_exhausted = false;
-            Ok(true)
+        for proposal in self.analyze(optimization_runs).await? {
+            self.save_if_best_so_far(proposal);
         }
+
+        Ok(!self.attempts.is_empty())
     }
 
     async fn finish(mut self) -> Result<BundleProposal> {
-        if self.best_proposal.is_none() && !self.attempts_exhausted {
-            self.advance().await?;
+        if self.best_proposal.is_none() {
+            self.advance(1.try_into().expect("not zero")).await?;
         }
 
         let best_proposal = self
@@ -378,26 +413,64 @@ where
             .take()
             .expect("advance should have set the best proposal");
 
-        let compression_ratio = best_proposal.compression_ratio();
-
+        let compressed_data_size = best_proposal.compressed_data.len_nonzero();
         let fragments = self
             .fragment_encoder
             .encode(best_proposal.compressed_data)?;
 
+        let num_attempts = self
+            .blocks
+            .len()
+            .saturating_sub(self.attempts.len())
+            .try_into()
+            .map_err(|_| crate::Error::Other("too many attempts".to_string()))?;
+
         Ok(BundleProposal {
             fragments,
-            block_heights: best_proposal.block_heights,
-            known_to_be_optimal: self.attempts_exhausted,
-            compression_ratio,
-            gas_usage: best_proposal.gas_usage,
-            optimization_attempts: self.number_of_attempts,
+            metadata: Metadata {
+                block_heights: best_proposal.block_heights,
+                known_to_be_optimal: self.attempts.is_empty(),
+                uncompressed_data_size: best_proposal.uncompressed_data_size,
+                compressed_data_size,
+                gas_usage: best_proposal.gas_usage,
+                optimization_attempts: num_attempts,
+            },
         })
     }
 }
 
+fn merge_block_data(blocks: NonEmpty<ports::storage::FuelBlock>) -> NonEmpty<u8> {
+    blocks
+        .into_iter()
+        .flat_map(|b| b.data)
+        .collect_nonempty()
+        .expect("non-empty")
+}
+
+fn create_proposal(
+    compressor: Compressor,
+    fragment_encoder: impl FragmentEncoder,
+    bundle_blocks: NonEmpty<ports::storage::FuelBlock>,
+) -> Result<Proposal> {
+    let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
+
+    let uncompressed_data = merge_block_data(bundle_blocks);
+    let uncompressed_data_size = uncompressed_data.len_nonzero();
+
+    let compressed_data = compressor.compress(uncompressed_data)?;
+
+    let gas_usage = fragment_encoder.gas_usage(compressed_data.len_nonzero());
+
+    Ok(Proposal {
+        uncompressed_data_size,
+        compressed_data,
+        gas_usage,
+        block_heights,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
     use ports::{l1::FragmentEncoder, types::nonempty};
@@ -408,14 +481,14 @@ mod tests {
 
     #[test]
     fn can_disable_compression() {
-        // given
+        // Given
         let compressor = Compressor::new(CompressionLevel::Disabled);
         let data = nonempty!(1, 2, 3);
 
-        // when
-        let compressed = compressor.compress_blocking(data.clone()).unwrap();
+        // When
+        let compressed = compressor.compress(data.clone()).unwrap();
 
-        // then
+        // Then
         assert_eq!(data, compressed);
     }
 
@@ -424,15 +497,15 @@ mod tests {
         let data = nonempty!(1, 2, 3);
         for level in CompressionLevel::levels() {
             let compressor = Compressor::new(level);
-            compressor.compress_blocking(data.clone()).unwrap();
+            compressor.compress(data.clone()).unwrap();
         }
     }
 
     #[tokio::test]
     async fn finishing_will_advance_if_not_called_at_least_once() {
-        // given
+        // Given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = generate_storage_block_sequence(0..=0, &secret_key, 10, 100);
+        let blocks = generate_storage_block_sequence(0..=10, &secret_key, 10, 100);
 
         let bundler = Bundler::new(
             Eip4844BlobEncoder,
@@ -441,19 +514,20 @@ mod tests {
             NonZeroUsize::new(1).unwrap(),
         );
 
-        // when
+        // When
         let bundle = bundler.finish().await.unwrap();
 
-        // then
-        let expected_fragments = Eip4844BlobEncoder.encode(blocks[0].data.clone()).unwrap();
-        assert!(bundle.known_to_be_optimal);
-        assert_eq!(bundle.block_heights, 0..=0);
+        // Then
+        let merged = blocks.into_inner().flat_map(|b| b.data.clone());
+        let expected_fragments = Eip4844BlobEncoder.encode(merged).unwrap();
+        assert!(!bundle.metadata.known_to_be_optimal);
+        assert_eq!(bundle.metadata.block_heights, 0..=10);
         assert_eq!(bundle.fragments, expected_fragments);
     }
 
     #[tokio::test]
     async fn will_provide_a_suboptimal_bundle_if_not_advanced_enough() -> Result<()> {
-        // given
+        // Given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let stops_at_blob_boundary =
@@ -476,55 +550,29 @@ mod tests {
             NonZeroUsize::new(1).unwrap(),
         );
 
-        bundler.advance().await?;
+        bundler.advance(1.try_into().unwrap()).await?;
 
-        // when
-        let non_optimal_bundle = proposal_if_finalized_now(&bundler).await;
-        bundler.advance().await?;
+        let non_optimal_bundle = bundler.clone().finish().await?;
+        bundler.advance(1.try_into().unwrap()).await?;
+
+        // When
         let optimal_bundle = bundler.finish().await?;
 
-        // then
-        assert_eq!(non_optimal_bundle.block_heights, 0..=1);
-        assert!(!non_optimal_bundle.known_to_be_optimal);
+        // Then
+        // Non-optimal bundle should include both blocks
+        assert_eq!(non_optimal_bundle.metadata.block_heights, 0..=1);
+        assert!(!non_optimal_bundle.metadata.known_to_be_optimal);
 
-        assert_eq!(optimal_bundle.block_heights, 0..=0);
-        assert!(optimal_bundle.known_to_be_optimal);
+        // Optimal bundle should include only the first block
+        assert_eq!(optimal_bundle.metadata.block_heights, 0..=0);
+        assert!(optimal_bundle.metadata.known_to_be_optimal);
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn will_advance_in_steps() -> Result<()> {
-        // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-
-        let blocks = generate_storage_block_sequence(0..=9, &secret_key, 10, 100);
-
-        let step_size = NonZeroUsize::new(3).unwrap();
-
-        let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
-            blocks.clone(),
-            Compressor::no_compression(),
-            step_size,
-        );
-
-        // when
-        let mut attempts = 0;
-        while bundler.advance().await? {
-            attempts += 1;
-        }
-        let proposal = bundler.finish().await?;
-
-        // then
-        assert_eq!(attempts, 3); // 10 -> 7 -> 4 -> 1
-        assert!(proposal.known_to_be_optimal);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn will_not_step_below_one() -> Result<()> {
-        // given
+    async fn tolerates_step_too_large() -> Result<()> {
+        // Given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let blocks = generate_storage_block_sequence(0..=2, &secret_key, 3, 100);
@@ -538,32 +586,22 @@ mod tests {
             step_size,
         );
 
-        // when
-        let more = bundler.advance().await?;
+        while bundler.advance(1.try_into().unwrap()).await? {}
+
+        // When
         let bundle = bundler.finish().await?;
 
-        // then
-        assert!(!more);
-        assert!(bundle.known_to_be_optimal);
-        assert_eq!(bundle.block_heights, 0..=2);
-        assert_eq!(bundle.optimization_attempts, 1);
+        // Then
+        assert!(bundle.metadata.known_to_be_optimal);
+        assert_eq!(bundle.metadata.block_heights, 0..=2);
+        assert_eq!(bundle.metadata.optimization_attempts, 3); // 3 then 1 then 2
         Ok(())
     }
 
-    async fn proposal_if_finalized_now(bundler: &Bundler<Eip4844BlobEncoder>) -> BundleProposal {
-        bundler.clone().finish().await.unwrap()
-    }
-
-    fn enough_bytes_to_almost_fill_a_blob() -> usize {
-        let encoding_overhead = Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
-        Eip4844BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
-    }
-
-    // This can happen when you've already paying for a blob but are not utilizing it. Adding
-    // more data is going to increase the bytes per gas but keep the storage price the same.
+    // when the smaller bundle doesn't utilize the whole blob, for example
     #[tokio::test]
     async fn bigger_bundle_will_have_same_storage_gas_usage() -> Result<()> {
-        // given
+        // Given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let blocks = nonempty![
@@ -577,16 +615,20 @@ mod tests {
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(), // Default step size
         );
+        while bundler.advance(1.try_into().unwrap()).await? {}
 
-        while bundler.advance().await? {}
-
-        // when
+        // When
         let bundle = bundler.finish().await?;
 
-        // then
-        assert!(bundle.known_to_be_optimal);
-        assert_eq!(bundle.block_heights, 0..=1);
-
+        // Then
+        assert!(bundle.metadata.known_to_be_optimal);
+        assert_eq!(bundle.metadata.block_heights, 0..=1);
         Ok(())
     }
+
+    fn enough_bytes_to_almost_fill_a_blob() -> usize {
+        let encoding_overhead = Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
+        Eip4844BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
+    }
+    // TODO: segfault test the sequence of attempts generated above
 }

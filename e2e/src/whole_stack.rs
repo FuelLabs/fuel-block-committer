@@ -122,7 +122,7 @@ impl WholeStack {
                 .with_kms_url(main_key.url.clone())
                 .with_bundle_accumulation_timeout("1000s".to_owned())
                 .with_bundle_blocks_to_accumulate("2500".to_string())
-                .with_bundle_optimization_timeout("180s".to_owned())
+                .with_bundle_optimization_timeout("120s".to_owned())
                 .with_bundle_block_height_lookback("3000".to_owned())
                 .with_bundle_optimization_step("100".to_owned())
                 .with_bundle_compression_level("level6".to_owned());

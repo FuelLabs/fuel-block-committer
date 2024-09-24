@@ -23,6 +23,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+bytesize = { workspace = true }
+rayon = { workspace = true }
 trait-variant = { workspace = true }
 
 [dev-dependencies]

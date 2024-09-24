@@ -110,17 +110,13 @@ where
 
         let BundleProposal {
             fragments,
-            block_heights,
-            known_to_be_optimal: optimal,
-            compression_ratio,
-            gas_usage,
-            optimization_attempts,
+            metadata,
         } = self.find_optimal_bundle(bundler).await?;
 
-        info!("Bundler proposed: known_to_be_optimal={optimal}, optimization_attempts={optimization_attempts}, compression_ratio={compression_ratio}, heights={block_heights:?}, num_blocks={}, num_fragments={}, gas_usage={gas_usage:?}",  block_heights.clone().count(), fragments.len());
+        info!("Bundler proposed: {metadata}");
 
         self.storage
-            .insert_bundle_and_fragments(block_heights, fragments)
+            .insert_bundle_and_fragments(metadata.block_heights, fragments)
             .await?;
 
         Ok(())
@@ -135,7 +131,7 @@ where
     async fn find_optimal_bundle<B: Bundle>(&self, mut bundler: B) -> Result<BundleProposal> {
         let optimization_start = self.clock.now();
 
-        while bundler.advance().await? {
+        while bundler.advance(32.try_into().expect("not zero")).await? {
             if self.should_stop_optimizing(optimization_start)? {
                 info!("Optimization time limit reached! Finishing bundling.");
                 break;
@@ -192,6 +188,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use bundler::Metadata;
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
     use itertools::Itertools;
@@ -236,7 +233,7 @@ mod tests {
     }
 
     impl Bundle for ControllableBundler {
-        async fn advance(&mut self) -> Result<bool> {
+        async fn advance(&mut self, _: NonZeroUsize) -> Result<bool> {
             self.can_advance.recv().await.unwrap();
             self.notify_advanced.send(()).unwrap();
             Ok(true)
@@ -568,11 +565,14 @@ mod tests {
 
         let unoptimal_bundle = BundleProposal {
             fragments: unoptimal_fragments.clone(),
-            block_heights: 0..=0,
-            known_to_be_optimal: false,
-            compression_ratio: 1.0,
-            gas_usage: 100,
-            optimization_attempts: 10,
+            metadata: Metadata {
+                block_heights: 0..=0,
+                known_to_be_optimal: false,
+                gas_usage: 100,
+                optimization_attempts: 10,
+                compressed_data_size: 100.try_into().unwrap(),
+                uncompressed_data_size: 1000.try_into().unwrap(),
+            },
         };
 
         let (bundler_factory, send_can_advance_permission, mut notify_has_advanced) =
