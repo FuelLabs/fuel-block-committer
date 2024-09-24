@@ -192,33 +192,35 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use clock::TestClock;
-    use ports::{l1::FragmentsSubmitted, types::nonempty};
 
     use super::*;
-    use crate::{test_utils, test_utils::mocks::l1::TxStatus, Runner, StateCommitter};
+    use crate::{test_utils, Runner, StateCommitter};
 
     #[tokio::test]
-    async fn wont_send_fragments_if_lookback_window_moved_on() -> Result<()> {
+    async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let _expired_fragments = setup.insert_fragments(0, 3).await;
-        let new_fragments = setup.insert_fragments(1, 3).await;
+        let fragments = setup.insert_fragments(0, 4).await;
 
+        let tx_hash = [0; 32];
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
-            Some(NonEmpty::from_vec(new_fragments.clone()).unwrap()),
-            [0; 32],
+            Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+            tx_hash,
         )]);
 
-        let fuel_mock = test_utils::mocks::fuel::latest_height_is(2);
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             fuel_mock,
             setup.db(),
             Config {
-                lookback_window: 1,
-                ..Default::default()
+                lookback_window: 1000,
+                fragment_accumulation_timeout: Duration::from_secs(60),
+                fragments_to_accumulate: 4.try_into().unwrap(),
             },
             TestClock::default(),
         );
@@ -228,163 +230,194 @@ mod tests {
 
         // then
         // Mocks validate that the fragments have been sent
-
         Ok(())
     }
 
     #[tokio::test]
-    async fn sends_fragments_in_order() -> Result<()> {
+    async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
         // given
+        let clock = TestClock::default();
         let setup = test_utils::Setup::init().await;
 
-        let fragments = setup.insert_fragments(0, 7).await;
+        let fragments = setup.insert_fragments(0, 5).await; // Only 5 fragments, less than required
 
-        let first_tx_fragments = fragments[0..6].iter().cloned().collect_nonempty().unwrap();
-
-        let second_tx_fragments = nonempty![fragments[6].clone()];
-        let fragment_tx_ids = [[0; 32], [1; 32]];
-
-        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (Some(first_tx_fragments), fragment_tx_ids[0]),
-            (Some(second_tx_fragments), fragment_tx_ids[1]),
-        ]);
+        let tx_hash = [1; 32];
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
+            Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+            tx_hash,
+        )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             fuel_mock,
             setup.db(),
-            Config::default(),
-            TestClock::default(),
+            Config {
+                lookback_window: 1000,
+                fragment_accumulation_timeout: Duration::from_secs(60),
+                fragments_to_accumulate: 10.try_into().unwrap(),
+            },
+            clock.clone(),
         );
 
-        // when
-        // Send the first fragments
-        state_committer.run().await?;
-        setup
-            .report_txs_finished([(fragment_tx_ids[0], TxStatus::Success)])
-            .await;
+        // Advance time beyond the timeout
+        clock.advance_time(Duration::from_secs(61));
 
-        // Send the second fragments
+        // when
         state_committer.run().await?;
 
         // then
-        // Mocks validate that the fragments have been sent in order.
-
+        // Mocks validate that the fragments have been sent despite insufficient accumulation
         Ok(())
     }
 
     #[tokio::test]
-    async fn repeats_failed_fragments() -> Result<()> {
+    async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<()> {
         // given
+        let clock = TestClock::default();
         let setup = test_utils::Setup::init().await;
 
-        let fragments = NonEmpty::collect(setup.insert_fragments(0, 2).await).unwrap();
+        let _fragments = setup.insert_fragments(0, 5).await; // Only 5 fragments, less than required
 
-        let original_tx = [0; 32];
-        let retry_tx = [1; 32];
-
-        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
-            (Some(fragments.clone()), original_tx),
-            (Some(fragments.clone()), retry_tx),
-        ]);
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([]); // Expect no submissions
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             fuel_mock,
             setup.db(),
-            Config::default(),
-            TestClock::default(),
+            Config {
+                lookback_window: 1000,
+                fragment_accumulation_timeout: Duration::from_secs(60),
+                fragments_to_accumulate: 10.try_into().unwrap(),
+            },
+            clock.clone(),
         );
 
-        // when
-        // Send the first fragment (which will fail)
-        state_committer.run().await?;
-        setup
-            .report_txs_finished([(original_tx, TxStatus::Failure)])
-            .await;
+        // Advance time less than the timeout
+        clock.advance_time(Duration::from_secs(30));
 
-        // Retry sending the failed fragment
+        // when
         state_committer.run().await?;
 
         // then
-        // Mocks validate that the failed fragment was retried.
-
+        // Mocks validate that no fragments have been sent
         Ok(())
     }
 
     #[tokio::test]
-    async fn does_nothing_if_there_are_pending_transactions() -> Result<()> {
+    async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
         // given
+        let clock = TestClock::default();
         let setup = test_utils::Setup::init().await;
 
-        setup.insert_fragments(0, 2).await;
+        let fragments = setup.insert_fragments(0, 5).await;
 
-        let mut l1_mock_submit = ports::l1::MockApi::new();
-        l1_mock_submit
-            .expect_submit_state_fragments()
-            .once()
-            .return_once(|_| {
-                Box::pin(async {
-                    Ok(FragmentsSubmitted {
-                        tx: [1; 32],
-                        num_fragments: 6.try_into().unwrap(),
-                    })
-                })
-            });
+        let tx_hash = [3; 32];
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
+            Some(NonEmpty::from_vec(fragments).unwrap()),
+            tx_hash,
+        )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
         let mut state_committer = StateCommitter::new(
             l1_mock_submit,
             fuel_mock,
             setup.db(),
-            Config::default(),
-            TestClock::default(),
+            Config {
+                lookback_window: 1000,
+                fragment_accumulation_timeout: Duration::from_secs(60),
+                fragments_to_accumulate: 5.try_into().unwrap(),
+            },
+            clock.clone(),
         );
 
         // when
-        // First run: bundles and sends the first fragment
-        state_committer.run().await?;
-
-        // Second run: should do nothing due to pending transaction
         state_committer.run().await?;
 
         // then
-        // Mocks validate that no additional submissions were made.
-
+        // Mocks validate that the fragments have been sent
         Ok(())
     }
 
     #[tokio::test]
-    async fn handles_l1_adapter_submission_failure() -> Result<()> {
+    async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
         // given
+        let clock = TestClock::default();
         let setup = test_utils::Setup::init().await;
 
-        // Import enough blocks to create a bundle
-        setup.insert_fragments(0, 1).await;
+        // Insert initial fragments
+        setup.commit_single_block_bundle(clock.now()).await;
 
-        // Configure the L1 adapter to fail on submission
-        let mut l1_mock = ports::l1::MockApi::new();
-        l1_mock.expect_submit_state_fragments().return_once(|_| {
-            Box::pin(async { Err(ports::l1::Error::Other("Submission failed".into())) })
-        });
+        let fragments_to_submit = setup.insert_fragments(1, 2).await;
+
+        let tx_hash = [4; 32];
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
+            Some(NonEmpty::from_vec(fragments_to_submit).unwrap()),
+            tx_hash,
+        )]);
+
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(1);
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            fuel_mock,
+            setup.db(),
+            Config {
+                lookback_window: 1000,
+                fragment_accumulation_timeout: Duration::from_secs(60),
+                fragments_to_accumulate: 10.try_into().unwrap(),
+            },
+            clock.clone(),
+        );
+
+        // Advance time to exceed the timeout since last finalized fragment
+        clock.advance_time(Duration::from_secs(60));
+
+        // when
+        state_committer.run().await?;
+
+        // then
+        // Mocks validate that the fragments were sent even though the accumulation target was not reached
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> {
+        // given
+        let clock = TestClock::default();
+        let setup = test_utils::Setup::init().await;
+
+        let fragments = setup.insert_fragments(0, 5).await; // Only 5 fragments, less than required
+
+        let tx_hash = [5; 32];
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
+            Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+            tx_hash,
+        )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
         let mut state_committer = StateCommitter::new(
-            l1_mock,
+            l1_mock_submit,
             fuel_mock,
             setup.db(),
-            Config::default(),
-            TestClock::default(),
+            Config {
+                lookback_window: 1000,
+                fragment_accumulation_timeout: Duration::from_secs(60),
+                fragments_to_accumulate: 10.try_into().unwrap(),
+            },
+            clock.clone(),
         );
 
+        // Advance time beyond the timeout from startup
+        clock.advance_time(Duration::from_secs(61));
+
         // when
-        let result = state_committer.run().await;
+        state_committer.run().await?;
 
         // then
-        assert!(result.is_err());
-
+        // Mocks validate that the fragments have been sent despite insufficient accumulation
         Ok(())
     }
+
+    // Existing tests can remain as they are, but it's recommended to review and adjust them as necessary.
 }

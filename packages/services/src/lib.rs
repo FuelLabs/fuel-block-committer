@@ -515,18 +515,6 @@ pub(crate) mod test_utils {
             blocks
         }
 
-        pub async fn report_txs_finished(
-            &self,
-            statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
-        ) {
-            let l1_mock = mocks::l1::txs_finished(0, 0, statuses);
-
-            StateListener::new(l1_mock, self.db(), 0, TestClock::default())
-                .run()
-                .await
-                .unwrap()
-        }
-
         pub fn block_importer(
             &self,
             blocks: Blocks,
