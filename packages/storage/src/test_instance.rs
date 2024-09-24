@@ -11,6 +11,7 @@ use ports::{
         BlockSubmission, DateTime, Fragment, L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
+use sqlx::Executor;
 use testcontainers::{
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
@@ -106,6 +107,16 @@ impl PostgresProcess {
     }
 
     pub async fn create_random_db(self: &Arc<Self>) -> ports::storage::Result<DbWithProcess> {
+        let db = self.create_noschema_random_db().await?;
+
+        db.db.migrate().await?;
+
+        Ok(db)
+    }
+
+    pub async fn create_noschema_random_db(
+        self: &Arc<Self>,
+    ) -> ports::storage::Result<DbWithProcess> {
         let port = self
             .container
             .get_host_port_ipv4(5432)
@@ -125,13 +136,14 @@ impl PostgresProcess {
 
         let db_name = format!("test_db_{}", rand::random::<u32>());
         let query = format!("CREATE DATABASE {db_name}");
-        db.execute(&query).await?;
+        db.pool()
+            .execute(sqlx::query(&query))
+            .await
+            .map_err(crate::error::Error::from)?;
 
         config.database = db_name;
 
         let db = Postgres::connect(&config).await?;
-
-        db.migrate().await?;
 
         Ok(DbWithProcess {
             db,
@@ -142,7 +154,7 @@ impl PostgresProcess {
 
 #[derive(Clone)]
 pub struct DbWithProcess {
-    db: Postgres,
+    pub db: Postgres,
     _process: Arc<PostgresProcess>,
 }
 

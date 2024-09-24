@@ -93,9 +93,8 @@ impl Postgres {
     }
 
     #[cfg(feature = "test-helpers")]
-    pub(crate) async fn execute(&self, query: &str) -> Result<()> {
-        sqlx::query(query).execute(&self.connection_pool).await?;
-        Ok(())
+    pub(crate) fn pool(&self) -> sqlx::Pool<sqlx::Postgres> {
+        self.connection_pool.clone()
     }
 
     pub(crate) async fn _insert(&self, submission: BlockSubmission) -> Result<()> {
@@ -471,5 +470,274 @@ impl Postgres {
         tx.commit().await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_instance;
+
+    use sqlx::{Executor, PgPool, Row};
+    use std::env;
+    use std::fs;
+    use std::path::Path;
+
+    #[tokio::test]
+    async fn test_second_migration_applies_successfully() {
+        let db = test_instance::PostgresProcess::shared()
+            .await
+            .expect("Failed to initialize PostgresProcess")
+            .create_noschema_random_db()
+            .await
+            .expect("Failed to create random test database");
+
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let migrations_path = Path::new(manifest_dir).join("migrations");
+
+        async fn apply_migration(pool: &sqlx::Pool<sqlx::Postgres>, path: &Path) {
+            let sql = fs::read_to_string(path)
+                .map_err(|e| format!("Failed to read migration file {:?}: {}", path, e))
+                .unwrap();
+            pool.execute(sqlx::raw_sql(&sql)).await.unwrap();
+        }
+
+        // -----------------------
+        // Apply Initial Migration
+        // -----------------------
+        let initial_migration_path = migrations_path.join("0001_initial.up.sql");
+        apply_migration(&db.db.pool(), &initial_migration_path).await;
+
+        // Insert sample data into initial tables
+
+        let fuel_block_hash = vec![0u8; 32];
+        let insert_l1_submissions = r#"
+        INSERT INTO l1_submissions (fuel_block_hash, fuel_block_height)
+        VALUES ($1, $2)
+        RETURNING id
+    "#;
+        let row = sqlx::query(insert_l1_submissions)
+            .bind(&fuel_block_hash)
+            .bind(1000i64)
+            .fetch_one(&db.db.pool())
+            .await
+            .unwrap();
+        let submission_id: i32 = row.try_get("id").unwrap();
+
+        let insert_l1_fuel_block_submission = r#"
+        INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height)
+        VALUES ($1, $2, $3, $4)
+    "#;
+        sqlx::query(insert_l1_fuel_block_submission)
+            .bind(&fuel_block_hash)
+            .bind(1000i64)
+            .bind(true)
+            .bind(950i64)
+            .execute(&db.db.pool())
+            .await
+            .unwrap();
+
+        // Insert into l1_transactions
+        let tx_hash = vec![1u8; 32];
+        let insert_l1_transactions = r#"
+        INSERT INTO l1_transactions (hash, state)
+        VALUES ($1, $2)
+        RETURNING id
+    "#;
+        let row = sqlx::query(insert_l1_transactions)
+            .bind(&tx_hash)
+            .bind(0i16)
+            .fetch_one(&db.db.pool())
+            .await
+            .unwrap();
+        let transaction_id: i32 = row.try_get("id").unwrap();
+
+        // Insert into l1_fragments
+        let fragment_data = vec![2u8; 10];
+        let insert_l1_fragments = r#"
+        INSERT INTO l1_fragments (fragment_idx, submission_id, data)
+        VALUES ($1, $2, $3)
+        RETURNING id
+    "#;
+        let row = sqlx::query(insert_l1_fragments)
+            .bind(0i64)
+            .bind(submission_id)
+            .bind(&fragment_data)
+            .fetch_one(&db.db.pool())
+            .await
+            .unwrap();
+        let fragment_id: i32 = row.try_get("id").unwrap();
+
+        // Insert into l1_transaction_fragments
+        let insert_l1_transaction_fragments = r#"
+        INSERT INTO l1_transaction_fragments (transaction_id, fragment_id)
+        VALUES ($1, $2)
+    "#;
+        sqlx::query(insert_l1_transaction_fragments)
+            .bind(transaction_id)
+            .bind(fragment_id)
+            .execute(&db.db.pool())
+            .await
+            .unwrap();
+
+        // ------------------------
+        // Apply Second Migration
+        // ------------------------
+        let second_migration_path = migrations_path.join("0002_better_fragmentation.up.sql");
+        apply_migration(&db.db.pool(), &second_migration_path).await;
+
+        // ------------------------
+        // Verification Steps
+        // ------------------------
+
+        // Function to check table existence
+        async fn table_exists(pool: &PgPool, table_name: &str) -> bool {
+            let query = r#"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = $1
+            )
+        "#;
+            let row = sqlx::query(query)
+                .bind(table_name)
+                .fetch_one(pool)
+                .await
+                .expect("Failed to execute table_exists query");
+            row.try_get::<bool, _>(0).unwrap_or(false)
+        }
+
+        // Function to check column existence and type
+        async fn column_info(pool: &PgPool, table_name: &str, column_name: &str) -> Option<String> {
+            let query = r#"
+            SELECT data_type 
+            FROM information_schema.columns 
+            WHERE table_name = $1 AND column_name = $2
+        "#;
+            let row = sqlx::query(query)
+                .bind(table_name)
+                .bind(column_name)
+                .fetch_optional(pool)
+                .await
+                .expect("Failed to execute column_info query");
+            row.map(|row| row.try_get("data_type").unwrap_or_default())
+        }
+
+        let fuel_blocks_exists = table_exists(&db.db.pool(), "fuel_blocks").await;
+        assert!(fuel_blocks_exists, "fuel_blocks table does not exist");
+
+        let bundles_exists = table_exists(&db.db.pool(), "bundles").await;
+        assert!(bundles_exists, "bundles table does not exist");
+
+        async fn check_columns(pool: &PgPool, table: &str, column: &str, expected_type: &str) {
+            let info = column_info(pool, table, column).await;
+            assert!(
+                info.is_some(),
+                "Column '{}' does not exist in table '{}'",
+                column,
+                table
+            );
+            let data_type = info.unwrap();
+            assert_eq!(
+                data_type, expected_type,
+                "Column '{}' in table '{}' has type '{}', expected '{}'",
+                column, table, data_type, expected_type
+            );
+        }
+
+        // Check that 'l1_fragments' has new columns
+        check_columns(&db.db.pool(), "l1_fragments", "idx", "integer").await;
+        check_columns(&db.db.pool(), "l1_fragments", "total_bytes", "bigint").await;
+        check_columns(&db.db.pool(), "l1_fragments", "unused_bytes", "bigint").await;
+        check_columns(&db.db.pool(), "l1_fragments", "bundle_id", "integer").await;
+
+        // Verify 'l1_transactions' has 'finalized_at' column
+        check_columns(
+            &db.db.pool(),
+            "l1_transactions",
+            "finalized_at",
+            "timestamp with time zone",
+        )
+        .await;
+
+        // Verify that l1_fragments and l1_transaction_fragments are empty after migration
+        let count_l1_fragments = sqlx::query_scalar::<_, i64>(
+            r#"
+        SELECT COUNT(*) FROM l1_fragments
+        "#,
+        )
+        .fetch_one(&db.db.pool())
+        .await
+        .unwrap();
+        assert_eq!(
+            count_l1_fragments, 0,
+            "l1_fragments table is not empty after migration"
+        );
+
+        let count_l1_transaction_fragments = sqlx::query_scalar::<_, i64>(
+            r#"
+        SELECT COUNT(*) FROM l1_transaction_fragments
+        "#,
+        )
+        .fetch_one(&db.db.pool())
+        .await
+        .unwrap();
+        assert_eq!(
+            count_l1_transaction_fragments, 0,
+            "l1_transaction_fragments table is not empty after migration"
+        );
+
+        // Insert a default bundle to satisfy the foreign key constraint for future inserts
+        let insert_default_bundle = r#"
+        INSERT INTO bundles (start_height, end_height)
+        VALUES ($1, $2)
+        RETURNING id
+    "#;
+        let row = sqlx::query(insert_default_bundle)
+            .bind(0i64)
+            .bind(0i64)
+            .fetch_one(&db.db.pool())
+            .await
+            .unwrap();
+        let bundle_id: i32 = row.try_get("id").unwrap();
+        assert_eq!(bundle_id, 1, "Default bundle ID is not 1");
+
+        // Attempt to insert a fragment with empty data
+        let insert_invalid_fragment = r#"
+        INSERT INTO l1_fragments (idx, data, total_bytes, unused_bytes, bundle_id)
+        VALUES ($1, $2, $3, $4, $5)
+    "#;
+        let result = sqlx::query(insert_invalid_fragment)
+            .bind(1i32)
+            .bind::<&[u8]>(&[]) // Empty data should fail due to check constraint
+            .bind(10i64)
+            .bind(5i64)
+            .bind(1i32) // Valid bundle_id
+            .execute(&db.db.pool())
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Inserting empty data should fail due to check constraint"
+        );
+
+        // Insert a valid fragment
+        let fragment_data_valid = vec![3u8; 15];
+        let insert_valid_fragment = r#"
+        INSERT INTO l1_fragments (idx, data, total_bytes, unused_bytes, bundle_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+    "#;
+        let row = sqlx::query(insert_valid_fragment)
+            .bind(1i32)
+            .bind(&fragment_data_valid)
+            .bind(15i64)
+            .bind(0i64)
+            .bind(1i32)
+            .fetch_one(&db.db.pool())
+            .await
+            .unwrap();
+
+        let new_fragment_id: i32 = row.try_get("id").unwrap();
+        assert!(new_fragment_id > 0, "Failed to insert a valid fragment");
     }
 }

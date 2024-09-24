@@ -1,5 +1,8 @@
 BEGIN;
 
+DELETE FROM l1_transaction_fragments;
+DELETE FROM l1_fragments;
+
 CREATE TABLE IF NOT EXISTS fuel_blocks (
     hash     BYTEA PRIMARY KEY NOT NULL,
     height   BIGINT NOT NULL UNIQUE CHECK (height >= 0),
@@ -15,6 +18,7 @@ CREATE TABLE IF NOT EXISTS bundles (
 );
 
 CREATE INDEX idx_bundles_start_end ON bundles (start_height, end_height);
+
 
 ALTER TABLE l1_fragments
 DROP COLUMN submission_id,
