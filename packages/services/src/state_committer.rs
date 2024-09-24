@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use itertools::Itertools;
 use ports::{
+    clock::Clock,
     storage::{BundleFragment, Storage},
-    types::{CollectNonEmpty, NonEmpty},
+    types::{CollectNonEmpty, DateTime, NonEmpty, Utc},
 };
 
 use crate::{Result, Runner};
@@ -11,46 +14,53 @@ use crate::{Result, Runner};
 pub struct Config {
     /// The lookback window in blocks to determine the starting height.
     pub lookback_window: u32,
-}
-
-impl Config {
-    pub fn new(lookback_window: u32) -> Self {
-        Self { lookback_window }
-    }
+    pub fragment_accumulation_timeout: Duration,
 }
 
 #[cfg(test)]
 impl Default for Config {
     fn default() -> Self {
-        Self::new(100)
+        Self {
+            lookback_window: 1000,
+            fragment_accumulation_timeout: Duration::from_secs(0),
+        }
     }
 }
 
 /// The `StateCommitter` is responsible for committing state fragments to L1.
-pub struct StateCommitter<L1, F, Storage> {
+pub struct StateCommitter<L1, F, Storage, C> {
     l1_adapter: L1,
     fuel_api: F,
     storage: Storage,
     config: Config,
+    clock: C,
+    startup_time: DateTime<Utc>,
 }
 
-impl<L1, F, Storage> StateCommitter<L1, F, Storage> {
+impl<L1, F, Storage, C> StateCommitter<L1, F, Storage, C>
+where
+    C: Clock,
+{
     /// Creates a new `StateCommitter`.
-    pub fn new(l1_adapter: L1, fuel_api: F, storage: Storage, config: Config) -> Self {
+    pub fn new(l1_adapter: L1, fuel_api: F, storage: Storage, config: Config, clock: C) -> Self {
+        let startup_time = clock.now();
         Self {
             l1_adapter,
             fuel_api,
             storage,
             config,
+            clock,
+            startup_time,
         }
     }
 }
 
-impl<L1, F, Db> StateCommitter<L1, F, Db>
+impl<L1, F, Db, C> StateCommitter<L1, F, Db, C>
 where
     L1: ports::l1::Api,
     F: ports::fuel::Api,
     Db: Storage,
+    C: Clock,
 {
     async fn submit_fragments(&self, fragments: NonEmpty<BundleFragment>) -> Result<()> {
         let data = fragments
@@ -117,11 +127,12 @@ where
     }
 }
 
-impl<L1, F, Db> Runner for StateCommitter<L1, F, Db>
+impl<L1, F, Db, C> Runner for StateCommitter<L1, F, Db, C>
 where
     F: ports::fuel::Api + Send + Sync,
     L1: ports::l1::Api + Send + Sync,
     Db: Storage + Clone + Send + Sync,
+    C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         if self.has_pending_transactions().await? {
@@ -138,6 +149,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use clock::TestClock;
     use ports::{l1::FragmentsSubmitted, types::nonempty};
 
     use super::*;
@@ -161,7 +173,11 @@ mod tests {
             l1_mock_submit,
             fuel_mock,
             setup.db(),
-            Config { lookback_window: 1 },
+            Config {
+                lookback_window: 1,
+                ..Default::default()
+            },
+            TestClock::default(),
         );
 
         // when
@@ -191,8 +207,13 @@ mod tests {
         ]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
-        let mut state_committer =
-            StateCommitter::new(l1_mock_submit, fuel_mock, setup.db(), Config::default());
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            fuel_mock,
+            setup.db(),
+            Config::default(),
+            TestClock::default(),
+        );
 
         // when
         // Send the first fragments
@@ -226,8 +247,13 @@ mod tests {
         ]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
-        let mut state_committer =
-            StateCommitter::new(l1_mock_submit, fuel_mock, setup.db(), Config::default());
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            fuel_mock,
+            setup.db(),
+            Config::default(),
+            TestClock::default(),
+        );
 
         // when
         // Send the first fragment (which will fail)
@@ -266,8 +292,13 @@ mod tests {
             });
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
-        let mut state_committer =
-            StateCommitter::new(l1_mock_submit, fuel_mock, setup.db(), Config::default());
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            fuel_mock,
+            setup.db(),
+            Config::default(),
+            TestClock::default(),
+        );
 
         // when
         // First run: bundles and sends the first fragment
@@ -297,8 +328,13 @@ mod tests {
         });
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
-        let mut state_committer =
-            StateCommitter::new(l1_mock, fuel_mock, setup.db(), Config::default());
+        let mut state_committer = StateCommitter::new(
+            l1_mock,
+            fuel_mock,
+            setup.db(),
+            Config::default(),
+            TestClock::default(),
+        );
 
         // when
         let result = state_committer.run().await;

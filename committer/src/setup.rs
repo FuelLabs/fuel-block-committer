@@ -123,7 +123,9 @@ pub fn state_committer(
         storage,
         services::StateCommitterConfig {
             lookback_window: config.app.bundle.block_height_lookback,
+            fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
         },
+        SystemClock,
     );
 
     schedule_polling(

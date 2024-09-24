@@ -412,6 +412,7 @@ pub(crate) mod test_utils {
                 mocks::fuel::latest_height_is(0),
                 self.db(),
                 crate::StateCommitterConfig::default(),
+                TestClock::default(),
             )
             .run()
             .await
@@ -446,6 +447,7 @@ pub(crate) mod test_utils {
                 fuel_mock,
                 self.db(),
                 crate::StateCommitterConfig::default(),
+                TestClock::default(),
             );
             committer.run().await.unwrap();
 
