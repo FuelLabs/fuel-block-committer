@@ -6,6 +6,7 @@ use ports::{
     storage::{BundleFragment, Storage},
     types::{CollectNonEmpty, DateTime, NonEmpty, Utc},
 };
+use tracing::info;
 
 use crate::{Result, Runner};
 
@@ -39,12 +40,12 @@ pub struct StateCommitter<L1, F, Storage, C> {
     startup_time: DateTime<Utc>,
 }
 
-impl<L1, F, Storage, C> StateCommitter<L1, F, Storage, C>
+impl<L1, F, S, C> StateCommitter<L1, F, S, C>
 where
     C: Clock,
 {
     /// Creates a new `StateCommitter`.
-    pub fn new(l1_adapter: L1, fuel_api: F, storage: Storage, config: Config, clock: C) -> Self {
+    pub fn new(l1_adapter: L1, fuel_api: F, storage: S, config: Config, clock: C) -> Self {
         let startup_time = clock.now();
         Self {
             l1_adapter,
@@ -64,12 +65,25 @@ where
     Db: Storage,
     C: Clock,
 {
+    async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
+        Ok(self
+            .storage
+            .last_time_a_fragment_was_finalized()
+            .await?
+            .unwrap_or(self.startup_time))
+    }
+
+    async fn is_timeout_expired(&self) -> Result<bool> {
+        let reference_time = self.get_reference_time().await?;
+        let elapsed = self.clock.now() - reference_time;
+        let std_elapsed = elapsed
+            .to_std()
+            .map_err(|e| crate::Error::Other(format!("Failed to convert time: {}", e)))?;
+        Ok(std_elapsed >= self.config.fragment_accumulation_timeout)
+    }
+
     async fn submit_fragments(&self, fragments: NonEmpty<BundleFragment>) -> Result<()> {
-        let data = fragments
-            .iter()
-            .map(|f| f.fragment.clone())
-            .collect_nonempty()
-            .expect("non-empty vec");
+        let data = fragments.clone().map(|f| f.fragment);
 
         match self.l1_adapter.submit_state_fragments(data).await {
             Ok(submittal_report) => {
@@ -113,15 +127,48 @@ where
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
         let latest_height = self.fuel_api.latest_height().await?;
-
         let starting_height = latest_height.saturating_sub(self.config.lookback_window);
 
+        // although we shouldn't know at this layer how many fragments the L1 can accept, we ignore
+        // this for now and put the eth value of max blobs per block (6).
         let existing_fragments = self
             .storage
             .oldest_nonfinalized_fragments(starting_height, 6)
             .await?;
 
         Ok(NonEmpty::collect(existing_fragments))
+    }
+
+    async fn should_submit_fragments(&self, fragment_count: NonZeroUsize) -> Result<bool> {
+        if fragment_count >= self.config.fragments_to_accumulate {
+            return Ok(true);
+        }
+        info!(
+            "have only {} out of the target {} fragments per tx per tx",
+            fragment_count, self.config.fragments_to_accumulate
+        );
+
+        let expired = self.is_timeout_expired().await?;
+        if expired {
+            info!(
+                "fragment accumulation timeout expired, proceeding with {} fragments",
+                fragment_count
+            );
+        }
+
+        Ok(expired)
+    }
+
+    async fn submit_fragments_if_ready(&self) -> Result<()> {
+        if let Some(fragments) = self.next_fragments_to_submit().await? {
+            if self
+                .should_submit_fragments(fragments.len_nonzero())
+                .await?
+            {
+                self.submit_fragments(fragments).await?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -137,9 +184,7 @@ where
             return Ok(());
         }
 
-        if let Some(fragments) = self.next_fragments_to_submit().await? {
-            self.submit_fragments(fragments).await?;
-        }
+        self.submit_fragments_if_ready().await?;
 
         Ok(())
     }
