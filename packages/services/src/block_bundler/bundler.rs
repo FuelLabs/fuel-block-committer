@@ -1,11 +1,6 @@
 use std::{
-    cmp::min,
-    collections::{HashSet, VecDeque},
-    fmt::Display,
-    io::Write,
-    num::NonZeroUsize,
-    ops::RangeInclusive,
-    str::FromStr,
+    cmp::min, collections::VecDeque, fmt::Display, io::Write, num::NonZeroUsize,
+    ops::RangeInclusive, str::FromStr,
 };
 
 use bytesize::ByteSize;
@@ -18,45 +13,7 @@ use ports::{
 use rayon::prelude::*;
 
 use crate::Result;
-
-/// Generates a sequence of block counts based on the initial step size.
-/// For each step size, it creates a range from `max_blocks` down to `1`,
-/// decrementing by the current step. After exhausting a step size,
-/// the step is halved, and the process continues until the step size is `1`.
-fn generate_attempts(
-    max_blocks: NonZeroUsize,
-    initial_step: NonZeroUsize,
-) -> VecDeque<NonZeroUsize> {
-    let mut attempts = Vec::new();
-    let mut step = min(initial_step, max_blocks).get();
-
-    // Continue halving the step until it reaches 1
-    while step >= 1 {
-        // Generate block counts for the current step size
-        for count in (1..=max_blocks.get()).rev().step_by(step) {
-            attempts.push(count);
-        }
-
-        // Halve the step size for the next iteration
-        if step == 1 {
-            break;
-        }
-        step /= 2;
-    }
-
-    // Ensure that 1 is included
-    if !attempts.contains(&1) {
-        attempts.push(1);
-    }
-
-    // Deduplicate while preserving order
-    let mut seen = HashSet::new();
-    attempts
-        .into_iter()
-        .filter(|x| seen.insert(*x))
-        .map(|e| e.try_into().expect("not zero"))
-        .collect()
-}
+use itertools::Itertools;
 
 #[derive(Debug, Clone, Copy)]
 struct Compressor {
@@ -442,6 +399,26 @@ where
     }
 }
 
+// The step sizes are progressively halved, starting from the largest step, in order to explore
+// bundling opportunities more efficiently. Larger steps attempt to bundle more blocks together,
+// which can result in significant gas savings or better compression ratios early on.
+// By starting with the largest step, we cover more ground and are more likely to encounter
+// major improvements quickly. As the step size decreases, the search becomes more fine-tuned,
+// focusing on incremental changes. This ensures that even if we stop optimizing early, we will
+// have tested configurations that likely provide substantial benefits to the overall gas per byte.
+fn generate_attempts(
+    max_blocks: NonZeroUsize,
+    initial_step: NonZeroUsize,
+) -> VecDeque<NonZeroUsize> {
+    std::iter::successors(Some(min(initial_step, max_blocks).get()), |&step| {
+        (step > 1).then_some(step / 2)
+    })
+    .flat_map(|step| (1..=max_blocks.get()).rev().step_by(step))
+    .filter_map(NonZeroUsize::new)
+    .unique()
+    .collect()
+}
+
 fn merge_block_data(blocks: NonEmpty<ports::storage::FuelBlock>) -> NonEmpty<u8> {
     blocks
         .into_iter()
@@ -634,5 +611,28 @@ mod tests {
         let encoding_overhead = Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
         Eip4844BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
     }
-    // TODO: segfault test the sequence of attempts generated above
+    #[test]
+    fn generates_steps_as_expected() {
+        // given
+        let max_steps = 100;
+        let max_step = 20;
+
+        // when
+        let steps = generate_attempts(
+            NonZeroUsize::new(max_steps).unwrap(),
+            NonZeroUsize::new(max_step).unwrap(),
+        );
+
+        // then
+        let actual_steps = steps.into_iter().map(|s| s.get()).collect::<Vec<_>>();
+        let expected_steps = vec![
+            100, 80, 60, 40, 20, 90, 70, 50, 30, 10, 95, 85, 75, 65, 55, 45, 35, 25, 15, 5, 98, 96,
+            94, 92, 88, 86, 84, 82, 78, 76, 74, 72, 68, 66, 64, 62, 58, 56, 54, 52, 48, 46, 44, 42,
+            38, 36, 34, 32, 28, 26, 24, 22, 18, 16, 14, 12, 8, 6, 4, 2, 99, 97, 93, 91, 89, 87, 83,
+            81, 79, 77, 73, 71, 69, 67, 63, 61, 59, 57, 53, 51, 49, 47, 43, 41, 39, 37, 33, 31, 29,
+            27, 23, 21, 19, 17, 13, 11, 9, 7, 3, 1,
+        ];
+
+        assert_eq!(actual_steps, expected_steps);
+    }
 }
