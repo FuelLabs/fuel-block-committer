@@ -32,8 +32,10 @@ impl Storage for Postgres {
             .await?)
     }
 
-    async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>> {
-        self._available_blocks().await.map_err(Into::into)
+    async fn available_blocks(&self, starting_height: u32) -> Result<Option<RangeInclusive<u32>>> {
+        self._available_blocks(starting_height)
+            .await
+            .map_err(Into::into)
     }
 
     async fn insert_blocks(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> Result<()> {

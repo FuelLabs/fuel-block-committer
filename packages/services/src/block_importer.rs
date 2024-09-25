@@ -83,7 +83,7 @@ where
     async fn determine_starting_height(&self, chain_height: u32) -> Result<Option<u32>> {
         let starting_height = chain_height.saturating_sub(self.config.lookback_window);
 
-        let Some(available_blocks) = self.storage.available_blocks().await? else {
+        let Some(available_blocks) = self.storage.available_blocks(0).await? else {
             return Ok(Some(starting_height));
         };
 

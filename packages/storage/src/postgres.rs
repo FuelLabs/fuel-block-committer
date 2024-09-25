@@ -174,11 +174,15 @@ impl Postgres {
 
     pub(crate) async fn _available_blocks(
         &self,
+        starting_height: u32,
     ) -> crate::error::Result<Option<RangeInclusive<u32>>> {
-        let record = sqlx::query!("SELECT MIN(height) AS min, MAX(height) AS max FROM fuel_blocks")
-            .fetch_one(&self.connection_pool)
-            .await
-            .map_err(Error::from)?;
+        let record = sqlx::query!(
+            "SELECT MIN(height) AS min, MAX(height) AS max FROM fuel_blocks WHERE height >= $1",
+            i64::from(starting_height)
+        )
+        .fetch_one(&self.connection_pool)
+        .await
+        .map_err(Error::from)?;
 
         let Some((min, max)) = record.min.zip(record.max) else {
             return Ok(None);

@@ -151,7 +151,7 @@ pub trait Storage: Send + Sync {
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
-    async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
+    async fn available_blocks(&self, starting_height: u32) -> Result<Option<RangeInclusive<u32>>>;
     async fn lowest_sequence_of_unbundled_blocks(
         &self,
         starting_height: u32,
@@ -186,7 +186,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
                 async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
                 async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
-                async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
+                async fn available_blocks(&self, starting_height: u32) -> Result<Option<RangeInclusive<u32>>>;
                 async fn lowest_sequence_of_unbundled_blocks(
                     &self,
                     starting_height: u32,
@@ -222,7 +222,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
                 async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
                 async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
-                async fn available_blocks(&self) -> Result<Option<RangeInclusive<u32>>>;
+                async fn available_blocks(&self, starting_height: u32) -> Result<Option<RangeInclusive<u32>>>;
                 async fn lowest_sequence_of_unbundled_blocks(
                     &self,
                     starting_height: u32,

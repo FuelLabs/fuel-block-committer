@@ -91,7 +91,7 @@ mod tests {
                 && !stack.db.has_pending_txs().await?
                 && stack
                     .db
-                    .available_blocks()
+                    .available_blocks(0)
                     .await?
                     .is_some_and(|range| *range.end() >= num_iterations * blocks_per_iteration);
 
