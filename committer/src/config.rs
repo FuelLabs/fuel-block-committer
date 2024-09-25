@@ -99,19 +99,15 @@ pub struct App {
     pub bundle: BundleConfig,
 }
 
-/// Configuration settings for managing fuel block bundling operations.
+/// Configuration settings for managing fuel block bundling and fragment submission operations.
 ///
-/// This struct encapsulates various timeouts and window settings that govern
-/// how fuel blocks are accumulated, optimized, and submitted to L1.
+/// This struct defines how blocks and fragments are accumulated, optimized, and eventually submitted to L1.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BundleConfig {
     /// Duration to wait for additional fuel blocks before initiating the bundling process.
     ///
     /// This timeout is measured from the moment the last blob transaction was finalized, or, if
     /// missing, from the application startup time.
-    ///
-    /// If no new fuel blocks are received within this period, the current set of accumulated
-    /// blocks will be bundled.
     #[serde(deserialize_with = "human_readable_duration")]
     pub accumulation_timeout: Duration,
 
@@ -133,11 +129,14 @@ pub struct BundleConfig {
     // TODO: segfault
     pub optimization_step: NonZeroUsize,
 
-    // TODO: segfault
+    /// Duration to wait for additional fragments before submitting them in a transaction to L1.
+    ///
+    /// Similar to `accumulation_timeout`, this timeout starts from the last finalized fragment submission. If no new
+    /// fragments are received within this period, the system will proceed to submit the currently accumulated fragments.
     #[serde(deserialize_with = "human_readable_duration")]
     pub fragment_accumulation_timeout: Duration,
 
-    // TODO: segfault
+    /// The number of fragments to accumulate before submitting them in a transaction to L1.
     pub fragments_to_accumulate: NonZeroUsize,
 
     /// Only blocks within the `block_height_lookback` window
@@ -159,7 +158,11 @@ pub struct BundleConfig {
     /// This approach effectively "gives up" on blocks that fall outside the defined window.
     pub block_height_lookback: u32,
 
-    /// Valid values: "disabled", "min", "1" to "9", "max"
+    /// Compression level used for compressing block data before submission.
+    ///
+    /// Compression is applied to the blocks to minimize the transaction size. Valid values are:
+    /// - `"disabled"`: No compression is applied.
+    /// - `"min"` to `"max"`: Compression levels where higher numbers indicate more aggressive compression.
     pub compression_level: CompressionLevel,
 }
 
