@@ -462,14 +462,14 @@ mod tests {
 
     #[test]
     fn can_disable_compression() {
-        // Given
+        // given
         let compressor = Compressor::new(CompressionLevel::Disabled);
         let data = nonempty!(1, 2, 3);
 
-        // When
+        // when
         let compressed = compressor.compress(data.clone()).unwrap();
 
-        // Then
+        // then
         assert_eq!(data, compressed);
     }
 
@@ -484,7 +484,7 @@ mod tests {
 
     #[tokio::test]
     async fn finishing_will_advance_if_not_called_at_least_once() {
-        // Given
+        // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
         let blocks = generate_storage_block_sequence(0..=10, &secret_key, 10, 100);
 
@@ -495,10 +495,10 @@ mod tests {
             NonZeroUsize::new(1).unwrap(),
         );
 
-        // When
+        // when
         let bundle = bundler.finish().await.unwrap();
 
-        // Then
+        // then
         let merged = blocks.into_inner().flat_map(|b| b.data.clone());
         let expected_fragments = Eip4844BlobEncoder.encode(merged).unwrap();
         assert!(!bundle.metadata.known_to_be_optimal);
@@ -508,7 +508,7 @@ mod tests {
 
     #[tokio::test]
     async fn will_provide_a_suboptimal_bundle_if_not_advanced_enough() -> Result<()> {
-        // Given
+        // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let stops_at_blob_boundary =
@@ -536,10 +536,10 @@ mod tests {
         let non_optimal_bundle = bundler.clone().finish().await?;
         bundler.advance(1.try_into().unwrap()).await?;
 
-        // When
+        // when
         let optimal_bundle = bundler.finish().await?;
 
-        // Then
+        // then
         // Non-optimal bundle should include both blocks
         assert_eq!(non_optimal_bundle.metadata.block_heights, 0..=1);
         assert!(!non_optimal_bundle.metadata.known_to_be_optimal);
@@ -553,7 +553,7 @@ mod tests {
 
     #[tokio::test]
     async fn tolerates_step_too_large() -> Result<()> {
-        // Given
+        // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let blocks = generate_storage_block_sequence(0..=2, &secret_key, 3, 100);
@@ -569,10 +569,10 @@ mod tests {
 
         while bundler.advance(1.try_into().unwrap()).await? {}
 
-        // When
+        // when
         let bundle = bundler.finish().await?;
 
-        // Then
+        // then
         assert!(bundle.metadata.known_to_be_optimal);
         assert_eq!(bundle.metadata.block_heights, 0..=2);
         assert_eq!(bundle.metadata.optimization_attempts, 3); // 3 then 1 then 2
@@ -582,7 +582,7 @@ mod tests {
     // when the smaller bundle doesn't utilize the whole blob, for example
     #[tokio::test]
     async fn bigger_bundle_will_have_same_storage_gas_usage() -> Result<()> {
-        // Given
+        // given
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let blocks = nonempty![
@@ -598,10 +598,10 @@ mod tests {
         );
         while bundler.advance(1.try_into().unwrap()).await? {}
 
-        // When
+        // when
         let bundle = bundler.finish().await?;
 
-        // Then
+        // then
         assert!(bundle.metadata.known_to_be_optimal);
         assert_eq!(bundle.metadata.block_heights, 0..=1);
         Ok(())
