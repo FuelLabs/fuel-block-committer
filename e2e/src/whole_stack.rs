@@ -125,7 +125,7 @@ impl WholeStack {
                 .with_bundle_optimization_timeout("60s".to_owned())
                 .with_bundle_block_height_lookback("8500".to_owned())
                 .with_bundle_optimization_step("100".to_owned())
-                .with_bundle_fragments_to_accumulate("6".to_owned())
+                .with_bundle_fragments_to_accumulate("3".to_owned())
                 .with_bundle_fragment_accumulation_timeout("10m".to_owned())
                 .with_bundle_compression_level("level6".to_owned());
 
