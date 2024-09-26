@@ -24,30 +24,6 @@ pub struct BlockCommitter<L1, Db, Fuel, BlockValidator> {
     metrics: Metrics,
 }
 
-struct Metrics {
-    latest_fuel_block: IntGauge,
-}
-
-impl<L1, Db, Fuel, BlockValidator> RegistersMetrics
-    for BlockCommitter<L1, Db, Fuel, BlockValidator>
-{
-    fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.metrics.latest_fuel_block.clone())]
-    }
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        let latest_fuel_block = IntGauge::with_opts(Opts::new(
-            "latest_fuel_block",
-            "The height of the latest fuel block.",
-        ))
-        .expect("fuel_network_errors metric to be correctly configured");
-
-        Self { latest_fuel_block }
-    }
-}
-
 impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator> {
     pub fn new(
         l1: L1,
@@ -65,15 +41,7 @@ impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator> 
             metrics: Metrics::default(),
         }
     }
-}
 
-impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator>
-where
-    L1: ports::l1::Contract + ports::l1::Api,
-    Db: Storage,
-    BlockValidator: Validator,
-    Fuel: ports::fuel::Api,
-{
     async fn submit_block(&self, fuel_block: ValidatedFuelBlock) -> Result<()> {
         let submittal_height = self.l1_adapter.get_block_number().await?;
 
@@ -86,7 +54,6 @@ where
 
         self.storage.insert(submission).await?;
 
-        // if we have a network failure the DB entry will be left at completed:false.
         self.l1_adapter.submit(fuel_block).await?;
 
         Ok(())
@@ -104,11 +71,10 @@ where
     }
 
     async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
-        let Some(submitted_height) = self.last_submitted_block_height().await? else {
-            return Ok(false);
-        };
-
-        Ok(submitted_height >= block_height)
+        match self.last_submitted_block_height().await? {
+            Some(submitted_height) => Ok(submitted_height >= block_height),
+            None => Ok(false),
+        }
     }
 
     fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
@@ -116,11 +82,10 @@ where
     }
 
     async fn last_submitted_block_height(&self) -> Result<Option<u32>> {
-        Ok(self
-            .storage
+        self.storage
             .submission_w_latest_block()
-            .await?
-            .map(|submission| submission.block_height))
+            .await
+            .map(|submission| submission.map(|s| s.block_height))
     }
 
     async fn fetch_block(&self, height: u32) -> Result<ValidatedFuelBlock> {
@@ -128,11 +93,7 @@ where
             .fuel_adapter
             .block_at_height(height)
             .await?
-            .ok_or_else(|| {
-                Error::Other(format!(
-                    "Fuel node could not provide block at height: {height}"
-                ))
-            })?;
+            .ok_or_else(|| Error::Other(format!("Fuel node could not provide block at height: {height}")))?;
 
         Ok(self.block_validator.validate(&fuel_block)?)
     }
@@ -160,12 +121,33 @@ where
             self.fetch_block(current_epoch_block_height).await?
         };
 
-        self.submit_block(block)
-            .await
-            .map_err(|e| Error::Other(e.to_string()))?;
+        self.submit_block(block).await?;
         info!("submitted {block:?}!");
 
         Ok(())
+    }
+}
+
+struct Metrics {
+    latest_fuel_block: IntGauge,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let latest_fuel_block = IntGauge::with_opts(Opts::new(
+            "latest_fuel_block",
+            "The height of the latest fuel block",
+        ))
+        .expect("Failed to configure `latest_fuel_block` metric");
+
+        Self { latest_fuel_block }
+    }
+}
+
+impl<L1, Db, Fuel, BlockValidator> RegistersMetrics for BlockCommitter<L1, Db, Fuel, BlockValidator>
+{
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
+        vec![Box::new(self.metrics.latest_fuel_block.clone())]
     }
 }
 
@@ -191,6 +173,7 @@ mod tests {
         api: ports::l1::MockApi,
         contract: MockContract,
     }
+
     impl MockL1 {
         fn new() -> Self {
             Self {
@@ -205,6 +188,7 @@ mod tests {
         async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<()> {
             self.contract.submit(block).await
         }
+
         fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
             self.contract.event_streamer(height)
         }
@@ -253,7 +237,6 @@ mod tests {
 
     #[tokio::test]
     async fn will_fetch_and_submit_missed_block() {
-        // given
         let secret_key = given_secret_key();
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let missed_block = given_a_block(4, &secret_key);
@@ -267,16 +250,11 @@ mod tests {
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
 
-        // when
         block_committer.run().await.unwrap();
-
-        // then
-        // MockL1 validates the expected calls are made
     }
 
     #[tokio::test]
     async fn will_not_reattempt_submitting_missed_block() {
-        // given
         let secret_key = given_secret_key();
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let missed_block = given_a_block(4, &secret_key);
@@ -292,16 +270,11 @@ mod tests {
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
 
-        // when
         block_committer.run().await.unwrap();
-
-        // then
-        // Mock verifies that the submit didn't happen
     }
 
     #[tokio::test]
     async fn will_not_reattempt_committing_latest_block() {
-        // given
         let secret_key = given_secret_key();
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let latest_block = given_a_block(6, &secret_key);
@@ -316,16 +289,11 @@ mod tests {
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
 
-        // when
         block_committer.run().await.unwrap();
-
-        // then
-        // MockL1 verifies that submit was not called
     }
 
     #[tokio::test]
     async fn propagates_block_if_epoch_reached() {
-        // given
         let secret_key = given_secret_key();
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let block = given_a_block(4, &secret_key);
@@ -337,16 +305,11 @@ mod tests {
         let mut block_committer =
             BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
 
-        // when
         block_committer.run().await.unwrap();
-
-        // then
-        // Mock verifies that submit was called with the appropriate block
     }
 
     #[tokio::test]
     async fn updates_block_metric_regardless_if_block_is_published() {
-        // given
         let secret_key = given_secret_key();
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let block = given_a_block(5, &secret_key);
@@ -364,10 +327,8 @@ mod tests {
         let registry = Registry::default();
         block_committer.register_metrics(&registry);
 
-        // when
         block_committer.run().await.unwrap();
 
-        // then
         let metrics = registry.gather();
         let latest_block_metric = metrics
             .iter()
@@ -399,10 +360,7 @@ mod tests {
                 .with(eq(block.header.height))
                 .returning(move |_| Ok(Some(block.clone())));
         }
-        if let Some(block) = available_blocks
-            .into_iter()
-            .max_by_key(|el| el.header.height)
-        {
+        if let Some(block) = available_blocks.into_iter().max_by_key(|el| el.header.height) {
             fetcher
                 .expect_latest_block()
                 .returning(move || Ok(block.clone()));
