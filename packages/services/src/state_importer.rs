@@ -9,14 +9,14 @@ use validator::Validator;
 
 use crate::{Result, Runner};
 
-pub struct StateImporter<Db, A, BlockValidator> {
+pub struct StateImporter<Db, Api, BlockValidator> {
     storage: Db,
-    fuel_adapter: A,
+    fuel_adapter: Api,
     block_validator: BlockValidator,
 }
 
-impl<Db, A, BlockValidator> StateImporter<Db, A, BlockValidator> {
-    pub fn new(storage: Db, fuel_adapter: A, block_validator: BlockValidator) -> Self {
+impl<Db, Api, BlockValidator> StateImporter<Db, Api, BlockValidator> {
+    pub fn new(storage: Db, fuel_adapter: Api, block_validator: BlockValidator) -> Self {
         Self {
             storage,
             fuel_adapter,
@@ -25,34 +25,30 @@ impl<Db, A, BlockValidator> StateImporter<Db, A, BlockValidator> {
     }
 }
 
-impl<Db, A, BlockValidator> StateImporter<Db, A, BlockValidator>
+impl<Db, Api, BlockValidator> StateImporter<Db, Api, BlockValidator>
 where
     Db: Storage,
-    A: ports::fuel::Api,
+    Api: ports::fuel::Api,
     BlockValidator: Validator,
 {
     async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
-
         self.block_validator.validate(&latest_block)?;
-
         Ok(latest_block)
     }
 
     async fn check_if_stale(&self, block_height: u32) -> Result<bool> {
-        let Some(submitted_height) = self.last_submitted_block_height().await? else {
-            return Ok(false);
-        };
-
-        Ok(submitted_height >= block_height)
+        if let Some(submitted_height) = self.last_submitted_block_height().await? {
+            return Ok(submitted_height >= block_height);
+        }
+        Ok(false)
     }
 
     async fn last_submitted_block_height(&self) -> Result<Option<u32>> {
-        Ok(self
-            .storage
+        self.storage
             .state_submission_w_latest_block()
-            .await?
-            .map(|submission| submission.block_height))
+            .await
+            .map(|submission| submission.map(|s| s.block_height))
     }
 
     fn block_to_state_submission(
@@ -61,7 +57,6 @@ where
     ) -> Result<(StateSubmission, Vec<StateFragment>)> {
         use itertools::Itertools;
 
-        // Serialize the block into bytes
         let fragments = block
             .transactions
             .iter()
@@ -92,26 +87,21 @@ where
         self.storage
             .insert_state_submission(submission, fragments)
             .await?;
-
         Ok(())
     }
 }
 
 #[async_trait]
-impl<Db, Fuel, BlockValidator> Runner for StateImporter<Db, Fuel, BlockValidator>
+impl<Db, Api, BlockValidator> Runner for StateImporter<Db, Api, BlockValidator>
 where
     Db: Storage,
-    Fuel: ports::fuel::Api,
+    Api: ports::fuel::Api + Send + Sync,
     BlockValidator: Validator,
 {
     async fn run(&mut self) -> Result<()> {
         let block = self.fetch_latest_block().await?;
 
-        if self.check_if_stale(block.header.height).await? {
-            return Ok(());
-        }
-
-        if block.transactions.is_empty() {
+        if self.check_if_stale(block.header.height).await? || block.transactions.is_empty() {
             return Ok(());
         }
 
@@ -119,7 +109,7 @@ where
         let block_height = block.header.height;
         self.import_state(block).await?;
         info!(
-            "imported state from fuel block: height: {}, id: {}",
+            "Imported state from Fuel block: height: {}, id: {}",
             block_height, block_id
         );
 
@@ -138,9 +128,7 @@ mod tests {
     use super::*;
 
     fn given_secret_key() -> SecretKey {
-        let mut rng = StdRng::seed_from_u64(42);
-
-        SecretKey::random(&mut rng)
+        SecretKey::random(&mut StdRng::seed_from_u64(42))
     }
 
     fn given_a_block(height: u32, secret_key: &SecretKey) -> FuelBlock {
@@ -170,7 +158,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        ports::fuel::FuelHeader {
+        FuelHeader {
             id: Default::default(),
             da_height: Default::default(),
             consensus_parameters_version: Default::default(),
