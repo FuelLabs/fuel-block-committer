@@ -84,7 +84,7 @@ impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
                 value.bundle_id
             ))
         })?;
-        // TODO: segfault, make all errors have better context
+
         let data = NonEmpty::collect(value.data).ok_or_else(|| {
             crate::error::Error::Conversion("db fragment data is invalid".to_owned())
         })?;

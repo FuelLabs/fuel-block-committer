@@ -126,7 +126,10 @@ pub struct BundleConfig {
     #[serde(deserialize_with = "human_readable_duration")]
     pub optimization_timeout: Duration,
 
-    // TODO: segfault
+    /// How big should the optimization step be at the start of the optimization process. Setting
+    /// this value to 100 and giving the bundler a 1000 blocks would result in the following
+    /// attempts:
+    /// 1000, 900, ..., 100, 1, 950, 850, ..., 50, 975, 925, ...
     pub optimization_step: NonZeroUsize,
 
     /// Duration to wait for additional fragments before submitting them in a transaction to L1.

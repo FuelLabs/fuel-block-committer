@@ -159,7 +159,6 @@ impl Postgres {
     pub(crate) async fn _all_fragments(
         &self,
     ) -> crate::error::Result<Vec<ports::storage::BundleFragment>> {
-        // TODO: segfault add cascading rules
         sqlx::query_as!(
             tables::BundleFragment,
             "SELECT * FROM l1_fragments ORDER BY idx ASC"
@@ -343,7 +342,6 @@ impl Postgres {
         .await?
         .id;
 
-        // TODO: segfault batch this
         for id in fragment_ids {
             sqlx::query!(
             "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
