@@ -10,11 +10,8 @@ pub struct StateCommitter<L1, Db> {
 }
 
 impl<L1, Db> StateCommitter<L1, Db> {
-    pub fn new(l1: L1, storage: Db) -> Self {
-        Self {
-            l1_adapter: l1,
-            storage,
-        }
+    pub fn new(l1_adapter: L1, storage: Db) -> Self {
+        Self { l1_adapter, storage }
     }
 }
 
@@ -26,13 +23,12 @@ where
     async fn prepare_fragments(&self) -> Result<(Vec<u32>, Vec<u8>)> {
         let fragments = self.storage.get_unsubmitted_fragments().await?;
 
-        let num_fragments = fragments.len();
-        let mut fragment_ids = Vec::with_capacity(num_fragments);
-        let mut data = Vec::with_capacity(num_fragments);
-        for fragment in fragments {
-            fragment_ids.push(fragment.id.expect("fragments from DB must have `id`"));
-            data.extend(fragment.data);
-        }
+        let fragment_ids: Vec<u32> = fragments
+            .iter()
+            .map(|fragment| fragment.id.expect("fragments from DB must have `id`"))
+            .collect();
+
+        let data: Vec<u8> = fragments.into_iter().flat_map(|fragment| fragment.data).collect();
 
         Ok((fragment_ids, data))
     }
@@ -44,17 +40,15 @@ where
         }
 
         let tx_hash = self.l1_adapter.submit_l2_state(data).await?;
-        self.storage
-            .record_pending_tx(tx_hash, fragment_ids)
-            .await?;
+        self.storage.record_pending_tx(tx_hash, fragment_ids).await?;
 
-        info!("submitted blob tx {}", hex::encode(tx_hash));
+        info!("Submitted blob transaction: {}", hex::encode(tx_hash));
 
         Ok(())
     }
 
     async fn is_tx_pending(&self) -> Result<bool> {
-        self.storage.has_pending_txs().await.map_err(|e| e.into())
+        self.storage.has_pending_txs().await
     }
 }
 
@@ -67,7 +61,7 @@ where
     async fn run(&mut self) -> Result<()> {
         if self.is_tx_pending().await? {
             return Ok(());
-        };
+        }
 
         self.submit_state().await?;
 
@@ -86,6 +80,7 @@ mod tests {
     struct MockL1 {
         api: ports::l1::MockApi,
     }
+
     impl MockL1 {
         fn new() -> Self {
             Self {
