@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 pub use fuel_core_client::client::types::{
     block::{
-        Block as FuelBlock, Consensus as FuelConsensus, Genesis as FuelGenesis,
+        Block as FuelBlock, Consensus as FuelConsensus, Genesis, Genesis as FuelGenesis,
         Header as FuelHeader, PoAConsensus as FuelPoAConsensus,
     },
     primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32, PublicKey as FuelPublicKey},

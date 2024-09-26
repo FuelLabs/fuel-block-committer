@@ -1,7 +1,7 @@
 use futures::TryStreamExt;
 use itertools::chain;
 use ports::{
-    fuel::FullFuelBlock,
+    fuel::{Consensus, FuelPoAConsensus, FullFuelBlock, Genesis},
     storage::Storage,
     types::{CollectNonEmpty, NonEmpty},
 };
@@ -93,11 +93,65 @@ pub(crate) fn encode_blocks(
         .expect("should be non-empty")
 }
 
-fn encode_block_data(block: FullFuelBlock) -> NonEmpty<u8> {
-    let tx_num = u64::try_from(block.raw_transactions.len()).unwrap_or(u64::MAX);
-
+fn serialize_header(header: ports::fuel::FuelHeader) -> NonEmpty<u8> {
     chain!(
-        tx_num.to_be_bytes(),
+        *header.id,
+        header.da_height.to_be_bytes(),
+        header.consensus_parameters_version.to_be_bytes(),
+        header.state_transition_bytecode_version.to_be_bytes(),
+        header.transactions_count.to_be_bytes(),
+        header.message_receipt_count.to_be_bytes(),
+        *header.transactions_root,
+        *header.message_outbox_root,
+        *header.event_inbox_root,
+        header.height.to_be_bytes(),
+        *header.prev_root,
+        header.time.0.to_be_bytes(),
+        *header.application_hash,
+    )
+    .collect_nonempty()
+    .expect("should be non-empty")
+}
+
+fn serialize_consensus(consensus: Consensus) -> NonEmpty<u8> {
+    let mut buf = vec![];
+    match consensus {
+        Consensus::Genesis(Genesis {
+            chain_config_hash,
+            coins_root,
+            contracts_root,
+            messages_root,
+            transactions_root,
+        }) => {
+            let variant = 0u8;
+            buf.extend(chain!(
+                variant.to_be_bytes(),
+                *chain_config_hash,
+                *coins_root,
+                *contracts_root,
+                *messages_root,
+                *transactions_root,
+            ));
+        }
+        Consensus::PoAConsensus(FuelPoAConsensus { signature }) => {
+            let variant = 1u8;
+
+            buf.extend(chain!(variant.to_be_bytes(), *signature));
+        }
+        Consensus::Unknown => {
+            let variant = 2u8;
+            buf.extend(variant.to_be_bytes());
+        }
+    }
+
+    NonEmpty::from_vec(buf).expect("should be non-empty")
+}
+
+fn encode_block_data(block: FullFuelBlock) -> NonEmpty<u8> {
+    // We don't handle fwd/bwd compatibility, that should be handled once the DA compression on the core is incorporated
+    chain!(
+        serialize_header(block.header),
+        serialize_consensus(block.consensus),
         block.raw_transactions.into_iter().flatten()
     )
     .collect_nonempty()
