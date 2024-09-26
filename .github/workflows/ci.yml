@@ -62,7 +62,7 @@ jobs:
       - name: Check for typos
         uses: crate-ci/typos@v1.23.6
       - name: Setup Rust
-      - uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: clippy,rustfmt
@@ -102,7 +102,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Setup Rust
-      - uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
       - name: Build release binary
