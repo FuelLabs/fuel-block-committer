@@ -159,6 +159,7 @@ jobs:
   publish-crates:
     needs:
       - cargo-verifications
+      - e2e-tests
       - publish-crates-check
     # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
@@ -186,6 +187,7 @@ jobs:
   build-docker-images:
     needs:
       - cargo-verifications
+      - e2e-tests
     strategy:
       matrix:
         arch: [
