@@ -37,18 +37,17 @@ where
     Db: Storage,
 {
     async fn determine_starting_l1_height(&mut self) -> crate::Result<L1Height> {
-        Ok(self
-            .storage
+        self.storage
             .submission_w_latest_block()
             .await?
-            .map_or(0u32.into(), |submission| submission.submittal_height))
+            .map_or(Ok(0u32.into()), |submission| Ok(submission.submittal_height))
     }
 
     async fn handle_block_committed(
         &self,
         committed_on_l1: FuelBlockCommittedOnL1,
     ) -> crate::Result<()> {
-        info!("received block commit event from l1 {committed_on_l1:?}");
+        info!("Received block commit event from L1: {:?}", committed_on_l1);
 
         let submission = self
             .storage
@@ -64,7 +63,7 @@ where
 
     fn log_if_error(result: crate::Result<()>) {
         if let Err(error) = result {
-            error!("Received an error from block commit event stream: {error}");
+            error!("Error in block commit event stream: {error}");
         }
     }
 }
@@ -97,7 +96,7 @@ struct Metrics {
     latest_committed_block: IntGauge,
 }
 
-impl<E, Db> RegistersMetrics for CommitListener<E, Db> {
+impl<C, Db> RegistersMetrics for CommitListener<C, Db> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.metrics.latest_committed_block.clone())]
     }
@@ -107,9 +106,9 @@ impl Default for Metrics {
     fn default() -> Self {
         let latest_committed_block = IntGauge::with_opts(Opts::new(
             "latest_committed_block",
-            "The height of the latest fuel block committed on Ethereum.",
+            "The height of the latest Fuel block committed on Ethereum",
         ))
-        .expect("latest_committed_block metric to be correctly configured");
+        .expect("Failed to configure `latest_committed_block` metric");
 
         Self {
             latest_committed_block,
@@ -138,8 +137,6 @@ mod tests {
 
     #[tokio::test]
     async fn listener_will_update_storage_if_event_is_emitted() {
-        use ports::storage::Storage;
-        // given
         let mut rng = rand::thread_rng();
         let submission = BlockSubmission {
             completed: false,
@@ -155,18 +152,14 @@ mod tests {
         let mut commit_listener =
             CommitListener::new(contract, db.clone(), CancellationToken::default());
 
-        // when
         commit_listener.run().await.unwrap();
 
-        // then
         let res = db.submission_w_latest_block().await.unwrap().unwrap();
-
         assert!(res.completed);
     }
 
     #[tokio::test]
     async fn listener_will_update_metrics_if_event_is_emitted() {
-        // given
         let mut rng = rand::thread_rng();
         let submission = BlockSubmission {
             completed: false,
@@ -185,10 +178,8 @@ mod tests {
         let registry = Registry::new();
         commit_listener.register_metrics(&registry);
 
-        // when
         commit_listener.run().await.unwrap();
 
-        // then
         let metrics = registry.gather();
         let latest_committed_block_metric = metrics
             .iter()
@@ -205,7 +196,6 @@ mod tests {
 
     #[tokio::test]
     async fn error_while_handling_event_will_not_close_stream() {
-        // given
         let mut rng = rand::thread_rng();
         let block_missing_from_db: BlockSubmission = rng.gen();
         let incoming_block: BlockSubmission = rng.gen();
@@ -224,10 +214,8 @@ mod tests {
         let mut commit_listener =
             CommitListener::new(contract, db.clone(), CancellationToken::default());
 
-        // when
         commit_listener.run().await.unwrap();
 
-        // then
         let latest_submission = db.submission_w_latest_block().await.unwrap().unwrap();
         assert_eq!(
             BlockSubmission {
@@ -243,9 +231,7 @@ mod tests {
         submission: BlockSubmission,
     ) -> Postgres {
         let db = process.create_random_db().await.unwrap();
-
         db.insert(submission).await.unwrap();
-
         db
     }
 
@@ -254,13 +240,11 @@ mod tests {
         starting_from_height: L1Height,
     ) -> MockContract {
         let mut contract = MockContract::new();
-
         let event_streamer = Box::new(given_event_streamer_w_events(events));
         contract
             .expect_event_streamer()
             .with(predicate::eq(starting_from_height))
             .return_once(move |_| event_streamer);
-
         contract
     }
 
@@ -274,11 +258,9 @@ mod tests {
             })
             .map(Ok)
             .collect::<Vec<_>>();
-
         streamer
             .expect_establish_stream()
             .return_once(move || Ok(Box::pin(stream::iter(events))));
-
         streamer
     }
 }
