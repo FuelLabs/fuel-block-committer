@@ -16,15 +16,15 @@ pub use postgres::{DbConfig, Postgres};
 #[async_trait::async_trait]
 impl Storage for Postgres {
     async fn insert(&self, submission: BlockSubmission) -> Result<()> {
-        Ok(self._insert(submission).await?)
+        self.insert_submission(submission).await
     }
 
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
-        Ok(self._submission_w_latest_block().await?)
+        self.get_latest_submission().await
     }
 
     async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
-        Ok(self._set_submission_completed(fuel_block_hash).await?)
+        self.mark_submission_completed(fuel_block_hash).await
     }
 
     async fn insert_state_submission(
@@ -32,27 +32,27 @@ impl Storage for Postgres {
         submission: StateSubmission,
         fragments: Vec<StateFragment>,
     ) -> Result<()> {
-        Ok(self._insert_state_submission(submission, fragments).await?)
+        self.insert_state_submission(submission, fragments).await
     }
 
     async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
-        Ok(self._get_unsubmitted_fragments().await?)
+        self.get_unsubmitted_fragments().await
     }
 
     async fn record_pending_tx(&self, tx_hash: [u8; 32], fragment_ids: Vec<u32>) -> Result<()> {
-        Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
+        self.record_pending_tx(tx_hash, fragment_ids).await
     }
 
     async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>> {
-        Ok(self._get_pending_txs().await?)
+        self.get_pending_txs().await
     }
 
     async fn has_pending_txs(&self) -> Result<bool> {
-        Ok(self._has_pending_txs().await?)
+        self.has_pending_txs().await
     }
 
     async fn state_submission_w_latest_block(&self) -> Result<Option<StateSubmission>> {
-        Ok(self._state_submission_w_latest_block().await?)
+        self.get_latest_state_submission().await
     }
 
     async fn update_submission_tx_state(
@@ -60,7 +60,7 @@ impl Storage for Postgres {
         hash: [u8; 32],
         state: TransactionState,
     ) -> Result<()> {
-        Ok(self._update_submission_tx_state(hash, state).await?)
+        self.update_submission_tx_state(hash, state).await
     }
 }
 
@@ -76,13 +76,11 @@ mod tests {
     use crate::PostgresProcess;
 
     fn random_non_zero_height() -> u32 {
-        let mut rng = thread_rng();
-        rng.gen_range(1..u32::MAX)
+        thread_rng().gen_range(1..u32::MAX)
     }
 
     #[tokio::test]
     async fn can_insert_and_find_latest_block() {
-        // given
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
         let latest_height = random_non_zero_height();
@@ -93,16 +91,13 @@ mod tests {
         let older_submission = given_incomplete_submission(latest_height - 1);
         db.insert(older_submission).await.unwrap();
 
-        // when
         let actual = db.submission_w_latest_block().await.unwrap().unwrap();
 
-        // then
         assert_eq!(actual, latest_submission);
     }
 
     #[tokio::test]
     async fn can_update_completion_status() {
-        // given
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
 
@@ -111,16 +106,13 @@ mod tests {
         let block_hash = submission.block_hash;
         db.insert(submission).await.unwrap();
 
-        // when
         let submission = db.set_submission_completed(block_hash).await.unwrap();
 
-        // then
         assert!(submission.completed);
     }
 
     #[tokio::test]
     async fn updating_a_missing_submission_causes_an_error() {
-        // given
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
 
@@ -128,10 +120,8 @@ mod tests {
         let submission = given_incomplete_submission(height);
         let block_hash = submission.block_hash;
 
-        // when
         let result = db.set_submission_completed(block_hash).await;
 
-        // then
         let Err(Error::Database(msg)) = result else {
             panic!("should be storage error");
         };
@@ -141,24 +131,20 @@ mod tests {
     }
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {
-        let mut submission = rand::thread_rng().gen::<BlockSubmission>();
+        let mut submission = thread_rng().gen::<BlockSubmission>();
         submission.block_height = fuel_block_height;
-
         submission
     }
 
     #[tokio::test]
     async fn insert_state_submission() -> Result<()> {
-        // given
         let process = PostgresProcess::shared().await?;
         let db = process.create_random_db().await?;
 
         let (state, fragments) = given_state_and_fragments();
 
-        // when
         db.insert_state_submission(state, fragments.clone()).await?;
 
-        // then
         let db_fragments = db.get_unsubmitted_fragments().await?;
 
         assert_eq!(db_fragments.len(), fragments.len());
@@ -168,7 +154,6 @@ mod tests {
 
     #[tokio::test]
     async fn record_pending_tx() -> Result<()> {
-        // given
         let process = PostgresProcess::shared().await?;
         let db = process.create_random_db().await?;
 
@@ -177,15 +162,12 @@ mod tests {
         let tx_hash = [1; 32];
         let fragment_ids = vec![1];
 
-        // when
         db.record_pending_tx(tx_hash, fragment_ids).await?;
 
-        // then
         let has_pending_tx = db.has_pending_txs().await?;
         let pending_tx = db.get_pending_txs().await?;
 
         assert!(has_pending_tx);
-
         assert_eq!(pending_tx.len(), 1);
         assert_eq!(pending_tx[0].hash, tx_hash);
         assert_eq!(pending_tx[0].state, TransactionState::Pending);
@@ -195,7 +177,6 @@ mod tests {
 
     #[tokio::test]
     async fn update_submission_tx_state() -> Result<()> {
-        // given
         let process = PostgresProcess::shared().await?;
         let db = process.create_random_db().await?;
 
@@ -205,11 +186,8 @@ mod tests {
         let fragment_ids = vec![1];
         db.record_pending_tx(tx_hash, fragment_ids).await?;
 
-        // when
-        db.update_submission_tx_state(tx_hash, TransactionState::Finalized)
-            .await?;
+        db.update_submission_tx_state(tx_hash, TransactionState::Finalized).await?;
 
-        // then
         let has_pending_tx = db.has_pending_txs().await?;
         let pending_tx = db.get_pending_txs().await?;
 
@@ -220,40 +198,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsbumitted_fragments_are_not_in_pending_or_finalized_tx() -> Result<()> {
-        // given
+    async fn unsubmitted_fragments_are_not_in_pending_or_finalized_tx() -> Result<()> {
         let process = PostgresProcess::shared().await?;
         let db = process.create_random_db().await?;
 
         let (state, fragments) = given_state_and_fragments();
         db.insert_state_submission(state, fragments.clone()).await?;
 
-        // when
-        // tx failed
         let tx_hash = [1; 32];
         let fragment_ids = vec![1, 2];
         db.record_pending_tx(tx_hash, fragment_ids).await?;
-        db.update_submission_tx_state(tx_hash, TransactionState::Failed)
-            .await?;
+        db.update_submission_tx_state(tx_hash, TransactionState::Failed).await?;
 
-        // tx is finalized
         let tx_hash = [2; 32];
         let fragment_ids = vec![2];
         db.record_pending_tx(tx_hash, fragment_ids).await?;
-        db.update_submission_tx_state(tx_hash, TransactionState::Finalized)
-            .await?;
+        db.update_submission_tx_state(tx_hash, TransactionState::Finalized).await?;
 
-        // tx is pending
         let tx_hash = [3; 32];
         let fragment_ids = vec![3];
         db.record_pending_tx(tx_hash, fragment_ids).await?;
 
-        // then
         let db_fragments = db.get_unsubmitted_fragments().await?;
-
         let db_fragment_id: Vec<_> = db_fragments.iter().map(|f| f.id.expect("has id")).collect();
 
-        // unsubmitted fragments are not associated to any finalized or pending tx
         assert_eq!(db_fragment_id, vec![1, 4, 5]);
 
         Ok(())
