@@ -8,7 +8,7 @@ pub struct HealthReport {
 }
 
 impl HealthReport {
-    pub fn healthy(&self) -> bool {
+    pub fn is_healthy(&self) -> bool {
         self.fuel_connection_up && self.eth_connection_healthy
     }
 }
@@ -28,7 +28,7 @@ impl HealthReporter {
     }
 
     #[must_use]
-    pub fn report(&self) -> HealthReport {
+    pub fn generate_report(&self) -> HealthReport {
         HealthReport {
             fuel_connection_up: self.fuel_connection.healthy(),
             eth_connection_healthy: self.eth_connection.healthy(),
