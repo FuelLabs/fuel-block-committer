@@ -14,16 +14,16 @@ use super::Runner;
 pub struct StateListener<L1, Db> {
     l1_adapter: L1,
     storage: Db,
-    num_blocks_to_finalize: u64,
+    finalization_delay: u64,
     metrics: Metrics,
 }
 
 impl<L1, Db> StateListener<L1, Db> {
-    pub fn new(l1_adapter: L1, storage: Db, num_blocks_to_finalize: u64) -> Self {
+    pub fn new(l1_adapter: L1, storage: Db, finalization_delay: u64) -> Self {
         Self {
             l1_adapter,
             storage,
-            num_blocks_to_finalize,
+            finalization_delay,
             metrics: Metrics::default(),
         }
     }
@@ -48,13 +48,11 @@ where
                     .update_submission_tx_state(tx_hash, TransactionState::Failed)
                     .await?;
 
-                info!("failed blob tx {}", hex::encode(tx_hash));
+                info!("Failed transaction: {}", hex::encode(tx_hash));
                 continue;
             }
 
-            if current_block_number.saturating_sub(tx_response.block_number())
-                < self.num_blocks_to_finalize
-            {
+            if current_block_number < tx_response.block_number() + self.finalization_delay {
                 continue; // not finalized
             }
 
@@ -62,11 +60,11 @@ where
                 .update_submission_tx_state(tx_hash, TransactionState::Finalized)
                 .await?;
 
-            info!("finalized blob tx {}", hex::encode(tx_hash));
+            info!("Finalized transaction: {}", hex::encode(tx_hash));
 
             self.metrics
                 .last_eth_block_w_blob
-                .set(tx_response.block_number() as i64); // TODO: conversion
+                .set(tx_response.block_number() as i64);
         }
 
         Ok(())
@@ -107,9 +105,9 @@ impl Default for Metrics {
     fn default() -> Self {
         let last_eth_block_w_blob = IntGauge::with_opts(Opts::new(
             "last_eth_block_w_blob",
-            "The height of the latest Ethereum block used for state submission.",
+            "Height of the latest Ethereum block used for state submission.",
         ))
-        .expect("last_eth_block_w_blob metric to be correctly configured");
+        .expect("Metric configuration failed");
 
         Self {
             last_eth_block_w_blob,
@@ -128,6 +126,7 @@ mod tests {
     struct MockL1 {
         api: ports::l1::MockApi,
     }
+
     impl MockL1 {
         fn new() -> Self {
             Self {
@@ -158,7 +157,7 @@ mod tests {
         }
     }
 
-    fn given_l1_that_expects_get_transaction_receipt(
+    fn given_l1_with_expected_transaction(
         tx_hash: [u8; 32],
         current_block_number: u32,
         block_number: u64,
@@ -178,7 +177,7 @@ mod tests {
         l1
     }
 
-    fn given_l1_that_returns_failed_transaction(tx_hash: [u8; 32]) -> MockL1 {
+    fn given_l1_with_failed_transaction(tx_hash: [u8; 32]) -> MockL1 {
         let mut l1 = MockL1::new();
 
         l1.api
@@ -215,7 +214,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn state_listener_will_update_tx_state_if_finalized() -> crate::Result<()> {
+    async fn updates_tx_state_if_finalized() -> crate::Result<()> {
         // given
         let (state, fragment, fragment_ids) = given_state();
         let tx_hash = [1; 32];
@@ -227,14 +226,10 @@ mod tests {
 
         let current_block_number = 34;
         let tx_block_number = 32;
-        let l1_mock = given_l1_that_expects_get_transaction_receipt(
-            tx_hash,
-            current_block_number,
-            tx_block_number,
-        );
+        let l1_mock = given_l1_with_expected_transaction(tx_hash, current_block_number, tx_block_number);
 
-        let num_blocks_to_finalize = 1;
-        let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
+        let finalization_delay = 1;
+        let mut listener = StateListener::new(l1_mock, db.clone(), finalization_delay);
         assert!(db.has_pending_txs().await?);
 
         // when
@@ -247,7 +242,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn state_listener_will_not_update_tx_state_if_not_finalized() -> crate::Result<()> {
+    async fn does_not_update_tx_state_if_not_finalized() -> crate::Result<()> {
         // given
         let (state, fragment, fragment_ids) = given_state();
         let tx_hash = [1; 32];
@@ -259,14 +254,10 @@ mod tests {
 
         let current_block_number = 34;
         let tx_block_number = 32;
-        let l1_mock = given_l1_that_expects_get_transaction_receipt(
-            tx_hash,
-            current_block_number,
-            tx_block_number,
-        );
+        let l1_mock = given_l1_with_expected_transaction(tx_hash, current_block_number, tx_block_number);
 
-        let num_blocks_to_finalize = 4;
-        let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
+        let finalization_delay = 4;
+        let mut listener = StateListener::new(l1_mock, db.clone(), finalization_delay);
         assert!(db.has_pending_txs().await?);
 
         // when
@@ -279,7 +270,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn state_listener_will_update_tx_state_if_failed() -> crate::Result<()> {
+    async fn updates_tx_state_if_failed() -> crate::Result<()> {
         // given
         let (state, fragment, fragment_ids) = given_state();
         let tx_hash = [1; 32];
@@ -289,10 +280,10 @@ mod tests {
         db.insert_state_submission(state, vec![fragment]).await?;
         db.record_pending_tx(tx_hash, fragment_ids).await?;
 
-        let l1_mock = given_l1_that_returns_failed_transaction(tx_hash);
+        let l1_mock = given_l1_with_failed_transaction(tx_hash);
 
-        let num_blocks_to_finalize = 4;
-        let mut listener = StateListener::new(l1_mock, db.clone(), num_blocks_to_finalize);
+        let finalization_delay = 4;
+        let mut listener = StateListener::new(l1_mock, db.clone(), finalization_delay);
         assert!(db.has_pending_txs().await?);
 
         // when
