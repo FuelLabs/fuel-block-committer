@@ -209,7 +209,13 @@ impl Default for Internal {
     about,
     propagate_version = true
 )]
-struct Cli {}
+struct Cli {
+    #[arg(
+        value_name = "FILE",
+        help = "Used to be the path to the configuration, unused currently until helm charts are updated."
+    )]
+    config_path: Option<String>,
+}
 
 pub fn parse() -> crate::errors::Result<Config> {
     let _ = Cli::parse();
