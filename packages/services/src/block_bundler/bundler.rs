@@ -5,6 +5,7 @@ use std::{
 
 use bytesize::ByteSize;
 use flate2::{write::GzEncoder, Compression};
+use itertools::Itertools;
 use ports::{
     l1::FragmentEncoder,
     storage::SequentialFuelBlocks,
@@ -13,7 +14,6 @@ use ports::{
 use rayon::prelude::*;
 
 use crate::Result;
-use itertools::Itertools;
 
 #[derive(Debug, Clone, Copy)]
 struct Compressor {
