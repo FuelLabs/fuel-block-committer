@@ -67,6 +67,8 @@ jobs:
           components: clippy,rustfmt
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        # The last version of Foundry that didn't experience this issue: https://github.com/alloy-rs/alloy/issues/1371
+        version: nightly-cb9dfae298fe0b5a5cdef2536955f50b8c7f0bf5
       - name: Build cache
         uses: buildjet/cache@v4
         with:
