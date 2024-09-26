@@ -172,29 +172,34 @@ impl Postgres {
         .collect()
     }
 
-    pub(crate) async fn _available_blocks(
+    pub(crate) async fn _missing_blocks(
         &self,
         starting_height: u32,
-    ) -> crate::error::Result<Option<RangeInclusive<u32>>> {
-        let record = sqlx::query!(
-            "SELECT MIN(height) AS min, MAX(height) AS max FROM fuel_blocks WHERE height >= $1",
-            i64::from(starting_height)
+        current_height: u32,
+    ) -> crate::error::Result<Vec<RangeInclusive<u32>>> {
+        let heights: Vec<_> = sqlx::query!(
+            r#"WITH all_heights AS (SELECT generate_series($1::BIGINT, $2::BIGINT) AS height)
+                SELECT ah.height
+                FROM all_heights ah
+                LEFT JOIN fuel_blocks fb ON fb.height = ah.height
+                WHERE fb.height IS NULL
+                ORDER BY ah.height;"#,
+            i64::from(starting_height),
+            i64::from(current_height)
         )
-        .fetch_one(&self.connection_pool)
+        .fetch_all(&self.connection_pool)
         .await
-        .map_err(Error::from)?;
+        .map_err(Error::from)?
+        .into_iter()
+        .flat_map(|row| row.height)
+        .map(|height| {
+            u32::try_from(height).map_err(|_| {
+                crate::error::Error::Conversion(format!("invalid block height: {height}"))
+            })
+        })
+        .try_collect()?;
 
-        let Some((min, max)) = record.min.zip(record.max) else {
-            return Ok(None);
-        };
-
-        let min = u32::try_from(min)
-            .map_err(|_| Error::Conversion(format!("cannot convert height into u32: {min} ")))?;
-
-        let max = u32::try_from(max)
-            .map_err(|_| Error::Conversion(format!("cannot convert height into u32: {max} ")))?;
-
-        Ok(Some(min..=max))
+        Ok(create_ranges(heights))
     }
 
     pub(crate) async fn _insert_blocks(
@@ -475,6 +480,31 @@ impl Postgres {
 
         Ok(())
     }
+}
+
+fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
+    // db should take care of it always being ASC sorted and unique, but just in case it doesn't
+    // hurt to dedupe and sort here
+    heights
+        .into_iter()
+        .unique()
+        .sorted_unstable()
+        .enumerate()
+        .chunk_by(|(i, height)| {
+            // consecutive heights will give the same number when subtracted from their indexes
+            // heights( 5, 6, 7) -> ( 5-0, 6-1, 7-2) = ( 5, 5, 5 )
+            height
+                .checked_sub(*i as u32)
+                .expect("cannot underflow since elements are sorted and `height` is always >= `i` ")
+        })
+        .into_iter()
+        .map(|(_key, group)| {
+            let mut group_iter = group.map(|(_, h)| h);
+            let start = group_iter.next().expect("group cannot be empty");
+            let end = group_iter.last().unwrap_or(start);
+            start..=end
+        })
+        .collect()
 }
 
 #[cfg(test)]

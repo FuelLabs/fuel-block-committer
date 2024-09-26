@@ -174,7 +174,7 @@ impl Storage for DbWithProcess {
             async fn submission_w_latest_block(&self) -> ports::storage::Result<Option<BlockSubmission>>;
             async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> ports::storage::Result<BlockSubmission>;
             async fn insert_blocks(&self, blocks: NonEmpty<FuelBlock>) -> ports::storage::Result<()>;
-            async fn available_blocks(&self, starting_height: u32) -> ports::storage::Result<Option<RangeInclusive<u32>>>;
+            async fn missing_blocks(&self, starting_height: u32, current_height: u32) -> ports::storage::Result<Vec<RangeInclusive<u32>>>;
             async fn lowest_sequence_of_unbundled_blocks(
                 &self,
                 starting_height: u32,

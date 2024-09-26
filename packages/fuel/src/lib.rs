@@ -2,10 +2,7 @@
 use std::ops::RangeInclusive;
 
 use futures::StreamExt;
-use ports::{
-    fuel::{BoxStream, FuelBlock},
-    types::NonEmpty,
-};
+use ports::fuel::{BoxStream, FuelBlock};
 mod client;
 mod metrics;
 
@@ -30,7 +27,7 @@ impl ports::fuel::Api for client::HttpClient {
     fn full_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<NonEmpty<ports::fuel::FullFuelBlock>>> {
+    ) -> BoxStream<'_, Result<Vec<ports::fuel::FullFuelBlock>>> {
         self.block_in_height_range(range).boxed()
     }
 }

@@ -1,5 +1,3 @@
-use std::cmp::max;
-
 use futures::TryStreamExt;
 use itertools::chain;
 use ports::{
@@ -9,7 +7,7 @@ use ports::{
 };
 use tracing::info;
 
-use crate::{validator::Validator, Error, Result, Runner};
+use crate::{validator::Validator, Result, Runner};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -71,37 +69,13 @@ where
         Ok(())
     }
 
-    fn validate_blocks(&self, blocks: &NonEmpty<FullFuelBlock>) -> Result<()> {
+    fn validate_blocks(&self, blocks: &[FullFuelBlock]) -> Result<()> {
         for block in blocks {
             self.block_validator
                 .validate(block.id, &block.header, &block.consensus)?;
         }
 
         Ok(())
-    }
-
-    async fn determine_starting_height(&self, chain_height: u32) -> Result<Option<u32>> {
-        let starting_height = chain_height.saturating_sub(self.config.lookback_window);
-
-        let Some(available_blocks) = self.storage.available_blocks(0).await? else {
-            return Ok(Some(starting_height));
-        };
-
-        let latest_db_block = *available_blocks.end();
-
-        match latest_db_block.cmp(&chain_height) {
-            std::cmp::Ordering::Greater => {
-                let err_msg = format!(
-                    "Latest database block ({latest_db_block}) has a height greater than the current chain height ({chain_height})",
-                );
-                Err(Error::Other(err_msg))
-            }
-            std::cmp::Ordering::Equal => Ok(None),
-            std::cmp::Ordering::Less => Ok(Some(max(
-                starting_height,
-                latest_db_block.saturating_add(1),
-            ))),
-        }
     }
 }
 
@@ -138,23 +112,27 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let chain_height = self.fuel_api.latest_height().await?;
+        let starting_height = chain_height.saturating_sub(self.config.lookback_window);
 
-        let Some(starting_height) = self.determine_starting_height(chain_height).await? else {
-            info!("Database is up to date with the chain({chain_height}); no import necessary.");
-            return Ok(());
-        };
+        for range in self
+            .storage
+            .missing_blocks(starting_height, chain_height)
+            .await?
+        {
+            self.fuel_api
+                .full_blocks_in_height_range(range)
+                .map_err(crate::Error::from)
+                .try_for_each(|blocks| async {
+                    self.validate_blocks(&blocks)?;
 
-        self.fuel_api
-            .full_blocks_in_height_range(starting_height..=chain_height)
-            .map_err(crate::Error::from)
-            .try_for_each(|blocks| async {
-                self.validate_blocks(&blocks)?;
+                    if let Some(blocks) = NonEmpty::from_vec(blocks) {
+                        self.import_blocks(blocks).await?;
+                    }
 
-                self.import_blocks(blocks).await?;
-
-                Ok(())
-            })
-            .await?;
+                    Ok(())
+                })
+                .await?;
+        }
 
         Ok(())
     }
@@ -162,8 +140,11 @@ where
 
 #[cfg(test)]
 mod tests {
+
     use fuel_crypto::SecretKey;
+    use futures::StreamExt;
     use itertools::Itertools;
+    use mockall::{predicate::eq, Sequence};
     use ports::types::nonempty;
     use rand::{rngs::StdRng, SeedableRng};
 
@@ -182,7 +163,7 @@ mod tests {
         let secret_key = SecretKey::random(&mut rng);
         let block = test_utils::mocks::fuel::generate_block(0, &secret_key, 1, 100);
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(
@@ -221,7 +202,7 @@ mod tests {
         let incorrect_secret_key = SecretKey::random(&mut rng);
         let block = test_utils::mocks::fuel::generate_block(0, &incorrect_secret_key, 1, 100);
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()]);
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
 
         let mut importer = BlockImporter::new(
             setup.db(),
@@ -273,7 +254,7 @@ mod tests {
             .collect_nonempty()
             .unwrap();
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer =
@@ -297,50 +278,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fails_if_db_height_is_greater_than_chain_height() -> Result<()> {
-        // given
-        let setup = test_utils::Setup::init().await;
-
-        let secret_key = setup
-            .import_blocks(Blocks::WithHeights {
-                range: 0..=5,
-                tx_per_block: 1,
-                size_per_tx: 100,
-            })
-            .await
-            .secret_key;
-
-        let chain_blocks = (0..=2)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
-            .collect_vec();
-
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(chain_blocks.clone());
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
-        let mut importer = BlockImporter::new(
-            setup.db(),
-            fuel_mock,
-            block_validator,
-            Config { lookback_window: 0 },
-        );
-
-        // when
-        let result = importer.run().await;
-
-        // then
-        if let Err(Error::Other(err)) = result {
-            assert_eq!(
-                err,
-                "Latest database block (5) has a height greater than the current chain height (2)"
-            );
-        } else {
-            panic!("Expected an Error::Other due to db height being greater than chain height");
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
@@ -359,7 +296,7 @@ mod tests {
             .collect_nonempty()
             .unwrap();
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone());
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(
@@ -405,7 +342,7 @@ mod tests {
             })
             .await;
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks);
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks, true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(
@@ -431,7 +368,6 @@ mod tests {
         Ok(())
     }
 
-    /// New Test: Ensures that blocks outside the lookback window are not bundled.
     #[tokio::test]
     async fn skips_blocks_outside_lookback_window() -> Result<()> {
         // given
@@ -442,7 +378,7 @@ mod tests {
         let blocks_to_import = (3..=5)
             .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100));
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks_to_import);
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks_to_import, true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(
@@ -471,6 +407,85 @@ mod tests {
         assert_eq!(
             unbundled_block_heights,
             vec![3, 4, 5],
+            "Blocks outside the lookback window should remain unbundled"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        let secret_key = SecretKey::random(&mut StdRng::from_seed([0; 32]));
+
+        for range in [(3..=10), (40..=60)] {
+            setup
+                .import_blocks(Blocks::WithHeights {
+                    range,
+                    tx_per_block: 1,
+                    size_per_tx: 100,
+                })
+                .await;
+        }
+
+        let mut fuel_mock = ports::fuel::MockApi::new();
+
+        let mut sequence = Sequence::new();
+
+        for range in [0..=2, 11..=39, 61..=100] {
+            fuel_mock
+                .expect_full_blocks_in_height_range()
+                .with(eq(range))
+                .once()
+                .in_sequence(&mut sequence)
+                .return_once(move |range| {
+                    let blocks = range
+                        .map(|height| {
+                            test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100)
+                        })
+                        .collect();
+
+                    futures::stream::once(async { Ok(blocks) }).boxed()
+                });
+        }
+
+        fuel_mock
+            .expect_latest_height()
+            .once()
+            .return_once(|| Box::pin(async { Ok(100) }));
+
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+
+        let mut importer = BlockImporter::new(
+            setup.db(),
+            fuel_mock,
+            block_validator,
+            Config {
+                lookback_window: 101,
+            },
+        );
+
+        // when
+        importer.run().await?;
+
+        // then
+        let unbundled_blocks = setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(0, 101)
+            .await?
+            .unwrap();
+
+        let unbundled_block_heights: Vec<_> = unbundled_blocks
+            .into_inner()
+            .iter()
+            .map(|b| b.height)
+            .collect();
+
+        assert_eq!(
+            unbundled_block_heights,
+            (0..=100).collect_vec(),
             "Blocks outside the lookback window should remain unbundled"
         );
 

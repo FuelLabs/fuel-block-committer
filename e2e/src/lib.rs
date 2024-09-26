@@ -91,9 +91,9 @@ mod tests {
                 && !stack.db.has_pending_txs().await?
                 && stack
                     .db
-                    .available_blocks(0)
+                    .missing_blocks(0, num_iterations * blocks_per_iteration)
                     .await?
-                    .is_some_and(|range| *range.end() >= num_iterations * blocks_per_iteration);
+                    .is_empty();
 
             anyhow::Result::<_>::Ok(finished)
         };

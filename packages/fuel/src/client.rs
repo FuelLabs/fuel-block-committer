@@ -17,7 +17,6 @@ use futures::{stream, Stream};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{NonEmpty, TryCollectNonEmpty};
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
@@ -114,7 +113,7 @@ impl HttpClient {
     pub(crate) fn block_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> impl Stream<Item = Result<NonEmpty<ports::fuel::FullFuelBlock>>> + '_ {
+    ) -> impl Stream<Item = Result<Vec<ports::fuel::FullFuelBlock>>> + '_ {
         struct Progress {
             cursor: Option<String>,
             blocks_so_far: usize,
@@ -153,6 +152,10 @@ impl HttpClient {
         let initial_progress = Progress::new(range);
 
         stream::try_unfold(initial_progress, move |mut current_progress| async move {
+            if current_progress.remaining() <= 0 {
+                return Ok(None);
+            }
+
             let request = PaginationRequest {
                 cursor: current_progress.take_cursor(),
                 results: min(
@@ -175,15 +178,16 @@ impl HttpClient {
                     ))
                 })?;
 
-            let results = current_progress
+            let results: Vec<_> = current_progress
                 .consume(response)
                 .into_iter()
-                .map(ports::fuel::FullFuelBlock::try_from);
+                .map(ports::fuel::FullFuelBlock::try_from)
+                .collect::<Result<_>>()?;
 
-            if let Some(non_empty) = results.try_collect_nonempty()? {
-                Ok(Some((non_empty, current_progress)))
-            } else {
+            if results.is_empty() {
                 Ok(None)
+            } else {
+                Ok(Some((results, current_progress)))
             }
         })
     }

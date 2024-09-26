@@ -343,6 +343,7 @@ pub(crate) mod test_utils {
 
             pub fn these_blocks_exist(
                 blocks: impl IntoIterator<Item = ports::fuel::FullFuelBlock>,
+                enforce_tight_range: bool,
             ) -> ports::fuel::MockApi {
                 let mut fuel_mock = ports::fuel::MockApi::default();
 
@@ -368,15 +369,14 @@ pub(crate) mod test_utils {
                     .expect_full_blocks_in_height_range()
                     .returning(move |range| {
                         let expected_range = lowest_height..=highest_height;
-                        if range != expected_range {
+                        if enforce_tight_range && range != expected_range {
                             panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
                         let blocks_batch = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
-                            .cloned()
-                            .collect_nonempty().unwrap();
+                            .cloned().collect();
 
                         stream::iter(iter::once(Ok(blocks_batch))).boxed()
                     });
@@ -546,7 +546,7 @@ pub(crate) mod test_utils {
 
                     let storage_blocks = encode_blocks(fuel_blocks.clone());
 
-                    let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone());
+                    let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone(), false);
 
                     (
                         BlockImporter::new(self.db(), mock, block_validator, Config::default()),

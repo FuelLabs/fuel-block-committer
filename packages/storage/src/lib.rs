@@ -32,8 +32,12 @@ impl Storage for Postgres {
             .await?)
     }
 
-    async fn available_blocks(&self, starting_height: u32) -> Result<Option<RangeInclusive<u32>>> {
-        self._available_blocks(starting_height)
+    async fn missing_blocks(
+        &self,
+        starting_height: u32,
+        current_height: u32,
+    ) -> Result<Vec<RangeInclusive<u32>>> {
+        self._missing_blocks(starting_height, current_height)
             .await
             .map_err(Into::into)
     }
@@ -580,5 +584,55 @@ mod tests {
         // then
         assert_eq!(fragments.len(), 1);
         assert_eq!(fragments[0].fragment, fragment);
+    }
+
+    #[tokio::test]
+    async fn empty_db_reports_missing_heights() -> Result<()> {
+        // given
+        let current_height = 10;
+        let storage = start_db().await;
+
+        // when
+        let missing_blocks = storage.missing_blocks(0, current_height).await?;
+
+        // then
+        assert_eq!(missing_blocks, vec![0..=current_height]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn missing_blocks_no_holes() -> Result<()> {
+        // given
+        let current_height = 10;
+        let storage = start_db().await;
+
+        insert_sequence_of_unbundled_blocks(&storage, 0..=5).await;
+
+        // when
+        let missing_blocks = storage.missing_blocks(0, current_height).await?;
+
+        // then
+        assert_eq!(missing_blocks, vec![6..=current_height]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reports_holes_in_blocks() -> Result<()> {
+        // given
+        let current_height = 15;
+        let storage = start_db().await;
+
+        insert_sequence_of_unbundled_blocks(&storage, 3..=5).await;
+        insert_sequence_of_unbundled_blocks(&storage, 8..=10).await;
+
+        // when
+        let missing_blocks = storage.missing_blocks(0, current_height).await?;
+
+        // then
+        assert_eq!(missing_blocks, vec![0..=2, 6..=7, 11..=current_height]);
+
+        Ok(())
     }
 }

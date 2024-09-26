@@ -39,7 +39,7 @@ pub trait Api: Send + Sync {
     fn full_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<NonEmpty<FullFuelBlock>>>;
+    ) -> BoxStream<'_, Result<Vec<FullFuelBlock>>>;
     async fn latest_block(&self) -> Result<FuelBlock>;
     async fn latest_height(&self) -> Result<u32>;
 }
