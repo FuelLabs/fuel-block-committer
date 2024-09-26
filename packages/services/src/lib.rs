@@ -1,4 +1,5 @@
 #![deny(unused_crate_dependencies)]
+
 mod block_committer;
 mod commit_listener;
 mod health_reporter;
@@ -21,10 +22,13 @@ pub use wallet_balance_tracker::WalletBalanceTracker;
 pub enum Error {
     #[error("{0}")]
     Other(String),
+
     #[error("Network error: {0}")]
     Network(String),
+
     #[error("Storage error: {0}")]
     Storage(String),
+
     #[error("Block validation error: {0}")]
     BlockValidation(String),
 }
