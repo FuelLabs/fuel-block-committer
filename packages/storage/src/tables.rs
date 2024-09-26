@@ -4,7 +4,7 @@ use ports::types::{
 use sqlx::types::chrono;
 
 macro_rules! bail {
-    ($msg: literal, $($args: expr),*) => {
+    ($msg:literal, $($args:expr),*) => {
         return Err(Self::Error::Conversion(format!($msg, $($args),*)));
     };
 }
@@ -21,22 +21,29 @@ impl TryFrom<L1FuelBlockSubmission> for BlockSubmission {
     type Error = crate::error::Error;
 
     fn try_from(value: L1FuelBlockSubmission) -> Result<Self, Self::Error> {
-        let block_hash = value.fuel_block_hash.as_slice();
-        let Ok(block_hash) = block_hash.try_into() else {
-            bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
-        };
+        let block_hash: [u8; 32] = value
+            .fuel_block_hash
+            .try_into()
+            .map_err(|_| {
+                crate::error::Error::Conversion(format!(
+                    "Expected 32 bytes for `fuel_block_hash`, but got: {:?} from db",
+                    value.fuel_block_hash
+                ))
+            })?;
 
-        let Ok(block_height) = value.fuel_block_height.try_into() else {
-            bail!(
-                "`fuel_block_height` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
+        let block_height = u32::try_from(value.fuel_block_height).map_err(|_| {
+            crate::error::Error::Conversion(format!(
+                "`fuel_block_height` from db cannot fit in a `u32`. Got: {:?}",
                 value.fuel_block_height
+            ))
+        })?;
 
-            );
-        };
-
-        let Ok(submittal_height) = value.submittal_height.try_into() else {
-            bail!("`submittal_height` as read from the db cannot fit in a `u64` as expected. Got: {} from db", value.submittal_height);
-        };
+        let submittal_height = u64::try_from(value.submittal_height).map_err(|_| {
+            crate::error::Error::Conversion(format!(
+                "`submittal_height` from db cannot fit in a `u64`. Got: {:?}",
+                value.submittal_height
+            ))
+        })?;
 
         Ok(Self {
             block_hash,
@@ -51,7 +58,7 @@ impl From<BlockSubmission> for L1FuelBlockSubmission {
     fn from(value: BlockSubmission) -> Self {
         Self {
             fuel_block_hash: value.block_hash.to_vec(),
-            fuel_block_height: i64::from(value.block_height),
+            fuel_block_height: value.block_height.into(),
             completed: value.completed,
             submittal_height: value.submittal_height.into(),
         }
@@ -69,18 +76,22 @@ impl TryFrom<L1StateSubmission> for StateSubmission {
     type Error = crate::error::Error;
 
     fn try_from(value: L1StateSubmission) -> Result<Self, Self::Error> {
-        let block_hash = value.fuel_block_hash.as_slice();
-        let Ok(block_hash) = block_hash.try_into() else {
-            bail!("Expected 32 bytes for `fuel_block_hash`, but got: {block_hash:?} from db",);
-        };
+        let block_hash: [u8; 32] = value
+            .fuel_block_hash
+            .try_into()
+            .map_err(|_| {
+                crate::error::Error::Conversion(format!(
+                    "Expected 32 bytes for `fuel_block_hash`, but got: {:?} from db",
+                    value.fuel_block_hash
+                ))
+            })?;
 
-        let Ok(block_height) = value.fuel_block_height.try_into() else {
-            bail!(
-                "`fuel_block_height` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
+        let block_height = u32::try_from(value.fuel_block_height).map_err(|_| {
+            crate::error::Error::Conversion(format!(
+                "`fuel_block_height` from db cannot fit in a `u32`. Got: {:?}",
                 value.fuel_block_height
-
-            );
-        };
+            ))
+        })?;
 
         Ok(Self {
             id: Some(value.id as u32),
@@ -93,9 +104,8 @@ impl TryFrom<L1StateSubmission> for StateSubmission {
 impl From<StateSubmission> for L1StateSubmission {
     fn from(value: StateSubmission) -> Self {
         Self {
-            // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
-            fuel_block_height: i64::from(value.block_height),
+            fuel_block_height: value.block_height.into(),
             fuel_block_hash: value.block_hash.to_vec(),
         }
     }
@@ -127,9 +137,7 @@ impl TryFrom<L1StateFragment> for StateFragment {
 impl From<StateFragment> for L1StateFragment {
     fn from(value: StateFragment) -> Self {
         Self {
-            // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
-            // if not present use placeholder as id is given by db
             submission_id: value.submission_id.unwrap_or_default() as i64,
             fragment_idx: value.fragment_idx as i64,
             data: value.data,
@@ -149,17 +157,22 @@ impl TryFrom<L1SubmissionTx> for SubmissionTx {
     type Error = crate::error::Error;
 
     fn try_from(value: L1SubmissionTx) -> Result<Self, Self::Error> {
-        let hash = value.hash.as_slice();
-        let Ok(hash) = hash.try_into() else {
-            bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
-        };
+        let hash: [u8; 32] = value
+            .hash
+            .try_into()
+            .map_err(|_| {
+                crate::error::Error::Conversion(format!(
+                    "Expected 32 bytes for transaction hash, but got: {:?} from db",
+                    value.hash
+                ))
+            })?;
 
-        let Some(state) = TransactionState::from_i16(value.state) else {
-            bail!(
+        let state = TransactionState::from_i16(value.state).ok_or_else(|| {
+            crate::error::Error::Conversion(format!(
                 "state: {:?} is not a valid variant of `TransactionState`",
                 value.state
-            );
-        };
+            ))
+        })?;
 
         Ok(SubmissionTx {
             id: Some(value.id as u32),
@@ -172,7 +185,6 @@ impl TryFrom<L1SubmissionTx> for SubmissionTx {
 impl From<SubmissionTx> for L1SubmissionTx {
     fn from(value: SubmissionTx) -> Self {
         Self {
-            // if not present use placeholder as id is given by db
             id: value.id.unwrap_or_default() as i64,
             hash: value.hash.to_vec(),
             state: value.state.into_i16(),
