@@ -49,7 +49,7 @@ impl Postgres {
             .max_connections(opt.max_connections)
             .connect_with(options)
             .await
-            .map_err(crate::error::Error::from)?;
+            .map_err(Error::from)?;
 
         Ok(Self { connection_pool })
     }
@@ -78,7 +78,7 @@ impl Postgres {
         sqlx::migrate!()
             .run(&self.connection_pool)
             .await
-            .map_err(crate::error::Error::from)?;
+            .map_err(Error::from)?;
         Ok(())
     }
 
@@ -88,7 +88,7 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _insert(&self, submission: BlockSubmission) -> crate::error::Result<()> {
+    pub(crate) async fn insert_submission(&self, submission: BlockSubmission) -> Result<()> {
         let row = tables::L1FuelBlockSubmission::from(submission);
         sqlx::query!(
             "INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height) VALUES ($1, $2, $3, $4)",
@@ -96,13 +96,13 @@ impl Postgres {
             row.fuel_block_height,
             row.completed,
             row.submittal_height
-        ).execute(&self.connection_pool).await?;
+        )
+        .execute(&self.connection_pool)
+        .await?;
         Ok(())
     }
 
-    pub(crate) async fn _submission_w_latest_block(
-        &self,
-    ) -> crate::error::Result<Option<BlockSubmission>> {
+    pub(crate) async fn get_latest_submission(&self) -> Result<Option<BlockSubmission>> {
         sqlx::query_as!(
             tables::L1FuelBlockSubmission,
             "SELECT * FROM l1_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
@@ -113,7 +113,7 @@ impl Postgres {
         .transpose()
     }
 
-    pub(crate) async fn _set_submission_completed(
+    pub(crate) async fn mark_submission_completed(
         &self,
         fuel_block_hash: [u8; 32],
     ) -> Result<BlockSubmission> {
@@ -121,36 +121,35 @@ impl Postgres {
             tables::L1FuelBlockSubmission,
             "UPDATE l1_fuel_block_submission SET completed = true WHERE fuel_block_hash = $1 RETURNING *",
             fuel_block_hash.as_slice(),
-        ).fetch_optional(&self.connection_pool).await?;
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?;
 
-        if let Some(row) = updated_row {
-            Ok(row.try_into()?)
-        } else {
-            let hash = hex::encode(fuel_block_hash);
-            Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
-        }
+        updated_row
+            .map(BlockSubmission::try_from)
+            .transpose()?
+            .ok_or_else(|| {
+                let hash = hex::encode(fuel_block_hash);
+                Error::Database(format!(
+                    "Cannot mark submission as completed! Submission of block `{hash}` not found in DB."
+                ))
+            })
     }
 
-    pub(crate) async fn _insert_state_submission(
+    pub(crate) async fn insert_state_submission(
         &self,
         state: StateSubmission,
         fragments: Vec<StateFragment>,
     ) -> Result<()> {
         if fragments.is_empty() {
-            return Err(Error::Database(
-                "cannot insert state with no fragments".to_string(),
-            ));
+            return Err(Error::Database("Cannot insert state with no fragments".to_string()));
         }
 
         let state_row = tables::L1StateSubmission::from(state);
-        let fragment_rows = fragments
-            .into_iter()
-            .map(tables::L1StateFragment::from)
-            .collect::<Vec<_>>();
+        let fragment_rows: Vec<_> = fragments.into_iter().map(tables::L1StateFragment::from).collect();
 
         let mut transaction = self.connection_pool.begin().await?;
 
-        // Insert the state submission
         let submission_id = sqlx::query!(
             "INSERT INTO l1_submissions (fuel_block_hash, fuel_block_height) VALUES ($1, $2) RETURNING id",
             state_row.fuel_block_hash,
@@ -159,8 +158,6 @@ impl Postgres {
         .fetch_one(&mut *transaction)
         .await?.id;
 
-        // Insert the state fragments
-        // TODO: optimize this
         for fragment_row in fragment_rows {
             sqlx::query!(
                 "INSERT INTO l1_fragments (fragment_idx, submission_id, data, created_at) VALUES ($1, $2, $3, $4)",
@@ -174,14 +171,12 @@ impl Postgres {
         }
 
         transaction.commit().await?;
-
         Ok(())
     }
 
-    pub(crate) async fn _get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
+    pub(crate) async fn get_unsubmitted_fragments(&self) -> Result<Vec<StateFragment>> {
         const BLOB_LIMIT: i64 = 6;
         let rows = sqlx::query_as!(
-            // all fragments that are not associated to any pending or finalized tx
             tables::L1StateFragment,
             "SELECT l1_fragments.*
             FROM l1_fragments
@@ -206,7 +201,7 @@ impl Postgres {
         rows.collect::<Result<Vec<_>>>()
     }
 
-    pub(crate) async fn _record_pending_tx(
+    pub(crate) async fn record_pending_tx(
         &self,
         tx_hash: [u8; 32],
         fragment_ids: Vec<u32>,
@@ -233,11 +228,10 @@ impl Postgres {
         }
 
         transaction.commit().await?;
-
         Ok(())
     }
 
-    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
+    pub(crate) async fn has_pending_txs(&self) -> Result<bool> {
         Ok(sqlx::query!(
             "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
             TransactionState::Pending.into_i16()
@@ -247,7 +241,7 @@ impl Postgres {
         .has_pending_transactions.unwrap_or(false))
     }
 
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<SubmissionTx>> {
+    pub(crate) async fn get_pending_txs(&self) -> Result<Vec<SubmissionTx>> {
         sqlx::query_as!(
             tables::L1SubmissionTx,
             "SELECT * FROM l1_transactions WHERE state = $1",
@@ -260,9 +254,9 @@ impl Postgres {
         .collect::<Result<Vec<_>>>()
     }
 
-    pub(crate) async fn _state_submission_w_latest_block(
+    pub(crate) async fn get_latest_state_submission(
         &self,
-    ) -> crate::error::Result<Option<StateSubmission>> {
+    ) -> Result<Option<StateSubmission>> {
         sqlx::query_as!(
             tables::L1StateSubmission,
             "SELECT * FROM l1_submissions ORDER BY fuel_block_height DESC LIMIT 1"
@@ -273,7 +267,7 @@ impl Postgres {
         .transpose()
     }
 
-    pub(crate) async fn _update_submission_tx_state(
+    pub(crate) async fn update_submission_tx_state(
         &self,
         hash: [u8; 32],
         state: TransactionState,
@@ -285,7 +279,6 @@ impl Postgres {
         )
         .execute(&self.connection_pool)
         .await?;
-
         Ok(())
     }
 }
