@@ -154,6 +154,7 @@ pub struct Metadata {
     pub gas_usage: u64,
     pub compressed_data_size: NonZeroUsize,
     pub uncompressed_data_size: NonZeroUsize,
+    pub num_fragments: NonZeroUsize,
 }
 
 impl Display for Metadata {
@@ -177,6 +178,7 @@ impl Display for Metadata {
                 &(self.uncompressed_data_size.get() as f64
                     / self.compressed_data_size.get() as f64),
             )
+            .field("num_fragments", &self.num_fragments.get())
             .finish()
     }
 }
@@ -386,7 +388,6 @@ where
             .map_err(|_| crate::Error::Other("too many attempts".to_string()))?;
 
         Ok(BundleProposal {
-            fragments,
             metadata: Metadata {
                 block_heights: best_proposal.block_heights,
                 known_to_be_optimal: self.attempts.is_empty(),
@@ -394,7 +395,9 @@ where
                 compressed_data_size,
                 gas_usage: best_proposal.gas_usage,
                 optimization_attempts: num_attempts,
+                num_fragments: fragments.len_nonzero(),
             },
+            fragments,
         })
     }
 }

@@ -576,6 +576,7 @@ mod tests {
                 optimization_attempts: 10,
                 compressed_data_size: 100.try_into().unwrap(),
                 uncompressed_data_size: 1000.try_into().unwrap(),
+                num_fragments: 1.try_into().unwrap(),
             },
         };
 
