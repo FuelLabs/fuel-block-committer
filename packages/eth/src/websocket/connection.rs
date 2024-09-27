@@ -2,12 +2,9 @@ use std::num::NonZeroU32;
 
 use alloy::{
     eips::eip4844::BYTES_PER_BLOB,
-    network::{Ethereum, EthereumWallet, TransactionBuilder, TxSigner},
+    network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{
-        fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
-        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
-    },
+    providers::{Provider, ProviderBuilder, WsConnect},
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
     signers::aws::AwsSigner,
@@ -30,28 +27,28 @@ use crate::{
     Eip4844BlobEncoder,
 };
 
-pub type WsProvider = FillProvider<
-    JoinFill<
-        JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
-        WalletFiller<EthereumWallet>,
+pub type WsProvider = alloy::providers::fillers::FillProvider<
+    alloy::providers::fillers::JoinFill<
+        alloy::providers::fillers::JoinFill<
+            alloy::providers::Identity,
+            alloy::providers::fillers::JoinFill<
+                alloy::providers::fillers::GasFiller,
+                alloy::providers::fillers::JoinFill<
+                    alloy::providers::fillers::BlobGasFiller,
+                    alloy::providers::fillers::JoinFill<
+                        alloy::providers::fillers::NonceFiller,
+                        alloy::providers::fillers::ChainIdFiller,
+                    >,
+                >,
+            >,
+        >,
+        alloy::providers::fillers::WalletFiller<EthereumWallet>,
     >,
-    RootProvider<PubSubFrontend>,
-    PubSubFrontend,
+    alloy::providers::RootProvider<alloy::pubsub::PubSubFrontend>,
+    alloy::pubsub::PubSubFrontend,
     Ethereum,
 >;
-
-type FuelStateContract = IFuelStateContract::IFuelStateContractInstance<
-    PubSubFrontend,
-    FillProvider<
-        JoinFill<
-            JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
-            WalletFiller<EthereumWallet>,
-        >,
-        RootProvider<PubSubFrontend>,
-        PubSubFrontend,
-        Ethereum,
-    >,
->;
+type FuelStateContract = IFuelStateContract::IFuelStateContractInstance<PubSubFrontend, WsProvider>;
 
 sol!(
     #[sol(rpc)]
@@ -187,8 +184,8 @@ impl EthApi for WsConnection {
         let (sidecar, num_fragments) = Eip4844BlobEncoder::decode(fragments)?;
 
         let blob_tx = TransactionRequest::default()
-            .with_to(*blob_signer_address)
-            .with_blob_sidecar(sidecar);
+            .with_blob_sidecar(sidecar)
+            .with_to(*blob_signer_address);
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
         self.metrics

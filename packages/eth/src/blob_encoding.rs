@@ -32,8 +32,8 @@ impl Eip4844BlobEncoder {
 
 impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
     fn encode(&self, data: NonEmpty<u8>) -> ports::l1::Result<NonEmpty<Fragment>> {
-        let builder =
-            SidecarBuilder::from_coder_and_data(SimpleCoder::default(), Vec::from(data).as_slice());
+        let data = Vec::from(data);
+        let builder = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data.as_slice());
 
         let single_blobs =
             split_sidecar(builder).map_err(|e| ports::l1::Error::Other(e.to_string()))?;
@@ -110,7 +110,7 @@ impl SingleBlob {
         bytes.extend_from_slice(self.data.as_slice());
         bytes.extend_from_slice(self.commitment.as_ref());
         bytes.extend_from_slice(self.proof.as_ref());
-        let data = NonEmpty::collect(bytes).expect("cannot be empty");
+        let data = NonEmpty::from_vec(bytes).expect("cannot be empty");
 
         Fragment {
             data,
@@ -197,6 +197,7 @@ fn merge_into_sidecar(
 #[cfg(test)]
 mod tests {
     use alloy::consensus::{SidecarBuilder, SimpleCoder};
+    use eip4844::builder::SidecarCoder;
     use itertools::Itertools;
     use ports::l1::FragmentEncoder;
     use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
@@ -258,7 +259,7 @@ mod tests {
 
     #[test]
     fn roundtrip_split_encode_decode_merge() {
-        let mut random_data = vec![0; 1000];
+        let mut random_data = vec![0; 110_000];
         let mut rng = rand::rngs::SmallRng::from_seed([0; 32]);
         rng.fill_bytes(&mut random_data);
 
@@ -266,19 +267,17 @@ mod tests {
 
         let single_blobs = split_sidecar(builder.clone()).unwrap();
 
-        let fragments = single_blobs
-            .into_iter()
-            .map(|blob| blob.encode())
-            .collect::<Vec<_>>();
+        let merged_sidecar = merge_into_sidecar(single_blobs);
+        assert_eq!(merged_sidecar, builder.build().unwrap());
 
-        let reassmbled_single_blobs = fragments
+        let should_be_original_data = SimpleCoder::default()
+            .decode_all(&merged_sidecar.blobs)
+            .unwrap()
             .into_iter()
-            .map(|fragment| SingleBlob::decode(fragment).unwrap())
+            .flatten()
             .collect_vec();
 
-        let reassmbled_sidecar = merge_into_sidecar(reassmbled_single_blobs);
-
-        assert_eq!(builder.build().unwrap(), reassmbled_sidecar);
+        assert_eq!(should_be_original_data, random_data);
     }
 
     #[test]

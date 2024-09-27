@@ -127,7 +127,7 @@ impl Compressor {
 
     pub fn compress(&self, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
         let Some(level) = self.compression else {
-            return Ok(data.clone());
+            return Ok(data);
         };
 
         let bytes = Vec::from(data);
