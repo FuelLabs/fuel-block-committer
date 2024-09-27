@@ -10,6 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+c-kzg = { workspace = true }
 alloy = { workspace = true, features = [
   "consensus",
   "network",
@@ -33,11 +34,13 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+pretty_assertions = { workspace = true, features = ["default"] }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["l1", "test-helpers"] }
 rand = { workspace = true, features = ["small_rng"] }
 test-case = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
+rayon = { workspace = true }
 
 [features]
 test-helpers = []

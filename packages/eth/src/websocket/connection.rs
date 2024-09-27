@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{cmp::min, num::NonZeroU32};
 
 use alloy::{
     eips::eip4844::BYTES_PER_BLOB,
@@ -181,16 +181,17 @@ impl EthApi for WsConnection {
         // we only want to add it to the metrics if the submission succeeds
         let used_bytes_per_fragment = fragments.iter().map(|f| f.used_bytes()).collect_vec();
 
-        let (sidecar, num_fragments) = Eip4844BlobEncoder::decode(fragments)?;
+        let num_fragments = min(fragments.len(), 6);
+
+        let limited_fragments = fragments.into_iter().take(num_fragments);
+        let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
 
         let blob_tx = TransactionRequest::default()
             .with_blob_sidecar(sidecar)
             .with_to(*blob_signer_address);
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
-        self.metrics
-            .blobs_per_tx
-            .observe(num_fragments.get() as f64);
+        self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
         for bytes in used_bytes_per_fragment {
             self.metrics.blob_used_bytes.observe(bytes as f64);
@@ -198,7 +199,7 @@ impl EthApi for WsConnection {
 
         Ok(FragmentsSubmitted {
             tx: tx.tx_hash().0,
-            num_fragments,
+            num_fragments: num_fragments.try_into().expect("cannot be zero"),
         })
     }
 
