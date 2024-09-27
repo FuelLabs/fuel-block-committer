@@ -53,6 +53,7 @@ pub struct Fuel {
     pub graphql_endpoint: Url,
     /// Block producer address
     pub block_producer_address: ports::fuel::FuelBytes32,
+    pub max_full_blocks_per_request: NonZeroU32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -187,7 +188,6 @@ pub struct Internal {
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
     pub new_bundle_check_interval: Duration,
-    pub max_full_blocks_per_request: NonZeroU32,
 }
 
 impl Default for Internal {
@@ -198,7 +198,6 @@ impl Default for Internal {
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
             new_bundle_check_interval: Duration::from_secs(10),
-            max_full_blocks_per_request: 100.try_into().unwrap(),
         }
     }
 }

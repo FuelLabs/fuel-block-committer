@@ -61,6 +61,7 @@ impl Committer {
                 "COMMITTER__FUEL__BLOCK_PRODUCER_ADDRESS",
                 get_field!(fuel_block_producer_addr),
             )
+            .env("COMMITTER__FUEL__MAX_FULL_BLOCKS_PER_REQUEST", "100")
             .env("COMMITTER__APP__DB__PORT", db_port.to_string())
             .env("COMMITTER__APP__DB__HOST", "localhost")
             .env("COMMITTER__APP__DB__USERNAME", "username")
