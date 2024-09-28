@@ -3,11 +3,17 @@ use std::num::NonZeroUsize;
 
 use alloy::{
     consensus::BlobTransactionSidecar,
-    eips::eip4844::{self, BYTES_PER_BLOB, DATA_GAS_PER_BLOB, FIELD_ELEMENTS_PER_BLOB},
+    eips::eip4844::{
+        Blob, Bytes48, BYTES_PER_BLOB, BYTES_PER_COMMITMENT, BYTES_PER_PROOF, DATA_GAS_PER_BLOB,
+        FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES,
+    },
 };
 use itertools::izip;
 use ports::types::{CollectNonEmpty, Fragment, NonEmpty};
 
+// Until the issue is fixed be careful that we use the `SidecarBuilder` and `SimpleCoder` from
+// `copied_from_alloy`, there is a unit test that should protect against accidental import from the
+// original location.
 use super::copied_from_alloy::{SidecarBuilder, SimpleCoder};
 
 #[derive(Debug, Clone, Copy)]
@@ -16,7 +22,7 @@ pub struct Eip4844BlobEncoder;
 impl Eip4844BlobEncoder {
     #[cfg(feature = "test-helpers")]
     pub const FRAGMENT_SIZE: usize =
-        FIELD_ELEMENTS_PER_BLOB as usize * eip4844::FIELD_ELEMENT_BYTES as usize;
+        FIELD_ELEMENTS_PER_BLOB as usize * FIELD_ELEMENT_BYTES as usize;
 
     pub(crate) fn decode(
         fragments: impl IntoIterator<Item = Fragment>,
@@ -61,15 +67,14 @@ impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
 
 struct SingleBlob {
     // needs to be heap allocated because it's large enough to cause a stack overflow
-    blobs: Box<eip4844::Blob>,
-    commitment: eip4844::Bytes48,
-    proof: eip4844::Bytes48,
+    blobs: Box<Blob>,
+    commitment: Bytes48,
+    proof: Bytes48,
     unused_bytes: u32,
 }
 
 impl SingleBlob {
-    const SIZE: usize =
-        eip4844::BYTES_PER_BLOB + eip4844::BYTES_PER_COMMITMENT + eip4844::BYTES_PER_PROOF;
+    const SIZE: usize = BYTES_PER_BLOB + BYTES_PER_COMMITMENT + BYTES_PER_PROOF;
 
     fn decode(fragment: Fragment) -> crate::error::Result<Self> {
         let data = Vec::from(fragment.data);
@@ -83,19 +88,15 @@ impl SingleBlob {
 
         let len_checked = "checked earlier that enough bytes are available";
 
-        let blobs = Box::new(
-            bytes[..eip4844::BYTES_PER_BLOB]
-                .try_into()
-                .expect(len_checked),
-        );
-        let remaining_bytes = &bytes[eip4844::BYTES_PER_BLOB..];
+        let blobs = Box::new(bytes[..BYTES_PER_BLOB].try_into().expect(len_checked));
+        let remaining_bytes = &bytes[BYTES_PER_BLOB..];
 
-        let commitment: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_COMMITMENT]
+        let commitment: [u8; BYTES_PER_COMMITMENT] = remaining_bytes[..BYTES_PER_COMMITMENT]
             .try_into()
             .expect(len_checked);
-        let remaining_bytes = &remaining_bytes[eip4844::BYTES_PER_COMMITMENT..];
+        let remaining_bytes = &remaining_bytes[BYTES_PER_COMMITMENT..];
 
-        let proof: [u8; 48] = remaining_bytes[..eip4844::BYTES_PER_PROOF]
+        let proof: [u8; BYTES_PER_COMMITMENT] = remaining_bytes[..BYTES_PER_PROOF]
             .try_into()
             .expect(len_checked);
 
