@@ -130,14 +130,6 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<Singl
         .build()
         .map_err(|e| crate::error::Error::Other(e.to_string()))?;
 
-    if sidecar.blobs.len() != sidecar.commitments.len()
-        || sidecar.blobs.len() != sidecar.proofs.len()
-    {
-        return Err(crate::error::Error::Other(
-            "sidecar blobs, commitments, and proofs must be the same length".to_string(),
-        ));
-    }
-
     let num_blobs = u32::try_from(sidecar.blobs.len()).map_err(|_| {
         crate::error::Error::Other("cannot handle more than u32::MAX blobs".to_string())
     })?;
