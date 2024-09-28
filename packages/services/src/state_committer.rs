@@ -144,7 +144,7 @@ where
             return Ok(true);
         }
         info!(
-            "have only {} out of the target {} fragments per tx per tx",
+            "have only {} out of the target {} fragments per tx",
             fragment_count, self.config.fragments_to_accumulate
         );
 
@@ -419,5 +419,4 @@ mod tests {
         Ok(())
     }
 
-    // Existing tests can remain as they are, but it's recommended to review and adjust them as necessary.
 }

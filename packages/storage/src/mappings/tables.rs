@@ -190,7 +190,7 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
 pub struct L1Tx {
     pub id: i64,
     pub hash: Vec<u8>,
-    // The fields `state` and `finalized_at` are duplicated in `L1SubmissionTxState` since #[sqlx(flatten)] is not an option because `query_as!` doesn't use `FromRow` and consequently doesn't flatten
+    // The fields `state` and `finalized_at` are duplicated in `L1TxState` since #[sqlx(flatten)] is not an option because `query_as!` doesn't use `FromRow` and consequently doesn't flatten
     pub state: i16,
     pub finalized_at: Option<DateTime<Utc>>,
 }
