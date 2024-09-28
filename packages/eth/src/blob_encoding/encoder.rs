@@ -5,7 +5,7 @@ use alloy::{
     consensus::BlobTransactionSidecar,
     eips::eip4844::{
         Blob, Bytes48, BYTES_PER_BLOB, BYTES_PER_COMMITMENT, BYTES_PER_PROOF, DATA_GAS_PER_BLOB,
-        FIELD_ELEMENTS_PER_BLOB, FIELD_ELEMENT_BYTES,
+        FIELD_ELEMENTS_PER_BLOB,
     },
 };
 use itertools::izip;

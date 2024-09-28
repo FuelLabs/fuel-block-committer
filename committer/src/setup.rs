@@ -3,7 +3,6 @@ use std::{num::NonZeroU32, time::Duration};
 use clock::SystemClock;
 use eth::{AwsConfig, Eip4844BlobEncoder};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
-use ports::storage::Storage;
 use services::{
     BlockBundler, BlockBundlerConfig, BlockCommitter, BlockImporterConfig, BlockValidator,
     CommitListener, Runner, WalletBalanceTracker,
@@ -53,7 +52,7 @@ pub fn l1_event_listener(
 pub fn block_committer(
     commit_interval: NonZeroU32,
     l1: L1,
-    storage: impl Storage + 'static,
+    storage: Database,
     fuel: FuelApi,
     config: &config::Config,
     registry: &Registry,
@@ -139,7 +138,7 @@ pub fn state_committer(
 
 pub fn block_importer(
     fuel: FuelApi,
-    storage: impl Storage + 'static,
+    storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
@@ -163,7 +162,7 @@ pub fn block_importer(
 
 pub fn state_listener(
     l1: L1,
-    storage: impl Storage + 'static,
+    storage: Database,
     cancel_token: CancellationToken,
     registry: &Registry,
     config: &config::Config,
