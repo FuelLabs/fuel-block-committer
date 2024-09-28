@@ -14,7 +14,7 @@ pub use block_bundler::{
     BlockBundler, Config as BlockBundlerConfig,
 };
 pub use block_committer::BlockCommitter;
-pub use block_importer::{BlockImporter, Config as BlockImporterConfig};
+pub use block_importer::BlockImporter;
 pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
@@ -112,7 +112,7 @@ pub(crate) mod test_utils {
     use super::Runner;
     use crate::{
         block_bundler::bundler::Factory,
-        block_importer::{self, encode_blocks, Config},
+        block_importer::{self, encode_blocks},
         BlockBundler, BlockBundlerConfig, BlockImporter, BlockValidator, StateCommitter,
         StateListener,
     };
@@ -549,7 +549,7 @@ pub(crate) mod test_utils {
                     let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone(), false);
 
                     (
-                        BlockImporter::new(self.db(), mock, block_validator, Config::default()),
+                        BlockImporter::new(self.db(), mock, block_validator, 1000),
                         ImportedBlocks {
                             fuel_blocks,
                             secret_key,

@@ -9,20 +9,6 @@ use tracing::info;
 
 use crate::{validator::Validator, Result, Runner};
 
-#[derive(Debug, Clone, Copy)]
-pub struct Config {
-    pub lookback_window: u32,
-}
-
-#[cfg(test)]
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            lookback_window: 1000,
-        }
-    }
-}
-
 /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
 /// into local storage. It fetches blocks from the Fuel API, validates them,
 /// and stores them if they are not already present.
@@ -30,7 +16,7 @@ pub struct BlockImporter<Db, FuelApi, BlockValidator> {
     storage: Db,
     fuel_api: FuelApi,
     block_validator: BlockValidator,
-    config: Config,
+    lookback_window: u32,
 }
 
 impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator> {
@@ -39,13 +25,13 @@ impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator> {
         storage: Db,
         fuel_api: FuelApi,
         block_validator: BlockValidator,
-        config: Config,
+        lookback_window: u32,
     ) -> Self {
         Self {
             storage,
             fuel_api,
             block_validator,
-            config,
+            lookback_window,
         }
     }
 }
@@ -166,7 +152,7 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         let chain_height = self.fuel_api.latest_height().await?;
-        let starting_height = chain_height.saturating_sub(self.config.lookback_window);
+        let starting_height = chain_height.saturating_sub(self.lookback_window);
 
         for range in self
             .storage
@@ -220,12 +206,7 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(
-            setup.db(),
-            fuel_mock,
-            block_validator,
-            Config { lookback_window: 0 },
-        );
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
         // when
         importer.run().await?;
@@ -258,12 +239,7 @@ mod tests {
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
 
-        let mut importer = BlockImporter::new(
-            setup.db(),
-            fuel_mock,
-            block_validator,
-            Config { lookback_window: 0 },
-        );
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
         // when
         let result = importer.run().await;
@@ -311,8 +287,7 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer =
-            BlockImporter::new(setup.db(), fuel_mock, block_validator, Config::default());
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 1000);
 
         // when
         importer.run().await?;
@@ -353,14 +328,7 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(
-            setup.db(),
-            fuel_mock,
-            block_validator,
-            Config {
-                lookback_window: 5, // Example lookback_window
-            },
-        );
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 5);
 
         // when
         importer.run().await?;
@@ -399,12 +367,7 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks, true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(
-            setup.db(),
-            fuel_mock,
-            block_validator,
-            Config { lookback_window: 0 },
-        );
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
         // when
         importer.run().await?;
@@ -435,12 +398,8 @@ mod tests {
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks_to_import, true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(
-            setup.db(),
-            fuel_mock,
-            block_validator,
-            Config { lookback_window },
-        );
+        let mut importer =
+            BlockImporter::new(setup.db(), fuel_mock, block_validator, lookback_window);
 
         // when
         importer.run().await?;
@@ -512,14 +471,7 @@ mod tests {
 
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(
-            setup.db(),
-            fuel_mock,
-            block_validator,
-            Config {
-                lookback_window: 101,
-            },
-        );
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 101);
 
         // when
         importer.run().await?;

@@ -22,7 +22,7 @@ pub struct Eip4844BlobEncoder;
 impl Eip4844BlobEncoder {
     #[cfg(feature = "test-helpers")]
     pub const FRAGMENT_SIZE: usize =
-        FIELD_ELEMENTS_PER_BLOB as usize * FIELD_ELEMENT_BYTES as usize;
+        FIELD_ELEMENTS_PER_BLOB as usize * alloy::eips::eip4844::FIELD_ELEMENT_BYTES as usize;
 
     pub(crate) fn decode(
         fragments: impl IntoIterator<Item = Fragment>,

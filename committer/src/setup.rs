@@ -4,8 +4,8 @@ use clock::SystemClock;
 use eth::{AwsConfig, Eip4844BlobEncoder};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use services::{
-    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockImporterConfig, BlockValidator,
-    CommitListener, Runner, WalletBalanceTracker,
+    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, CommitListener, Runner,
+    WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -147,9 +147,7 @@ pub fn block_importer(
         storage,
         fuel,
         validator,
-        BlockImporterConfig {
-            lookback_window: config.app.bundle.block_height_lookback,
-        },
+        config.app.bundle.block_height_lookback,
     );
 
     schedule_polling(
