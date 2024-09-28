@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use std::num::NonZeroUsize;
 
 use alloy::{
@@ -8,7 +7,7 @@ use alloy::{
         FIELD_ELEMENTS_PER_BLOB,
     },
 };
-use itertools::izip;
+use itertools::{izip, Itertools};
 use ports::types::{CollectNonEmpty, Fragment, NonEmpty};
 
 // Until the issue is fixed be careful that we use the `SidecarBuilder` and `SimpleCoder` from
@@ -196,9 +195,8 @@ mod tests {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use test_case::test_case;
 
-    use crate::blob_encoding::copied_from_alloy::SidecarCoder;
-
     use super::*;
+    use crate::blob_encoding::copied_from_alloy::SidecarCoder;
 
     #[test_case(100,  1; "one blob")]
     #[test_case(129 * 1024,  2; "two blobs")]
