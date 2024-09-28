@@ -114,7 +114,7 @@ impl Default for Metrics {
 
             blob_used_bytes: prometheus::Histogram::with_opts(histogram_opts!(
                 "blob_utilization",
-                "% utilization of blobs",
+                "bytes filled per blob",
                 custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
             ))
             .expect("to be correctly configured"),

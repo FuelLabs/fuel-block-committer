@@ -130,7 +130,7 @@ impl Postgres {
             ORDER BY b.start_height ASC, f.idx ASC
             LIMIT $3;
         "#,
-            L1TxState::FAILED_STATE,
+            i16::from(L1TxState::Failed),
             i64::from(starting_height),
             limit
         )
@@ -141,34 +141,6 @@ impl Postgres {
         .try_collect()?;
 
         Ok(fragments)
-    }
-
-    pub(crate) async fn _all_blocks(&self) -> crate::error::Result<Vec<ports::storage::FuelBlock>> {
-        sqlx::query_as!(
-            tables::FuelBlock,
-            "SELECT * FROM fuel_blocks ORDER BY height ASC"
-        )
-        .fetch_all(&self.connection_pool)
-        .await
-        .map_err(Error::from)?
-        .into_iter()
-        .map(ports::storage::FuelBlock::try_from)
-        .collect()
-    }
-
-    pub(crate) async fn _all_fragments(
-        &self,
-    ) -> crate::error::Result<Vec<ports::storage::BundleFragment>> {
-        sqlx::query_as!(
-            tables::BundleFragment,
-            "SELECT * FROM l1_fragments ORDER BY idx ASC"
-        )
-        .fetch_all(&self.connection_pool)
-        .await
-        .map_err(Error::from)?
-        .into_iter()
-        .map(TryFrom::try_from)
-        .collect()
     }
 
     pub(crate) async fn _missing_blocks(
@@ -268,7 +240,7 @@ impl Postgres {
         WHERE
             l1_transactions.state = $1;
         "#,
-            L1TxState::FINALIZED_STATE
+            i16::from(L1TxState::Finalized)
         )
         .fetch_optional(&self.connection_pool)
         .await?
@@ -336,7 +308,7 @@ impl Postgres {
         let tx_id = sqlx::query!(
             "INSERT INTO l1_transactions (hash, state) VALUES ($1, $2) RETURNING id",
             tx_hash.as_slice(),
-            L1TxState::PENDING_STATE
+            i16::from(L1TxState::Pending)
         )
         .fetch_one(&mut *tx)
         .await?
@@ -359,7 +331,7 @@ impl Postgres {
     pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
         Ok(sqlx::query!(
             "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
-            L1TxState::PENDING_STATE
+            i16::from(L1TxState::Pending)
         )
         .fetch_one(&self.connection_pool)
         .await?
@@ -370,7 +342,7 @@ impl Postgres {
         sqlx::query_as!(
             tables::L1Tx,
             "SELECT * FROM l1_transactions WHERE state = $1",
-            L1TxState::PENDING_STATE
+            i16::from(L1TxState::Pending)
         )
         .fetch_all(&self.connection_pool)
         .await?
@@ -384,10 +356,12 @@ impl Postgres {
         hash: [u8; 32],
         state: TransactionState,
     ) -> Result<()> {
-        let L1TxState {
-            state,
-            finalized_at,
-        } = state.into();
+        let finalized_at = match &state {
+            TransactionState::Finalized(date_time) => Some(*date_time),
+            _ => None,
+        };
+        let state = i16::from(L1TxState::from(&state));
+
         sqlx::query!(
             "UPDATE l1_transactions SET state = $1, finalized_at = $2 WHERE hash = $3",
             state,

@@ -1,7 +1,6 @@
 use std::num::NonZeroU32;
 
 use ports::types::{DateTime, NonEmpty, NonNegative, TransactionState, Utc};
-use sqlx::{postgres::PgRow, Row};
 
 macro_rules! bail {
     ($msg: literal, $($args: expr),*) => {
@@ -190,7 +189,6 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
 pub struct L1Tx {
     pub id: i64,
     pub hash: Vec<u8>,
-    // The fields `state` and `finalized_at` are duplicated in `L1TxState` since #[sqlx(flatten)] is not an option because `query_as!` doesn't use `FromRow` and consequently doesn't flatten
     pub state: i16,
     pub finalized_at: Option<DateTime<Utc>>,
 }
@@ -219,10 +217,11 @@ impl L1Tx {
 
 impl From<ports::types::L1Tx> for L1Tx {
     fn from(value: ports::types::L1Tx) -> Self {
-        let L1TxState {
-            state,
-            finalized_at,
-        } = value.state.into();
+        let state = L1TxState::from(&value.state).into();
+        let finalized_at = match value.state {
+            TransactionState::Finalized(finalized_at) => Some(finalized_at),
+            _ => None,
+        };
 
         Self {
             // if not present use placeholder as id is given by db
@@ -259,50 +258,28 @@ impl TryFrom<L1Tx> for ports::types::L1Tx {
     }
 }
 
-impl<'r> sqlx::FromRow<'r, PgRow> for L1Tx {
-    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let L1TxState {
-            state,
-            finalized_at,
-        } = L1TxState::from_row(row)?;
+pub enum L1TxState {
+    Pending,
+    Finalized,
+    Failed,
+}
 
-        let id = row.try_get("id")?;
-        let hash = row.try_get("hash")?;
-
-        Ok(Self {
-            id,
-            hash,
-            state,
-            finalized_at,
-        })
+impl From<L1TxState> for i16 {
+    fn from(value: L1TxState) -> Self {
+        match value {
+            L1TxState::Pending => 0,
+            L1TxState::Finalized => 1,
+            L1TxState::Failed => 2,
+        }
     }
 }
 
-#[derive(sqlx::FromRow)]
-pub struct L1TxState {
-    pub state: i16,
-    pub finalized_at: Option<DateTime<Utc>>,
-}
-
-impl L1TxState {
-    pub const PENDING_STATE: i16 = 0;
-    pub const FINALIZED_STATE: i16 = 1;
-    pub const FAILED_STATE: i16 = 2;
-}
-
-impl From<TransactionState> for L1TxState {
-    fn from(value: TransactionState) -> Self {
-        let (state, finalized_at) = match value {
-            TransactionState::Pending => (Self::PENDING_STATE, None),
-            TransactionState::Finalized(finalized_at) => {
-                (Self::FINALIZED_STATE, Some(finalized_at))
-            }
-            TransactionState::Failed => (Self::FAILED_STATE, None),
-        };
-
-        Self {
-            state,
-            finalized_at,
+impl From<&TransactionState> for L1TxState {
+    fn from(value: &TransactionState) -> Self {
+        match value {
+            TransactionState::Pending => Self::Pending,
+            TransactionState::Finalized(_) => Self::Finalized,
+            TransactionState::Failed => Self::Failed,
         }
     }
 }
