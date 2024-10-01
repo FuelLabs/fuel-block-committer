@@ -72,6 +72,7 @@ sol!(
 pub struct WsConnection {
     provider: WsProvider,
     max_fee_per_blob_gas_for_first_tx: Option<u128>,
+    max_priority_fee_per_blob_gas_for_first_tx: Option<u128>,
     first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
     address: Address,
@@ -198,12 +199,14 @@ impl EthApi for WsConnection {
         let blob_tx = match (
             self.first_blob_tx_sent.load(Ordering::Relaxed),
             self.max_fee_per_blob_gas_for_first_tx,
+            self.max_priority_fee_per_blob_gas_for_first_tx,
         ) {
-            (true, _) | (false, None) => TransactionRequest::default()
+            (true, _, _) | (false, None, _) | (false, _, None) => TransactionRequest::default()
                 .with_blob_sidecar(sidecar)
                 .with_to(*blob_signer_address),
-            (false, Some(max_fee)) => TransactionRequest::default()
+            (false, Some(max_fee), Some(max_priority_fee)) => TransactionRequest::default()
                 .with_max_fee_per_blob_gas(max_fee)
+                .with_max_priority_fee_per_gas(max_priority_fee)
                 .with_blob_sidecar(sidecar)
                 .with_to(*blob_signer_address),
         };
@@ -252,6 +255,7 @@ impl WsConnection {
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
         max_fee_per_blob_gas_for_first_tx: Option<u128>,
+        max_priority_fee_per_blob_gas_for_first_tx: Option<u128>,
     ) -> Result<Self> {
         let address = main_signer.address();
 
@@ -289,6 +293,7 @@ impl WsConnection {
             metrics: Default::default(),
             first_blob_tx_sent: Arc::new(AtomicBool::new(false)),
             max_fee_per_blob_gas_for_first_tx,
+            max_priority_fee_per_blob_gas_for_first_tx,
         })
     }
 

@@ -199,6 +199,10 @@ pub async fn l1_adapter(
         internal_config.eth_errors_before_unhealthy,
         aws_client,
         config.eth.max_fee_per_gas_for_first_tx.map(Into::into),
+        config
+            .eth
+            .max_priority_fee_per_gas_for_first_tx
+            .map(Into::into),
     )
     .await?;
 

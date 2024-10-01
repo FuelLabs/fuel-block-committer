@@ -33,6 +33,7 @@ impl WebsocketClient {
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
         max_fee_per_gas_for_first_tx: Option<u128>,
+        max_priority_fee_per_gas_for_first_tx: Option<u128>,
     ) -> ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
@@ -48,6 +49,7 @@ impl WebsocketClient {
             main_signer,
             blob_signer,
             max_fee_per_gas_for_first_tx,
+            max_priority_fee_per_gas_for_first_tx,
         )
         .await?;
 
