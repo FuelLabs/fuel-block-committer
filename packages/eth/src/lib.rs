@@ -34,11 +34,6 @@ impl Contract for WebsocketClient {
 mod blob_encoding;
 pub use blob_encoding::Eip4844BlobEncoder;
 
-#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
-pub struct FirstTxFeeOverride {
-    pub gas_estimation_multiplier: u64,
-}
-
 impl Api for WebsocketClient {
     delegate! {
         to (*self) {

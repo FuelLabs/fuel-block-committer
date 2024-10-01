@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::{command, Parser};
-use eth::{Address, FirstTxFeeOverride};
+use eth::Address;
 use serde::Deserialize;
 use services::CompressionLevel;
 use storage::DbConfig;
@@ -67,9 +67,9 @@ pub struct Eth {
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
-    /// This is a workaround to get pending transactions unstuck until the tx manager task is
-    /// complete.
-    pub first_tx_fee_override: Option<FirstTxFeeOverride>,
+    /// To manually be enabled if a transaction gets stuck. Geth requires a multiplier of 2. Should
+    /// be removed once the tx manager is implemented.
+    pub first_tx_gas_estimation_multiplier: Option<u64>,
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
