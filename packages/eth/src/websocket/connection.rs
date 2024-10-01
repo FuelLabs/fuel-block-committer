@@ -1,7 +1,14 @@
-use std::{cmp::min, num::NonZeroU32};
+use std::{
+    cmp::min,
+    num::NonZeroU32,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use alloy::{
-    eips::eip4844::BYTES_PER_BLOB,
+    eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -64,6 +71,7 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
+    first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
     address: Address,
     blob_signer_address: Option<Address>,
@@ -186,11 +194,24 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
 
-        let blob_tx = TransactionRequest::default()
-            .with_blob_sidecar(sidecar)
-            .with_to(*blob_signer_address);
+        let blob_tx = if self.first_blob_tx_sent.load(Ordering::Relaxed) {
+            TransactionRequest::default()
+                .with_blob_sidecar(sidecar)
+                .with_to(*blob_signer_address)
+        } else {
+            // Temporary hard coded gas to unblock a pending transaction.
+            // Work is being done ATM to have code that will replace stuck txs automatically.
+            TransactionRequest::default()
+                .with_max_fee_per_blob_gas(
+                    (974728630076u128.div_ceil(DATA_GAS_PER_BLOB as u128 * 6) as f64 * 1.5) as u128,
+                )
+                .with_blob_sidecar(sidecar)
+                .with_to(*blob_signer_address)
+        };
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
+        self.first_blob_tx_sent.store(true, Ordering::Relaxed);
+
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
         for bytes in used_bytes_per_fragment {
@@ -266,6 +287,7 @@ impl WsConnection {
             contract,
             commit_interval,
             metrics: Default::default(),
+            first_blob_tx_sent: Arc::new(AtomicBool::new(false)),
         })
     }
 
