@@ -40,9 +40,9 @@ pub struct BlockBundler<F, Storage, Clock, BundlerFactory> {
     fuel_api: F,
     storage: Storage,
     clock: Clock,
-    component_created_at: DateTime<Utc>,
     bundler_factory: BundlerFactory,
     config: Config,
+    last_time_bundled: DateTime<Utc>,
 }
 
 impl<F, Storage, C, BF> BlockBundler<F, Storage, C, BF>
@@ -63,7 +63,7 @@ where
             fuel_api: fuel_adapter,
             storage,
             clock,
-            component_created_at: now,
+            last_time_bundled: now,
             bundler_factory,
             config,
         }
@@ -77,7 +77,7 @@ where
     C: Clock,
     BF: BundlerFactory,
 {
-    async fn bundle_and_fragment_blocks(&self) -> Result<()> {
+    async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
         let starting_height = self.get_starting_height().await?;
         let Some(blocks) = self
             .storage
@@ -120,6 +120,8 @@ where
             .insert_bundle_and_fragments(metadata.block_heights, fragments)
             .await?;
 
+        self.last_time_bundled = self.clock.now();
+
         Ok(())
     }
 
@@ -146,16 +148,7 @@ where
     }
 
     async fn still_time_to_accumulate_more(&self) -> Result<bool> {
-        let last_finalized_time = self
-            .storage
-            .last_time_a_fragment_was_finalized()
-            .await?
-            .unwrap_or_else(||{
-                info!("No finalized fragments found in storage. Using component creation time ({}) as last finalized time.", self.component_created_at);
-                self.component_created_at
-            });
-
-        let elapsed = self.elapsed(last_finalized_time)?;
+        let elapsed = self.elapsed(self.last_time_bundled)?;
 
         Ok(elapsed < self.config.block_accumulation_time_limit)
     }
@@ -208,7 +201,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        test_utils::{self, encode_and_merge, Blocks, ImportedBlocks},
+        test_utils::{self, encode_and_merge, mocks, Blocks, ImportedBlocks},
         CompressionLevel,
     };
 
@@ -391,30 +384,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_finalized() -> Result<()>
-    {
+    async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_time(
+    ) -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
         let clock = TestClock::default();
-        setup.commit_single_block_bundle(clock.now()).await;
-        clock.advance_time(Duration::from_secs(10));
 
         let ImportedBlocks { fuel_blocks, .. } = setup
             .import_blocks(Blocks::WithHeights {
-                range: 1..=1,
+                range: 1..=3,
                 tx_per_block: 1,
                 size_per_tx: 100,
             })
             .await;
-        let data = encode_and_merge(fuel_blocks.clone());
-        let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
-
-        let latest_height = fuel_blocks.last().header.height;
-        let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
 
         let mut block_bundler = BlockBundler::new(
-            mock_fuel_api,
+            mocks::fuel::latest_height_is(fuel_blocks.last().header.height),
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
@@ -424,22 +410,37 @@ mod tests {
                 ..Default::default()
             },
         );
+        let fuel_blocks = Vec::from(fuel_blocks);
+
+        block_bundler.run().await?;
+        clock.advance_time(Duration::from_secs(10));
 
         // when
         block_bundler.run().await?;
 
         // then
-        // We will bundle and fragment because the time limit (10s) is measured from the last finalized fragment
+        let first_bundle =
+            encode_and_merge(NonEmpty::from_vec(fuel_blocks[0..=1].to_vec()).unwrap());
+        let first_bundle_fragments = Eip4844BlobEncoder.encode(first_bundle).unwrap();
+
+        let second_bundle =
+            encode_and_merge(NonEmpty::from_vec(fuel_blocks[2..=2].to_vec()).unwrap());
+        let second_bundle_fragments = Eip4844BlobEncoder.encode(second_bundle).unwrap();
 
         let unsubmitted_fragments = setup
             .db()
-            .oldest_nonfinalized_fragments(0, 1)
+            .oldest_nonfinalized_fragments(0, 2)
             .await?
             .into_iter()
             .map(|f| f.fragment.clone())
             .collect_nonempty()
             .unwrap();
 
+        let expected_fragments = first_bundle_fragments
+            .into_iter()
+            .chain(second_bundle_fragments)
+            .collect_nonempty()
+            .unwrap();
         assert_eq!(unsubmitted_fragments, expected_fragments);
 
         Ok(())
