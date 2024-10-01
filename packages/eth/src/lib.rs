@@ -36,9 +36,7 @@ pub use blob_encoding::Eip4844BlobEncoder;
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
 pub struct FirstTxFeeOverride {
-    pub max_fee_per_blob_gas: u64,
-    pub max_fee_per_gas: u64,
-    pub max_priority_fee_per_gas: u64,
+    pub max_fee_per_blob_gas_mult: u64,
 }
 
 impl Api for WebsocketClient {

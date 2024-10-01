@@ -11,7 +11,7 @@ use alloy::{
     eips::eip4844::BYTES_PER_BLOB,
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{Provider, ProviderBuilder, WsConnect},
+    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, WsConnect},
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
     signers::aws::AwsSigner,
@@ -199,12 +199,23 @@ impl EthApi for WsConnection {
             self.first_blob_tx_sent.load(Ordering::Relaxed),
             self.first_tx_fee_override,
         ) {
-            (false, Some(fee_override)) => TransactionRequest::default()
-                .with_max_fee_per_blob_gas(fee_override.max_fee_per_blob_gas.into())
-                .with_max_fee_per_gas(fee_override.max_fee_per_gas.into())
-                .with_max_priority_fee_per_gas(fee_override.max_priority_fee_per_gas.into())
-                .with_blob_sidecar(sidecar)
-                .with_to(*blob_signer_address),
+            (false, Some(fee_override)) => {
+                let max_fee_per_blob_gas = blob_provider.get_blob_base_fee().await?;
+                let Eip1559Estimation {
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                } = blob_provider.estimate_eip1559_fees(None).await?;
+
+                TransactionRequest::default()
+                    .with_max_fee_per_blob_gas(
+                        max_fee_per_blob_gas
+                            .saturating_mul(fee_override.max_fee_per_blob_gas_mult.into()),
+                    )
+                    .with_max_fee_per_gas(max_fee_per_gas)
+                    .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+                    .with_blob_sidecar(sidecar)
+                    .with_to(*blob_signer_address)
+            }
             _ => TransactionRequest::default()
                 .with_blob_sidecar(sidecar)
                 .with_to(*blob_signer_address),
