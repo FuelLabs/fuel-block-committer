@@ -209,10 +209,16 @@ impl EthApi for WsConnection {
                 TransactionRequest::default()
                     .with_max_fee_per_blob_gas(
                         max_fee_per_blob_gas
-                            .saturating_mul(fee_override.max_fee_per_blob_gas_mult.into()),
+                            .saturating_mul(fee_override.gas_estimation_multiplier.into()),
                     )
-                    .with_max_fee_per_gas(max_fee_per_gas)
-                    .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+                    .with_max_fee_per_gas(
+                        max_fee_per_gas
+                            .saturating_mul(fee_override.gas_estimation_multiplier.into()),
+                    )
+                    .with_max_priority_fee_per_gas(
+                        max_priority_fee_per_gas
+                            .saturating_mul(fee_override.gas_estimation_multiplier.into()),
+                    )
                     .with_blob_sidecar(sidecar)
                     .with_to(*blob_signer_address)
             }
