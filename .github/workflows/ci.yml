@@ -162,9 +162,9 @@ jobs:
           ignore-unpublished-changes: true
 
   build-docker-images:
-    needs:
-      - cargo-verifications
-      - e2e-tests
+    # needs:
+    #   - cargo-verifications
+    #   - e2e-tests
     strategy:
       matrix:
         arch: [
