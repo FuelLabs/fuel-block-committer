@@ -31,7 +31,7 @@ use url::Url;
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
 use crate::{
     error::{Error, Result},
-    Eip4844BlobEncoder,
+    Eip4844BlobEncoder, FirstTxFeeOverride,
 };
 
 pub type WsProvider = alloy::providers::fillers::FillProvider<
@@ -71,8 +71,7 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
-    max_fee_per_blob_gas_for_first_tx: Option<u128>,
-    max_priority_fee_per_blob_gas_for_first_tx: Option<u128>,
+    first_tx_fee_override: Option<FirstTxFeeOverride>,
     first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
     address: Address,
@@ -198,15 +197,15 @@ impl EthApi for WsConnection {
 
         let blob_tx = match (
             self.first_blob_tx_sent.load(Ordering::Relaxed),
-            self.max_fee_per_blob_gas_for_first_tx,
-            self.max_priority_fee_per_blob_gas_for_first_tx,
+            self.first_tx_fee_override,
         ) {
-            (true, _, _) | (false, None, _) | (false, _, None) => TransactionRequest::default()
+            (false, Some(fee_override)) => TransactionRequest::default()
+                .with_max_fee_per_blob_gas(fee_override.max_fee_per_blob_gas.into())
+                .with_max_fee_per_gas(fee_override.max_fee_per_gas.into())
+                .with_max_priority_fee_per_gas(fee_override.max_priority_fee_per_gas.into())
                 .with_blob_sidecar(sidecar)
                 .with_to(*blob_signer_address),
-            (false, Some(max_fee), Some(max_priority_fee)) => TransactionRequest::default()
-                .with_max_fee_per_blob_gas(max_fee)
-                .with_max_priority_fee_per_gas(max_priority_fee)
+            _ => TransactionRequest::default()
                 .with_blob_sidecar(sidecar)
                 .with_to(*blob_signer_address),
         };
@@ -254,8 +253,7 @@ impl WsConnection {
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
-        max_fee_per_blob_gas_for_first_tx: Option<u128>,
-        max_priority_fee_per_blob_gas_for_first_tx: Option<u128>,
+        first_tx_fee_override: Option<FirstTxFeeOverride>,
     ) -> Result<Self> {
         let address = main_signer.address();
 
@@ -292,8 +290,7 @@ impl WsConnection {
             commit_interval,
             metrics: Default::default(),
             first_blob_tx_sent: Arc::new(AtomicBool::new(false)),
-            max_fee_per_blob_gas_for_first_tx,
-            max_priority_fee_per_blob_gas_for_first_tx,
+            first_tx_fee_override,
         })
     }
 

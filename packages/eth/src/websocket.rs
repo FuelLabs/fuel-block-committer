@@ -13,7 +13,7 @@ use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::AwsClient;
+use crate::{AwsClient, FirstTxFeeOverride};
 
 mod connection;
 mod event_streamer;
@@ -32,8 +32,7 @@ impl WebsocketClient {
         blob_pool_key_arn: Option<String>,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
-        max_fee_per_gas_for_first_tx: Option<u128>,
-        max_priority_fee_per_gas_for_first_tx: Option<u128>,
+        first_tx_fee_override: Option<FirstTxFeeOverride>,
     ) -> ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
@@ -48,8 +47,7 @@ impl WebsocketClient {
             contract_address,
             main_signer,
             blob_signer,
-            max_fee_per_gas_for_first_tx,
-            max_priority_fee_per_gas_for_first_tx,
+            first_tx_fee_override,
         )
         .await?;
 

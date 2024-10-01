@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::{command, Parser};
-use eth::Address;
+use eth::{Address, FirstTxFeeOverride};
 use serde::Deserialize;
 use services::CompressionLevel;
 use storage::DbConfig;
@@ -69,8 +69,7 @@ pub struct Eth {
     pub state_contract_address: Address,
     /// This is a workaround to get pending transactions unstuck until the tx manager task is
     /// complete.
-    pub max_fee_per_gas_for_first_tx: Option<u64>,
-    pub max_priority_fee_per_gas_for_first_tx: Option<u64>,
+    pub first_tx_fee_override: Option<FirstTxFeeOverride>,
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
