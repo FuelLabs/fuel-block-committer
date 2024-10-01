@@ -11,7 +11,9 @@ use alloy::{
     eips::eip4844::BYTES_PER_BLOB,
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, WsConnect},
+    providers::{
+        utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WalletProvider, WsConnect,
+    },
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
     signers::aws::AwsSigner,
@@ -26,6 +28,7 @@ use ports::{
     l1::FragmentsSubmitted,
     types::{Fragment, NonEmpty, TransactionResponse},
 };
+use tracing::info;
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
@@ -224,7 +227,23 @@ impl EthApi for WsConnection {
                 .with_to(*blob_signer_address),
         };
 
-        let tx = blob_provider.send_transaction(blob_tx).await?;
+        let blob_tx = blob_provider.fill(blob_tx).await?;
+        let SendableTx::Builder(tx) = blob_tx else {
+            return Err(crate::error::Error::Other(
+                "Expected a builder, got an envelope from alloy. This is a bug.".to_string(),
+            ));
+        };
+
+        let envelope = tx
+            .build(blob_provider.wallet())
+            .await
+            .map_err(|e| crate::error::Error::Other(format!("Error building blob tx: {}", e)))?;
+
+        let tx_id = *envelope.tx_hash();
+
+        info!("sending blob tx: {tx_id}",);
+        let _ = blob_provider.send_tx_envelope(envelope).await?;
+
         self.first_blob_tx_sent.store(true, Ordering::Relaxed);
 
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
@@ -234,7 +253,7 @@ impl EthApi for WsConnection {
         }
 
         Ok(FragmentsSubmitted {
-            tx: tx.tx_hash().0,
+            tx: tx_id.0,
             num_fragments: num_fragments.try_into().expect("cannot be zero"),
         })
     }

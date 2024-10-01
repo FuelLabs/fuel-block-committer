@@ -83,6 +83,8 @@ where
     }
 
     async fn submit_fragments(&self, fragments: NonEmpty<BundleFragment>) -> Result<()> {
+        info!("about to send at most {} fragments", fragments.len());
+
         let data = fragments.clone().map(|f| f.fragment);
 
         match self.l1_adapter.submit_state_fragments(data).await {
