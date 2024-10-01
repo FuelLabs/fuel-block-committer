@@ -11,7 +11,7 @@ use alloy::{
     eips::eip4844::BYTES_PER_BLOB,
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
+    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, WalletProvider, WsConnect},
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
     signers::aws::AwsSigner,
@@ -196,45 +196,43 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
 
-        let blob_tx = match (
+        let mut max_fee_per_blob_gas = blob_provider.get_blob_base_fee().await?;
+        let Eip1559Estimation {
+            mut max_fee_per_gas,
+            mut max_priority_fee_per_gas,
+        } = blob_provider.estimate_eip1559_fees(None).await?;
+
+        if let (false, Some(gas_estimation_multiplier)) = (
             self.first_blob_tx_sent.load(Ordering::Relaxed),
             self.first_tx_gas_estimation_multiplier,
         ) {
-            (false, Some(gas_estimation_multiplier)) => {
-                let max_fee_per_blob_gas = blob_provider.get_blob_base_fee().await?;
-                let Eip1559Estimation {
-                    max_fee_per_gas,
-                    max_priority_fee_per_gas,
-                } = blob_provider.estimate_eip1559_fees(None).await?;
-
-                TransactionRequest::default()
-                    .with_max_fee_per_blob_gas(
-                        max_fee_per_blob_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
-                    .with_max_fee_per_gas(
-                        max_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
-                    .with_max_priority_fee_per_gas(
-                        max_priority_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
-                    .with_blob_sidecar(sidecar)
-                    .with_to(*blob_signer_address)
-            }
-            _ => TransactionRequest::default()
-                .with_blob_sidecar(sidecar)
-                .with_to(*blob_signer_address),
+            max_fee_per_blob_gas =
+                max_fee_per_blob_gas.saturating_mul(gas_estimation_multiplier.into());
+            max_fee_per_gas = max_fee_per_gas.saturating_mul(gas_estimation_multiplier.into());
+            max_priority_fee_per_gas =
+                max_priority_fee_per_gas.saturating_mul(gas_estimation_multiplier.into());
         };
 
-        let blob_tx = blob_provider.fill(blob_tx).await?;
-        let SendableTx::Envelope(blob_tx) = blob_tx else {
-            return Err(crate::error::Error::Other(
-                "Expected an envelope because we have a wallet filler as well, but got a builder from alloy. This is a bug.".to_string(),
-            ));
-        };
-        let tx_id = *blob_tx.tx_hash();
+        let current_nonce = blob_provider
+            .get_transaction_count(*blob_signer_address)
+            .await?;
+
+        let chain_id = blob_provider.get_chain_id().await?;
+        let blob_tx = TransactionRequest::default()
+            .with_nonce(current_nonce)
+            .with_to(*blob_signer_address)
+            .with_chain_id(chain_id)
+            .with_blob_sidecar(sidecar)
+            .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
+            .with_gas_limit(21_000)
+            .with_max_fee_per_gas(max_fee_per_gas)
+            .with_max_priority_fee_per_gas(max_priority_fee_per_gas);
+
+        let envelope = blob_tx.build(blob_provider.wallet()).await.unwrap();
+        let tx_id = *envelope.tx_hash();
         info!("sending blob tx: {tx_id}",);
 
-        let _ = blob_provider.send_tx_envelope(blob_tx).await?;
+        let _ = blob_provider.send_tx_envelope(envelope).await?;
 
         self.first_blob_tx_sent.store(true, Ordering::Relaxed);
 
