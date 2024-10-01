@@ -8,7 +8,7 @@ use std::{
 };
 
 use alloy::{
-    eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
+    eips::eip4844::BYTES_PER_BLOB,
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -71,6 +71,7 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
+    max_fee_per_blob_gas_for_first_tx: Option<u128>,
     first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
     address: Address,
@@ -194,19 +195,17 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
 
-        let blob_tx = if self.first_blob_tx_sent.load(Ordering::Relaxed) {
-            TransactionRequest::default()
+        let blob_tx = match (
+            self.first_blob_tx_sent.load(Ordering::Relaxed),
+            self.max_fee_per_blob_gas_for_first_tx,
+        ) {
+            (true, _) | (false, None) => TransactionRequest::default()
                 .with_blob_sidecar(sidecar)
-                .with_to(*blob_signer_address)
-        } else {
-            // Temporary hard coded gas to unblock a pending transaction.
-            // Work is being done ATM to have code that will replace stuck txs automatically.
-            TransactionRequest::default()
-                .with_max_fee_per_blob_gas(
-                    (974728630076u128.div_ceil(DATA_GAS_PER_BLOB as u128 * 6) as f64 * 1.5) as u128,
-                )
+                .with_to(*blob_signer_address),
+            (false, Some(max_fee)) => TransactionRequest::default()
+                .with_max_fee_per_blob_gas(max_fee)
                 .with_blob_sidecar(sidecar)
-                .with_to(*blob_signer_address)
+                .with_to(*blob_signer_address),
         };
 
         let tx = blob_provider.send_transaction(blob_tx).await?;
@@ -252,6 +251,7 @@ impl WsConnection {
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
+        max_fee_per_blob_gas_for_first_tx: Option<u128>,
     ) -> Result<Self> {
         let address = main_signer.address();
 
@@ -288,6 +288,7 @@ impl WsConnection {
             commit_interval,
             metrics: Default::default(),
             first_blob_tx_sent: Arc::new(AtomicBool::new(false)),
+            max_fee_per_blob_gas_for_first_tx,
         })
     }
 

@@ -67,6 +67,9 @@ pub struct Eth {
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+    /// This is a workaround to get pending transactions unstuck until the tx manager task is
+    /// complete.
+    pub max_fee_per_gas_for_first_tx: Option<u128>,
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>

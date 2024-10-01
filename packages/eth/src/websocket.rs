@@ -32,6 +32,7 @@ impl WebsocketClient {
         blob_pool_key_arn: Option<String>,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
+        max_fee_per_gas_for_first_tx: Option<u128>,
     ) -> ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
@@ -41,8 +42,14 @@ impl WebsocketClient {
 
         let main_signer = aws_client.make_signer(main_key_arn).await?;
 
-        let provider =
-            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
+        let provider = WsConnection::connect(
+            url,
+            contract_address,
+            main_signer,
+            blob_signer,
+            max_fee_per_gas_for_first_tx,
+        )
+        .await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
