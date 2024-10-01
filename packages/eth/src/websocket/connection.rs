@@ -11,9 +11,7 @@ use alloy::{
     eips::eip4844::BYTES_PER_BLOB,
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{
-        utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WalletProvider, WsConnect,
-    },
+    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
     signers::aws::AwsSigner,
@@ -228,21 +226,15 @@ impl EthApi for WsConnection {
         };
 
         let blob_tx = blob_provider.fill(blob_tx).await?;
-        let SendableTx::Builder(tx) = blob_tx else {
+        let SendableTx::Envelope(blob_tx) = blob_tx else {
             return Err(crate::error::Error::Other(
-                "Expected a builder, got an envelope from alloy. This is a bug.".to_string(),
+                "Expected an envelope because we have a wallet filler as well, but got a builder from alloy. This is a bug.".to_string(),
             ));
         };
-
-        let envelope = tx
-            .build(blob_provider.wallet())
-            .await
-            .map_err(|e| crate::error::Error::Other(format!("Error building blob tx: {}", e)))?;
-
-        let tx_id = *envelope.tx_hash();
-
+        let tx_id = *blob_tx.tx_hash();
         info!("sending blob tx: {tx_id}",);
-        let _ = blob_provider.send_tx_envelope(envelope).await?;
+
+        let _ = blob_provider.send_tx_envelope(blob_tx).await?;
 
         self.first_blob_tx_sent.store(true, Ordering::Relaxed);
 
