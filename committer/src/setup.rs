@@ -1,13 +1,14 @@
 use std::{num::NonZeroU32, time::Duration};
 
-use eth::AwsConfig;
+use clock::SystemClock;
+use eth::{AwsConfig, Eip4844BlobEncoder};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
-use ports::storage::Storage;
-use services::{BlockCommitter, Runner, WalletBalanceTracker};
+use services::{
+    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, Runner, WalletBalanceTracker,
+};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use validator::BlockValidator;
 
 use crate::{config, errors::Result, AwsClient, Database, FuelApi, L1};
 
@@ -32,7 +33,7 @@ pub fn wallet_balance_tracker(
 pub fn block_committer(
     commit_interval: NonZeroU32,
     l1: L1,
-    storage: impl Storage + 'static,
+    storage: Database,
     fuel: FuelApi,
     config: &config::Config,
     registry: &Registry,
@@ -40,7 +41,8 @@ pub fn block_committer(
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
 
-    let block_committer = BlockCommitter::new(l1, storage, fuel, validator, commit_interval);
+    let block_committer =
+        BlockCommitter::new(l1, storage, fuel, validator, SystemClock, commit_interval);
 
     block_committer.register_metrics(registry);
 
@@ -52,34 +54,87 @@ pub fn block_committer(
     )
 }
 
+pub fn block_bundler(
+    fuel: FuelApi,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+) -> tokio::task::JoinHandle<()> {
+    let bundler_factory = services::BundlerFactory::new(
+        Eip4844BlobEncoder,
+        config.app.bundle.compression_level,
+        config.app.bundle.optimization_step,
+    );
+
+    let block_bundler = BlockBundler::new(
+        fuel,
+        storage,
+        SystemClock,
+        bundler_factory,
+        BlockBundlerConfig {
+            optimization_time_limit: config.app.bundle.optimization_timeout,
+            block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            lookback_window: config.app.bundle.block_height_lookback,
+            max_bundles_per_optimization_run: num_cpus::get()
+                .try_into()
+                .expect("num cpus not zero"),
+        },
+    );
+
+    schedule_polling(
+        internal_config.new_bundle_check_interval,
+        block_bundler,
+        "Block Bundler",
+        cancel_token,
+    )
+}
+
 pub fn state_committer(
+    fuel: FuelApi,
     l1: L1,
-    storage: impl Storage + 'static,
+    storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_committer = services::StateCommitter::new(l1, storage);
+    let state_committer = services::StateCommitter::new(
+        l1,
+        fuel,
+        storage,
+        services::StateCommitterConfig {
+            lookback_window: config.app.bundle.block_height_lookback,
+            fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
+            fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
+        },
+        SystemClock,
+    );
 
     schedule_polling(
-        config.app.block_check_interval,
+        config.app.tx_finalization_check_interval,
         state_committer,
         "State Committer",
         cancel_token,
     )
 }
 
-pub fn state_importer(
+pub fn block_importer(
     fuel: FuelApi,
-    storage: impl Storage + 'static,
+    storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
-    let state_importer = services::StateImporter::new(storage, fuel, validator);
+    let block_importer = services::BlockImporter::new(
+        storage,
+        fuel,
+        validator,
+        config.app.bundle.block_height_lookback,
+    );
 
     schedule_polling(
         config.app.block_check_interval,
-        state_importer,
+        block_importer,
         "State Importer",
         cancel_token,
     )
@@ -87,13 +142,17 @@ pub fn state_importer(
 
 pub fn state_listener(
     l1: L1,
-    storage: impl Storage + 'static,
+    storage: Database,
     cancel_token: CancellationToken,
     registry: &Registry,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let state_listener =
-        services::StateListener::new(l1, storage, config.app.num_blocks_to_finalize_tx);
+    let state_listener = services::StateListener::new(
+        l1,
+        storage,
+        config.app.num_blocks_to_finalize_tx,
+        SystemClock,
+    );
 
     state_listener.register_metrics(registry);
 
@@ -121,6 +180,7 @@ pub async fn l1_adapter(
         config.eth.blob_pool_key_arn.clone(),
         internal_config.eth_errors_before_unhealthy,
         aws_client,
+        config.eth.first_tx_gas_estimation_multiplier,
     )
     .await?;
 
@@ -162,6 +222,7 @@ pub fn fuel_adapter(
     let fuel_adapter = FuelApi::new(
         &config.fuel.graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
+        config.fuel.max_full_blocks_per_request,
     );
     fuel_adapter.register_metrics(registry);
 

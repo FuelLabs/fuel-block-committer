@@ -1,8 +1,14 @@
-use std::{net::Ipv4Addr, path::PathBuf, str::FromStr, time::Duration};
+use std::{
+    net::Ipv4Addr,
+    num::{NonZeroU32, NonZeroUsize},
+    str::FromStr,
+    time::Duration,
+};
 
 use clap::{command, Parser};
 use eth::Address;
 use serde::Deserialize;
+use services::CompressionLevel;
 use storage::DbConfig;
 use url::Url;
 
@@ -23,6 +29,19 @@ impl Config {
             }
         }
 
+        if self.app.bundle.fragments_to_accumulate.get() > 6 {
+            return Err(crate::errors::Error::Other(
+                "Fragments to accumulate must be <= 6".to_string(),
+            ));
+        }
+
+        if self.app.bundle.block_height_lookback < self.app.bundle.blocks_to_accumulate.get() as u32
+        {
+            return Err(crate::errors::Error::Other(
+                "block_height_lookback must be >= blocks_to_accumulate".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
@@ -34,6 +53,7 @@ pub struct Fuel {
     pub graphql_endpoint: Url,
     /// Block producer address
     pub block_producer_address: ports::fuel::FuelBytes32,
+    pub max_full_blocks_per_request: NonZeroU32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,6 +67,9 @@ pub struct Eth {
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+    /// To manually be enabled if a transaction gets stuck. Geth requires a multiplier of 2. Should
+    /// be removed once the tx manager is implemented.
+    pub first_tx_gas_estimation_multiplier: Option<u64>,
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
@@ -68,11 +91,86 @@ pub struct App {
     pub host: Ipv4Addr,
     /// Postgres database configuration
     pub db: DbConfig,
-    /// How often to check the latest fuel block
+    /// How often to check for fuel blocks
     #[serde(deserialize_with = "human_readable_duration")]
     pub block_check_interval: Duration,
+    /// How often to check for finalized l1 txs
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub tx_finalization_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
+    ///// Contains configs relating to block state posting to l1
+    pub bundle: BundleConfig,
+}
+
+/// Configuration settings for managing fuel block bundling and fragment submission operations.
+///
+/// This struct defines how blocks and fragments are accumulated, optimized, and eventually submitted to L1.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BundleConfig {
+    /// Duration to wait for additional fuel blocks before initiating the bundling process.
+    ///
+    /// This timeout is measured from the moment the last blob transaction was finalized, or, if
+    /// missing, from the application startup time.
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub accumulation_timeout: Duration,
+
+    /// The number of fuel blocks to accumulate before initiating the bundling process.
+    ///
+    /// If the system successfully accumulates this number of blocks before the `accumulation_timeout` is reached,
+    /// the bundling process will start immediately. Otherwise, the bundling process will be triggered when the
+    /// `accumulation_timeout` fires, regardless of the number of blocks accumulated.
+    pub blocks_to_accumulate: NonZeroUsize,
+
+    /// Maximum duration allocated for determining the optimal bundle size.
+    ///
+    /// This timeout limits the amount of time the system can spend searching for the ideal
+    /// number of fuel blocks to include in a bundle. Once this duration is reached, the
+    /// bundling process will proceed with the best configuration found within the allotted time.
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub optimization_timeout: Duration,
+
+    /// How big should the optimization step be at the start of the optimization process. Setting
+    /// this value to 100 and giving the bundler a 1000 blocks would result in the following
+    /// attempts:
+    /// 1000, 900, ..., 100, 1, 950, 850, ..., 50, 975, 925, ...
+    pub optimization_step: NonZeroUsize,
+
+    /// Duration to wait for additional fragments before submitting them in a transaction to L1.
+    ///
+    /// Similar to `accumulation_timeout`, this timeout starts from the last finalized fragment submission. If no new
+    /// fragments are received within this period, the system will proceed to submit the currently accumulated fragments.
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub fragment_accumulation_timeout: Duration,
+
+    /// The number of fragments to accumulate before submitting them in a transaction to L1.
+    pub fragments_to_accumulate: NonZeroUsize,
+
+    /// Only blocks within the `block_height_lookback` window
+    /// value will be considered for importing, bundling, fragmenting, and submitting to L1.
+    ///
+    /// This parameter defines a sliding window based on block height to determine which blocks are
+    /// eligible for processing. Specifically:
+    ///
+    /// - **Exclusion of Stale Blocks:** If a block arrives with a height less than the current
+    ///   height minus the `block_height_lookback`, it will be excluded from the bundling process.
+    ///
+    /// - **Bundling Behavior:**
+    ///   - **Unbundled Blocks:** Blocks outside the lookback window will not be bundled.
+    ///   - **Already Bundled Blocks:** If a block has already been bundled, its fragments will
+    ///     not be sent to L1.
+    ///   - **Failed Submissions:** If fragments of a bundled block were sent to L1 but failed,
+    ///     they will not be retried.
+    ///
+    /// This approach effectively "gives up" on blocks that fall outside the defined window.
+    pub block_height_lookback: u32,
+
+    /// Compression level used for compressing block data before submission.
+    ///
+    /// Compression is applied to the blocks to minimize the transaction size. Valid values are:
+    /// - `"disabled"`: No compression is applied.
+    /// - `"min"` to `"max"`: Compression levels where higher numbers indicate more aggressive compression.
+    pub compression_level: CompressionLevel,
 }
 
 fn human_readable_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -91,6 +189,7 @@ pub struct Internal {
     pub fuel_errors_before_unhealthy: usize,
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
+    pub new_bundle_check_interval: Duration,
 }
 
 impl Default for Internal {
@@ -99,6 +198,7 @@ impl Default for Internal {
             fuel_errors_before_unhealthy: 3,
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
+            new_bundle_check_interval: Duration::from_secs(10),
         }
     }
 }
@@ -107,19 +207,20 @@ impl Default for Internal {
     name = "fuel-block-committer",
     version,
     about,
-    propagate_version = true,
-    arg_required_else_help(true)
+    propagate_version = true
 )]
 struct Cli {
-    #[arg(value_name = "FILE", help = "Path to the configuration file")]
-    config_path: PathBuf,
+    #[arg(
+        value_name = "FILE",
+        help = "Used to be the path to the configuration, unused currently until helm charts are updated."
+    )]
+    config_path: Option<String>,
 }
 
 pub fn parse() -> crate::errors::Result<Config> {
-    let cli = Cli::parse();
+    let _ = Cli::parse();
 
     let config = config::Config::builder()
-        .add_source(config::File::from(cli.config_path))
         .add_source(config::Environment::with_prefix("COMMITTER").separator("__"))
         .build()?;
 

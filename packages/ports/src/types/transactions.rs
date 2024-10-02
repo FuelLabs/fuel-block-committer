@@ -1,28 +1,10 @@
+use sqlx::types::chrono::{DateTime, Utc};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionState {
     Pending,
-    Finalized,
+    Finalized(DateTime<Utc>),
     Failed,
-}
-
-// Used for DB storage
-impl TransactionState {
-    pub fn into_i16(&self) -> i16 {
-        match self {
-            TransactionState::Pending => 0,
-            TransactionState::Finalized => 1,
-            TransactionState::Failed => 2,
-        }
-    }
-
-    pub fn from_i16(value: i16) -> Option<Self> {
-        match value {
-            0 => Some(Self::Pending),
-            1 => Some(Self::Finalized),
-            2 => Some(Self::Failed),
-            _ => None,
-        }
-    }
 }
 
 pub struct TransactionResponse {

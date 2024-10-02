@@ -40,6 +40,11 @@
       },
       {
         "ordinal": 7,
+        "name": "finalized_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
         "name": "state",
         "type_info": "Int2"
       }
@@ -58,6 +63,7 @@
       false,
       false,
       false,
+      true,
       false
     ]
   },

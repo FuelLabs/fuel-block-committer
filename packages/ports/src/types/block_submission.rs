@@ -1,11 +1,11 @@
 use sqlx::types::chrono::{DateTime, Utc};
 
-use super::TransactionState;
+use super::{NonNegative, TransactionState};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmissionTx {
-    pub id: Option<u32>,
-    pub submission_id: Option<u32>,
+    pub id: Option<NonNegative<i32>>,
+    pub submission_id: Option<NonNegative<i32>>,
     pub hash: [u8; 32],
     pub nonce: u32,
     pub max_fee: u128,
@@ -31,7 +31,7 @@ impl Default for BlockSubmissionTx {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmission {
-    pub id: Option<u32>,
+    pub id: Option<NonNegative<i32>>,
     pub block_hash: [u8; 32],
     pub block_height: u32,
     pub completed: bool,

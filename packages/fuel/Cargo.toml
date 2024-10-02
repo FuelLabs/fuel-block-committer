@@ -8,17 +8,24 @@ repository = { workspace = true }
 version = { workspace = true }
 publish = { workspace = true }
 rust-version = { workspace = true }
+build = "build.rs"
 
 [dependencies]
-async-trait = { workspace = true }
+cynic = { version = "2.2", features = ["http-reqwest"] }
+delegate = { workspace = true }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
-fuel-core-types = { workspace = true, optional = true }
+fuel-core-types = { workspace = true }
+futures = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["fuel"] }
+trait-variant = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }
 
+[build-dependencies]
+fuel-core-client = { workspace = true }
+
 [features]
-test-helpers = ["fuel-core-types"]
+test-helpers = []

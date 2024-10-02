@@ -11,20 +11,19 @@ mod whole_stack;
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use ports::fuel::Api;
-    use tokio::time::sleep_until;
-    use validator::{BlockValidator, Validator};
+    use std::time::Duration;
 
-    use crate::whole_stack::WholeStack;
+    use anyhow::Result;
+    use ports::storage::Storage;
+    use tokio::time::sleep_until;
+
+    use crate::whole_stack::{FuelNodeType, WholeStack};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
         let show_logs = false;
-        // blob support disabled because this test doesn't generate blocks with transactions in it
-        // so there is no data to blobify
-        let blob_support = false;
+        let blob_support = true;
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
 
         // when
@@ -45,10 +44,7 @@ mod tests {
 
         let latest_block = stack.fuel_node.client().latest_block().await?;
 
-        let validated_block = BlockValidator::new(*stack.fuel_node.consensus_pub_key().hash())
-            .validate(&latest_block)?;
-
-        assert!(stack.deployed_contract.finalized(validated_block).await?);
+        assert!(stack.deployed_contract.finalized(latest_block).await?);
 
         Ok(())
     }
@@ -60,12 +56,62 @@ mod tests {
         let blob_support = true;
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
 
+        let num_iterations = 10;
+        let blocks_per_iteration = 100;
+
         // when
-        stack.fuel_node.produce_transaction().await?;
-        stack.fuel_node.client().produce_blocks(1).await?;
+        for _ in 0..num_iterations {
+            let FuelNodeType::Local(node) = &stack.fuel_node else {
+                panic!("Expected local fuel node");
+            };
+
+            node.produce_transactions(100).await?;
+
+            let _ = stack
+                .fuel_node
+                .client()
+                .produce_blocks(blocks_per_iteration)
+                .await;
+        }
 
         // then
-        stack.committer.wait_for_committed_blob().await?;
+        let state_submitting_finished = || async {
+            let finished = stack
+                .db
+                .lowest_sequence_of_unbundled_blocks(0, 1)
+                .await?
+                .is_none()
+                && stack
+                    .db
+                    .oldest_nonfinalized_fragments(0, 1)
+                    .await?
+                    .is_empty()
+                && !stack.db.has_pending_txs().await?
+                && stack
+                    .db
+                    .missing_blocks(0, num_iterations * blocks_per_iteration)
+                    .await?
+                    .is_empty();
+
+            anyhow::Result::<_>::Ok(finished)
+        };
+
+        while !state_submitting_finished().await? {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+
+        Ok(())
+    }
+
+    #[ignore = "meant for running manually and tweaking configuration parameters"]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connecting_to_testnet() -> Result<()> {
+        // given
+        let show_logs = false;
+        let blob_support = true;
+        let _stack = WholeStack::connect_to_testnet(show_logs, blob_support).await?;
+
+        tokio::time::sleep(Duration::from_secs(10000)).await;
 
         Ok(())
     }

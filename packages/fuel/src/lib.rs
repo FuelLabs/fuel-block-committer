@@ -1,21 +1,34 @@
 #![deny(unused_crate_dependencies)]
-use ports::fuel::FuelBlock;
+use std::ops::RangeInclusive;
+
+use futures::StreamExt;
+use ports::fuel::{BoxStream, FuelBlock};
 mod client;
 mod metrics;
 
 pub use client::*;
+use delegate::delegate;
 
 type Error = ports::fuel::Error;
 type Result<T> = ports::fuel::Result<T>;
 
-#[async_trait::async_trait]
 impl ports::fuel::Api for client::HttpClient {
-    async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>> {
-        self._block_at_height(height).await
+    delegate! {
+        to self {
+            async fn block_at_height(&self, height: u32) -> ports::fuel::Result<Option<FuelBlock>>;
+            async fn latest_block(&self) -> ports::fuel::Result<FuelBlock>;
+        }
     }
 
-    async fn latest_block(&self) -> ports::fuel::Result<FuelBlock> {
-        self._latest_block().await
+    async fn latest_height(&self) -> Result<u32> {
+        self.latest_block().await.map(|b| b.header.height)
+    }
+
+    fn full_blocks_in_height_range(
+        &self,
+        range: RangeInclusive<u32>,
+    ) -> BoxStream<'_, Result<Vec<ports::fuel::FullFuelBlock>>> {
+        self.block_in_height_range(range).boxed()
     }
 }
 
@@ -25,7 +38,6 @@ mod tests {
         prometheus::{proto::Metric, Registry},
         RegistersMetrics,
     };
-    use ports::fuel::Api;
     use url::Url;
 
     use super::*;
@@ -89,7 +101,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("localhost:12344").unwrap();
 
-        let fuel_adapter = HttpClient::new(&url, 1);
+        let fuel_adapter = HttpClient::new(&url, 1, 1.try_into().unwrap());
 
         let registry = Registry::default();
         fuel_adapter.register_metrics(&registry);
@@ -116,7 +128,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("http://localhost:12344").unwrap();
 
-        let fuel_adapter = client::HttpClient::new(&url, 3);
+        let fuel_adapter = client::HttpClient::new(&url, 3, 1.try_into().unwrap());
         let health_check = fuel_adapter.connection_health_checker();
 
         assert!(health_check.healthy());

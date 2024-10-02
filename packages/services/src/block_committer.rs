@@ -1,32 +1,32 @@
 use std::num::NonZeroU32;
 
-use async_trait::async_trait;
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
 use ports::{
+    fuel::FuelBlock,
     storage::Storage,
-    types::{BlockSubmission, TransactionState, ValidatedFuelBlock},
+    types::{BlockSubmission, NonNegative, TransactionState},
 };
 use tracing::info;
-use validator::Validator;
 
 use super::Runner;
-use crate::{Error, Result};
+use crate::{validator::Validator, Error, Result};
 
-pub struct BlockCommitter<L1, Db, Fuel, BlockValidator> {
+pub struct BlockCommitter<L1, Db, Fuel, BlockValidator, Clock> {
     l1_adapter: L1,
     fuel_adapter: Fuel,
     storage: Db,
     block_validator: BlockValidator,
+    clock: Clock,
     commit_interval: NonZeroU32,
     metrics: Metrics,
 }
 
 enum Action {
     UpdateTx {
-        submission_id: u32,
+        submission_id: NonNegative<i32>,
         block_height: u32,
     },
     Post,
@@ -38,8 +38,8 @@ struct Metrics {
     latest_committed_block: IntGauge,
 }
 
-impl<L1, Db, Fuel, BlockValidator> RegistersMetrics
-    for BlockCommitter<L1, Db, Fuel, BlockValidator>
+impl<L1, Db, Fuel, BlockValidator, Clock> RegistersMetrics
+    for BlockCommitter<L1, Db, Fuel, BlockValidator, Clock>
 {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![
@@ -70,12 +70,13 @@ impl Default for Metrics {
     }
 }
 
-impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator> {
+impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockValidator, Clock> {
     pub fn new(
         l1: L1,
         storage: Db,
         fuel_adapter: Fuel,
         block_validator: BlockValidator,
+        clock: Clock,
         commit_interval: NonZeroU32,
     ) -> Self {
         Self {
@@ -83,23 +84,28 @@ impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator> 
             storage,
             fuel_adapter,
             block_validator,
+            clock,
             commit_interval,
             metrics: Metrics::default(),
         }
     }
 }
 
-impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator>
+impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockValidator, Clock>
 where
     L1: ports::l1::Contract + ports::l1::Api,
     Db: Storage,
     BlockValidator: Validator,
     Fuel: ports::fuel::Api,
+    Clock: ports::clock::Clock,
 {
-    async fn submit_block(&self, fuel_block: ValidatedFuelBlock) -> Result<()> {
-        let submission = BlockSubmission::new(fuel_block.hash(), fuel_block.height());
+    async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
+        let submission = BlockSubmission::new(*fuel_block.id, fuel_block.header.height);
 
-        let mut tx = self.l1_adapter.submit(fuel_block).await?;
+        let mut tx = self
+            .l1_adapter
+            .submit(*fuel_block.id, fuel_block.header.height)
+            .await?;
         tx.submission_id = submission.id;
         self.storage.record_block_submission(tx, submission).await?;
 
@@ -108,15 +114,19 @@ where
         Ok(())
     }
 
-    async fn fetch_latest_block(&self) -> Result<ValidatedFuelBlock> {
+    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
         let latest_block = self.fuel_adapter.latest_block().await?;
-        let validated_block = self.block_validator.validate(&latest_block)?;
+        self.block_validator.validate(
+            latest_block.id,
+            &latest_block.header,
+            &latest_block.consensus,
+        )?;
 
         self.metrics
             .latest_fuel_block
-            .set(i64::from(validated_block.height()));
+            .set(i64::from(latest_block.header.height));
 
-        Ok(validated_block)
+        Ok(latest_block)
     }
 
     fn check_if_stale(
@@ -135,7 +145,7 @@ where
         current_block_height - (current_block_height % self.commit_interval)
     }
 
-    async fn fetch_block(&self, height: u32) -> Result<ValidatedFuelBlock> {
+    async fn fetch_block(&self, height: u32) -> Result<FuelBlock> {
         let fuel_block = self
             .fuel_adapter
             .block_at_height(height)
@@ -146,7 +156,9 @@ where
                 ))
             })?;
 
-        Ok(self.block_validator.validate(&fuel_block)?)
+        self.block_validator
+            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)?;
+        Ok(fuel_block)
     }
 
     fn decide_action(
@@ -160,7 +172,6 @@ where
                 block_height: submission.block_height,
             },
             _ => {
-                dbg!("what");
                 if self.check_if_stale(fuel_block_height, latest_submission) {
                     Action::DoNothing
                 } else {
@@ -170,7 +181,11 @@ where
         }
     }
 
-    async fn update_transactions(&self, submission_id: u32, block_height: u32) -> Result<()> {
+    async fn update_transactions(
+        &self,
+        submission_id: NonNegative<i32>,
+        block_height: u32,
+    ) -> Result<()> {
         let transactions = self
             .storage
             .get_pending_block_submission_txs(submission_id)
@@ -201,7 +216,7 @@ where
             }
 
             self.storage
-                .update_block_submission_tx(tx_hash, TransactionState::Finalized)
+                .update_block_submission_tx(tx_hash, TransactionState::Finalized(self.clock.now()))
                 .await?;
 
             info!(
@@ -218,25 +233,27 @@ where
     }
 }
 
-#[async_trait]
-impl<L1, Db, Fuel, BlockValidator> Runner for BlockCommitter<L1, Db, Fuel, BlockValidator>
+impl<L1, Db, Fuel, BlockValidator, Clock> Runner
+    for BlockCommitter<L1, Db, Fuel, BlockValidator, Clock>
 where
     L1: ports::l1::Contract + ports::l1::Api,
     Db: Storage,
     Fuel: ports::fuel::Api,
     BlockValidator: Validator,
+    Clock: ports::clock::Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         let latest_submission = self.storage.submission_w_latest_block().await?;
 
         let current_block = self.fetch_latest_block().await?;
-        let current_epoch_block_height = self.current_epoch_block_height(current_block.height());
+        let current_epoch_block_height =
+            self.current_epoch_block_height(current_block.header.height);
 
         let action = self.decide_action(latest_submission.as_ref(), current_epoch_block_height);
         match action {
             Action::DoNothing => {}
             Action::Post => {
-                let block = if current_block.height() == current_epoch_block_height {
+                let block = if current_block.header.height == current_epoch_block_height {
                     current_block
                 } else {
                     self.fetch_block(current_epoch_block_height).await?
@@ -248,7 +265,6 @@ where
                 submission_id,
                 block_height,
             } => {
-                dbg!("updating txs ", block_height);
                 self.update_transactions(submission_id, block_height)
                     .await?
             }
@@ -260,19 +276,19 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
+    use clock::SystemClock;
     use fuel_crypto::{Message, SecretKey, Signature};
     use metrics::prometheus::{proto::Metric, Registry};
-    use mockall::predicate::{self, eq};
+    use mockall::predicate::eq;
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
-        l1::{Contract, MockContract},
-        types::{BlockSubmissionTx, L1Height, TransactionResponse, U256},
+        l1::{Contract, FragmentsSubmitted, MockContract},
+        types::{BlockSubmissionTx, Fragment, L1Height, NonEmpty, TransactionResponse, Utc, U256},
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
-    use storage::{Postgres, PostgresProcess};
-    use validator::BlockValidator;
+    use storage::{DbWithProcess, PostgresProcess};
+
+    use crate::{test_utils::mocks::l1::FullL1Mock, BlockValidator};
 
     use super::*;
 
@@ -289,10 +305,13 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl Contract for MockL1 {
-        async fn submit(&self, block: ValidatedFuelBlock) -> ports::l1::Result<BlockSubmissionTx> {
-            self.contract.submit(block).await
+        async fn submit(
+            &self,
+            hash: [u8; 32],
+            height: u32,
+        ) -> ports::l1::Result<BlockSubmissionTx> {
+            self.contract.submit(hash, height).await
         }
 
         fn commit_interval(&self) -> NonZeroU32 {
@@ -300,10 +319,12 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl ports::l1::Api for MockL1 {
-        async fn submit_l2_state(&self, state_data: Vec<u8>) -> ports::l1::Result<[u8; 32]> {
-            self.api.submit_l2_state(state_data).await
+        async fn submit_state_fragments(
+            &self,
+            _fragments: NonEmpty<Fragment>,
+        ) -> ports::l1::Result<FragmentsSubmitted> {
+            unimplemented!()
         }
 
         async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
@@ -322,7 +343,7 @@ mod tests {
         }
     }
 
-    fn given_l1_that_expects_submission(block: ValidatedFuelBlock) -> MockL1 {
+    fn given_l1_that_expects_submission(block: FuelBlock) -> MockL1 {
         let mut l1 = MockL1::new();
 
         let submission_tx = BlockSubmissionTx {
@@ -331,12 +352,12 @@ mod tests {
         };
         l1.contract
             .expect_submit()
-            .with(predicate::eq(block))
-            .return_once(move |_| Ok(submission_tx));
+            .withf(move |hash, height| *hash == *block.id && *height == block.header.height)
+            .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }));
 
         l1.api
             .expect_get_block_number()
-            .return_once(move || Ok(0u32.into()));
+            .return_once(move || Box::pin(async { Ok(0u32.into()) }));
 
         l1
     }
@@ -349,17 +370,22 @@ mod tests {
         let latest_block = given_a_block(10, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![10]).await;
-        db.update_block_submission_tx([10; 32], TransactionState::Finalized)
+        let db = db_with_submissions(vec![6, 8, 10]).await;
+        db.update_block_submission_tx([10; 32], TransactionState::Finalized(Utc::now()))
             .await
             .unwrap();
 
         let mut l1 = MockL1::new();
         l1.contract.expect_submit().never();
 
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+        );
 
         // when
         block_committer.run().await.unwrap();
@@ -375,12 +401,16 @@ mod tests {
         let latest_block = given_a_block(10, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
 
-        let validated_latest_block = ValidatedFuelBlock::new(*latest_block.id, 10);
-        let l1 = given_l1_that_expects_submission(validated_latest_block);
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![]).await;
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+        let l1 = given_l1_that_expects_submission(latest_block);
+        let db = db_with_submissions(vec![]).await;
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+        );
 
         // when
         block_committer.run().await.unwrap();
@@ -401,13 +431,17 @@ mod tests {
         ];
         let fuel_adapter = given_fetcher(all_blocks);
 
-        let validated_latest_block = ValidatedFuelBlock::new(*latest_block.id, 10);
-        let l1 = given_l1_that_expects_submission(validated_latest_block);
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![8]).await;
+        let l1 = given_l1_that_expects_submission(latest_block);
+        let db = db_with_submissions(vec![8]).await;
 
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+        );
 
         // when
         block_committer.run().await.unwrap();
@@ -424,12 +458,16 @@ mod tests {
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
 
-        let validated_missed_block = ValidatedFuelBlock::new(*missed_block.id, 4);
-        let l1 = given_l1_that_expects_submission(validated_missed_block);
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2]).await;
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+        let l1 = given_l1_that_expects_submission(missed_block);
+        let db = db_with_submissions(vec![0, 2]).await;
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+        );
 
         // when
         block_committer.run().await.unwrap();
@@ -447,44 +485,31 @@ mod tests {
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2, 4]).await;
+        let db = db_with_submissions(vec![0, 2, 4]).await;
 
-        let mut l1 = MockL1::new();
+        let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
+        l1.api
+            .expect_get_block_number()
+            .returning(|| Box::pin(async { Ok(5u32.into()) }));
+        l1.api
+            .expect_get_transaction_response()
+            .returning(|_| Box::pin(async { Ok(None) }));
 
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+        );
 
         // when
         block_committer.run().await.unwrap();
 
         // then
         // Mock verifies that the submit didn't happen
-    }
-
-    #[tokio::test]
-    async fn will_not_reattempt_committing_latest_block() {
-        // given
-        let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-        let latest_block = given_a_block(6, &secret_key);
-        let fuel_adapter = given_fetcher(vec![latest_block]);
-
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2, 4, 6]).await;
-
-        let mut l1 = MockL1::new();
-        l1.contract.expect_submit().never();
-
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        // MockL1 verifies that submit was not called
     }
 
     #[tokio::test]
@@ -495,11 +520,16 @@ mod tests {
         let block = given_a_block(4, &secret_key);
         let fuel_adapter = given_fetcher(vec![block.clone()]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2]).await;
-        let l1 = given_l1_that_expects_submission(ValidatedFuelBlock::new(*block.id, 4));
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+        let db = db_with_submissions(vec![0, 2]).await;
+        let l1 = given_l1_that_expects_submission(block);
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+        );
 
         // when
         block_committer.run().await.unwrap();
@@ -516,14 +546,25 @@ mod tests {
         let block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![block]);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submissions(&process, vec![0, 2, 4]).await;
+        let db = db_with_submissions(vec![0, 2, 4]).await;
 
-        let mut l1 = MockL1::new();
+        let mut l1 = FullL1Mock::default();
         l1.contract.expect_submit().never();
+        l1.api
+            .expect_get_block_number()
+            .returning(|| Box::pin(async { Ok(4u32.into()) }));
+        l1.api
+            .expect_get_transaction_response()
+            .returning(|_| Box::pin(async { Ok(None) }));
 
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+        );
 
         let registry = Registry::default();
         block_committer.register_metrics(&registry);
@@ -543,15 +584,18 @@ mod tests {
         assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
-    async fn db_with_submissions(
-        process: &Arc<PostgresProcess>,
-        pending_submissions: Vec<u32>,
-    ) -> Postgres {
-        let db = process.create_random_db().await.unwrap();
+    async fn db_with_submissions(pending_submissions: Vec<u32>) -> DbWithProcess {
+        let db = PostgresProcess::shared()
+            .await
+            .unwrap()
+            .create_random_db()
+            .await
+            .unwrap();
         for height in pending_submissions {
             let submission_tx = BlockSubmissionTx {
                 hash: [height as u8; 32],
                 nonce: height,
+
                 ..Default::default()
             };
             db.record_block_submission(submission_tx, given_incomplete_submission(height))
@@ -568,15 +612,19 @@ mod tests {
             fetcher
                 .expect_block_at_height()
                 .with(eq(block.header.height))
-                .returning(move |_| Ok(Some(block.clone())));
+                .returning(move |_| {
+                    let block = block.clone();
+                    Box::pin(async move { Ok(Some(block)) })
+                });
         }
         if let Some(block) = available_blocks
             .into_iter()
             .max_by_key(|el| el.header.height)
         {
-            fetcher
-                .expect_latest_block()
-                .returning(move || Ok(block.clone()));
+            fetcher.expect_latest_block().returning(move || {
+                let block = block.clone();
+                Box::pin(async { Ok(block) })
+            });
         }
 
         fetcher

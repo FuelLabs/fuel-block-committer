@@ -1,11 +1,19 @@
+use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
+
+use block_ext::{ClientExt, FullBlock};
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
     Coin, CoinType,
 };
-use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
+use fuel_core_client::client::{
+    pagination::{PageDirection, PaginatedResult, PaginationRequest},
+    types::Block,
+    FuelClient as GqlClient,
+};
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
+use futures::{stream, Stream};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
@@ -13,21 +21,29 @@ use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
 
+mod block_ext;
+
 #[derive(Clone)]
 pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
+    full_blocks_req_size: NonZeroU32,
 }
 
 impl HttpClient {
     #[must_use]
-    pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
+    pub fn new(
+        url: &Url,
+        unhealthy_after_n_errors: usize,
+        full_blocks_req_size: NonZeroU32,
+    ) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
         Self {
             client,
             metrics: Metrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
+            full_blocks_req_size,
         }
     }
 
@@ -81,7 +97,7 @@ impl HttpClient {
         }
     }
 
-    pub(crate) async fn _block_at_height(&self, height: u32) -> Result<Option<Block>> {
+    pub(crate) async fn block_at_height(&self, height: u32) -> Result<Option<Block>> {
         match self.client.block_by_height(height.into()).await {
             Ok(maybe_block) => {
                 self.handle_network_success();
@@ -94,7 +110,89 @@ impl HttpClient {
         }
     }
 
-    pub(crate) async fn _latest_block(&self) -> Result<Block> {
+    pub(crate) fn block_in_height_range(
+        &self,
+        range: RangeInclusive<u32>,
+    ) -> impl Stream<Item = Result<Vec<ports::fuel::FullFuelBlock>>> + '_ {
+        struct Progress {
+            cursor: Option<String>,
+            blocks_so_far: usize,
+            target_amount: usize,
+        }
+
+        impl Progress {
+            pub fn new(range: RangeInclusive<u32>) -> Self {
+                // Cursor represents the block height of the last block in the previous request.
+                let cursor = range.start().checked_sub(1).map(|v| v.to_string());
+
+                Self {
+                    cursor,
+                    blocks_so_far: 0,
+                    target_amount: range.count(),
+                }
+            }
+        }
+
+        impl Progress {
+            fn consume(&mut self, result: PaginatedResult<FullBlock, String>) -> Vec<FullBlock> {
+                self.blocks_so_far += result.results.len();
+                self.cursor = result.cursor;
+                result.results
+            }
+
+            fn take_cursor(&mut self) -> Option<String> {
+                self.cursor.take()
+            }
+
+            fn remaining(&self) -> i32 {
+                self.target_amount.saturating_sub(self.blocks_so_far) as i32
+            }
+        }
+
+        let initial_progress = Progress::new(range);
+
+        stream::try_unfold(initial_progress, move |mut current_progress| async move {
+            if current_progress.remaining() <= 0 {
+                return Ok(None);
+            }
+
+            let request = PaginationRequest {
+                cursor: current_progress.take_cursor(),
+                results: min(
+                    current_progress.remaining(),
+                    self.full_blocks_req_size
+                        .get()
+                        .try_into()
+                        .unwrap_or(i32::MAX),
+                ),
+                direction: PageDirection::Forward,
+            };
+
+            let response = self
+                .client
+                .full_blocks(request.clone())
+                .await
+                .map_err(|e| {
+                    Error::Network(format!(
+                        "While sending request for full blocks: {request:?} got error: {e}"
+                    ))
+                })?;
+
+            let results: Vec<_> = current_progress
+                .consume(response)
+                .into_iter()
+                .map(ports::fuel::FullFuelBlock::try_from)
+                .collect::<Result<_>>()?;
+
+            if results.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some((results, current_progress)))
+            }
+        })
+    }
+
+    pub async fn latest_block(&self) -> Result<Block> {
         match self.client.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();

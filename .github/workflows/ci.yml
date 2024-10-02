@@ -15,7 +15,7 @@ concurrency:
 env:
   DASEL_VERSION: https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_linux_amd64
   RUST_VERSION: 1.79
-  FUEL_CORE_VERSION: 0.31.0
+  FUEL_CORE_VERSION: 0.36.0
   IMAGE_NAME: ${{ github.repository }}
   REPO_NAME: ${{ github.event.repository.name }}
   AWS_ROLE_ARN: arn:aws:iam::024848458133:role/github_oidc_FuelLabs_fuel-block-committer
@@ -61,12 +61,16 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Check for typos
         uses: crate-ci/typos@v1.23.6
-      - uses: dtolnay/rust-toolchain@master
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: clippy,rustfmt
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # The last version of Foundry that didn't experience this issue: https://github.com/alloy-rs/alloy/issues/1371
+          version: nightly-cb9dfae298fe0b5a5cdef2536955f50b8c7f0bf5
       - name: Build cache
         uses: buildjet/cache@v4
         with:
@@ -89,8 +93,56 @@ jobs:
           tar -xvf fuel-core.tar.gz
           chmod +x fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core
           mv fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core /usr/local/bin/fuel-core
-      - name: Run tests
-        run: ./run_tests.sh
+      - name: Unit/integration tests
+        run:  cargo test --workspace --exclude e2e
+
+  e2e-release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - name: Build release binary
+        run: cargo build --release --bin fuel-block-committer
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuel-block-committer-binary
+          path: target/release/fuel-block-committer
+
+  e2e-tests:
+    needs: e2e-release-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # The last version of Foundry that didn't experience this issue: https://github.com/alloy-rs/alloy/issues/1371
+          version: nightly-cb9dfae298fe0b5a5cdef2536955f50b8c7f0bf5
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: fuel-block-committer-binary
+          path: ./target/release
+      - name: Ensure Binary is Executable
+        run: chmod +x ./target/release/fuel-block-committer
+      - name: Install Fuel Core
+        run: |
+          curl -sSLf https://github.com/FuelLabs/fuel-core/releases/download/v${{ env.FUEL_CORE_VERSION }}/fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu.tar.gz -L -o fuel-core.tar.gz
+          tar -xvf fuel-core.tar.gz
+          chmod +x fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core
+          mv fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core /usr/local/bin/fuel-core
+      - name: Run E2E tests
+        run: |
+          ./target/release/fuel-block-committer --version
+          PATH="$(pwd)/target/release:$PATH" cargo test --package e2e --jobs 1
 
   publish-crates-check:
     runs-on: ubuntu-latest
@@ -109,42 +161,17 @@ jobs:
           check-repo: false
           ignore-unpublished-changes: true
 
-  publish-crates:
-    needs:
-      - cargo-verifications
-      - publish-crates-check
-    # Only do this job if publishing a release
-    if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Verify tag version
-        run: |
-          curl -sSLf "$DASEL_VERSION" -L -o dasel && chmod +x dasel
-          mv ./dasel /usr/local/bin/dasel
-          ./.github/scripts/verify_tag.sh ${{ github.ref_name }} Cargo.toml
-      - name: Publish crate
-        uses: katyo/publish-crates@v2
-        with:
-          publish-delay: 30000
-          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
   build-docker-images:
-    needs:
-      - cargo-verifications
+    # needs:
+    #   - cargo-verifications
+    #   - e2e-tests
     strategy:
       matrix:
         arch: [
           # build on native runners instead of using emulation
           {platform: linux/amd64, runner: buildjet-8vcpu-ubuntu-2204},
-          {platform: linux/arm64, runner: buildjet-8vcpu-ubuntu-2204-arm}
+          # don't currently need arm builds
+          # {platform: linux/arm64, runner: buildjet-8vcpu-ubuntu-2204-arm}
         ]
     runs-on: ${{ matrix.arch.runner }}
     permissions:

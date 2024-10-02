@@ -16,13 +16,18 @@ pub struct Committer {
     db_port: Option<u16>,
     db_name: Option<String>,
     kms_url: Option<String>,
+    bundle_accumulation_timeout: Option<String>,
+    bundle_blocks_to_accumulate: Option<String>,
+    bundle_optimization_step: Option<String>,
+    bundle_optimization_timeout: Option<String>,
+    bundle_block_height_lookback: Option<String>,
+    bundle_compression_level: Option<String>,
+    bundle_fragments_to_accumulate: Option<String>,
+    bundle_fragment_accumulation_timeout: Option<String>,
 }
 
 impl Committer {
     pub async fn start(self) -> anyhow::Result<CommitterProcess> {
-        let config =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../configurations/development/config.toml");
-
         macro_rules! get_field {
             ($field:ident) => {
                 self.$field
@@ -34,8 +39,11 @@ impl Committer {
 
         let kms_url = get_field!(kms_url);
         let mut cmd = tokio::process::Command::new("fuel-block-committer");
-        cmd.arg(config)
-            .env("E2E_TEST_AWS_ENDPOINT", kms_url)
+
+        let db_port = get_field!(db_port);
+        let db_name = get_field!(db_name);
+
+        cmd.env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
@@ -53,9 +61,51 @@ impl Committer {
                 "COMMITTER__FUEL__BLOCK_PRODUCER_ADDRESS",
                 get_field!(fuel_block_producer_addr),
             )
-            .env("COMMITTER__APP__DB__PORT", get_field!(db_port).to_string())
-            .env("COMMITTER__APP__DB__DATABASE", get_field!(db_name))
+            .env("COMMITTER__FUEL__MAX_FULL_BLOCKS_PER_REQUEST", "100")
+            .env("COMMITTER__APP__DB__PORT", db_port.to_string())
+            .env("COMMITTER__APP__DB__HOST", "localhost")
+            .env("COMMITTER__APP__DB__USERNAME", "username")
+            .env("COMMITTER__APP__DB__PASSWORD", "password")
+            .env("COMMITTER__APP__DB__MAX_CONNECTIONS", "10")
+            .env("COMMITTER__APP__DB__USE_SSL", "false")
+            .env("COMMITTER__APP__DB__DATABASE", &db_name)
             .env("COMMITTER__APP__PORT", unused_port.to_string())
+            .env("COMMITTER__APP__HOST", "127.0.0.1")
+            .env("COMMITTER__APP__BLOCK_CHECK_INTERVAL", "5s")
+            .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "5s")
+            .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
+            .env(
+                "COMMITTER__APP__BUNDLE__ACCUMULATION_TIMEOUT",
+                get_field!(bundle_accumulation_timeout),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE",
+                get_field!(bundle_blocks_to_accumulate),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT",
+                get_field!(bundle_optimization_timeout),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__BLOCK_HEIGHT_LOOKBACK",
+                get_field!(bundle_block_height_lookback),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__COMPRESSION_LEVEL",
+                get_field!(bundle_compression_level),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__OPTIMIZATION_STEP",
+                get_field!(bundle_optimization_step),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__FRAGMENTS_TO_ACCUMULATE",
+                get_field!(bundle_fragments_to_accumulate),
+            )
+            .env(
+                "COMMITTER__APP__BUNDLE__FRAGMENT_ACCUMULATION_TIMEOUT",
+                get_field!(bundle_fragment_accumulation_timeout),
+            )
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
@@ -76,6 +126,46 @@ impl Committer {
             _child: child,
             port: unused_port,
         })
+    }
+
+    pub fn with_bundle_fragment_accumulation_timeout(mut self, timeout: String) -> Self {
+        self.bundle_fragment_accumulation_timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_bundle_fragments_to_accumulate(mut self, fragments: String) -> Self {
+        self.bundle_fragments_to_accumulate = Some(fragments);
+        self
+    }
+
+    pub fn with_bundle_optimization_step(mut self, step: String) -> Self {
+        self.bundle_optimization_step = Some(step);
+        self
+    }
+
+    pub fn with_bundle_accumulation_timeout(mut self, timeout: String) -> Self {
+        self.bundle_accumulation_timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_bundle_blocks_to_accumulate(mut self, blocks: String) -> Self {
+        self.bundle_blocks_to_accumulate = Some(blocks);
+        self
+    }
+
+    pub fn with_bundle_optimization_timeout(mut self, timeout: String) -> Self {
+        self.bundle_optimization_timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_bundle_block_height_lookback(mut self, lookback: String) -> Self {
+        self.bundle_block_height_lookback = Some(lookback);
+        self
+    }
+
+    pub fn with_bundle_compression_level(mut self, level: String) -> Self {
+        self.bundle_compression_level = Some(level);
+        self
     }
 
     pub fn with_main_key_arn(mut self, wallet_arn: String) -> Self {
@@ -108,8 +198,8 @@ impl Committer {
         self
     }
 
-    pub fn with_fuel_block_producer_addr(mut self, fuel_block_producer_addr: [u8; 32]) -> Self {
-        self.fuel_block_producer_addr = Some(hex::encode(fuel_block_producer_addr));
+    pub fn with_fuel_block_producer_addr(mut self, fuel_block_producer_addr: String) -> Self {
+        self.fuel_block_producer_addr = Some(fuel_block_producer_addr);
         self
     }
 
@@ -148,25 +238,8 @@ impl CommitterProcess {
         Ok(())
     }
 
-    pub async fn wait_for_committed_blob(&self) -> anyhow::Result<()> {
-        loop {
-            match self.fetch_latest_blob_block().await {
-                Ok(_) => break,
-                _ => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    continue;
-                }
-            }
-        }
-        Ok(())
-    }
-
     async fn fetch_latest_committed_block(&self) -> anyhow::Result<u64> {
         self.fetch_metric_value("latest_committed_block").await
-    }
-
-    async fn fetch_latest_blob_block(&self) -> anyhow::Result<u64> {
-        self.fetch_metric_value("last_eth_block_w_blob").await
     }
 
     async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
