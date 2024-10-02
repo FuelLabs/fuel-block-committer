@@ -1,13 +1,11 @@
-#![deny(unused_crate_dependencies)]
-
 use std::{num::NonZeroU32, pin::Pin};
 
 use alloy::primitives::U256;
-use async_trait::async_trait;
+use delegate::delegate;
 use futures::{stream::TryStreamExt, Stream};
 use ports::{
-    l1::{Api, Contract, EventStreamer, Result},
-    types::{FuelBlockCommittedOnL1, L1Height, TransactionResponse, ValidatedFuelBlock},
+    l1::{Api, Contract, EventStreamer, FragmentsSubmitted, Result},
+    types::{Fragment, FuelBlockCommittedOnL1, L1Height, NonEmpty, TransactionResponse},
 };
 use websocket::EthEventStreamer;
 
@@ -20,43 +18,39 @@ pub use alloy::primitives::Address;
 pub use aws::*;
 pub use websocket::WebsocketClient;
 
-#[async_trait]
 impl Contract for WebsocketClient {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
-        self.submit(block).await
+    delegate! {
+        to self {
+            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
+            fn commit_interval(&self) -> NonZeroU32;
+        }
     }
 
     fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
         Box::new(self.event_streamer(height.into()))
     }
-
-    fn commit_interval(&self) -> NonZeroU32 {
-        self.commit_interval()
-    }
 }
 
-#[async_trait]
-impl Api for WebsocketClient {
-    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
-        Ok(self.submit_l2_state(state_data).await?)
-    }
+mod blob_encoding;
+pub use blob_encoding::Eip4844BlobEncoder;
 
-    async fn balance(&self) -> Result<U256> {
-        Ok(self.balance().await?)
+impl Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn submit_state_fragments(
+                &self,
+                fragments: NonEmpty<Fragment>,
+            ) -> Result<FragmentsSubmitted>;
+            async fn balance(&self) -> Result<U256>;
+            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
+        }
     }
 
     async fn get_block_number(&self) -> Result<L1Height> {
-        let block_num = self.get_block_number().await?;
+        let block_num = self._get_block_number().await?;
         let height = L1Height::try_from(block_num)?;
 
         Ok(height)
-    }
-
-    async fn get_transaction_response(
-        &self,
-        tx_hash: [u8; 32],
-    ) -> Result<Option<TransactionResponse>> {
-        Ok(self.get_transaction_response(tx_hash).await?)
     }
 }
 

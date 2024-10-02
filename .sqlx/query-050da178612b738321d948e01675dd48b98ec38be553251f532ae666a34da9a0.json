@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM l1_fragments ORDER BY idx ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "idx",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "total_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "unused_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "bundle_id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "050da178612b738321d948e01675dd48b98ec38be553251f532ae666a34da9a0"
+}

@@ -1,46 +1,62 @@
-use std::num::NonZeroU32;
+use std::{
+    cmp::min,
+    num::NonZeroU32,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use alloy::{
-    consensus::{SidecarBuilder, SimpleCoder},
-    network::{Ethereum, EthereumWallet, TransactionBuilder, TxSigner},
+    eips::eip4844::BYTES_PER_BLOB,
+    network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{
-        fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
-        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
-    },
+    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
     signers::aws::AwsSigner,
     sol,
 };
-use ports::types::{TransactionResponse, ValidatedFuelBlock};
+use itertools::Itertools;
+use metrics::{
+    prometheus::{self, histogram_opts},
+    RegistersMetrics,
+};
+use ports::{
+    l1::FragmentsSubmitted,
+    types::{Fragment, NonEmpty, TransactionResponse},
+};
+use tracing::info;
 use url::Url;
 
 use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    Eip4844BlobEncoder,
+};
 
-pub type WsProvider = FillProvider<
-    JoinFill<
-        JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
-        WalletFiller<EthereumWallet>,
+pub type WsProvider = alloy::providers::fillers::FillProvider<
+    alloy::providers::fillers::JoinFill<
+        alloy::providers::fillers::JoinFill<
+            alloy::providers::Identity,
+            alloy::providers::fillers::JoinFill<
+                alloy::providers::fillers::GasFiller,
+                alloy::providers::fillers::JoinFill<
+                    alloy::providers::fillers::BlobGasFiller,
+                    alloy::providers::fillers::JoinFill<
+                        alloy::providers::fillers::NonceFiller,
+                        alloy::providers::fillers::ChainIdFiller,
+                    >,
+                >,
+            >,
+        >,
+        alloy::providers::fillers::WalletFiller<EthereumWallet>,
     >,
-    RootProvider<PubSubFrontend>,
-    PubSubFrontend,
+    alloy::providers::RootProvider<alloy::pubsub::PubSubFrontend>,
+    alloy::pubsub::PubSubFrontend,
     Ethereum,
 >;
-
-type FuelStateContract = IFuelStateContract::IFuelStateContractInstance<
-    PubSubFrontend,
-    FillProvider<
-        JoinFill<
-            JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
-            WalletFiller<EthereumWallet>,
-        >,
-        RootProvider<PubSubFrontend>,
-        PubSubFrontend,
-        Ethereum,
-    >,
->;
+type FuelStateContract = IFuelStateContract::IFuelStateContractInstance<PubSubFrontend, WsProvider>;
 
 sol!(
     #[sol(rpc)]
@@ -56,18 +72,71 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
+    first_tx_gas_estimation_multiplier: Option<u64>,
+    first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
     address: Address,
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
+    metrics: Metrics,
+}
+
+impl RegistersMetrics for WsConnection {
+    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+        vec![
+            Box::new(self.metrics.blobs_per_tx.clone()),
+            Box::new(self.metrics.blob_used_bytes.clone()),
+        ]
+    }
+}
+
+#[derive(Clone)]
+struct Metrics {
+    blobs_per_tx: prometheus::Histogram,
+    blob_used_bytes: prometheus::Histogram,
+}
+
+fn custom_exponential_buckets(start: f64, end: f64, steps: usize) -> Vec<f64> {
+    let factor = (end / start).powf(1.0 / (steps - 1) as f64);
+    let mut buckets = Vec::with_capacity(steps);
+
+    let mut value = start;
+    for _ in 0..(steps - 1) {
+        buckets.push(value.ceil());
+        value *= factor;
+    }
+
+    buckets.push(end.ceil());
+
+    buckets
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            blobs_per_tx: prometheus::Histogram::with_opts(histogram_opts!(
+                "blob_per_tx",
+                "Number of blobs per blob transaction",
+                vec![1.0f64, 2., 3., 4., 5., 6.]
+            ))
+            .expect("to be correctly configured"),
+
+            blob_used_bytes: prometheus::Histogram::with_opts(histogram_opts!(
+                "blob_utilization",
+                "bytes filled per blob",
+                custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
+            ))
+            .expect("to be correctly configured"),
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    async fn submit(&self, block: ValidatedFuelBlock) -> Result<()> {
-        let commit_height = Self::calculate_commit_height(block.height(), self.commit_interval);
-        let contract_call = self.contract.commit(block.hash().into(), commit_height);
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+        let commit_height = Self::calculate_commit_height(height, self.commit_interval);
+        let contract_call = self.contract.commit(hash.into(), commit_height);
         let tx = contract_call.send().await?;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
@@ -109,27 +178,83 @@ impl EthApi for WsConnection {
         Self::convert_to_tx_response(tx_receipt)
     }
 
-    async fn submit_l2_state(&self, state_data: Vec<u8>) -> Result<[u8; 32]> {
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmpty<Fragment>,
+    ) -> Result<ports::l1::FragmentsSubmitted> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
                 _ => return Err(Error::Other("blob pool signer not configured".to_string())),
             };
 
-        let blob_tx = self
-            .prepare_blob_tx(&state_data, *blob_signer_address)
-            .await?;
+        // we only want to add it to the metrics if the submission succeeds
+        let used_bytes_per_fragment = fragments.iter().map(|f| f.used_bytes()).collect_vec();
 
-        let tx = blob_provider.send_transaction(blob_tx).await?;
+        let num_fragments = min(fragments.len(), 6);
 
-        Ok(tx.tx_hash().0)
+        let limited_fragments = fragments.into_iter().take(num_fragments);
+        let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
+
+        let blob_tx = match (
+            self.first_blob_tx_sent.load(Ordering::Relaxed),
+            self.first_tx_gas_estimation_multiplier,
+        ) {
+            (false, Some(gas_estimation_multiplier)) => {
+                let max_fee_per_blob_gas = blob_provider.get_blob_base_fee().await?;
+                let Eip1559Estimation {
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                } = blob_provider.estimate_eip1559_fees(None).await?;
+
+                TransactionRequest::default()
+                    .with_max_fee_per_blob_gas(
+                        max_fee_per_blob_gas.saturating_mul(gas_estimation_multiplier.into()),
+                    )
+                    .with_max_fee_per_gas(
+                        max_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
+                    )
+                    .with_max_priority_fee_per_gas(
+                        max_priority_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
+                    )
+                    .with_blob_sidecar(sidecar)
+                    .with_to(*blob_signer_address)
+            }
+            _ => TransactionRequest::default()
+                .with_blob_sidecar(sidecar)
+                .with_to(*blob_signer_address),
+        };
+
+        let blob_tx = blob_provider.fill(blob_tx).await?;
+        let SendableTx::Envelope(blob_tx) = blob_tx else {
+            return Err(crate::error::Error::Other(
+                "Expected an envelope because we have a wallet filler as well, but got a builder from alloy. This is a bug.".to_string(),
+            ));
+        };
+        let tx_id = *blob_tx.tx_hash();
+        info!("sending blob tx: {tx_id}",);
+
+        let _ = blob_provider.send_tx_envelope(blob_tx).await?;
+
+        self.first_blob_tx_sent.store(true, Ordering::Relaxed);
+
+        self.metrics.blobs_per_tx.observe(num_fragments as f64);
+
+        for bytes in used_bytes_per_fragment {
+            self.metrics.blob_used_bytes.observe(bytes as f64);
+        }
+
+        Ok(FragmentsSubmitted {
+            tx: tx_id.0,
+            num_fragments: num_fragments.try_into().expect("cannot be zero"),
+        })
     }
 
     #[cfg(feature = "test-helpers")]
-    async fn finalized(&self, block: ValidatedFuelBlock) -> Result<bool> {
+    async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool> {
         Ok(self
             .contract
-            .finalized(block.hash().into(), U256::from(block.height()))
+            .finalized(hash.into(), U256::from(height))
             .call()
             .await?
             ._0)
@@ -153,6 +278,7 @@ impl WsConnection {
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
+        first_tx_gas_estimation_multiplier: Option<u64>,
     ) -> Result<Self> {
         let address = main_signer.address();
 
@@ -187,6 +313,9 @@ impl WsConnection {
             blob_signer_address,
             contract,
             commit_interval,
+            metrics: Default::default(),
+            first_blob_tx_sent: Arc::new(AtomicBool::new(false)),
+            first_tx_gas_estimation_multiplier,
         })
     }
 
@@ -206,16 +335,6 @@ impl WsConnection {
 
     async fn _balance(&self, address: Address) -> Result<U256> {
         Ok(self.provider.get_balance(address).await?)
-    }
-
-    async fn prepare_blob_tx(&self, data: &[u8], to: Address) -> Result<TransactionRequest> {
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), data).build()?;
-
-        let blob_tx = TransactionRequest::default()
-            .with_to(to)
-            .with_blob_sidecar(sidecar);
-
-        Ok(blob_tx)
     }
 
     fn convert_to_tx_response(
@@ -242,6 +361,7 @@ impl WsConnection {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]

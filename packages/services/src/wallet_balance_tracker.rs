@@ -64,7 +64,6 @@ impl Default for Metrics {
     }
 }
 
-#[async_trait::async_trait]
 impl<Api> Runner for WalletBalanceTracker<Api>
 where
     Api: Send + Sync + ports::l1::Api,
@@ -114,7 +113,7 @@ mod tests {
         let mut eth_adapter = l1::MockApi::new();
         eth_adapter
             .expect_balance()
-            .return_once(move || Ok(balance));
+            .return_once(move || Box::pin(async move { Ok(balance) }));
 
         eth_adapter
     }

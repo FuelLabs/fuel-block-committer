@@ -10,8 +10,10 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+num_cpus = { workspace = true }
 actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["default", "derive"] }
+clock = { workspace = true }
 config = { workspace = true, features = ["toml", "async"] }
 eth = { workspace = true }
 fuel = { workspace = true }
@@ -28,7 +30,6 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 url = { workspace = true }
-validator = { workspace = true, features = ["validator"] }
 
 [dev-dependencies]
 anyhow = { workspace = true }

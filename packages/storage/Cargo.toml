@@ -10,8 +10,9 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-async-trait = { workspace = true }
+delegate = { workspace = true, optional = true }
 hex = { workspace = true }
+itertools = { workspace = true, features = ["use_alloc"] }
 ports = { workspace = true, features = ["storage"] }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -24,13 +25,16 @@ sqlx = { workspace = true, features = [
   "time",
   "chrono",
 ] }
-testcontainers = { workspace = true, optional = true }
+testcontainers = { workspace = true, optional = true, features = [
+  "signal-hook",
+  "watchdog",
+] }
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 ports = { workspace = true, features = ["storage"] }
-rand = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tokio = { workspace = true }
 
@@ -39,5 +43,6 @@ test-helpers = [
   "dep:testcontainers",
   "tokio/sync",
   "dep:rand",
+  "dep:delegate",
   "ports/test-helpers",
 ]

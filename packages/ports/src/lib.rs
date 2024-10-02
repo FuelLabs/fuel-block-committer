@@ -7,8 +7,16 @@ mod ports {
 
     #[cfg(feature = "storage")]
     pub mod storage;
+
+    #[cfg(feature = "clock")]
+    pub mod clock;
 }
 
-#[cfg(any(feature = "l1", feature = "fuel", feature = "storage"))]
+#[cfg(any(
+    feature = "l1",
+    feature = "fuel",
+    feature = "storage",
+    feature = "clock"
+))]
 pub use ports::*;
 pub mod types;

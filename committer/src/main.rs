@@ -16,7 +16,7 @@ pub type L1 = eth::WebsocketClient;
 pub type AwsClient = eth::AwsClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
-pub type Validator = validator::BlockValidator;
+pub type Validator = services::BlockValidator;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -80,7 +80,16 @@ async fn main() -> Result<()> {
     // If the blob pool wallet key is set, we need to start
     // the state committer and state importer
     if config.eth.blob_pool_key_arn.is_some() {
+        let block_bundler = setup::block_bundler(
+            fuel_adapter.clone(),
+            storage.clone(),
+            cancel_token.clone(),
+            &config,
+            &internal_config,
+        );
+
         let state_committer_handle = setup::state_committer(
+            fuel_adapter.clone(),
             ethereum_rpc.clone(),
             storage.clone(),
             cancel_token.clone(),
@@ -88,7 +97,7 @@ async fn main() -> Result<()> {
         );
 
         let state_importer_handle =
-            setup::state_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
+            setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
 
         let state_listener_handle = setup::state_listener(
             ethereum_rpc,
@@ -100,6 +109,7 @@ async fn main() -> Result<()> {
 
         handles.push(state_committer_handle);
         handles.push(state_importer_handle);
+        handles.push(block_bundler);
         handles.push(state_listener_handle);
     }
 

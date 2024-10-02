@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "state",
         "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "finalized_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -27,7 +32,8 @@
     "nullable": [
       false,
       false,
-      false
+      false,
+      true
     ]
   },
   "hash": "9be45d22c0bb43deb53da5a8fe19f5554f2a901cabc730792d51baadd2460e44"

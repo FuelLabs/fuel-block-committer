@@ -10,24 +10,36 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-async-trait = { workspace = true }
+flate2 = { workspace = true, features = ["default"] }
+fuel-crypto = { workspace = true }
 futures = { workspace = true }
+hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
+mockall = { workspace = true, optional = true }
 ports = { workspace = true, features = ["full"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
-hex = { workspace = true }
-validator = { workspace = true }
+bytesize = { workspace = true }
+rayon = { workspace = true }
+trait-variant = { workspace = true }
 
 [dev-dependencies]
+clock = { workspace = true, features = ["test-helpers"] }
+delegate = { workspace = true }
+eth = { workspace = true, features = ["test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["full", "test-helpers"] }
-rand = { workspace = true }
+pretty_assertions = { workspace = true, features = ["std"] }
+rand = { workspace = true, features = ["small_rng"] }
+services = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
-validator = { workspace = true, features = ["test-helpers"] }
+
+[features]
+test-helpers = ["dep:mockall"]

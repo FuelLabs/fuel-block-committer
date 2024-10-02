@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
@@ -69,7 +68,6 @@ where
     }
 }
 
-#[async_trait]
 impl<C, Db> Runner for CommitListener<C, Db>
 where
     C: ports::l1::Contract,
@@ -131,7 +129,7 @@ mod tests {
         types::{BlockSubmission, FuelBlockCommittedOnL1, L1Height, U256},
     };
     use rand::Rng;
-    use storage::{Postgres, PostgresProcess};
+    use storage::{DbWithProcess, PostgresProcess};
     use tokio_util::sync::CancellationToken;
 
     use crate::{CommitListener, Runner};
@@ -149,8 +147,7 @@ mod tests {
 
         let contract = given_contract_with_events(vec![block_hash], submission.submittal_height);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submission(&process, submission).await;
+        let db = db_with_submission(submission).await;
 
         let mut commit_listener =
             CommitListener::new(contract, db.clone(), CancellationToken::default());
@@ -177,8 +174,7 @@ mod tests {
 
         let contract = given_contract_with_events(vec![block_hash], submission.submittal_height);
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submission(&process, submission).await;
+        let db = db_with_submission(submission).await;
 
         let mut commit_listener = CommitListener::new(contract, db, CancellationToken::default());
 
@@ -218,8 +214,7 @@ mod tests {
             incoming_block.submittal_height,
         );
 
-        let process = PostgresProcess::shared().await.unwrap();
-        let db = db_with_submission(&process, incoming_block.clone()).await;
+        let db = db_with_submission(incoming_block.clone()).await;
 
         let mut commit_listener =
             CommitListener::new(contract, db.clone(), CancellationToken::default());
@@ -238,11 +233,13 @@ mod tests {
         );
     }
 
-    async fn db_with_submission(
-        process: &PostgresProcess,
-        submission: BlockSubmission,
-    ) -> Postgres {
-        let db = process.create_random_db().await.unwrap();
+    async fn db_with_submission(submission: BlockSubmission) -> DbWithProcess {
+        let db = PostgresProcess::shared()
+            .await
+            .unwrap()
+            .create_random_db()
+            .await
+            .unwrap();
 
         db.insert(submission).await.unwrap();
 

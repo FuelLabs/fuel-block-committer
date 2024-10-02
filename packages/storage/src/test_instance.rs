@@ -1,8 +1,17 @@
 use std::{
     borrow::Cow,
+    ops::RangeInclusive,
     sync::{Arc, Weak},
 };
 
+use delegate::delegate;
+use ports::{
+    storage::{BundleFragment, FuelBlock, SequentialFuelBlocks, Storage},
+    types::{
+        BlockSubmission, DateTime, Fragment, L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
+    },
+};
+use sqlx::Executor;
 use testcontainers::{
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
@@ -97,7 +106,17 @@ impl PostgresProcess {
         })
     }
 
-    pub async fn create_random_db(&self) -> ports::storage::Result<Postgres> {
+    pub async fn create_random_db(self: &Arc<Self>) -> ports::storage::Result<DbWithProcess> {
+        let db = self.create_noschema_random_db().await?;
+
+        db.db.migrate().await?;
+
+        Ok(db)
+    }
+
+    pub async fn create_noschema_random_db(
+        self: &Arc<Self>,
+    ) -> ports::storage::Result<DbWithProcess> {
         let port = self
             .container
             .get_host_port_ipv4(5432)
@@ -117,14 +136,69 @@ impl PostgresProcess {
 
         let db_name = format!("test_db_{}", rand::random::<u32>());
         let query = format!("CREATE DATABASE {db_name}");
-        db.execute(&query).await?;
+        db.pool()
+            .execute(sqlx::query(&query))
+            .await
+            .map_err(crate::error::Error::from)?;
 
         config.database = db_name;
 
         let db = Postgres::connect(&config).await?;
 
-        db.migrate().await?;
+        Ok(DbWithProcess {
+            db,
+            _process: self.clone(),
+        })
+    }
+}
 
-        Ok(db)
+#[derive(Clone)]
+pub struct DbWithProcess {
+    pub db: Postgres,
+    _process: Arc<PostgresProcess>,
+}
+
+impl DbWithProcess {
+    delegate! {
+        to self.db {
+            pub fn db_name(&self) -> String;
+            pub fn port(&self) -> u16;
+        }
+    }
+}
+
+impl Storage for DbWithProcess {
+    delegate! {
+        to self.db {
+            async fn insert(&self, submission: BlockSubmission) -> ports::storage::Result<()>;
+            async fn submission_w_latest_block(&self) -> ports::storage::Result<Option<BlockSubmission>>;
+            async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> ports::storage::Result<BlockSubmission>;
+            async fn insert_blocks(&self, blocks: NonEmpty<FuelBlock>) -> ports::storage::Result<()>;
+            async fn missing_blocks(&self, starting_height: u32, current_height: u32) -> ports::storage::Result<Vec<RangeInclusive<u32>>>;
+            async fn lowest_sequence_of_unbundled_blocks(
+                &self,
+                starting_height: u32,
+                limit: usize,
+            ) -> ports::storage::Result<Option<SequentialFuelBlocks>>;
+            async fn insert_bundle_and_fragments(
+                &self,
+                block_range: RangeInclusive<u32>,
+                fragments: NonEmpty<Fragment>,
+            ) -> ports::storage::Result<()>;
+            async fn record_pending_tx(
+                &self,
+                tx_hash: [u8; 32],
+                fragment_ids: NonEmpty<NonNegative<i32>>,
+            ) -> ports::storage::Result<()>;
+            async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
+            async fn has_pending_txs(&self) -> ports::storage::Result<bool>;
+            async fn oldest_nonfinalized_fragments(
+                &self,
+                starting_height: u32,
+                limit: usize,
+            ) -> ports::storage::Result<Vec<BundleFragment>>;
+            async fn last_time_a_fragment_was_finalized(&self) -> ports::storage::Result<Option<DateTime<Utc>>>;
+            async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<()>;
+        }
     }
 }
