@@ -80,18 +80,14 @@ where
     async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
         let starting_height = self.get_starting_height().await?;
 
-        loop {
-            let Some(blocks) = self
-                .storage
-                .lowest_sequence_of_unbundled_blocks(
-                    starting_height,
-                    self.config.num_blocks_to_accumulate.get(),
-                )
-                .await?
-            else {
-                return Ok(());
-            };
-
+        while let Some(blocks) = self
+            .storage
+            .lowest_sequence_of_unbundled_blocks(
+                starting_height,
+                self.config.num_blocks_to_accumulate.get(),
+            )
+            .await?
+        {
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more().await?;
             if blocks.len() < self.config.num_blocks_to_accumulate && still_time_to_accumulate_more
             {
@@ -125,6 +121,8 @@ where
 
             self.last_time_bundled = self.clock.now();
         }
+
+        Ok(())
     }
 
     async fn get_starting_height(&self) -> Result<u32> {
