@@ -10,6 +10,6 @@ spec:
     matchLabels:
       {{- include "fuel-block-committer.labels" . | nindent 4 }}
   endpoints:
-    - path: /api/metrics
+    - path: /metrics
       port: http
 {{- end }}
