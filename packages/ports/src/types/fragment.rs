@@ -10,10 +10,6 @@ pub struct Fragment {
 }
 
 impl Fragment {
-    pub fn used_bytes(&self) -> u32 {
-        self.total_bytes.get().saturating_sub(self.unused_bytes)
-    }
-
     pub fn utilization(&self) -> f64 {
         self.total_bytes.get().saturating_sub(self.unused_bytes) as f64
             / self.total_bytes.get() as f64

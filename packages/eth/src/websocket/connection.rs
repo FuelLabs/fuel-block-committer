@@ -86,7 +86,7 @@ impl RegistersMetrics for WsConnection {
     fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
         vec![
             Box::new(self.metrics.blobs_per_tx.clone()),
-            Box::new(self.metrics.blob_used_bytes.clone()),
+            Box::new(self.metrics.blob_unused_bytes.clone()),
         ]
     }
 }
@@ -94,7 +94,7 @@ impl RegistersMetrics for WsConnection {
 #[derive(Clone)]
 struct Metrics {
     blobs_per_tx: prometheus::Histogram,
-    blob_used_bytes: prometheus::Histogram,
+    blob_unused_bytes: prometheus::Histogram,
 }
 
 fn custom_exponential_buckets(start: f64, end: f64, steps: usize) -> Vec<f64> {
@@ -122,9 +122,9 @@ impl Default for Metrics {
             ))
             .expect("to be correctly configured"),
 
-            blob_used_bytes: prometheus::Histogram::with_opts(histogram_opts!(
+            blob_unused_bytes: prometheus::Histogram::with_opts(histogram_opts!(
                 "blob_utilization",
-                "bytes filled per blob",
+                "unused bytes per blob",
                 custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
             ))
             .expect("to be correctly configured"),
@@ -189,7 +189,7 @@ impl EthApi for WsConnection {
             };
 
         // we only want to add it to the metrics if the submission succeeds
-        let used_bytes_per_fragment = fragments.iter().map(|f| f.used_bytes()).collect_vec();
+        let used_bytes_per_fragment = fragments.iter().map(|f| f.unused_bytes).collect_vec();
 
         let num_fragments = min(fragments.len(), 6);
 
@@ -241,7 +241,7 @@ impl EthApi for WsConnection {
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
         for bytes in used_bytes_per_fragment {
-            self.metrics.blob_used_bytes.observe(bytes as f64);
+            self.metrics.blob_unused_bytes.observe(bytes as f64);
         }
 
         Ok(FragmentsSubmitted {
