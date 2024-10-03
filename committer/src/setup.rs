@@ -59,7 +59,6 @@ pub fn block_bundler(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
-    internal_config: &config::Internal,
 ) -> tokio::task::JoinHandle<()> {
     let bundler_factory = services::BundlerFactory::new(
         Eip4844BlobEncoder,
@@ -84,7 +83,7 @@ pub fn block_bundler(
     );
 
     schedule_polling(
-        internal_config.new_bundle_check_interval,
+        config.app.bundle.new_bundle_check_interval,
         block_bundler,
         "Block Bundler",
         cancel_token,

@@ -79,48 +79,48 @@ where
 {
     async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
         let starting_height = self.get_starting_height().await?;
-        let Some(blocks) = self
+
+        while let Some(blocks) = self
             .storage
             .lowest_sequence_of_unbundled_blocks(
                 starting_height,
                 self.config.num_blocks_to_accumulate.get(),
             )
             .await?
-        else {
-            return Ok(());
-        };
+        {
+            let still_time_to_accumulate_more = self.still_time_to_accumulate_more().await?;
+            if blocks.len() < self.config.num_blocks_to_accumulate && still_time_to_accumulate_more
+            {
+                info!(
+                    "Not enough blocks ({} < {}) to bundle. Waiting for more to accumulate.",
+                    blocks.len(),
+                    self.config.num_blocks_to_accumulate.get()
+                );
 
-        let still_time_to_accumulate_more = self.still_time_to_accumulate_more().await?;
-        if blocks.len() < self.config.num_blocks_to_accumulate && still_time_to_accumulate_more {
-            info!(
-                "Not enough blocks ({} < {}) to bundle. Waiting for more to accumulate.",
-                blocks.len(),
-                self.config.num_blocks_to_accumulate.get()
-            );
+                return Ok(());
+            }
 
-            return Ok(());
+            if !still_time_to_accumulate_more {
+                info!("Accumulation time limit reached.",);
+            }
+
+            info!("Giving {} blocks to the bundler", blocks.len());
+
+            let bundler = self.bundler_factory.build(blocks).await;
+
+            let BundleProposal {
+                fragments,
+                metadata,
+            } = self.find_optimal_bundle(bundler).await?;
+
+            info!("Bundler proposed: {metadata}");
+
+            self.storage
+                .insert_bundle_and_fragments(metadata.block_heights, fragments)
+                .await?;
+
+            self.last_time_bundled = self.clock.now();
         }
-
-        if !still_time_to_accumulate_more {
-            info!("Accumulation time limit reached.",);
-        }
-
-        info!("Giving {} blocks to the bundler", blocks.len());
-
-        let bundler = self.bundler_factory.build(blocks).await;
-
-        let BundleProposal {
-            fragments,
-            metadata,
-        } = self.find_optimal_bundle(bundler).await?;
-
-        info!("Bundler proposed: {metadata}");
-
-        self.storage
-            .insert_bundle_and_fragments(metadata.block_heights, fragments)
-            .await?;
-
-        self.last_time_bundled = self.clock.now();
 
         Ok(())
     }
@@ -128,6 +128,7 @@ where
     async fn get_starting_height(&self) -> Result<u32> {
         let current_height = self.fuel_api.latest_height().await?;
         let starting_height = current_height.saturating_sub(self.config.lookback_window);
+
         Ok(starting_height)
     }
 
