@@ -9,4 +9,4 @@ cargo test --manifest-path "$workspace_cargo_manifest" --workspace --exclude e2e
 
 # So that we may have a binary in `target/release`
 cargo build --release --manifest-path "$workspace_cargo_manifest" --bin fuel-block-committer
-PATH="$script_location/target/release:$PATH" cargo test --manifest-path "$workspace_cargo_manifest" --package e2e --jobs 1 -- --nocapture
+PATH="$script_location/target/release:$PATH" cargo test --manifest-path "$workspace_cargo_manifest" --package e2e --jobs 1

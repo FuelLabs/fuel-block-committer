@@ -160,7 +160,7 @@ where
     ) -> Action {
         let is_stale = latest_submission
             .map(|s| s.block_height < current_epoch_block_height)
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         // if we reached the next epoch since our last submission, we should post the latest block
         if is_stale {
@@ -347,7 +347,8 @@ mod tests {
         l1.contract
             .expect_submit()
             .withf(move |hash, height| *hash == *block.id && *height == block.header.height)
-            .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }));
+            .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }))
+            .once();
 
         l1.api
             .expect_get_block_number()
