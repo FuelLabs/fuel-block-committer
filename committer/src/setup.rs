@@ -112,6 +112,8 @@ pub fn state_committer(
             lookback_window: config.app.bundle.block_height_lookback,
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
+            gas_bump_timeout: Duration::from_secs(300), //TODO: make this configurable
+            max_gas_price: 1_000_000_000,
         },
         SystemClock,
     );
@@ -186,7 +188,6 @@ pub async fn l1_adapter(
         config.eth.blob_pool_key_arn.clone(),
         internal_config.eth_errors_before_unhealthy,
         aws_client,
-        config.eth.first_tx_gas_estimation_multiplier,
     )
     .await?;
 

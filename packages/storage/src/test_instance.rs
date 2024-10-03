@@ -189,7 +189,7 @@ impl Storage for DbWithProcess {
             ) -> ports::storage::Result<()>;
             async fn record_pending_tx(
                 &self,
-                tx_hash: [u8; 32],
+                tx: L1Tx,
                 fragment_ids: NonEmpty<NonNegative<i32>>,
             ) -> ports::storage::Result<()>;
             async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;

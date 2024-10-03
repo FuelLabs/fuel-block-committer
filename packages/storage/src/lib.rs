@@ -100,10 +100,10 @@ impl Storage for Postgres {
 
     async fn record_pending_tx(
         &self,
-        tx_hash: [u8; 32],
+        tx: L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
     ) -> Result<()> {
-        Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
+        Ok(self._record_pending_tx(tx, fragment_ids).await?)
     }
 
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
@@ -364,17 +364,18 @@ mod tests {
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
-        let tx_hash = rand::random::<[u8; 32]>();
-        storage
-            .record_pending_tx(tx_hash, fragment_ids)
-            .await
-            .unwrap();
+        let hash = rand::random::<[u8; 32]>();
+        let tx = L1Tx {
+            hash,
+            ..Default::default()
+        };
+        storage.record_pending_tx(tx, fragment_ids).await.unwrap();
 
         let finalization_time = Utc::now();
 
         // when
         storage
-            .update_tx_state(tx_hash, TransactionState::Finalized(finalization_time))
+            .update_tx_state(hash, TransactionState::Finalized(finalization_time))
             .await
             .unwrap();
 

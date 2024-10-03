@@ -25,7 +25,8 @@ pub trait EthApi {
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<ports::types::Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted>;
+        previous_tx: Option<ports::types::L1Tx>,
+    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -124,8 +125,12 @@ where
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted> {
-        let response = self.adapter.submit_state_fragments(fragments).await;
+        previous: Option<ports::types::L1Tx>,
+    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)> {
+        let response = self
+            .adapter
+            .submit_state_fragments(fragments, previous)
+            .await;
         self.note_network_status(&response);
         response
     }

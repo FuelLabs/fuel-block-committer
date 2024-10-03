@@ -4,7 +4,7 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::primitives::Address;
 use ports::{
     l1::{FragmentsSubmitted, Result},
-    types::{BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256},
+    types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse, U256},
 };
 use url::Url;
 
@@ -30,7 +30,6 @@ impl WebsocketClient {
         blob_pool_key_arn: Option<String>,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
-        first_tx_gas_estimation_multiplier: Option<u64>,
     ) -> ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
@@ -40,14 +39,8 @@ impl WebsocketClient {
 
         let main_signer = aws_client.make_signer(main_key_arn).await?;
 
-        let provider = WsConnection::connect(
-            url,
-            contract_address,
-            main_signer,
-            blob_signer,
-            first_tx_gas_estimation_multiplier,
-        )
-        .await?;
+        let provider =
+            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
@@ -85,8 +78,12 @@ impl WebsocketClient {
     pub(crate) async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> ports::l1::Result<FragmentsSubmitted> {
-        Ok(self.inner.submit_state_fragments(fragments).await?)
+        previous_tx: Option<ports::types::L1Tx>,
+    ) -> ports::l1::Result<(L1Tx, FragmentsSubmitted)> {
+        Ok(self
+            .inner
+            .submit_state_fragments(fragments, previous_tx)
+            .await?)
     }
 
     #[cfg(feature = "test-helpers")]

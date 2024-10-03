@@ -164,7 +164,8 @@ pub(crate) mod test_utils {
                         async fn submit_state_fragments(
                             &self,
                             fragments: NonEmpty<Fragment>,
-                        ) -> ports::l1::Result<FragmentsSubmitted>;
+                            previous_tx: Option<ports::types::L1Tx>,
+                        ) -> ports::l1::Result<(ports::types::L1Tx, FragmentsSubmitted)>;
                         async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
                         async fn balance(&self) -> ports::l1::Result<U256>;
                         async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> ports::l1::Result<Option<TransactionResponse>>;
@@ -185,9 +186,10 @@ pub(crate) mod test_utils {
                 let mut l1_mock = ports::l1::MockApi::new();
 
                 for (fragment, tx_id) in expectations {
+                    // TODO figure out how we need to use previous tx
                     l1_mock
                         .expect_submit_state_fragments()
-                        .withf(move |data| {
+                        .withf(move |data, _previous_tx| {
                             if let Some(fragment) = &fragment {
                                 data == fragment
                             } else {
@@ -195,12 +197,17 @@ pub(crate) mod test_utils {
                             }
                         })
                         .once()
-                        .return_once(move |fragments| {
+                        .return_once(move |fragments, _previous_tx| {
                             Box::pin(async move {
-                                Ok(FragmentsSubmitted {
-                                    tx: tx_id,
-                                    num_fragments: min(fragments.len(), 6).try_into().unwrap(),
-                                })
+                                Ok((
+                                    ports::types::L1Tx {
+                                        hash: tx_id,
+                                        ..Default::default()
+                                    },
+                                    FragmentsSubmitted {
+                                        num_fragments: min(fragments.len(), 6).try_into().unwrap(),
+                                    },
+                                ))
                             })
                         })
                         .in_sequence(&mut sequence);

@@ -277,7 +277,9 @@ mod tests {
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
         l1::{Contract, FragmentsSubmitted, MockContract},
-        types::{BlockSubmissionTx, Fragment, L1Height, NonEmpty, TransactionResponse, Utc, U256},
+        types::{
+            BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, TransactionResponse, Utc, U256,
+        },
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{DbWithProcess, PostgresProcess};
@@ -317,7 +319,8 @@ mod tests {
         async fn submit_state_fragments(
             &self,
             _fragments: NonEmpty<Fragment>,
-        ) -> ports::l1::Result<FragmentsSubmitted> {
+            _previous_tx: Option<L1Tx>,
+        ) -> ports::l1::Result<(L1Tx, FragmentsSubmitted)> {
             unimplemented!()
         }
 

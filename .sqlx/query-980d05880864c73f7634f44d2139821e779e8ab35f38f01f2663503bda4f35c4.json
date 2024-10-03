@@ -22,6 +22,31 @@
         "ordinal": 3,
         "name": "finalized_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "max_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "priority_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "blob_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -33,7 +58,12 @@
       false,
       false,
       false,
-      true
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
     ]
   },
   "hash": "980d05880864c73f7634f44d2139821e779e8ab35f38f01f2663503bda4f35c4"

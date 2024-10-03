@@ -1,7 +1,8 @@
 use std::num::NonZeroUsize;
 
 use crate::types::{
-    BlockSubmissionTx, Fragment, InvalidL1Height, L1Height, NonEmpty, TransactionResponse, U256,
+    BlockSubmissionTx, Fragment, InvalidL1Height, L1Height, L1Tx, NonEmpty, TransactionResponse,
+    U256,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -30,7 +31,6 @@ pub trait Contract: Send + Sync {
 
 #[derive(Debug, Clone, Copy)]
 pub struct FragmentsSubmitted {
-    pub tx: [u8; 32],
     pub num_fragments: NonZeroUsize,
 }
 
@@ -41,7 +41,8 @@ pub trait Api {
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> Result<FragmentsSubmitted>;
+        previous_tx: Option<L1Tx>,
+    ) -> Result<(L1Tx, FragmentsSubmitted)>;
     async fn get_block_number(&self) -> Result<L1Height>;
     async fn balance(&self) -> Result<U256>;
     async fn get_transaction_response(

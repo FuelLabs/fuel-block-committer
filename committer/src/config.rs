@@ -67,9 +67,6 @@ pub struct Eth {
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
-    /// To manually be enabled if a transaction gets stuck. Geth requires a multiplier of 2. Should
-    /// be removed once the tx manager is implemented.
-    pub first_tx_gas_estimation_multiplier: Option<u64>,
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>

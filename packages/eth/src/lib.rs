@@ -4,7 +4,7 @@ use alloy::primitives::U256;
 use delegate::delegate;
 use ports::{
     l1::{Api, Contract, FragmentsSubmitted, Result},
-    types::{BlockSubmissionTx, Fragment, L1Height, NonEmpty, TransactionResponse},
+    types::{BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, TransactionResponse},
 };
 
 mod aws;
@@ -34,7 +34,8 @@ impl Api for WebsocketClient {
             async fn submit_state_fragments(
                 &self,
                 fragments: NonEmpty<Fragment>,
-            ) -> Result<FragmentsSubmitted>;
+                previous_tx: Option<ports::types::L1Tx>,
+            ) -> Result<(L1Tx, FragmentsSubmitted)>;
             async fn balance(&self) -> Result<U256>;
             async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
         }

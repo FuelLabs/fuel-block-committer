@@ -27,8 +27,7 @@ impl DeployedContract {
         let aws_client = AwsClient::new(AwsConfig::for_testing(key.url).await).await;
 
         let chain_state_contract =
-            WebsocketClient::connect(url, address, key.id, blob_wallet, 5, aws_client, None)
-                .await?;
+            WebsocketClient::connect(url, address, key.id, blob_wallet, 5, aws_client).await?;
 
         Ok(Self {
             address,

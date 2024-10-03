@@ -4,7 +4,7 @@ use itertools::Itertools;
 use ports::{
     clock::Clock,
     storage::{BundleFragment, Storage},
-    types::{CollectNonEmpty, DateTime, NonEmpty, Utc},
+    types::{CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
 };
 use tracing::info;
 
@@ -17,6 +17,8 @@ pub struct Config {
     pub lookback_window: u32,
     pub fragment_accumulation_timeout: Duration,
     pub fragments_to_accumulate: NonZeroUsize,
+    pub gas_bump_timeout: Duration,
+    pub max_gas_price: u64,
 }
 
 #[cfg(test)]
@@ -26,6 +28,8 @@ impl Default for Config {
             lookback_window: 1000,
             fragment_accumulation_timeout: Duration::from_secs(0),
             fragments_to_accumulate: 1.try_into().unwrap(),
+            gas_bump_timeout: Duration::from_secs(300),
+            max_gas_price: 1_000_000_000,
         }
     }
 }
@@ -82,17 +86,25 @@ where
         Ok(std_elapsed >= self.config.fragment_accumulation_timeout)
     }
 
-    async fn submit_fragments(&self, fragments: NonEmpty<BundleFragment>) -> Result<()> {
+    async fn submit_fragments(
+        &self,
+        fragments: NonEmpty<BundleFragment>,
+        previous_tx: Option<L1Tx>,
+    ) -> Result<()> {
         info!("about to send at most {} fragments", fragments.len());
 
         let data = fragments.clone().map(|f| f.fragment);
 
-        match self.l1_adapter.submit_state_fragments(data).await {
-            Ok(submittal_report) => {
+        match self
+            .l1_adapter
+            .submit_state_fragments(data, previous_tx)
+            .await
+        {
+            Ok((submitted_tx, submitted_fragments)) => {
                 let fragment_ids = fragments
                     .iter()
                     .map(|f| f.id)
-                    .take(submittal_report.num_fragments.get())
+                    .take(submitted_fragments.num_fragments.get())
                     .collect_nonempty()
                     .expect("non-empty vec");
 
@@ -101,14 +113,12 @@ where
                     .map(|id| id.as_u32().to_string())
                     .join(", ");
 
+                let tx_hash = submitted_tx.hash;
                 self.storage
-                    .record_pending_tx(submittal_report.tx, fragment_ids)
+                    .record_pending_tx(submitted_tx, fragment_ids)
                     .await?;
 
-                tracing::info!(
-                    "Submitted fragments {ids} with tx {}",
-                    hex::encode(submittal_report.tx)
-                );
+                tracing::info!("Submitted fragments {ids} with tx {}", hex::encode(tx_hash));
                 Ok(())
             }
             Err(e) => {
@@ -123,8 +133,14 @@ where
         }
     }
 
-    async fn has_pending_transactions(&self) -> Result<bool> {
-        self.storage.has_pending_txs().await.map_err(|e| e.into())
+    // async fn has_pending_transactions(&self) -> Result<bool> {
+    //     self.storage.has_pending_txs().await.map_err(|e| e.into())
+    // }
+
+    async fn get_pending_transaction(&self) -> Result<Option<L1Tx>> {
+        let mut pending_txs = self.storage.get_pending_txs().await?;
+
+        Ok(pending_txs.pop())
     }
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
@@ -161,13 +177,13 @@ where
         Ok(expired)
     }
 
-    async fn submit_fragments_if_ready(&self) -> Result<()> {
+    async fn submit_fragments_if_ready(&self, previous_tx: Option<L1Tx>) -> Result<()> {
         if let Some(fragments) = self.next_fragments_to_submit().await? {
             if self
                 .should_submit_fragments(fragments.len_nonzero())
                 .await?
             {
-                self.submit_fragments(fragments).await?;
+                self.submit_fragments(fragments, previous_tx).await?;
             }
         }
         Ok(())
@@ -182,11 +198,23 @@ where
     C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
-        if self.has_pending_transactions().await? {
-            return Ok(());
-        }
+        match self.get_pending_transaction().await? {
+            Some(previous_tx) => {
+                let elapsed = self.clock.now()
+                    - previous_tx
+                        .created_at
+                        .expect("previous tx to have timestamp");
+                let std_elapsed = elapsed
+                    .to_std()
+                    .map_err(|e| crate::Error::Other(format!("Failed to convert time: {}", e)))?;
+                if std_elapsed >= self.config.gas_bump_timeout {
+                    self.submit_fragments_if_ready(Some(previous_tx)).await?
+                }
 
-        self.submit_fragments_if_ready().await?;
+                return Ok(());
+            }
+            None => self.submit_fragments_if_ready(None).await?,
+        };
 
         Ok(())
     }
@@ -223,6 +251,7 @@ mod tests {
                 lookback_window: 1000,
                 fragment_accumulation_timeout: Duration::from_secs(60),
                 fragments_to_accumulate: 4.try_into().unwrap(),
+                ..Default::default()
             },
             TestClock::default(),
         );
@@ -258,6 +287,7 @@ mod tests {
                 lookback_window: 1000,
                 fragment_accumulation_timeout: Duration::from_secs(60),
                 fragments_to_accumulate: 10.try_into().unwrap(),
+                ..Default::default()
             },
             clock.clone(),
         );
@@ -292,6 +322,7 @@ mod tests {
                 lookback_window: 1000,
                 fragment_accumulation_timeout: Duration::from_secs(60),
                 fragments_to_accumulate: 10.try_into().unwrap(),
+                ..Default::default()
             },
             clock.clone(),
         );
@@ -330,6 +361,7 @@ mod tests {
                 lookback_window: 1000,
                 fragment_accumulation_timeout: Duration::from_secs(60),
                 fragments_to_accumulate: 5.try_into().unwrap(),
+                ..Default::default()
             },
             clock.clone(),
         );
@@ -368,6 +400,7 @@ mod tests {
                 lookback_window: 1000,
                 fragment_accumulation_timeout: Duration::from_secs(60),
                 fragments_to_accumulate: 10.try_into().unwrap(),
+                ..Default::default()
             },
             clock.clone(),
         );
@@ -406,6 +439,7 @@ mod tests {
                 lookback_window: 1000,
                 fragment_accumulation_timeout: Duration::from_secs(60),
                 fragments_to_accumulate: 10.try_into().unwrap(),
+                ..Default::default()
             },
             clock.clone(),
         );

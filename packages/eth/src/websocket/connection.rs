@@ -1,14 +1,8 @@
-use std::{
-    cmp::min,
-    num::NonZeroU32,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{cmp::min, num::NonZeroU32};
 
 use alloy::{
-    eips::eip4844::BYTES_PER_BLOB,
+    consensus::Transaction,
+    eips::{eip4844::BYTES_PER_BLOB, BlockNumberOrTag},
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
@@ -24,7 +18,7 @@ use metrics::{
 };
 use ports::{
     l1::FragmentsSubmitted,
-    types::{BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse},
+    types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse},
 };
 use tracing::info;
 use url::Url;
@@ -72,14 +66,50 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
-    first_tx_gas_estimation_multiplier: Option<u64>,
-    first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
     address: Address,
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
     metrics: Metrics,
+}
+
+impl WsConnection {
+    async fn get_next_blob_fee(&self) -> Result<u128> {
+        self.provider
+            .get_block_by_number(BlockNumberOrTag::Latest, false)
+            .await?
+            .ok_or(Error::Network(
+                "get_block_by_number returned None".to_string(),
+            ))?
+            .header
+            .next_block_blob_fee()
+            .ok_or(Error::Network(
+                "next_block_blob_fee returned None".to_string(),
+            ))
+    }
+
+    async fn get_bumped_fees(&self, previous_tx: &L1Tx) -> Result<(u128, u128, u128)> {
+        let next_blob_fee = self.get_next_blob_fee().await?;
+        let max_fee_per_blob_gas = min(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
+
+        let Eip1559Estimation {
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+        } = self.provider.estimate_eip1559_fees(None).await?;
+
+        let max_fee_per_gas = min(max_fee_per_gas, previous_tx.max_fee.saturating_mul(2));
+        let max_priority_fee_per_gas = min(
+            max_priority_fee_per_gas,
+            previous_tx.priority_fee.saturating_mul(2),
+        );
+
+        Ok((
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+            max_fee_per_blob_gas,
+        ))
+    }
 }
 
 impl RegistersMetrics for WsConnection {
@@ -193,7 +223,8 @@ impl EthApi for WsConnection {
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted> {
+        previous_tx: Option<L1Tx>,
+    ) -> Result<(L1Tx, ports::l1::FragmentsSubmitted)> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
@@ -208,29 +239,17 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
 
-        let blob_tx = match (
-            self.first_blob_tx_sent.load(Ordering::Relaxed),
-            self.first_tx_gas_estimation_multiplier,
-        ) {
-            (false, Some(gas_estimation_multiplier)) => {
-                let max_fee_per_blob_gas = blob_provider.get_blob_base_fee().await?;
-                let Eip1559Estimation {
-                    max_fee_per_gas,
-                    max_priority_fee_per_gas,
-                } = blob_provider.estimate_eip1559_fees(None).await?;
-
+        let blob_tx = match previous_tx {
+            Some(previous_tx) => {
+                let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
+                    self.get_bumped_fees(&previous_tx).await?;
                 TransactionRequest::default()
-                    .with_max_fee_per_blob_gas(
-                        max_fee_per_blob_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
-                    .with_max_fee_per_gas(
-                        max_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
-                    .with_max_priority_fee_per_gas(
-                        max_priority_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
+                    .with_max_fee_per_gas(max_fee_per_gas)
+                    .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+                    .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
                     .with_blob_sidecar(sidecar)
                     .with_to(*blob_signer_address)
+                    .with_nonce(previous_tx.nonce as u64)
             }
             _ => TransactionRequest::default()
                 .with_blob_sidecar(sidecar)
@@ -246,9 +265,20 @@ impl EthApi for WsConnection {
         let tx_id = *blob_tx.tx_hash();
         info!("sending blob tx: {tx_id}",);
 
-        let _ = blob_provider.send_tx_envelope(blob_tx).await?;
+        let l1_tx = L1Tx {
+            hash: tx_id.0,
+            nonce: blob_tx.nonce() as u32, // TODO: conversion
+            max_fee: blob_tx.max_fee_per_gas(),
+            priority_fee: blob_tx
+                .max_priority_fee_per_gas()
+                .expect("eip4844 tx to have priority fee"),
+            blob_fee: blob_tx
+                .max_fee_per_blob_gas()
+                .expect("eip4844 tx to have blob fee"),
+            ..Default::default()
+        };
 
-        self.first_blob_tx_sent.store(true, Ordering::Relaxed);
+        let _ = blob_provider.send_tx_envelope(blob_tx).await?;
 
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
@@ -256,10 +286,11 @@ impl EthApi for WsConnection {
             self.metrics.blob_used_bytes.observe(bytes as f64);
         }
 
-        Ok(FragmentsSubmitted {
-            tx: tx_id.0,
+        let fragments_submitted = FragmentsSubmitted {
             num_fragments: num_fragments.try_into().expect("cannot be zero"),
-        })
+        };
+
+        Ok((l1_tx, fragments_submitted))
     }
 
     #[cfg(feature = "test-helpers")]
@@ -290,7 +321,6 @@ impl WsConnection {
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
-        first_tx_gas_estimation_multiplier: Option<u64>,
     ) -> Result<Self> {
         let address = main_signer.address();
 
@@ -326,8 +356,6 @@ impl WsConnection {
             contract,
             commit_interval,
             metrics: Default::default(),
-            first_blob_tx_sent: Arc::new(AtomicBool::new(false)),
-            first_tx_gas_estimation_multiplier,
         })
     }
 

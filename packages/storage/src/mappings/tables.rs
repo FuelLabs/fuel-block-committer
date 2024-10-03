@@ -308,6 +308,11 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
 pub struct L1Tx {
     pub id: i32,
     pub hash: Vec<u8>,
+    pub nonce: i64,
+    pub max_fee: BigDecimal,
+    pub priority_fee: BigDecimal,
+    pub blob_fee: BigDecimal,
+    pub created_at: Option<DateTime<Utc>>,
     pub state: i16,
     pub finalized_at: Option<DateTime<Utc>>,
 }
@@ -336,6 +341,10 @@ impl L1Tx {
 
 impl From<ports::types::L1Tx> for L1Tx {
     fn from(value: ports::types::L1Tx) -> Self {
+        let max_fee = u128_to_bigdecimal(value.max_fee);
+        let priority_fee = u128_to_bigdecimal(value.priority_fee);
+        let blob_fee = u128_to_bigdecimal(value.blob_fee);
+
         let state = L1TxState::from(&value.state).into();
         let finalized_at = match value.state {
             TransactionState::Finalized(finalized_at) => Some(finalized_at),
@@ -348,6 +357,11 @@ impl From<ports::types::L1Tx> for L1Tx {
             hash: value.hash.to_vec(),
             state,
             finalized_at,
+            nonce: value.nonce as i64,
+            max_fee,
+            priority_fee,
+            blob_fee,
+            created_at: value.created_at,
         }
     }
 }
@@ -373,6 +387,11 @@ impl TryFrom<L1Tx> for ports::types::L1Tx {
             id: Some(id),
             hash,
             state,
+            nonce: value.nonce as u32,
+            max_fee: bigdecimal_to_u128(value.max_fee)?,
+            priority_fee: bigdecimal_to_u128(value.priority_fee)?,
+            blob_fee: bigdecimal_to_u128(value.blob_fee)?,
+            created_at: value.created_at,
         })
     }
 }

@@ -182,7 +182,7 @@ pub trait Storage: Send + Sync {
 
     async fn record_pending_tx(
         &self,
-        tx_hash: [u8; 32],
+        tx: L1Tx,
         fragments: NonEmpty<NonNegative<i32>>,
     ) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
@@ -221,7 +221,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 ) -> Result<()>;
                 async fn record_pending_tx(
                     &self,
-                    tx_hash: [u8; 32],
+                    tx: L1Tx,
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
@@ -262,7 +262,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 ) -> Result<()>;
                 async fn record_pending_tx(
                     &self,
-                    tx_hash: [u8; 32],
+                    tx: L1Tx,
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
