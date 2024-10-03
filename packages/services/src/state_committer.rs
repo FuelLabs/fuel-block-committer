@@ -210,7 +210,8 @@ where
                 if std_elapsed >= self.config.gas_bump_timeout {
                     info!(
                         "replacing tx {} because it was pending for {}s",
-                        hex::encode(previous_tx.hash), std_elapsed.as_secs()
+                        hex::encode(previous_tx.hash),
+                        std_elapsed.as_secs()
                     );
                     self.submit_fragments_if_ready(Some(previous_tx)).await?
                 }
