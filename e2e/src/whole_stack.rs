@@ -230,7 +230,8 @@ async fn start_committer(
         .with_bundle_fragments_to_accumulate("3".to_owned())
         .with_bundle_fragment_accumulation_timeout("5s".to_owned())
         .with_bundle_optimization_step("100".to_owned())
-        .with_bundle_compression_level("level6".to_owned());
+        .with_bundle_compression_level("level6".to_owned())
+        .with_new_bundle_check_interval("3s".to_owned());
 
     let committer = if blob_support {
         committer_builder.with_blob_key_arn(secondary_key.id.clone())

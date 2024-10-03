@@ -24,6 +24,7 @@ pub struct Committer {
     bundle_compression_level: Option<String>,
     bundle_fragments_to_accumulate: Option<String>,
     bundle_fragment_accumulation_timeout: Option<String>,
+    new_bundle_check_interval: Option<String>,
 }
 
 impl Committer {
@@ -106,6 +107,10 @@ impl Committer {
                 "COMMITTER__APP__BUNDLE__FRAGMENT_ACCUMULATION_TIMEOUT",
                 get_field!(bundle_fragment_accumulation_timeout),
             )
+            .env(
+                "COMMITTER__APP__BUNDLE__NEW_BUNDLE_CHECK_INTERVAL",
+                get_field!(new_bundle_check_interval),
+            )
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
@@ -160,6 +165,11 @@ impl Committer {
 
     pub fn with_bundle_block_height_lookback(mut self, lookback: String) -> Self {
         self.bundle_block_height_lookback = Some(lookback);
+        self
+    }
+
+    pub fn with_new_bundle_check_interval(mut self, timeout: String) -> Self {
+        self.new_bundle_check_interval = Some(timeout);
         self
     }
 
