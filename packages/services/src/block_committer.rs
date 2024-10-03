@@ -21,9 +21,11 @@ pub struct BlockCommitter<L1, Db, Fuel, BlockValidator, Clock> {
     block_validator: BlockValidator,
     clock: Clock,
     commit_interval: NonZeroU32,
+    num_blocks_to_finalize_tx: u64,
     metrics: Metrics,
 }
 
+#[derive(Debug)]
 enum Action {
     UpdateTx {
         submission_id: NonNegative<i32>,
@@ -78,6 +80,7 @@ impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockVali
         block_validator: BlockValidator,
         clock: Clock,
         commit_interval: NonZeroU32,
+        num_blocks_to_finalize_tx: u64,
     ) -> Self {
         Self {
             l1_adapter: l1,
@@ -86,6 +89,7 @@ impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockVali
             block_validator,
             clock,
             commit_interval,
+            num_blocks_to_finalize_tx,
             metrics: Metrics::default(),
         }
     }
@@ -129,18 +133,6 @@ where
         Ok(latest_block)
     }
 
-    fn check_if_stale(
-        &self,
-        block_height: u32,
-        latest_submission: Option<&BlockSubmission>,
-    ) -> bool {
-        if let Some(submission) = latest_submission {
-            submission.block_height >= block_height
-        } else {
-            return false;
-        }
-    }
-
     fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
         current_block_height - (current_block_height % self.commit_interval)
     }
@@ -164,20 +156,23 @@ where
     fn decide_action(
         &self,
         latest_submission: Option<&BlockSubmission>,
-        fuel_block_height: u32,
+        current_epoch_block_height: u32,
     ) -> Action {
+        let is_stale = latest_submission
+            .map(|s| s.block_height < current_epoch_block_height)
+            .unwrap_or(false);
+
+        // if we reached the next epoch since our last submission, we should post the latest block
+        if is_stale {
+            return Action::Post;
+        }
+
         match latest_submission {
             Some(submission) if !submission.completed => Action::UpdateTx {
                 submission_id: submission.id.expect("submission to have id"),
                 block_height: submission.block_height,
             },
-            _ => {
-                if self.check_if_stale(fuel_block_height, latest_submission) {
-                    Action::DoNothing
-                } else {
-                    Action::Post
-                }
-            }
+            _ => Action::DoNothing,
         }
     }
 
@@ -210,8 +205,7 @@ where
                 continue;
             }
 
-            //TODO: self.num_blocks_to_finalize
-            if !tx_response.confirmations(current_block_number) < 10 {
+            if !tx_response.confirmations(current_block_number) < self.num_blocks_to_finalize_tx {
                 continue; // not finalized
             }
 
@@ -337,9 +331,9 @@ mod tests {
 
         async fn get_transaction_response(
             &self,
-            _tx_hash: [u8; 32],
+            tx_hash: [u8; 32],
         ) -> ports::l1::Result<Option<TransactionResponse>> {
-            Ok(None)
+            self.api.get_transaction_response(tx_hash).await
         }
     }
 
@@ -358,6 +352,30 @@ mod tests {
         l1.api
             .expect_get_block_number()
             .return_once(move || Box::pin(async { Ok(0u32.into()) }));
+
+        l1
+    }
+
+    fn given_l1_that_expects_transaction_response(
+        block_number: u32,
+        tx_hash: [u8; 32],
+        response: Option<TransactionResponse>,
+    ) -> MockL1 {
+        let mut l1 = MockL1::new();
+
+        l1.api
+            .expect_get_block_number()
+            .returning(move || Box::pin(async move { Ok(block_number.into()) }));
+
+        l1.api
+            .expect_get_transaction_response()
+            .with(eq(tx_hash))
+            .returning(move |_| {
+                let response = response.clone();
+                Box::pin(async move { Ok(response) })
+            });
+
+        l1.contract.expect_submit().never();
 
         l1
     }
@@ -385,6 +403,7 @@ mod tests {
             block_validator,
             SystemClock,
             2.try_into().unwrap(),
+            1,
         );
 
         // when
@@ -410,6 +429,7 @@ mod tests {
             block_validator,
             SystemClock,
             2.try_into().unwrap(),
+            1,
         );
 
         // when
@@ -441,6 +461,7 @@ mod tests {
             block_validator,
             SystemClock,
             2.try_into().unwrap(),
+            1,
         );
 
         // when
@@ -467,6 +488,7 @@ mod tests {
             block_validator,
             SystemClock,
             2.try_into().unwrap(),
+            1,
         );
 
         // when
@@ -487,14 +509,7 @@ mod tests {
 
         let db = db_with_submissions(vec![0, 2, 4]).await;
 
-        let mut l1 = FullL1Mock::default();
-        l1.contract.expect_submit().never();
-        l1.api
-            .expect_get_block_number()
-            .returning(|| Box::pin(async { Ok(5u32.into()) }));
-        l1.api
-            .expect_get_transaction_response()
-            .returning(|_| Box::pin(async { Ok(None) }));
+        let l1 = given_l1_that_expects_transaction_response(5, [4; 32], None);
 
         let mut block_committer = BlockCommitter::new(
             l1,
@@ -503,6 +518,7 @@ mod tests {
             block_validator,
             SystemClock,
             2.try_into().unwrap(),
+            1,
         );
 
         // when
@@ -529,6 +545,7 @@ mod tests {
             block_validator,
             SystemClock,
             2.try_into().unwrap(),
+            1,
         );
 
         // when
@@ -564,6 +581,7 @@ mod tests {
             block_validator,
             SystemClock,
             2.try_into().unwrap(),
+            1,
         );
 
         let registry = Registry::default();
@@ -584,6 +602,94 @@ mod tests {
         assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
+    #[tokio::test]
+    async fn updates_latest_committed_block_metric() {
+        // given
+        let secret_key = given_secret_key();
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+        let latest_height = 4;
+        let latest_block = given_a_block(latest_height, &secret_key);
+        let fuel_adapter = given_fetcher(vec![latest_block]);
+
+        let db = db_with_submissions(vec![0, 2, 4]).await;
+        let tx_response = TransactionResponse::new(latest_height as u64, true);
+        let l1 =
+            given_l1_that_expects_transaction_response(latest_height, [4; 32], Some(tx_response));
+
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+            1,
+        );
+
+        let registry = Registry::default();
+        block_committer.register_metrics(&registry);
+
+        // when
+        block_committer.run().await.unwrap();
+
+        // then
+        let metrics = registry.gather();
+        let latest_committed_block_metric = metrics
+            .iter()
+            .find(|metric| metric.get_name() == "latest_committed_block")
+            .and_then(|metric| metric.get_metric().first())
+            .map(Metric::get_gauge)
+            .unwrap();
+
+        assert_eq!(
+            latest_committed_block_metric.get_value(),
+            f64::from(latest_height)
+        );
+    }
+
+    #[tokio::test]
+    async fn updates_submission_state_to_finalized() {
+        // given
+        let secret_key = given_secret_key();
+        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+        let latest_height = 4;
+        let latest_block = given_a_block(latest_height, &secret_key);
+        let fuel_adapter = given_fetcher(vec![latest_block]);
+
+        let db = db_with_submissions(vec![0, 2, 4]).await;
+        let tx_response = TransactionResponse::new(latest_height as u64, true);
+        let l1 =
+            given_l1_that_expects_transaction_response(latest_height, [4; 32], Some(tx_response));
+
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            db,
+            fuel_adapter,
+            block_validator,
+            SystemClock,
+            2.try_into().unwrap(),
+            1,
+        );
+
+        // when
+        block_committer.run().await.unwrap();
+
+        // then
+        let latest_submission = block_committer
+            .storage
+            .submission_w_latest_block()
+            .await
+            .unwrap()
+            .expect("submission to exist");
+        let pending_txs = block_committer
+            .storage
+            .get_pending_block_submission_txs(latest_submission.id.expect("submission to have id"))
+            .await
+            .unwrap();
+
+        assert!(pending_txs.is_empty());
+    }
+
     async fn db_with_submissions(pending_submissions: Vec<u32>) -> DbWithProcess {
         let db = PostgresProcess::shared()
             .await
@@ -595,7 +701,6 @@ mod tests {
             let submission_tx = BlockSubmissionTx {
                 hash: [height as u8; 32],
                 nonce: height,
-
                 ..Default::default()
             };
             db.record_block_submission(submission_tx, given_incomplete_submission(height))
@@ -633,6 +738,7 @@ mod tests {
     fn given_incomplete_submission(block_height: u32) -> BlockSubmission {
         let mut submission: BlockSubmission = rand::thread_rng().gen();
         submission.block_height = block_height;
+        submission.completed = false;
 
         submission
     }

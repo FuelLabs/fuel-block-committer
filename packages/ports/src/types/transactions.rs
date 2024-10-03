@@ -7,6 +7,7 @@ pub enum TransactionState {
     Failed,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionResponse {
     block_number: u64,
     succeeded: bool,

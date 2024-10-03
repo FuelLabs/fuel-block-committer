@@ -41,8 +41,15 @@ pub fn block_committer(
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
 
-    let block_committer =
-        BlockCommitter::new(l1, storage, fuel, validator, SystemClock, commit_interval);
+    let block_committer = BlockCommitter::new(
+        l1,
+        storage,
+        fuel,
+        validator,
+        SystemClock,
+        commit_interval,
+        config.app.num_blocks_to_finalize_tx,
+    );
 
     block_committer.register_metrics(registry);
 
