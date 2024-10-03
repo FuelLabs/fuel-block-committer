@@ -78,6 +78,7 @@ pub fn block_bundler(
     cancel_token: CancellationToken,
     config: &config::Config,
     internal_config: &config::Internal,
+    registry: &Registry,
 ) -> tokio::task::JoinHandle<()> {
     let bundler_factory = services::BundlerFactory::new(
         Eip4844BlobEncoder,
@@ -100,6 +101,8 @@ pub fn block_bundler(
                 .expect("num cpus not zero"),
         },
     );
+
+    block_bundler.register_metrics(registry);
 
     schedule_polling(
         internal_config.new_bundle_check_interval,

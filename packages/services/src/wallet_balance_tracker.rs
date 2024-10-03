@@ -28,7 +28,7 @@ where
 
         let balance_gwei = balance / U256::from(1_000_000_000);
         self.metrics
-            .eth_wallet_balance
+            .contract_wallet_balance
             .set(balance_gwei.to::<i64>());
 
         Ok(())
@@ -43,24 +43,35 @@ impl<Api> RegistersMetrics for WalletBalanceTracker<Api> {
 
 #[derive(Clone)]
 struct Metrics {
-    eth_wallet_balance: IntGauge,
+    contract_wallet_balance: IntGauge,
+    blob_wallet_balance: IntGauge,
 }
 
 impl RegistersMetrics for Metrics {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.eth_wallet_balance.clone())]
+        vec![
+            Box::new(self.contract_wallet_balance.clone()),
+            Box::new(self.blob_wallet_balance.clone()),
+        ]
     }
 }
 
 impl Default for Metrics {
     fn default() -> Self {
-        let eth_wallet_balance = IntGauge::with_opts(Opts::new(
-            "eth_wallet_balance",
-            "Ethereum wallet balance [gwei].",
-        ))
-        .expect("eth_wallet_balance metric to be correctly configured");
+        let contract_wallet_balance = IntGauge::with_opts(
+            Opts::new("wallet_balance", "Wallet balance [gwei].").const_label("usage", "contract"),
+        )
+        .expect("contract wallet balance metric to be correctly configured");
 
-        Self { eth_wallet_balance }
+        let blob_wallet_balance = IntGauge::with_opts(
+            Opts::new("wallet_balance", "Wallet balance [gwei].").const_label("usage", "blob"),
+        )
+        .expect("blob wallet balance metric to be correctly configured");
+
+        Self {
+            contract_wallet_balance,
+            blob_wallet_balance,
+        }
     }
 }
 
@@ -99,9 +110,16 @@ mod tests {
         let metrics = registry.gather();
         let eth_balance_metric = metrics
             .iter()
-            .find(|metric| metric.get_name() == "eth_wallet_balance")
-            .and_then(|metric| metric.get_metric().first())
+            .filter(|metric_group| metric_group.get_name() == "wallet_balance")
+            .flat_map(|metric_group| metric_group.get_metric())
+            .filter(|metric| {
+                metric
+                    .get_label()
+                    .iter()
+                    .any(|label| label.get_name() == "usage" && label.get_value() == "contract")
+            })
             .map(Metric::get_gauge)
+            .next()
             .unwrap();
 
         assert_eq!(eth_balance_metric.get_value(), 500_000_000_000_f64);

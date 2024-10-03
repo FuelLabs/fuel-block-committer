@@ -97,21 +97,6 @@ struct Metrics {
     blob_unused_bytes: prometheus::Histogram,
 }
 
-fn custom_exponential_buckets(start: f64, end: f64, steps: usize) -> Vec<f64> {
-    let factor = (end / start).powf(1.0 / (steps - 1) as f64);
-    let mut buckets = Vec::with_capacity(steps);
-
-    let mut value = start;
-    for _ in 0..(steps - 1) {
-        buckets.push(value.ceil());
-        value *= factor;
-    }
-
-    buckets.push(end.ceil());
-
-    buckets
-}
-
 impl Default for Metrics {
     fn default() -> Self {
         Self {
@@ -125,7 +110,7 @@ impl Default for Metrics {
             blob_unused_bytes: prometheus::Histogram::with_opts(histogram_opts!(
                 "blob_utilization",
                 "unused bytes per blob",
-                custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
+                metrics::custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
             ))
             .expect("to be correctly configured"),
         }

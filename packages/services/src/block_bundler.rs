@@ -2,7 +2,12 @@ use std::{num::NonZeroUsize, time::Duration};
 
 pub mod bundler;
 
-use bundler::{Bundle, BundleProposal, BundlerFactory};
+use bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
+use metrics::{
+    custom_exponential_buckets,
+    prometheus::{histogram_opts, linear_buckets, Histogram, IntGauge},
+    RegistersMetrics,
+};
 use ports::{
     clock::Clock,
     storage::Storage,
@@ -43,6 +48,73 @@ pub struct BlockBundler<F, Storage, Clock, BundlerFactory> {
     bundler_factory: BundlerFactory,
     config: Config,
     last_time_bundled: DateTime<Utc>,
+    metrics: Metrics,
+}
+
+impl<F, S, C, B> RegistersMetrics for BlockBundler<F, S, C, B> {
+    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+        vec![
+            Box::new(self.metrics.blocks_per_bundle.clone()),
+            Box::new(self.metrics.last_bundled_block_height.clone()),
+            Box::new(self.metrics.compression_ratio.clone()),
+            Box::new(self.metrics.optimization_duration.clone()),
+        ]
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Metrics {
+    blocks_per_bundle: Histogram,
+    last_bundled_block_height: IntGauge,
+    compression_ratio: Histogram,
+    optimization_duration: Histogram,
+}
+
+impl Metrics {
+    fn observe_metadata(&self, metadata: &Metadata) {
+        self.blocks_per_bundle.observe(metadata.num_blocks() as f64);
+        self.compression_ratio.observe(metadata.compression_ratio());
+        self.last_bundled_block_height
+            .set((*metadata.block_heights.end()).into());
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let blocks_per_bundle = Histogram::with_opts(histogram_opts!(
+            "blocks_per_bundle",
+            "Number of blocks per bundle",
+            linear_buckets(250.0, 250.0, 3600 / 250).expect("to be correctly configured")
+        ))
+        .expect("to be correctly configured");
+
+        let last_bundled_block_height = IntGauge::new(
+            "last_bundled_block_height",
+            "The height of the last bundled block",
+        )
+        .expect("to be correctly configured");
+
+        let compression_ratio = Histogram::with_opts(histogram_opts!(
+            "compression_ratio",
+            "The compression ratio of the bundled data",
+            custom_exponential_buckets(1.0, 10.0, 7)
+        ))
+        .expect("to be correctly configured");
+
+        let optimization_duration = Histogram::with_opts(histogram_opts!(
+            "optimization_duration",
+            "The duration of the optimization phase in seconds",
+            custom_exponential_buckets(60.0, 300.0, 10)
+        ))
+        .expect("to be correctly configured");
+
+        Self {
+            blocks_per_bundle,
+            last_bundled_block_height,
+            compression_ratio,
+            optimization_duration,
+        }
+    }
 }
 
 impl<F, Storage, C, BF> BlockBundler<F, Storage, C, BF>
@@ -66,6 +138,7 @@ where
             last_time_bundled: now,
             bundler_factory,
             config,
+            metrics: Metrics::default(),
         }
     }
 }
@@ -109,16 +182,23 @@ where
 
         let bundler = self.bundler_factory.build(blocks).await;
 
+        let optimization_start = self.clock.now();
         let BundleProposal {
             fragments,
             metadata,
         } = self.find_optimal_bundle(bundler).await?;
+        let optimization_duration = self.clock.now().signed_duration_since(optimization_start);
 
         info!("Bundler proposed: {metadata}");
 
         self.storage
-            .insert_bundle_and_fragments(metadata.block_heights, fragments)
+            .insert_bundle_and_fragments(metadata.block_heights.clone(), fragments)
             .await?;
+
+        self.metrics.observe_metadata(&metadata);
+        self.metrics
+            .optimization_duration
+            .observe(optimization_duration.num_seconds() as f64);
 
         self.last_time_bundled = self.clock.now();
 
