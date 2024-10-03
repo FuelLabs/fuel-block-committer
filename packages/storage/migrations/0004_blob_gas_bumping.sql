@@ -1,3 +1,4 @@
+DELETE FROM l1_transaction_fragments;
 DELETE FROM l1_blob_transaction;
 
 ALTER TABLE l1_blob_transaction
