@@ -24,7 +24,7 @@ impl From<InvalidL1Height> for Error {
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
-pub trait Contract: Send + Sync {
+pub trait Contract: Sync {
     async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
     fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
     fn commit_interval(&self) -> std::num::NonZeroU32;
@@ -45,7 +45,7 @@ pub trait Api {
         fragments: NonEmpty<Fragment>,
     ) -> Result<FragmentsSubmitted>;
     async fn get_block_number(&self) -> Result<L1Height>;
-    async fn balance(&self) -> Result<U256>;
+    async fn balance(&self, address: crate::types::Address) -> Result<U256>;
     async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],

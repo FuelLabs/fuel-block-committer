@@ -191,7 +191,7 @@ pub async fn l1_adapter(
 ) -> Result<(L1, HealthChecker)> {
     let aws_config = AwsConfig::from_env().await;
 
-    let aws_client = AwsClient::new(aws_config).await;
+    let aws_client = AwsClient::new(aws_config);
 
     let l1 = L1::connect(
         config.eth.rpc.clone(),

@@ -23,8 +23,12 @@ where
         }
     }
 
+    pub fn track_address(&mut self, address: ::ports::types::Address) {
+        todo!()
+    }
+
     pub async fn update_balance(&self) -> Result<()> {
-        let balance = self.api.balance().await?;
+        let balance = self.api.balance(todo!()).await?;
 
         let balance_gwei = balance / U256::from(1_000_000_000);
         self.metrics
@@ -131,7 +135,7 @@ mod tests {
         let mut eth_adapter = l1::MockApi::new();
         eth_adapter
             .expect_balance()
-            .return_once(move || Box::pin(async move { Ok(balance) }));
+            .return_once(move |_| Box::pin(async move { Ok(balance) }));
 
         eth_adapter
     }

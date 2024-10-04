@@ -11,7 +11,7 @@ pub struct Fragment {
 
 impl Fragment {
     pub fn utilization(&self) -> f64 {
-        self.total_bytes.get().saturating_sub(self.unused_bytes) as f64
-            / self.total_bytes.get() as f64
+        f64::from(self.total_bytes.get().saturating_sub(self.unused_bytes))
+            / f64::from(self.total_bytes.get())
     }
 }

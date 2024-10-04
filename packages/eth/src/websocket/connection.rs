@@ -75,7 +75,6 @@ pub struct WsConnection {
     first_tx_gas_estimation_multiplier: Option<u64>,
     first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
-    address: Address,
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
@@ -133,8 +132,7 @@ impl EthApi for WsConnection {
         Ok(response)
     }
 
-    async fn balance(&self) -> Result<U256> {
-        let address = self.address;
+    async fn balance(&self, address: Address) -> Result<U256> {
         Ok(self.provider.get_balance(address).await?)
     }
 
@@ -226,7 +224,7 @@ impl EthApi for WsConnection {
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
         for bytes in unused_bytes_per_fragment {
-            self.metrics.blob_unused_bytes.observe(bytes as f64);
+            self.metrics.blob_unused_bytes.observe(bytes.into());
         }
 
         Ok(FragmentsSubmitted {
@@ -265,8 +263,6 @@ impl WsConnection {
         blob_signer: Option<AwsSigner>,
         first_tx_gas_estimation_multiplier: Option<u64>,
     ) -> Result<Self> {
-        let address = main_signer.address();
-
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), main_signer).await?;
 
@@ -294,7 +290,6 @@ impl WsConnection {
         Ok(Self {
             provider,
             blob_provider,
-            address,
             blob_signer_address,
             contract,
             commit_interval,
