@@ -1,9 +1,5 @@
 use std::num::NonZeroU32;
 
-use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
-    RegistersMetrics,
-};
 use ports::{fuel::FuelBlock, storage::Storage, types::BlockSubmission};
 use tracing::info;
 
@@ -16,31 +12,6 @@ pub struct BlockCommitter<L1, Db, Fuel, BlockValidator> {
     storage: Db,
     block_validator: BlockValidator,
     commit_interval: NonZeroU32,
-    metrics: Metrics,
-}
-
-struct Metrics {
-    latest_fuel_block: IntGauge,
-}
-
-impl<L1, Db, Fuel, BlockValidator> RegistersMetrics
-    for BlockCommitter<L1, Db, Fuel, BlockValidator>
-{
-    fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.metrics.latest_fuel_block.clone())]
-    }
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        let latest_fuel_block = IntGauge::with_opts(Opts::new(
-            "latest_fuel_block",
-            "The height of the latest fuel block.",
-        ))
-        .expect("fuel_network_errors metric to be correctly configured");
-
-        Self { latest_fuel_block }
-    }
 }
 
 impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator> {
@@ -57,7 +28,6 @@ impl<L1, Db, Fuel, BlockValidator> BlockCommitter<L1, Db, Fuel, BlockValidator> 
             fuel_adapter,
             block_validator,
             commit_interval,
-            metrics: Metrics::default(),
         }
     }
 }
@@ -96,10 +66,6 @@ where
             &latest_block.header,
             &latest_block.consensus,
         )?;
-
-        self.metrics
-            .latest_fuel_block
-            .set(i64::from(latest_block.header.height));
 
         Ok(latest_block)
     }
@@ -176,7 +142,6 @@ where
 mod tests {
 
     use fuel_crypto::{Message, SecretKey, Signature};
-    use metrics::prometheus::{proto::Metric, Registry};
     use mockall::predicate::eq;
     use ports::fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus};
     use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -289,40 +254,6 @@ mod tests {
 
         // then
         // Mock verifies that submit was called with the appropriate block
-    }
-
-    #[tokio::test]
-    async fn updates_block_metric_regardless_if_block_is_published() {
-        // given
-        let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-        let block = given_a_block(5, &secret_key);
-        let fuel_adapter = given_fetcher(vec![block]);
-
-        let db = db_with_submissions(vec![0, 2, 4]).await;
-
-        let mut l1 = FullL1Mock::default();
-        l1.contract.expect_submit().never();
-
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, block_validator, 2.try_into().unwrap());
-
-        let registry = Registry::default();
-        block_committer.register_metrics(&registry);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        let metrics = registry.gather();
-        let latest_block_metric = metrics
-            .iter()
-            .find(|metric| metric.get_name() == "latest_fuel_block")
-            .and_then(|metric| metric.get_metric().first())
-            .map(Metric::get_gauge)
-            .unwrap();
-
-        assert_eq!(latest_block_metric.get_value(), 5f64);
     }
 
     async fn db_with_submissions(pending_submissions: Vec<u32>) -> DbWithProcess {

@@ -63,14 +63,11 @@ pub fn block_committer(
     storage: Database,
     fuel: FuelApi,
     config: &config::Config,
-    registry: &Registry,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
 
     let block_committer = BlockCommitter::new(l1, storage, fuel, validator, commit_interval);
-
-    block_committer.register_metrics(registry);
 
     schedule_polling(
         config.app.block_check_interval,

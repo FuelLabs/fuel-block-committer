@@ -59,7 +59,6 @@ async fn main() -> Result<()> {
         storage.clone(),
         fuel_adapter.clone(),
         &config,
-        &metrics_registry,
         cancel_token.clone(),
     );
 
