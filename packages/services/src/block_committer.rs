@@ -328,8 +328,8 @@ mod tests {
             self.api.get_block_number().await
         }
 
-        async fn balance(&self) -> ports::l1::Result<U256> {
-            self.api.balance().await
+        async fn balance(&self, address: ports::types::Address) -> ports::l1::Result<U256> {
+            self.api.balance(address).await
         }
 
         async fn get_transaction_response(
