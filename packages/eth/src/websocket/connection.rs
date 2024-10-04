@@ -72,6 +72,7 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
+    address: Address,
     first_tx_gas_estimation_multiplier: Option<u64>,
     first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
@@ -275,6 +276,7 @@ impl WsConnection {
         blob_signer: Option<AwsSigner>,
         first_tx_gas_estimation_multiplier: Option<u64>,
     ) -> Result<Self> {
+        let address = main_signer.address();
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), main_signer).await?;
 
@@ -301,6 +303,7 @@ impl WsConnection {
 
         Ok(Self {
             provider,
+            address,
             blob_provider,
             blob_signer_address,
             contract,
