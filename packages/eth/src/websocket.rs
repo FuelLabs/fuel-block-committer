@@ -4,11 +4,10 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::{primitives::Address, signers::Signer};
 use ports::{
     l1::{FragmentsSubmitted, Result},
-    types::{Fragment, NonEmpty, TransactionResponse, U256},
+    types::{BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256},
 };
 use url::Url;
 
-pub use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
@@ -16,7 +15,6 @@ use self::{
 use crate::AwsClient;
 
 mod connection;
-mod event_streamer;
 mod health_tracking_middleware;
 
 #[derive(Clone)]
@@ -68,11 +66,7 @@ impl WebsocketClient {
         self.inner.connection_health_checker()
     }
 
-    pub(crate) fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
-        self.inner.event_streamer(eth_block_height)
-    }
-
-    pub(crate) async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+    pub(crate) async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx> {
         Ok(self.inner.submit(hash, height).await?)
     }
 

@@ -1,6 +1,8 @@
 use std::num::NonZeroU32;
 
-use ports::types::{DateTime, NonEmpty, NonNegative, TransactionState, Utc};
+use num_bigint::BigInt;
+use ports::types::{BlockSubmissionTx, DateTime, NonEmpty, NonNegative, TransactionState, Utc};
+use sqlx::types::BigDecimal;
 
 macro_rules! bail {
     ($msg: literal, $($args: expr),*) => {
@@ -10,10 +12,10 @@ macro_rules! bail {
 
 #[derive(sqlx::FromRow)]
 pub struct L1FuelBlockSubmission {
+    pub id: i32,
     pub fuel_block_hash: Vec<u8>,
     pub fuel_block_height: i64,
     pub completed: bool,
-    pub submittal_height: i64,
 }
 
 impl TryFrom<L1FuelBlockSubmission> for ports::types::BlockSubmission {
@@ -33,15 +35,18 @@ impl TryFrom<L1FuelBlockSubmission> for ports::types::BlockSubmission {
             );
         };
 
-        let Ok(submittal_height) = value.submittal_height.try_into() else {
-            bail!("`submittal_height` as read from the db cannot fit in a `u64` as expected. Got: {} from db", value.submittal_height);
+        let Ok(id) = NonNegative::try_from(value.id) else {
+            bail!(
+                "Expected a non-negative `id`, but got: {} from db",
+                value.id
+            );
         };
 
         Ok(Self {
+            id: Some(id),
             block_hash,
             block_height,
             completed: value.completed,
-            submittal_height,
         })
     }
 }
@@ -49,10 +54,123 @@ impl TryFrom<L1FuelBlockSubmission> for ports::types::BlockSubmission {
 impl From<ports::types::BlockSubmission> for L1FuelBlockSubmission {
     fn from(value: ports::types::BlockSubmission) -> Self {
         Self {
+            id: value.id.unwrap_or_default().as_i32(),
             fuel_block_hash: value.block_hash.to_vec(),
             fuel_block_height: i64::from(value.block_height),
             completed: value.completed,
-            submittal_height: value.submittal_height.into(),
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct L1FuelBlockSubmissionTx {
+    pub id: i32,
+    pub submission_id: i32,
+    pub hash: Vec<u8>,
+    pub nonce: i64,
+    pub max_fee: BigDecimal,
+    pub priority_fee: BigDecimal,
+    pub state: i16,
+    pub created_at: Option<DateTime<Utc>>,
+    pub finalized_at: Option<DateTime<Utc>>,
+}
+
+// TODO: dry this up
+impl L1FuelBlockSubmissionTx {
+    pub fn parse_state(&self) -> Result<TransactionState, crate::error::Error> {
+        match (self.state, self.finalized_at) {
+            (0, _) => Ok(TransactionState::Pending),
+            (1, Some(finalized_at)) => Ok(TransactionState::Finalized(finalized_at)),
+            (1, None) => {
+                bail!(
+                    "L1FuelBlockSubmissionTx(id={}) is missing finalized_at field. Must not happen since there should have been a constraint on the table!", self.id
+                )
+            }
+            (2, _) => Ok(TransactionState::Failed),
+            _ => {
+                bail!(
+                    "L1FuelBlockSubmissionTx(id={}) has invalid state {}",
+                    self.id,
+                    self.state
+                )
+            }
+        }
+    }
+}
+
+// Assumes that the BigDecimal is non-negative and has no fractional part
+fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128, crate::error::Error> {
+    let (digits, _scale) = value.into_bigint_and_exponent();
+    let result: u128 = digits
+        .try_into()
+        .map_err(|_| crate::error::Error::Conversion("Digits exceed u128 range".to_string()))?;
+
+    Ok(result)
+}
+
+fn u128_to_bigdecimal(value: u128) -> BigDecimal {
+    let digits = BigInt::from(value);
+    BigDecimal::new(digits, 0)
+}
+
+impl TryFrom<L1FuelBlockSubmissionTx> for BlockSubmissionTx {
+    type Error = crate::error::Error;
+
+    fn try_from(value: L1FuelBlockSubmissionTx) -> Result<Self, Self::Error> {
+        let hash = value.hash.as_slice();
+        let Ok(hash) = hash.try_into() else {
+            bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
+        };
+
+        let state = value.parse_state()?;
+        let id = NonNegative::try_from(value.id).map_err(|_| {
+            Self::Error::Conversion(format!(
+                "Could not convert `id` to NonNegative<i32>. Got: {} from db",
+                value.id
+            ))
+        })?;
+
+        let submission_id = NonNegative::try_from(value.submission_id).map_err(|_| {
+            Self::Error::Conversion(format!(
+                "Could not convert `submission_id` to NonNegative<i32>. Got: {} from db",
+                value.submission_id
+            ))
+        })?;
+
+        Ok(Self {
+            id: Some(id),
+            submission_id: Some(submission_id),
+            hash,
+            nonce: value.nonce as u32,
+            max_fee: bigdecimal_to_u128(value.max_fee)?,
+            priority_fee: bigdecimal_to_u128(value.priority_fee)?,
+            state,
+            created_at: value.created_at,
+        })
+    }
+}
+
+impl From<BlockSubmissionTx> for L1FuelBlockSubmissionTx {
+    fn from(value: BlockSubmissionTx) -> Self {
+        let max_fee = u128_to_bigdecimal(value.max_fee);
+        let priority_fee = u128_to_bigdecimal(value.priority_fee);
+
+        let state = L1TxState::from(&value.state).into();
+        let finalized_at = match value.state {
+            TransactionState::Finalized(finalized_at) => Some(finalized_at),
+            _ => None,
+        };
+
+        Self {
+            id: value.id.unwrap_or_default().as_i32(),
+            submission_id: value.submission_id.unwrap_or_default().as_i32(),
+            hash: value.hash.to_vec(),
+            nonce: value.nonce as i64,
+            max_fee,
+            priority_fee,
+            state,
+            finalized_at,
+            created_at: value.created_at,
         }
     }
 }
@@ -186,8 +304,9 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
     }
 }
 
+#[derive(sqlx::FromRow)]
 pub struct L1Tx {
-    pub id: i64,
+    pub id: i32,
     pub hash: Vec<u8>,
     pub state: i16,
     pub finalized_at: Option<DateTime<Utc>>,
@@ -225,7 +344,7 @@ impl From<ports::types::L1Tx> for L1Tx {
 
         Self {
             // if not present use placeholder as id is given by db
-            id: value.id.unwrap_or_default() as i64,
+            id: value.id.unwrap_or_default() as i32,
             hash: value.hash.to_vec(),
             state,
             finalized_at,

@@ -24,12 +24,12 @@ use metrics::{
 };
 use ports::{
     l1::FragmentsSubmitted,
-    types::{Fragment, NonEmpty, TransactionResponse},
+    types::{BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse},
 };
 use tracing::info;
 use url::Url;
 
-use super::{event_streamer::EthEventStreamer, health_tracking_middleware::EthApi};
+use super::health_tracking_middleware::EthApi;
 use crate::{
     error::{Error, Result},
     Eip4844BlobEncoder,
@@ -72,6 +72,7 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
+    address: Address,
     first_tx_gas_estimation_multiplier: Option<u64>,
     first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
@@ -118,13 +119,34 @@ impl Default for Metrics {
 
 #[async_trait::async_trait]
 impl EthApi for WsConnection {
-    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx> {
         let commit_height = Self::calculate_commit_height(height, self.commit_interval);
+
         let contract_call = self.contract.commit(hash.into(), commit_height);
-        let tx = contract_call.send().await?;
+        let tx_request = contract_call.into_transaction_request();
+
+        let Eip1559Estimation {
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+        } = self.provider.estimate_eip1559_fees(None).await?;
+        let nonce = self.provider.get_transaction_count(self.address).await?;
+        let tx_request = tx_request
+            .max_fee_per_gas(max_fee_per_gas)
+            .max_priority_fee_per_gas(max_priority_fee_per_gas)
+            .nonce(nonce);
+
+        let tx = self.provider.send_transaction(tx_request).await?;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
-        Ok(())
+        let submission_tx = BlockSubmissionTx {
+            hash: tx.tx_hash().0,
+            nonce: nonce as u32, // TODO: conversion
+            max_fee: max_fee_per_gas,
+            priority_fee: max_priority_fee_per_gas,
+            ..Default::default()
+        };
+
+        Ok(submission_tx)
     }
 
     async fn get_block_number(&self) -> Result<u64> {
@@ -138,15 +160,6 @@ impl EthApi for WsConnection {
 
     fn commit_interval(&self) -> NonZeroU32 {
         self.commit_interval
-    }
-
-    fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
-        let filter = self
-            .contract
-            .CommitSubmitted_filter()
-            .from_block(eth_block_height)
-            .filter;
-        EthEventStreamer::new(filter, self.contract.provider().clone())
     }
 
     async fn get_transaction_response(
@@ -263,6 +276,7 @@ impl WsConnection {
         blob_signer: Option<AwsSigner>,
         first_tx_gas_estimation_multiplier: Option<u64>,
     ) -> Result<Self> {
+        let address = main_signer.address();
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), main_signer).await?;
 
@@ -289,6 +303,7 @@ impl WsConnection {
 
         Ok(Self {
             provider,
+            address,
             blob_provider,
             blob_signer_address,
             contract,

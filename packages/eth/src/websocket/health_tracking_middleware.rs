@@ -4,22 +4,20 @@ use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
 use delegate::delegate;
-use ports::types::{Address, Fragment, NonEmpty, TransactionResponse, U256};
+use ports::types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
 
 use crate::{
     error::{Error, Result},
     metrics::Metrics,
-    websocket::event_streamer::EthEventStreamer,
 };
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self, address: Address) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
-    fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
     async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
@@ -92,12 +90,11 @@ where
 {
     delegate! {
         to self.adapter {
-            fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
             fn commit_interval(&self) -> NonZeroU32;
         }
     }
 
-    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx> {
         let response = self.adapter.submit(hash, height).await;
         self.note_network_status(&response);
         response

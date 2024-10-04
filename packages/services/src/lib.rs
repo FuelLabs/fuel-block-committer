@@ -1,7 +1,6 @@
 mod block_bundler;
 mod block_committer;
 mod block_importer;
-mod commit_listener;
 mod health_reporter;
 mod state_committer;
 mod state_listener;
@@ -15,7 +14,6 @@ pub use block_bundler::{
 };
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
-pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 pub use state_listener::StateListener;
@@ -126,7 +124,9 @@ pub(crate) mod test_utils {
             use mockall::{predicate::eq, Sequence};
             use ports::{
                 l1::FragmentsSubmitted,
-                types::{Fragment, L1Height, NonEmpty, TransactionResponse, U256},
+                types::{
+                    BlockSubmissionTx, Fragment, L1Height, NonEmpty, TransactionResponse, U256,
+                },
             };
 
             pub struct FullL1Mock {
@@ -152,8 +152,7 @@ pub(crate) mod test_utils {
             impl ports::l1::Contract for FullL1Mock {
                 delegate! {
                     to self.contract {
-                        async fn submit(&self, hash: [u8;32], height: u32) -> ports::l1::Result<()>;
-                        fn event_streamer(&self, height: L1Height) -> Box<dyn ports::l1::EventStreamer + Send + Sync>;
+                        async fn submit(&self, hash: [u8;32], height: u32) -> ports::l1::Result<BlockSubmissionTx>;
                         fn commit_interval(&self) -> std::num::NonZeroU32;
                     }
                 }

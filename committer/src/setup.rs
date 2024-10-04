@@ -4,8 +4,7 @@ use clock::SystemClock;
 use eth::{AwsConfig, Eip4844BlobEncoder};
 use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
 use services::{
-    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, CommitListener, Runner,
-    WalletBalanceTracker,
+    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, Runner, WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -39,24 +38,6 @@ pub fn wallet_balance_tracker(
     )
 }
 
-pub fn l1_event_listener(
-    internal_config: &config::Internal,
-    l1: L1,
-    storage: Database,
-    registry: &Registry,
-    cancel_token: CancellationToken,
-) -> tokio::task::JoinHandle<()> {
-    let commit_listener_service = CommitListener::new(l1, storage, cancel_token.clone());
-    commit_listener_service.register_metrics(registry);
-
-    schedule_polling(
-        internal_config.between_eth_event_stream_restablishing_attempts,
-        commit_listener_service,
-        "Commit Listener",
-        cancel_token,
-    )
-}
-
 pub fn block_committer(
     commit_interval: NonZeroU32,
     l1: L1,
@@ -68,7 +49,15 @@ pub fn block_committer(
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
 
-    let block_committer = BlockCommitter::new(l1, storage, fuel, validator, commit_interval);
+    let block_committer = BlockCommitter::new(
+        l1,
+        storage,
+        fuel,
+        validator,
+        SystemClock,
+        commit_interval,
+        config.app.num_blocks_to_finalize_tx,
+    );
 
     block_committer.register_metrics(registry);
 

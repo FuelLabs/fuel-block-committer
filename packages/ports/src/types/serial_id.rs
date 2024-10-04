@@ -24,6 +24,14 @@ impl<NUM: Display> Display for NonNegative<NUM> {
     }
 }
 
+impl<NUM: Default> Default for NonNegative<NUM> {
+    fn default() -> Self {
+        Self {
+            val: Default::default(),
+        }
+    }
+}
+
 impl NonNegative<i32> {
     pub fn as_u32(&self) -> u32 {
         self.val as u32
@@ -86,5 +94,12 @@ impl TryFrom<u32> for NonNegative<i32> {
             });
         }
         Ok(Self { val: id as i32 })
+    }
+}
+
+#[cfg(feature = "test-helpers")]
+impl rand::distributions::Distribution<NonNegative<i32>> for rand::distributions::Standard {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> NonNegative<i32> {
+        NonNegative::try_from(rng.gen_range(0..=i32::MAX)).expect("to generate a non-negative i32")
     }
 }

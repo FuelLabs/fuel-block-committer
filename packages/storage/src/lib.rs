@@ -12,14 +12,38 @@ mod postgres;
 use ports::{
     storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, DateTime, Fragment, L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
+        TransactionState, Utc,
     },
 };
 pub use postgres::{DbConfig, Postgres};
 
 impl Storage for Postgres {
-    async fn insert(&self, submission: BlockSubmission) -> Result<()> {
-        Ok(self._insert(submission).await?)
+    async fn record_block_submission(
+        &self,
+        submission_tx: BlockSubmissionTx,
+        submission: BlockSubmission,
+    ) -> Result<NonNegative<i32>> {
+        Ok(self
+            ._record_block_submission(submission_tx, submission)
+            .await?)
+    }
+
+    async fn get_pending_block_submission_txs(
+        &self,
+        submission_id: NonNegative<i32>,
+    ) -> Result<Vec<BlockSubmissionTx>> {
+        Ok(self
+            ._get_pending_block_submission_txs(submission_id)
+            .await?)
+    }
+
+    async fn update_block_submission_tx(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> Result<BlockSubmission> {
+        Ok(self._update_block_submission_tx(hash, state).await?)
     }
 
     async fn oldest_nonfinalized_fragments(
@@ -62,10 +86,6 @@ impl Storage for Postgres {
 
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
         Ok(self._submission_w_latest_block().await?)
-    }
-
-    async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission> {
-        Ok(self._set_submission_completed(fuel_block_hash).await?)
     }
 
     async fn lowest_sequence_of_unbundled_blocks(
@@ -127,73 +147,10 @@ mod tests {
 
     fn given_incomplete_submission(fuel_block_height: u32) -> BlockSubmission {
         BlockSubmission {
+            id: None,
             block_hash: rand::random(),
             block_height: fuel_block_height,
             completed: false,
-            submittal_height: 0.into(),
-        }
-    }
-
-    #[tokio::test]
-    async fn can_insert_and_find_latest_block_submission() {
-        // given
-        let storage = start_db().await;
-        let latest_height = random_non_zero_height();
-
-        let latest_submission = given_incomplete_submission(latest_height);
-        storage.insert(latest_submission.clone()).await.unwrap();
-
-        let older_submission = given_incomplete_submission(latest_height - 1);
-        storage.insert(older_submission).await.unwrap();
-
-        // when
-        let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
-
-        // then
-        assert_eq!(actual, latest_submission);
-    }
-
-    #[tokio::test]
-    async fn can_update_completion_status() {
-        // given
-        let storage = start_db().await;
-
-        let height = random_non_zero_height();
-        let submission = given_incomplete_submission(height);
-        let block_hash = submission.block_hash;
-        storage.insert(submission).await.unwrap();
-
-        // when
-        let submission = storage.set_submission_completed(block_hash).await.unwrap();
-
-        // then
-        assert!(submission.completed);
-    }
-
-    #[tokio::test]
-    async fn updating_a_missing_submission_causes_an_error() {
-        // given
-        let storage = start_db().await;
-
-        let height = random_non_zero_height();
-        let submission = given_incomplete_submission(height);
-        let block_hash = submission.block_hash;
-
-        // when
-        let result = storage.set_submission_completed(block_hash).await;
-
-        // then
-        if let Err(Error::Database(msg)) = result {
-            let block_hash_hex = hex::encode(block_hash);
-            assert_eq!(
-                msg,
-                format!(
-                    "Cannot set submission to completed! Submission of block: `{}` not found in DB.",
-                    block_hash_hex
-                )
-            );
-        } else {
-            panic!("Expected storage error");
         }
     }
 
@@ -230,53 +187,133 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn can_record_and_get_pending_txs() {
+    async fn can_record_and_find_latest_block() {
         // given
         let storage = start_db().await;
+        let latest_height = random_non_zero_height();
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let latest_submission = given_incomplete_submission(latest_height);
+        let submission_tx = given_pending_tx(0);
+        let submission_id = storage
+            .record_block_submission(submission_tx, latest_submission.clone())
+            .await
+            .unwrap();
 
-        let tx_hash = rand::random::<[u8; 32]>();
+        let older_submission = given_incomplete_submission(latest_height - 1);
+        let submission_tx = given_pending_tx(1);
         storage
-            .record_pending_tx(tx_hash, fragment_ids)
+            .record_block_submission(submission_tx, older_submission)
             .await
             .unwrap();
 
         // when
-        let has_pending = storage.has_pending_txs().await.unwrap();
-        let pending_txs = storage.get_pending_txs().await.unwrap();
+        let actual = storage.submission_w_latest_block().await.unwrap().unwrap();
 
         // then
-        assert!(has_pending);
-        assert_eq!(pending_txs.len(), 1);
-        assert_eq!(pending_txs[0].hash, tx_hash);
-        assert_eq!(pending_txs[0].state, TransactionState::Pending);
+        let expected = BlockSubmission {
+            id: Some(submission_id),
+            ..latest_submission
+        };
+        assert_eq!(actual, expected);
     }
 
     #[tokio::test]
-    async fn can_update_tx_state() {
+    async fn can_record_and_find_pending_tx() {
         // given
-        let storage = start_db().await;
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await.unwrap();
+        let latest_height = random_non_zero_height();
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
-        let tx_hash = rand::random::<[u8; 32]>();
-        storage
-            .record_pending_tx(tx_hash, fragment_ids)
+        let latest_submission = given_incomplete_submission(latest_height);
+        let submission_tx = given_pending_tx(0);
+
+        let submission_id = db
+            .record_block_submission(submission_tx.clone(), latest_submission.clone())
             .await
             .unwrap();
 
         // when
+        let actual = db
+            .get_pending_block_submission_txs(submission_id)
+            .await
+            .unwrap()
+            .pop()
+            .expect("pending tx to exist");
+
+        // then
+        let expected = BlockSubmissionTx {
+            id: actual.id,
+            created_at: actual.created_at,
+            submission_id: Some(submission_id),
+            ..submission_tx
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn can_update_completion_status() {
+        // given
+        let storage = start_db().await;
+
+        let height = random_non_zero_height();
+        let submission = given_incomplete_submission(height);
+        let submission_tx = given_pending_tx(0);
+
+        let submission_id = storage
+            .record_block_submission(submission_tx, submission)
+            .await
+            .unwrap();
+
+        // when
+        let submission_tx = storage
+            .get_pending_block_submission_txs(submission_id)
+            .await
+            .unwrap()
+            .pop()
+            .expect("pending tx to exist");
         storage
-            .update_tx_state(tx_hash, TransactionState::Finalized(Utc::now()))
+            .update_block_submission_tx(submission_tx.hash, TransactionState::Finalized(Utc::now()))
             .await
             .unwrap();
 
         // then
-        let has_pending = storage.has_pending_txs().await.unwrap();
-        let pending_txs = storage.get_pending_txs().await.unwrap();
-
-        assert!(!has_pending);
+        let pending_txs = storage
+            .get_pending_block_submission_txs(submission_id)
+            .await
+            .unwrap();
         assert!(pending_txs.is_empty());
+
+        let submission = storage
+            .submission_w_latest_block()
+            .await
+            .unwrap()
+            .expect("submission to exist");
+        assert!(submission.completed);
+    }
+
+    #[tokio::test]
+    async fn updating_a_missing_submission_tx_causes_an_error() {
+        // given
+        let process = PostgresProcess::shared().await.unwrap();
+        let db = process.create_random_db().await.unwrap();
+
+        let submission_tx = given_pending_tx(0);
+
+        // when
+        let result = db
+            .update_block_submission_tx(submission_tx.hash, TransactionState::Finalized(Utc::now()))
+            .await;
+
+        // then
+        let Err(Error::Database(msg)) = result else {
+            panic!("should be storage error");
+        };
+
+        let tx_hash = hex::encode(submission_tx.hash);
+        assert_eq!(
+            msg,
+            format!("Cannot update tx state! Tx with hash: `{tx_hash}` not found in DB.")
+        );
     }
 
     #[tokio::test]
@@ -467,6 +504,15 @@ mod tests {
 
         // then
         assert_eq!(height_range, 0..=1);
+    }
+
+    fn given_pending_tx(nonce: u32) -> BlockSubmissionTx {
+        BlockSubmissionTx {
+            hash: [nonce as u8; 32],
+            nonce,
+            state: TransactionState::Pending,
+            ..Default::default()
+        }
     }
 
     #[tokio::test]

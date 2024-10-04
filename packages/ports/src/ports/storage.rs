@@ -12,7 +12,8 @@ use itertools::Itertools;
 pub use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{
-    BlockSubmission, CollectNonEmpty, Fragment, L1Tx, NonEmpty, NonNegative, TransactionState,
+    BlockSubmission, BlockSubmissionTx, CollectNonEmpty, Fragment, L1Tx, NonEmpty, NonNegative,
+    TransactionState,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -147,9 +148,21 @@ impl TryFrom<NonEmpty<FuelBlock>> for SequentialFuelBlocks {
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 pub trait Storage: Send + Sync {
-    async fn insert(&self, submission: BlockSubmission) -> Result<()>;
+    async fn record_block_submission(
+        &self,
+        submission_tx: BlockSubmissionTx,
+        submission: BlockSubmission,
+    ) -> Result<NonNegative<i32>>;
+    async fn get_pending_block_submission_txs(
+        &self,
+        submission_id: NonNegative<i32>,
+    ) -> Result<Vec<BlockSubmissionTx>>;
+    async fn update_block_submission_tx(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> Result<BlockSubmission>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-    async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
     async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
     async fn missing_blocks(
         &self,
@@ -186,9 +199,10 @@ pub trait Storage: Send + Sync {
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
     delegate! {
         to (**self) {
-            async fn insert(&self, submission: BlockSubmission) -> Result<()>;
+                async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> Result<NonNegative<i32>>;
+                async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
+                async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-                async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
                 async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
                 async fn missing_blocks(
                     &self,
@@ -226,9 +240,10 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
 impl<T: Storage + Send + Sync> Storage for &T {
     delegate! {
         to (**self) {
-            async fn insert(&self, submission: BlockSubmission) -> Result<()>;
+                async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> Result<NonNegative<i32>>;
+                async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
+                async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-                async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> Result<BlockSubmission>;
                 async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
                 async fn missing_blocks(
                     &self,

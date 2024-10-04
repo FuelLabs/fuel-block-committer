@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS (SELECT 1 FROM l1_transactions WHERE state = $1) AS has_pending_transactions;",
+  "query": "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1) AS has_pending_transactions;",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "59468b64c24fb4c77a9b30428fd4682e9b4cfcba55c9535931edc7448ed88bfa"
+  "hash": "0262541213bf75b490f385cca5b76bcd130d2fcb4cdd88ababb3348d28999fa8"
 }

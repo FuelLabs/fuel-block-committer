@@ -1,8 +1,7 @@
-use std::{num::NonZeroUsize, pin::Pin};
+use std::num::NonZeroUsize;
 
 use crate::types::{
-    Fragment, FuelBlockCommittedOnL1, InvalidL1Height, L1Height, NonEmpty, Stream,
-    TransactionResponse, U256,
+    BlockSubmissionTx, Fragment, InvalidL1Height, L1Height, NonEmpty, TransactionResponse, U256,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -24,9 +23,8 @@ impl From<InvalidL1Height> for Error {
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
-pub trait Contract: Sync {
-    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
-    fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync>;
+pub trait Contract: Send + Sync {
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     fn commit_interval(&self) -> std::num::NonZeroU32;
 }
 
@@ -55,12 +53,4 @@ pub trait Api {
 pub trait FragmentEncoder {
     fn encode(&self, data: NonEmpty<u8>) -> Result<NonEmpty<Fragment>>;
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64;
-}
-
-#[cfg_attr(feature = "test-helpers", mockall::automock)]
-#[async_trait::async_trait]
-pub trait EventStreamer {
-    async fn establish_stream<'a>(
-        &'a self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommittedOnL1>> + 'a + Send>>>;
 }
