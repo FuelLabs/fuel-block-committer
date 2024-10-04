@@ -1,4 +1,7 @@
-use std::{cmp::min, num::NonZeroU32};
+use std::{
+    cmp::{max, min},
+    num::NonZeroU32,
+};
 
 use alloy::{
     consensus::Transaction,
@@ -91,15 +94,15 @@ impl WsConnection {
 
     async fn get_bumped_fees(&self, previous_tx: &L1Tx) -> Result<(u128, u128, u128)> {
         let next_blob_fee = self.get_next_blob_fee().await?;
-        let max_fee_per_blob_gas = min(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
+        let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
 
         let Eip1559Estimation {
             max_fee_per_gas,
             max_priority_fee_per_gas,
         } = self.provider.estimate_eip1559_fees(None).await?;
 
-        let max_fee_per_gas = min(max_fee_per_gas, previous_tx.max_fee.saturating_mul(2));
-        let max_priority_fee_per_gas = min(
+        let max_fee_per_gas = max(max_fee_per_gas, previous_tx.max_fee.saturating_mul(2));
+        let max_priority_fee_per_gas = max(
             max_priority_fee_per_gas,
             previous_tx.priority_fee.saturating_mul(2),
         );
@@ -231,9 +234,9 @@ impl EthApi for WsConnection {
                     .with_max_fee_per_gas(max_fee_per_gas)
                     .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
                     .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
+                    .with_nonce(previous_tx.nonce as u64)
                     .with_blob_sidecar(sidecar)
                     .with_to(*blob_signer_address)
-                    .with_nonce(previous_tx.nonce as u64)
             }
             _ => TransactionRequest::default()
                 .with_blob_sidecar(sidecar)
