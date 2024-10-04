@@ -85,6 +85,7 @@ async fn main() -> Result<()> {
             storage.clone(),
             cancel_token.clone(),
             &config,
+            &metrics_registry,
         );
 
         let state_committer_handle = setup::state_committer(

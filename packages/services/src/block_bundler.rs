@@ -2,7 +2,12 @@ use std::{num::NonZeroUsize, time::Duration};
 
 pub mod bundler;
 
-use bundler::{Bundle, BundleProposal, BundlerFactory};
+use bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
+use metrics::{
+    custom_exponential_buckets,
+    prometheus::{histogram_opts, linear_buckets, Histogram, IntGauge},
+    RegistersMetrics,
+};
 use ports::{
     clock::Clock,
     storage::Storage,
@@ -43,6 +48,73 @@ pub struct BlockBundler<F, Storage, Clock, BundlerFactory> {
     bundler_factory: BundlerFactory,
     config: Config,
     last_time_bundled: DateTime<Utc>,
+    metrics: Metrics,
+}
+
+impl<F, S, C, B> RegistersMetrics for BlockBundler<F, S, C, B> {
+    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+        vec![
+            Box::new(self.metrics.blocks_per_bundle.clone()),
+            Box::new(self.metrics.last_bundled_block_height.clone()),
+            Box::new(self.metrics.compression_ratio.clone()),
+            Box::new(self.metrics.optimization_duration.clone()),
+        ]
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Metrics {
+    blocks_per_bundle: Histogram,
+    last_bundled_block_height: IntGauge,
+    compression_ratio: Histogram,
+    optimization_duration: Histogram,
+}
+
+impl Metrics {
+    fn observe_metadata(&self, metadata: &Metadata) {
+        self.blocks_per_bundle.observe(metadata.num_blocks() as f64);
+        self.compression_ratio.observe(metadata.compression_ratio());
+        self.last_bundled_block_height
+            .set((*metadata.block_heights.end()).into());
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let blocks_per_bundle = Histogram::with_opts(histogram_opts!(
+            "blocks_per_bundle",
+            "Number of blocks per bundle",
+            linear_buckets(250.0, 250.0, 3600 / 250).expect("to be correctly configured")
+        ))
+        .expect("to be correctly configured");
+
+        let last_bundled_block_height = IntGauge::new(
+            "last_bundled_block_height",
+            "The height of the last bundled block",
+        )
+        .expect("to be correctly configured");
+
+        let compression_ratio = Histogram::with_opts(histogram_opts!(
+            "compression_ratio",
+            "The compression ratio of the bundled data",
+            custom_exponential_buckets(1.0, 10.0, 7)
+        ))
+        .expect("to be correctly configured");
+
+        let optimization_duration = Histogram::with_opts(histogram_opts!(
+            "optimization_duration",
+            "The duration of the optimization phase in seconds",
+            custom_exponential_buckets(60.0, 300.0, 10)
+        ))
+        .expect("to be correctly configured");
+
+        Self {
+            blocks_per_bundle,
+            last_bundled_block_height,
+            compression_ratio,
+            optimization_duration,
+        }
+    }
 }
 
 impl<F, Storage, C, BF> BlockBundler<F, Storage, C, BF>
@@ -66,6 +138,7 @@ where
             last_time_bundled: now,
             bundler_factory,
             config,
+            metrics: Metrics::default(),
         }
     }
 }
@@ -108,16 +181,24 @@ where
 
             let bundler = self.bundler_factory.build(blocks).await;
 
+            let optimization_start = self.clock.now();
             let BundleProposal {
                 fragments,
                 metadata,
             } = self.find_optimal_bundle(bundler).await?;
 
+            let optimization_duration = self.clock.now().signed_duration_since(optimization_start);
+
             info!("Bundler proposed: {metadata}");
 
             self.storage
-                .insert_bundle_and_fragments(metadata.block_heights, fragments)
+                .insert_bundle_and_fragments(metadata.block_heights.clone(), fragments)
                 .await?;
+
+            self.metrics.observe_metadata(&metadata);
+            self.metrics
+                .optimization_duration
+                .observe(optimization_duration.num_seconds() as f64);
 
             self.last_time_bundled = self.clock.now();
         }
@@ -764,6 +845,105 @@ mod tests {
             vec![0, 1, 2],
             "Blocks outside the lookback window should remain unbundled"
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn metrics_are_updated() -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        // Import two blocks with specific parameters
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..=1,
+                tx_per_block: 1,
+                size_per_tx: 100,
+            })
+            .await;
+
+        let latest_height = blocks.last().header.height;
+        let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
+
+        let registry = metrics::prometheus::Registry::new();
+
+        let mut block_bundler = BlockBundler::new(
+            mock_fuel_api,
+            setup.db(),
+            TestClock::default(),
+            default_bundler_factory(),
+            Config {
+                num_blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+                ..Default::default()
+            },
+        );
+
+        block_bundler.register_metrics(&registry);
+
+        // when
+        block_bundler.run().await?;
+
+        // then
+        let gathered_metrics = registry.gather();
+
+        // Check that the last_bundled_block_height metric has been updated correctly
+        let last_bundled_block_height_metric = gathered_metrics
+            .iter()
+            .find(|metric| metric.get_name() == "last_bundled_block_height")
+            .expect("last_bundled_block_height metric not found");
+
+        let last_bundled_block_height = last_bundled_block_height_metric
+            .get_metric()
+            .first()
+            .expect("No metric samples found")
+            .get_gauge()
+            .get_value() as i64;
+
+        assert_eq!(
+            last_bundled_block_height,
+            blocks.last().header.height as i64
+        );
+
+        // Check that the blocks_per_bundle metric has recorded the correct number of blocks
+        let blocks_per_bundle_metric = gathered_metrics
+            .iter()
+            .find(|metric| metric.get_name() == "blocks_per_bundle")
+            .expect("blocks_per_bundle metric not found");
+
+        let blocks_per_bundle_sample = blocks_per_bundle_metric
+            .get_metric()
+            .first()
+            .expect("No metric samples found")
+            .get_histogram();
+
+        // The sample count should be 1 (since we observed once)
+        let blocks_per_bundle_count = blocks_per_bundle_sample.get_sample_count();
+        assert_eq!(blocks_per_bundle_count, 1);
+
+        // The sample sum should be 2.0 (since we bundled 2 blocks)
+        let blocks_per_bundle_sum = blocks_per_bundle_sample.get_sample_sum();
+        assert_eq!(blocks_per_bundle_sum, 2.0);
+
+        let compression_ratio_metric = gathered_metrics
+            .iter()
+            .find(|metric| metric.get_name() == "compression_ratio")
+            .expect("compression_ratio metric not found");
+
+        let compression_ratio_sample = compression_ratio_metric
+            .get_metric()
+            .first()
+            .expect("No metric samples found")
+            .get_histogram();
+
+        let compression_ratio_count = compression_ratio_sample.get_sample_count();
+        assert_eq!(compression_ratio_count, 1);
+
+        let compression_ratio_sum = compression_ratio_sample.get_sample_sum();
+        assert_eq!(compression_ratio_sum, 1.0); // Compression ratio is 1.0 when compression is disabled
 
         Ok(())
     }

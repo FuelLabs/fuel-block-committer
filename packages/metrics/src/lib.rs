@@ -20,3 +20,18 @@ pub trait RegistersMetrics {
 
     fn metrics(&self) -> Vec<Box<dyn crate::prometheus::core::Collector>>;
 }
+
+pub fn custom_exponential_buckets(start: f64, end: f64, steps: usize) -> Vec<f64> {
+    let factor = (end / start).powf(1.0 / (steps - 1) as f64);
+    let mut buckets = Vec::with_capacity(steps);
+
+    let mut value = start;
+    for _ in 0..(steps - 1) {
+        buckets.push(value.ceil());
+        value *= factor;
+    }
+
+    buckets.push(end.ceil());
+
+    buckets
+}

@@ -41,7 +41,7 @@ impl Api for WebsocketClient {
                 &self,
                 fragments: NonEmpty<Fragment>,
             ) -> Result<FragmentsSubmitted>;
-            async fn balance(&self) -> Result<U256>;
+            async fn balance(&self, address: Address) -> Result<U256>;
             async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
         }
     }

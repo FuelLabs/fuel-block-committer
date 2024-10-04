@@ -19,8 +19,16 @@ pub fn wallet_balance_tracker(
     l1: L1,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let wallet_balance_tracker = WalletBalanceTracker::new(l1);
+    let contract_caller_address = l1.contract_caller_address();
+    let blob_posting_address = l1.blob_poster_address();
+    let mut wallet_balance_tracker = WalletBalanceTracker::new(l1);
 
+    wallet_balance_tracker.track_address("contract_caller", contract_caller_address);
+    if let Some(address) = blob_posting_address {
+        wallet_balance_tracker.track_address("blob_poster", address);
+    }
+
+    // to be called only after all `track_address` calls
     wallet_balance_tracker.register_metrics(registry);
 
     schedule_polling(
@@ -77,6 +85,7 @@ pub fn block_bundler(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
+    registry: &Registry,
 ) -> tokio::task::JoinHandle<()> {
     let bundler_factory = services::BundlerFactory::new(
         Eip4844BlobEncoder,
@@ -99,6 +108,8 @@ pub fn block_bundler(
                 .expect("num cpus not zero"),
         },
     );
+
+    block_bundler.register_metrics(registry);
 
     schedule_polling(
         config.app.bundle.new_bundle_check_interval,
@@ -188,7 +199,7 @@ pub async fn l1_adapter(
 ) -> Result<(L1, HealthChecker)> {
     let aws_config = AwsConfig::from_env().await;
 
-    let aws_client = AwsClient::new(aws_config).await;
+    let aws_client = AwsClient::new(aws_config);
 
     let l1 = L1::connect(
         config.eth.rpc.clone(),
