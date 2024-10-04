@@ -44,13 +44,8 @@ impl WebsocketClient {
         let blob_poster_address = blob_signer.as_ref().map(|signer| signer.address());
         let contract_caller_address = main_signer.address();
 
-        let provider = WsConnection::connect(
-            url,
-            contract_address,
-            main_signer,
-            blob_signer,
-        )
-        .await?;
+        let provider =
+            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
