@@ -174,7 +174,7 @@ impl EthApi for WsConnection {
             };
 
         // we only want to add it to the metrics if the submission succeeds
-        let used_bytes_per_fragment = fragments.iter().map(|f| f.unused_bytes).collect_vec();
+        let unused_bytes_per_fragment = fragments.iter().map(|f| f.unused_bytes).collect_vec();
 
         let num_fragments = min(fragments.len(), 6);
 
@@ -225,7 +225,7 @@ impl EthApi for WsConnection {
 
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
-        for bytes in used_bytes_per_fragment {
+        for bytes in unused_bytes_per_fragment {
             self.metrics.blob_unused_bytes.observe(bytes as f64);
         }
 
