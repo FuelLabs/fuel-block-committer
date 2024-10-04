@@ -166,7 +166,7 @@ pub(crate) mod test_utils {
                             fragments: NonEmpty<Fragment>,
                         ) -> ports::l1::Result<FragmentsSubmitted>;
                         async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
-                        async fn balance(&self) -> ports::l1::Result<U256>;
+                        async fn balance(&self, address: ports::types::Address) -> ports::l1::Result<U256>;
                         async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> ports::l1::Result<Option<TransactionResponse>>;
                     }
                 }

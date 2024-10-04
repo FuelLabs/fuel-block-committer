@@ -75,7 +75,6 @@ pub struct WsConnection {
     first_tx_gas_estimation_multiplier: Option<u64>,
     first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
-    address: Address,
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
@@ -86,7 +85,7 @@ impl RegistersMetrics for WsConnection {
     fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
         vec![
             Box::new(self.metrics.blobs_per_tx.clone()),
-            Box::new(self.metrics.blob_used_bytes.clone()),
+            Box::new(self.metrics.blob_unused_bytes.clone()),
         ]
     }
 }
@@ -94,22 +93,7 @@ impl RegistersMetrics for WsConnection {
 #[derive(Clone)]
 struct Metrics {
     blobs_per_tx: prometheus::Histogram,
-    blob_used_bytes: prometheus::Histogram,
-}
-
-fn custom_exponential_buckets(start: f64, end: f64, steps: usize) -> Vec<f64> {
-    let factor = (end / start).powf(1.0 / (steps - 1) as f64);
-    let mut buckets = Vec::with_capacity(steps);
-
-    let mut value = start;
-    for _ in 0..(steps - 1) {
-        buckets.push(value.ceil());
-        value *= factor;
-    }
-
-    buckets.push(end.ceil());
-
-    buckets
+    blob_unused_bytes: prometheus::Histogram,
 }
 
 impl Default for Metrics {
@@ -122,10 +106,10 @@ impl Default for Metrics {
             ))
             .expect("to be correctly configured"),
 
-            blob_used_bytes: prometheus::Histogram::with_opts(histogram_opts!(
+            blob_unused_bytes: prometheus::Histogram::with_opts(histogram_opts!(
                 "blob_utilization",
-                "bytes filled per blob",
-                custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
+                "unused bytes per blob",
+                metrics::custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
             ))
             .expect("to be correctly configured"),
         }
@@ -169,8 +153,7 @@ impl EthApi for WsConnection {
         Ok(response)
     }
 
-    async fn balance(&self) -> Result<U256> {
-        let address = self.address;
+    async fn balance(&self, address: Address) -> Result<U256> {
         Ok(self.provider.get_balance(address).await?)
     }
 
@@ -201,7 +184,7 @@ impl EthApi for WsConnection {
             };
 
         // we only want to add it to the metrics if the submission succeeds
-        let used_bytes_per_fragment = fragments.iter().map(|f| f.used_bytes()).collect_vec();
+        let unused_bytes_per_fragment = fragments.iter().map(|f| f.unused_bytes).collect_vec();
 
         let num_fragments = min(fragments.len(), 6);
 
@@ -252,8 +235,8 @@ impl EthApi for WsConnection {
 
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
-        for bytes in used_bytes_per_fragment {
-            self.metrics.blob_used_bytes.observe(bytes as f64);
+        for bytes in unused_bytes_per_fragment {
+            self.metrics.blob_unused_bytes.observe(bytes.into());
         }
 
         Ok(FragmentsSubmitted {
@@ -292,8 +275,6 @@ impl WsConnection {
         blob_signer: Option<AwsSigner>,
         first_tx_gas_estimation_multiplier: Option<u64>,
     ) -> Result<Self> {
-        let address = main_signer.address();
-
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), main_signer).await?;
 
@@ -321,7 +302,6 @@ impl WsConnection {
         Ok(Self {
             provider,
             blob_provider,
-            address,
             blob_signer_address,
             contract,
             commit_interval,

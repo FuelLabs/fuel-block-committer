@@ -43,7 +43,7 @@ pub trait Api {
         fragments: NonEmpty<Fragment>,
     ) -> Result<FragmentsSubmitted>;
     async fn get_block_number(&self) -> Result<L1Height>;
-    async fn balance(&self) -> Result<U256>;
+    async fn balance(&self, address: crate::types::Address) -> Result<U256>;
     async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],

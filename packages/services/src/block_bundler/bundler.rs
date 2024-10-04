@@ -157,10 +157,20 @@ pub struct Metadata {
     pub num_fragments: NonZeroUsize,
 }
 
+impl Metadata {
+    pub fn num_blocks(&self) -> usize {
+        self.block_heights.clone().count()
+    }
+
+    pub fn compression_ratio(&self) -> f64 {
+        self.uncompressed_data_size.get() as f64 / self.compressed_data_size.get() as f64
+    }
+}
+
 impl Display for Metadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Metadata")
-            .field("num_blocks", &self.block_heights.clone().count())
+            .field("num_blocks", &self.num_blocks())
             .field("block_heights", &self.block_heights)
             .field("known_to_be_optimal", &self.known_to_be_optimal)
             .field("optimization_attempts", &self.optimization_attempts)
@@ -173,11 +183,7 @@ impl Display for Metadata {
                 "uncompressed_data_size",
                 &ByteSize(self.uncompressed_data_size.get() as u64),
             )
-            .field(
-                "compression_ratio",
-                &(self.uncompressed_data_size.get() as f64
-                    / self.compressed_data_size.get() as f64),
-            )
+            .field("compression_ratio", &self.compression_ratio())
             .field("num_fragments", &self.num_fragments.get())
             .finish()
     }
