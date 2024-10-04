@@ -848,4 +848,103 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn metrics_are_updated() -> Result<()> {
+        // given
+        let setup = test_utils::Setup::init().await;
+
+        // Import two blocks with specific parameters
+        let ImportedBlocks {
+            fuel_blocks: blocks,
+            ..
+        } = setup
+            .import_blocks(Blocks::WithHeights {
+                range: 0..=1,
+                tx_per_block: 1,
+                size_per_tx: 100,
+            })
+            .await;
+
+        let latest_height = blocks.last().header.height;
+        let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
+
+        let registry = metrics::prometheus::Registry::new();
+
+        let mut block_bundler = BlockBundler::new(
+            mock_fuel_api,
+            setup.db(),
+            TestClock::default(),
+            default_bundler_factory(),
+            Config {
+                num_blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+                ..Default::default()
+            },
+        );
+
+        block_bundler.register_metrics(&registry);
+
+        // when
+        block_bundler.run().await?;
+
+        // then
+        let gathered_metrics = registry.gather();
+
+        // Check that the last_bundled_block_height metric has been updated correctly
+        let last_bundled_block_height_metric = gathered_metrics
+            .iter()
+            .find(|metric| metric.get_name() == "last_bundled_block_height")
+            .expect("last_bundled_block_height metric not found");
+
+        let last_bundled_block_height = last_bundled_block_height_metric
+            .get_metric()
+            .first()
+            .expect("No metric samples found")
+            .get_gauge()
+            .get_value() as i64;
+
+        assert_eq!(
+            last_bundled_block_height,
+            blocks.last().header.height as i64
+        );
+
+        // Check that the blocks_per_bundle metric has recorded the correct number of blocks
+        let blocks_per_bundle_metric = gathered_metrics
+            .iter()
+            .find(|metric| metric.get_name() == "blocks_per_bundle")
+            .expect("blocks_per_bundle metric not found");
+
+        let blocks_per_bundle_sample = blocks_per_bundle_metric
+            .get_metric()
+            .first()
+            .expect("No metric samples found")
+            .get_histogram();
+
+        // The sample count should be 1 (since we observed once)
+        let blocks_per_bundle_count = blocks_per_bundle_sample.get_sample_count();
+        assert_eq!(blocks_per_bundle_count, 1);
+
+        // The sample sum should be 2.0 (since we bundled 2 blocks)
+        let blocks_per_bundle_sum = blocks_per_bundle_sample.get_sample_sum();
+        assert_eq!(blocks_per_bundle_sum, 2.0);
+
+        let compression_ratio_metric = gathered_metrics
+            .iter()
+            .find(|metric| metric.get_name() == "compression_ratio")
+            .expect("compression_ratio metric not found");
+
+        let compression_ratio_sample = compression_ratio_metric
+            .get_metric()
+            .first()
+            .expect("No metric samples found")
+            .get_histogram();
+
+        let compression_ratio_count = compression_ratio_sample.get_sample_count();
+        assert_eq!(compression_ratio_count, 1);
+
+        let compression_ratio_sum = compression_ratio_sample.get_sample_sum();
+        assert_eq!(compression_ratio_sum, 1.0); // Compression ratio is 1.0 when compression is disabled
+
+        Ok(())
+    }
 }
