@@ -44,7 +44,7 @@ pub trait Api {
         previous_tx: Option<L1Tx>,
     ) -> Result<(L1Tx, FragmentsSubmitted)>;
     async fn get_block_number(&self) -> Result<L1Height>;
-    async fn balance(&self) -> Result<U256>;
+    async fn balance(&self, address: crate::types::Address) -> Result<U256>;
     async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],

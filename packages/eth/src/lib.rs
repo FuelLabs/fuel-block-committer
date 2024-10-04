@@ -36,7 +36,7 @@ impl Api for WebsocketClient {
                 fragments: NonEmpty<Fragment>,
                 previous_tx: Option<ports::types::L1Tx>,
             ) -> Result<(L1Tx, FragmentsSubmitted)>;
-            async fn balance(&self) -> Result<U256>;
+            async fn balance(&self, address: Address) -> Result<U256>;
             async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
         }
     }

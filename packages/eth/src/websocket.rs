@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
-use alloy::primitives::Address;
+use alloy::{primitives::Address, signers::Signer};
 use ports::{
     l1::{FragmentsSubmitted, Result},
     types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse, U256},
@@ -20,6 +20,8 @@ mod health_tracking_middleware;
 #[derive(Clone)]
 pub struct WebsocketClient {
     inner: HealthTrackingMiddleware<WsConnection>,
+    blob_poster_address: Option<Address>,
+    contract_caller_address: Address,
 }
 
 impl WebsocketClient {
@@ -39,11 +41,21 @@ impl WebsocketClient {
 
         let main_signer = aws_client.make_signer(main_key_arn).await?;
 
-        let provider =
-            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
+        let blob_poster_address = blob_signer.as_ref().map(|signer| signer.address());
+        let contract_caller_address = main_signer.address();
+
+        let provider = WsConnection::connect(
+            url,
+            contract_address,
+            main_signer,
+            blob_signer,
+        )
+        .await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
+            blob_poster_address,
+            contract_caller_address,
         })
     }
 
@@ -71,8 +83,8 @@ impl WebsocketClient {
         Ok(self.inner.get_transaction_response(tx_hash).await?)
     }
 
-    pub(crate) async fn balance(&self) -> Result<U256> {
-        Ok(self.inner.balance().await?)
+    pub(crate) async fn balance(&self, address: Address) -> Result<U256> {
+        Ok(self.inner.balance(address).await?)
     }
 
     pub(crate) async fn submit_state_fragments(
@@ -97,6 +109,14 @@ impl WebsocketClient {
             .inner
             .block_hash_at_commit_height(commit_height)
             .await?)
+    }
+
+    pub fn blob_poster_address(&self) -> Option<Address> {
+        self.blob_poster_address
+    }
+
+    pub fn contract_caller_address(&self) -> Address {
+        self.contract_caller_address
     }
 }
 

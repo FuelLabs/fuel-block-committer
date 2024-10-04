@@ -4,7 +4,7 @@ use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
 use delegate::delegate;
-use ports::types::{BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
+use ports::types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
 
 use crate::{
     error::{Error, Result},
@@ -16,7 +16,7 @@ use crate::{
 pub trait EthApi {
     async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     async fn get_block_number(&self) -> Result<u64>;
-    async fn balance(&self) -> Result<U256>;
+    async fn balance(&self, address: Address) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
     async fn get_transaction_response(
         &self,
@@ -116,8 +116,8 @@ where
         response
     }
 
-    async fn balance(&self) -> Result<U256> {
-        let response = self.adapter.balance().await;
+    async fn balance(&self, address: Address) -> Result<U256> {
+        let response = self.adapter.balance(address).await;
         self.note_network_status(&response);
         response
     }
