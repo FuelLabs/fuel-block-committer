@@ -19,8 +19,16 @@ pub fn wallet_balance_tracker(
     l1: L1,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let wallet_balance_tracker = WalletBalanceTracker::new(l1);
+    let contract_caller_address = l1.contract_caller_address();
+    let blob_posting_address = l1.blob_poster_address();
+    let mut wallet_balance_tracker = WalletBalanceTracker::new(l1);
 
+    wallet_balance_tracker.track_address("contract_caller", contract_caller_address);
+    if let Some(address) = blob_posting_address {
+        wallet_balance_tracker.track_address("blob_poster", address);
+    }
+
+    // to be called only after all `track_address` calls
     wallet_balance_tracker.register_metrics(registry);
 
     schedule_polling(

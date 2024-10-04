@@ -22,7 +22,7 @@ mod health_tracking_middleware;
 #[derive(Clone)]
 pub struct WebsocketClient {
     inner: HealthTrackingMiddleware<WsConnection>,
-    blob_signer_address: Option<Address>,
+    blob_poster_address: Option<Address>,
     contract_caller_address: Address,
 }
 
@@ -44,7 +44,7 @@ impl WebsocketClient {
 
         let main_signer = aws_client.make_signer(main_key_arn).await?;
 
-        let blob_signer_address = blob_signer.as_ref().map(|signer| signer.address());
+        let blob_poster_address = blob_signer.as_ref().map(|signer| signer.address());
         let contract_caller_address = main_signer.address();
 
         let provider = WsConnection::connect(
@@ -58,7 +58,7 @@ impl WebsocketClient {
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
-            blob_signer_address,
+            blob_poster_address,
             contract_caller_address,
         })
     }
@@ -115,8 +115,8 @@ impl WebsocketClient {
             .await?)
     }
 
-    pub fn blob_signer_address(&self) -> Option<Address> {
-        self.blob_signer_address
+    pub fn blob_poster_address(&self) -> Option<Address> {
+        self.blob_poster_address
     }
 
     pub fn contract_caller_address(&self) -> Address {
