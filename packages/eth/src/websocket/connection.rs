@@ -175,15 +175,9 @@ impl EthApi for WsConnection {
             .nonce(nonce);
 
         let send_fut = self.provider.send_transaction(tx_request);
-        let tx = match tokio::time::timeout(self.send_tx_request_timeout, send_fut).await {
-            Ok(Ok(tx)) => tx,
-            Ok(Err(e)) => return Err(e.into()),
-            Err(_) => {
-                return Err(Error::Network(
-                    "timed out trying to submit block".to_string(),
-                ))
-            }
-        };
+        let tx = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+            .await
+            .map_err(|_| Error::Network("timed out trying to submit block".to_string()))??;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
         let submission_tx = BlockSubmissionTx {
@@ -282,15 +276,9 @@ impl EthApi for WsConnection {
         };
 
         let send_fut = blob_provider.send_tx_envelope(blob_tx);
-        match tokio::time::timeout(self.send_tx_request_timeout, send_fut).await {
-            Ok(Ok(_)) => (),
-            Ok(Err(e)) => return Err(e.into()),
-            Err(_) => {
-                return Err(Error::Network(
-                    "timed out trying to send blob tx".to_string(),
-                ))
-            }
-        };
+        let _ = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+            .await
+            .map_err(|_| Error::Network("timed out trying to send blob tx".to_string()))??;
 
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
