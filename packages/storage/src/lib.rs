@@ -110,8 +110,12 @@ impl Storage for Postgres {
         Ok(self._get_non_finalized_txs().await?)
     }
 
-    async fn has_non_finalized_txs(&self) -> Result<bool> {
-        Ok(self._has_non_finalized_txs().await?)
+    async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
+        Ok(self._get_pending_txs().await?)
+    }
+
+    async fn has_pending_txs(&self) -> Result<bool> {
+        Ok(self._has_pending_txs().await?)
     }
 
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()> {

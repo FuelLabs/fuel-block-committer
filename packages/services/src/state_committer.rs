@@ -123,11 +123,8 @@ where
         }
     }
 
-    async fn has_non_finalized_transactions(&self) -> Result<bool> {
-        self.storage
-            .has_non_finalized_txs()
-            .await
-            .map_err(|e| e.into())
+    async fn has_pending_transactions(&self) -> Result<bool> {
+        self.storage.has_pending_txs().await.map_err(|e| e.into())
     }
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
@@ -185,7 +182,7 @@ where
     C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
-        if self.has_non_finalized_transactions().await? {
+        if self.has_pending_transactions().await? {
             return Ok(());
         }
 

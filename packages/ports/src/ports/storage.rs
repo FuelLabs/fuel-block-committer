@@ -186,7 +186,8 @@ pub trait Storage: Send + Sync {
         fragments: NonEmpty<NonNegative<i32>>,
     ) -> Result<()>;
     async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
-    async fn has_non_finalized_txs(&self) -> Result<bool>;
+    async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+    async fn has_pending_txs(&self) -> Result<bool>;
     async fn oldest_nonfinalized_fragments(
         &self,
         starting_height: u32,
@@ -225,7 +226,8 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
-                async fn has_non_finalized_txs(&self) -> Result<bool>;
+                async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+                async fn has_pending_txs(&self) -> Result<bool>;
                 async fn oldest_nonfinalized_fragments(
                     &self,
                     starting_height: u32,
@@ -266,7 +268,8 @@ impl<T: Storage + Send + Sync> Storage for &T {
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
-                async fn has_non_finalized_txs(&self) -> Result<bool>;
+                async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+                async fn has_pending_txs(&self) -> Result<bool>;
                 async fn oldest_nonfinalized_fragments(
                     &self,
                     starting_height: u32,

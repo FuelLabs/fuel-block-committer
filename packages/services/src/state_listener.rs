@@ -92,13 +92,13 @@ where
                     self.storage
                         .update_tx_state(tx.hash, TransactionState::IncludedInBlock)
                         .await?;
-                }
 
-                info!(
-                    "blob tx {} included in block {}",
-                    hex::encode(tx.hash),
-                    tx_response.block_number()
-                );
+                    info!(
+                        "blob tx {} included in block {}",
+                        hex::encode(tx.hash),
+                        tx_response.block_number()
+                    );
+                }
 
                 continue;
             }
@@ -201,7 +201,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert!(!setup.db().has_non_finalized_txs().await?);
+        assert!(!setup.db().has_pending_txs().await?);
         assert_eq!(
             setup
                 .db()
@@ -247,7 +247,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert!(setup.db().has_non_finalized_txs().await?);
+        assert!(setup.db().has_pending_txs().await?);
         assert!(setup
             .db()
             .last_time_a_fragment_was_finalized()
@@ -293,7 +293,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert!(!setup.db().has_non_finalized_txs().await?);
+        assert!(!setup.db().has_pending_txs().await?);
         assert!(setup
             .db()
             .last_time_a_fragment_was_finalized()
