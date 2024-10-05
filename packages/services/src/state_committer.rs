@@ -18,7 +18,7 @@ pub struct Config {
     pub fragment_accumulation_timeout: Duration,
     pub fragments_to_accumulate: NonZeroUsize,
     pub gas_bump_timeout: Duration,
-    pub gas_bump_max_fee: u64,
+    pub tx_max_fee: u128,
 }
 
 #[cfg(test)]
@@ -29,7 +29,7 @@ impl Default for Config {
             fragment_accumulation_timeout: Duration::from_secs(0),
             fragments_to_accumulate: 1.try_into().unwrap(),
             gas_bump_timeout: Duration::from_secs(300),
-            gas_bump_max_fee: 1_000_000_000,
+            tx_max_fee: 1_000_000_000,
         }
     }
 }

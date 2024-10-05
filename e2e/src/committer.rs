@@ -76,7 +76,7 @@ impl Committer {
             .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
             .env("COMMITTER__APP__GAS_BUMP_TIMEOUT", "300s")
-            .env("COMMITTER__APP__GAS_BUMP_MAX_FEE", "1000000000000")
+            .env("COMMITTER__APP__TX_MAX_FEE", "1000000000000")
             .env("COMMITTER__APP__SEND_TX_REQUEST_TIMEOUT", "10s")
             .env(
                 "COMMITTER__APP__BUNDLE__ACCUMULATION_TIMEOUT",

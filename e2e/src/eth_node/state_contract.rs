@@ -26,6 +26,7 @@ impl DeployedContract {
         url: Url,
         address: Address,
         key: KmsKey,
+        tx_max_fee: u128,
         request_timeout: Duration,
     ) -> anyhow::Result<Self> {
         let blob_wallet = None;
@@ -38,6 +39,7 @@ impl DeployedContract {
             blob_wallet,
             5,
             aws_client,
+            tx_max_fee,
             request_timeout,
         )
         .await?;

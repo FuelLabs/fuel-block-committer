@@ -77,6 +77,7 @@ impl EthNodeProcess {
         &self,
         kms_key: KmsKey,
         contract_args: ContractArgs,
+        tx_max_fee: u128,
         request_timeout: Duration,
     ) -> anyhow::Result<DeployedContract> {
         let prepared_transactions =
@@ -92,6 +93,7 @@ impl EthNodeProcess {
             self.ws_url(),
             proxy_contract_address,
             kms_key,
+            tx_max_fee,
             request_timeout,
         )
         .await

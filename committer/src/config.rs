@@ -99,8 +99,8 @@ pub struct App {
     /// Interval after which to bump a pending tx
     #[serde(deserialize_with = "human_readable_duration")]
     pub gas_bump_timeout: Duration,
-    /// Max gas fee to use when bumping a tx
-    pub gas_bump_max_fee: u64,
+    /// Max gas fee we permit a tx to have in wei
+    pub tx_max_fee: u128,
     ///// Contains configs relating to block state posting to l1
     pub bundle: BundleConfig,
     //// Duration for timeout when sending tx requests

@@ -32,6 +32,7 @@ impl WebsocketClient {
         blob_pool_key_arn: Option<String>,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
+        tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
@@ -50,6 +51,7 @@ impl WebsocketClient {
             contract_address,
             main_signer,
             blob_signer,
+            tx_max_fee,
             send_tx_request_timeout,
         )
         .await?;

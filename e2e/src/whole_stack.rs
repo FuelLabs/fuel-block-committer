@@ -64,9 +64,10 @@ impl WholeStack {
         let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
 
         let request_timeout = Duration::from_secs(5);
+        let max_fee = 1_000_000_000_000;
 
         let (contract_args, deployed_contract) =
-            deploy_contract(&eth_node, &main_key, request_timeout).await?;
+            deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
 
         let fuel_node = FuelNodeType::Local(start_fuel_node(logs).await?);
 
@@ -103,9 +104,10 @@ impl WholeStack {
         let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
 
         let request_timeout = Duration::from_secs(5);
+        let max_fee = 1_000_000_000_000;
 
         let (contract_args, deployed_contract) =
-            deploy_contract(&eth_node, &main_key, request_timeout).await?;
+            deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
 
         let fuel_node = FuelNodeType::Testnet {
             url: "https://testnet.fuel.network/v1/graphql".parse().unwrap(),
@@ -181,6 +183,7 @@ async fn create_and_fund_kms_keys(
 async fn deploy_contract(
     eth_node: &EthNodeProcess,
     main_wallet_key: &KmsKey,
+    tx_max_fee: u128,
     request_timeout: Duration,
 ) -> anyhow::Result<(ContractArgs, DeployedContract)> {
     let contract_args = ContractArgs {
@@ -190,7 +193,12 @@ async fn deploy_contract(
     };
 
     let deployed_contract = eth_node
-        .deploy_state_contract(main_wallet_key.clone(), contract_args, request_timeout)
+        .deploy_state_contract(
+            main_wallet_key.clone(),
+            contract_args,
+            tx_max_fee,
+            request_timeout,
+        )
         .await?;
 
     Ok((contract_args, deployed_contract))

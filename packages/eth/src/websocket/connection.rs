@@ -6,7 +6,10 @@ use std::{
 
 use alloy::{
     consensus::Transaction,
-    eips::{eip4844::BYTES_PER_BLOB, BlockNumberOrTag},
+    eips::{
+        eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
+        BlockNumberOrTag,
+    },
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
@@ -75,6 +78,7 @@ pub struct WsConnection {
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
+    tx_max_fee: u128,
     send_tx_request_timeout: Duration,
     metrics: Metrics,
 }
@@ -118,6 +122,16 @@ impl WsConnection {
             max_priority_fee_per_gas,
             max_fee_per_blob_gas,
         ))
+    }
+
+    fn is_max_fee_exceeded(&self, tx: &L1Tx, gas_limit: u128, num_fragments: u64) -> bool {
+        let max_fee = tx.max_fee.saturating_mul(gas_limit).saturating_add(
+            tx.blob_fee
+                .saturating_mul(num_fragments as u128)
+                .saturating_mul(DATA_GAS_PER_BLOB as u128),
+        );
+
+        max_fee > self.tx_max_fee
     }
 }
 
@@ -275,6 +289,10 @@ impl EthApi for WsConnection {
             ..Default::default()
         };
 
+        if self.is_max_fee_exceeded(&l1_tx, blob_tx.gas_limit(), num_fragments as u64) {
+            return Err(Error::Other("max fee exceeded".to_string()));
+        }
+
         let send_fut = blob_provider.send_tx_envelope(blob_tx);
         let _ = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
             .await
@@ -321,6 +339,7 @@ impl WsConnection {
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
+        tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> Result<Self> {
         let address = main_signer.address();
@@ -355,6 +374,7 @@ impl WsConnection {
             blob_signer_address,
             contract,
             commit_interval,
+            tx_max_fee,
             send_tx_request_timeout,
             metrics: Default::default(),
         })
@@ -454,6 +474,7 @@ mod tests {
                 provider.clone(),
             ),
             commit_interval: 3.try_into().unwrap(),
+            tx_max_fee: 1_000_000_000,
             send_tx_request_timeout: Duration::from_secs(10),
             metrics: Default::default(),
         };
