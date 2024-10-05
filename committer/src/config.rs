@@ -103,6 +103,9 @@ pub struct App {
     pub gas_bump_max_fee: u64,
     ///// Contains configs relating to block state posting to l1
     pub bundle: BundleConfig,
+    //// Duration for timeout when sending tx requests
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub send_tx_request_timeout: Duration,
 }
 
 /// Configuration settings for managing fuel block bundling and fragment submission operations.

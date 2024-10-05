@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, time::Duration};
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::{primitives::Address, signers::Signer};
@@ -32,6 +32,7 @@ impl WebsocketClient {
         blob_pool_key_arn: Option<String>,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
+        send_tx_request_timeout: Duration,
     ) -> ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
@@ -44,8 +45,14 @@ impl WebsocketClient {
         let blob_poster_address = blob_signer.as_ref().map(|signer| signer.address());
         let contract_caller_address = main_signer.address();
 
-        let provider =
-            WsConnection::connect(url, contract_address, main_signer, blob_signer).await?;
+        let provider = WsConnection::connect(
+            url,
+            contract_address,
+            main_signer,
+            blob_signer,
+            send_tx_request_timeout,
+        )
+        .await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),

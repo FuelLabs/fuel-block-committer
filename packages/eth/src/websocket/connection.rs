@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     num::NonZeroU32,
+    time::Duration,
 };
 
 use alloy::{
@@ -74,6 +75,7 @@ pub struct WsConnection {
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
+    send_tx_request_timeout: Duration,
     metrics: Metrics,
 }
 
@@ -168,7 +170,16 @@ impl EthApi for WsConnection {
             .max_priority_fee_per_gas(max_priority_fee_per_gas)
             .nonce(nonce);
 
-        let tx = self.provider.send_transaction(tx_request).await?;
+        let send_fut = self.provider.send_transaction(tx_request);
+        let tx = match tokio::time::timeout(self.send_tx_request_timeout, send_fut).await {
+            Ok(Ok(tx)) => tx,
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => {
+                return Err(Error::Network(
+                    "timed out trying to submit block".to_string(),
+                ))
+            }
+        };
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
         let submission_tx = BlockSubmissionTx {
@@ -266,7 +277,16 @@ impl EthApi for WsConnection {
             ..Default::default()
         };
 
-        let _ = blob_provider.send_tx_envelope(blob_tx).await?;
+        let send_fut = blob_provider.send_tx_envelope(blob_tx);
+        match tokio::time::timeout(self.send_tx_request_timeout, send_fut).await {
+            Ok(Ok(_)) => (),
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => {
+                return Err(Error::Network(
+                    "timed out trying to send blob tx".to_string(),
+                ))
+            }
+        };
 
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
@@ -309,6 +329,7 @@ impl WsConnection {
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
+        send_tx_request_timeout: Duration,
     ) -> Result<Self> {
         let address = main_signer.address();
         let ws = WsConnect::new(url);
@@ -342,6 +363,7 @@ impl WsConnection {
             blob_signer_address,
             contract,
             commit_interval,
+            send_tx_request_timeout,
             metrics: Default::default(),
         })
     }

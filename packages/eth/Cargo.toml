@@ -32,6 +32,7 @@ metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
 url = { workspace = true }
 
 [dev-dependencies]

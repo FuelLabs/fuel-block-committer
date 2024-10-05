@@ -19,7 +19,6 @@ mod tests {
 
     use crate::whole_stack::{FuelNodeType, WholeStack};
 
-    #[ignore]
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given

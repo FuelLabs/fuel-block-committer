@@ -199,6 +199,7 @@ pub async fn l1_adapter(
         config.eth.blob_pool_key_arn.clone(),
         internal_config.eth_errors_before_unhealthy,
         aws_client,
+        config.app.send_tx_request_timeout,
     )
     .await?;
 

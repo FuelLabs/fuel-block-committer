@@ -25,9 +25,18 @@ impl DeployedContract {
     pub async fn connect(url: Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
         let blob_wallet = None;
         let aws_client = AwsClient::new(AwsConfig::for_testing(key.url).await);
+        let send_tx_request_timeout = Duration::from_secs(5);
 
-        let chain_state_contract =
-            WebsocketClient::connect(url, address, key.id, blob_wallet, 5, aws_client).await?;
+        let chain_state_contract = WebsocketClient::connect(
+            url,
+            address,
+            key.id,
+            blob_wallet,
+            5,
+            aws_client,
+            send_tx_request_timeout,
+        )
+        .await?;
 
         Ok(Self {
             address,
