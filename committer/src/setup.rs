@@ -124,7 +124,7 @@ pub fn state_committer(
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
             gas_bump_timeout: config.app.gas_bump_timeout,
-            tx_max_fee: config.app.tx_max_fee,
+            tx_max_fee: config.app.tx_max_fee as u128,
         },
         SystemClock,
     );
@@ -199,7 +199,7 @@ pub async fn l1_adapter(
         config.eth.blob_pool_key_arn.clone(),
         internal_config.eth_errors_before_unhealthy,
         aws_client,
-        config.app.tx_max_fee,
+        config.app.tx_max_fee as u128,
         config.app.send_tx_request_timeout,
     )
     .await?;
