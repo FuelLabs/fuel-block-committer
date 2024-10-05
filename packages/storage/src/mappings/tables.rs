@@ -323,6 +323,7 @@ impl L1Tx {
                 )
             }
             (2, _) => Ok(TransactionState::Failed),
+            (3, _) => Ok(TransactionState::IncludedInBlock),
             _ => {
                 bail!(
                     "L1SubmissionTx(id={}) has invalid state {}",
