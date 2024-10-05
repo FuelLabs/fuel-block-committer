@@ -3,6 +3,7 @@ use sqlx::types::chrono::{DateTime, Utc};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionState {
     Pending,
+    IncludedInBlock,
     Finalized(DateTime<Utc>),
     Failed,
 }

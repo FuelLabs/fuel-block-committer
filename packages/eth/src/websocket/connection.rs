@@ -174,6 +174,14 @@ impl EthApi for WsConnection {
         Self::convert_to_tx_response(tx_receipt)
     }
 
+    async fn is_in_mempool(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        Ok(self
+            .provider
+            .get_transaction_by_hash(tx_hash.into())
+            .await?
+            .is_some())
+    }
+
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,

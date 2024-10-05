@@ -430,9 +430,10 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
+    pub(crate) async fn _has_non_finalized_txs(&self) -> Result<bool> {
         Ok(sqlx::query!(
-            "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1) AS has_pending_transactions;",
+            "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1 or state = $2) AS has_pending_transactions;",
+            i16::from(L1TxState::IncludedInBlock),
             i16::from(L1TxState::Pending)
         )
         .fetch_one(&self.connection_pool)
@@ -440,10 +441,11 @@ impl Postgres {
         .has_pending_transactions.unwrap_or(false))
     }
 
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
+    pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,
-            "SELECT * FROM l1_blob_transaction WHERE state = $1",
+            "SELECT * FROM l1_blob_transaction WHERE state = $1 or state = $2",
+            i16::from(L1TxState::IncludedInBlock),
             i16::from(L1TxState::Pending)
         )
         .fetch_all(&self.connection_pool)

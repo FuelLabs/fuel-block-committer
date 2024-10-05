@@ -37,35 +37,76 @@ where
     Db: Storage,
     C: Clock,
 {
-    async fn check_pending_txs(&mut self, pending_txs: Vec<L1Tx>) -> crate::Result<()> {
+    async fn check_non_finalized_txs(&mut self, non_finalized_txs: Vec<L1Tx>) -> crate::Result<()> {
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
-        for tx in pending_txs {
-            let tx_hash = tx.hash;
-            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx_hash).await? else {
-                continue; // not committed
+        for tx in non_finalized_txs {
+            // get response if tx is included in a block
+            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx.hash).await? else {
+                // not included in block - check what happened to the tx
+
+                match (tx.state, self.l1_adapter.is_in_mempool(tx.hash).await?) {
+                    (TransactionState::Pending, false) => {
+                        //not in the mempool anymore set it to failed
+                        self.storage
+                            .update_tx_state(tx.hash, TransactionState::Failed)
+                            .await?;
+
+                        info!(
+                            "blob tx {} not found in mempool. Setting to failed",
+                            hex::encode(tx.hash)
+                        );
+                    }
+                    (TransactionState::IncludedInBlock, true) => {
+                        // if tx was in block and reorg happened we need to set the tx to pending
+                        self.storage
+                            .update_tx_state(tx.hash, TransactionState::Pending)
+                            .await?;
+
+                        info!(
+                            "blob tx {} returned to mempool. Setting to pending",
+                            hex::encode(tx.hash)
+                        );
+                    }
+                    _ => {}
+                }
+
+                continue;
             };
 
             if !tx_response.succeeded() {
                 self.storage
-                    .update_tx_state(tx_hash, TransactionState::Failed)
+                    .update_tx_state(tx.hash, TransactionState::Failed)
                     .await?;
 
-                info!("failed blob tx {}", hex::encode(tx_hash));
+                info!("failed blob tx {}", hex::encode(tx.hash));
                 continue;
             }
 
             if current_block_number.saturating_sub(tx_response.block_number())
                 < self.num_blocks_to_finalize
             {
-                continue; // not finalized
+                // tx included in block but is not yet finalized
+                if tx.state == TransactionState::Pending {
+                    self.storage
+                        .update_tx_state(tx.hash, TransactionState::IncludedInBlock)
+                        .await?;
+                }
+
+                info!(
+                    "blob tx {} included in block {}",
+                    hex::encode(tx.hash),
+                    tx_response.block_number()
+                );
+
+                continue;
             }
 
             self.storage
-                .update_tx_state(tx_hash, TransactionState::Finalized(self.clock.now()))
+                .update_tx_state(tx.hash, TransactionState::Finalized(self.clock.now()))
                 .await?;
 
-            info!("finalized blob tx {}", hex::encode(tx_hash));
+            info!("blob tx {} finalized", hex::encode(tx.hash));
 
             self.metrics
                 .last_eth_block_w_blob
@@ -83,13 +124,13 @@ where
     C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> crate::Result<()> {
-        let pending_txs = self.storage.get_pending_txs().await?;
+        let non_finalized_txs = self.storage.get_non_finalized_txs().await?;
 
-        if pending_txs.is_empty() {
+        if non_finalized_txs.is_empty() {
             return Ok(());
         }
 
-        self.check_pending_txs(pending_txs).await?;
+        self.check_non_finalized_txs(non_finalized_txs).await?;
 
         Ok(())
     }
@@ -159,7 +200,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert!(!setup.db().has_pending_txs().await?);
+        assert!(!setup.db().has_non_finalized_txs().await?);
         assert_eq!(
             setup
                 .db()
@@ -205,7 +246,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert!(setup.db().has_pending_txs().await?);
+        assert!(setup.db().has_non_finalized_txs().await?);
         assert!(setup
             .db()
             .last_time_a_fragment_was_finalized()
@@ -251,7 +292,7 @@ mod tests {
         listener.run().await.unwrap();
 
         // then
-        assert!(!setup.db().has_pending_txs().await?);
+        assert!(!setup.db().has_non_finalized_txs().await?);
         assert!(setup
             .db()
             .last_time_a_fragment_was_finalized()

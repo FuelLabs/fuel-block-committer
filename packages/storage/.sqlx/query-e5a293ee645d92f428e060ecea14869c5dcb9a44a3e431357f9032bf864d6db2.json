@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5a293ee645d92f428e060ecea14869c5dcb9a44a3e431357f9032bf864d6db2"
+}

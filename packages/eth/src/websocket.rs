@@ -85,6 +85,10 @@ impl WebsocketClient {
         Ok(self.inner.get_transaction_response(tx_hash).await?)
     }
 
+    pub(crate) async fn is_in_mempool(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        Ok(self.inner.is_in_mempool(tx_hash).await?)
+    }
+
     pub(crate) async fn balance(&self, address: Address) -> Result<U256> {
         Ok(self.inner.balance(address).await?)
     }

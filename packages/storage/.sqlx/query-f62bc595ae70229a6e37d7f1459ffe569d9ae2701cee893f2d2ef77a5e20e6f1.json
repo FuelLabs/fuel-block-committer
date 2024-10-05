@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH all_heights AS (SELECT generate_series($1::BIGINT, $2::BIGINT) AS height)\n                SELECT ah.height\n                FROM all_heights ah\n                LEFT JOIN fuel_blocks fb ON fb.height = ah.height\n                WHERE fb.height IS NULL\n                ORDER BY ah.height;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "height",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f62bc595ae70229a6e37d7f1459ffe569d9ae2701cee893f2d2ef77a5e20e6f1"
+}

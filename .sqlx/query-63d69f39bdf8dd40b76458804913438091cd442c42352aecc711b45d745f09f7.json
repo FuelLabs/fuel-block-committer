@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1 or state = $2) AS has_pending_transactions;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_pending_transactions",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "63d69f39bdf8dd40b76458804913438091cd442c42352aecc711b45d745f09f7"
+}

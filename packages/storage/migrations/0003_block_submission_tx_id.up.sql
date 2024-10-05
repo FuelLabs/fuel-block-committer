@@ -22,5 +22,5 @@ CREATE TABLE IF NOT EXISTS l1_transaction (
     finalized_at    TIMESTAMPTZ,
     state           SMALLINT NOT NULL,
     CHECK (octet_length(hash) = 32),
-    CHECK (state IN (0, 1, 2) AND (state != 1 OR finalized_at IS NOT NULL))
+    CHECK (state IN (0, 1, 2, 3) AND (state != 1 OR finalized_at IS NOT NULL))
 );
