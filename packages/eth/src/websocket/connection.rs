@@ -230,6 +230,7 @@ impl EthApi for WsConnection {
             Some(previous_tx) => {
                 let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
                     self.get_bumped_fees(&previous_tx).await?;
+
                 TransactionRequest::default()
                     .with_max_fee_per_gas(max_fee_per_gas)
                     .with_max_priority_fee_per_gas(max_priority_fee_per_gas)

@@ -186,7 +186,6 @@ pub(crate) mod test_utils {
                 let mut l1_mock = ports::l1::MockApi::new();
 
                 for (fragment, tx_id) in expectations {
-                    // TODO figure out how we need to use previous tx
                     l1_mock
                         .expect_submit_state_fragments()
                         .withf(move |data, _previous_tx| {

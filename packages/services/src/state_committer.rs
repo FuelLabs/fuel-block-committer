@@ -18,7 +18,7 @@ pub struct Config {
     pub fragment_accumulation_timeout: Duration,
     pub fragments_to_accumulate: NonZeroUsize,
     pub gas_bump_timeout: Duration,
-    pub max_gas_price: u64,
+    pub gas_bump_max_fee: u64,
 }
 
 #[cfg(test)]
@@ -29,7 +29,7 @@ impl Default for Config {
             fragment_accumulation_timeout: Duration::from_secs(0),
             fragments_to_accumulate: 1.try_into().unwrap(),
             gas_bump_timeout: Duration::from_secs(300),
-            max_gas_price: 1_000_000_000,
+            gas_bump_max_fee: 1_000_000_000,
         }
     }
 }
@@ -133,14 +133,9 @@ where
         }
     }
 
-    // async fn has_pending_transactions(&self) -> Result<bool> {
-    //     self.storage.has_pending_txs().await.map_err(|e| e.into())
-    // }
-
     async fn get_pending_transaction(&self) -> Result<Option<L1Tx>> {
-        let mut pending_txs = self.storage.get_pending_txs().await?;
-
-        Ok(pending_txs.pop())
+        let tx = self.storage.get_latest_pending_txs().await?;
+        Ok(tx)
     }
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
@@ -155,6 +150,14 @@ where
             .await?;
 
         Ok(NonEmpty::collect(existing_fragments))
+    }
+
+    async fn fragments_submitted_by_tx(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Option<NonEmpty<BundleFragment>>> {
+        let fragments = self.storage.fragments_submitted_by_tx(tx_hash).await?;
+        Ok(NonEmpty::collect(fragments))
     }
 
     async fn should_submit_fragments(&self, fragment_count: NonZeroUsize) -> Result<bool> {
@@ -188,6 +191,32 @@ where
         }
         Ok(())
     }
+
+    async fn resubmit_fragments_if_stalled(&self, previous_tx: L1Tx) -> Result<()> {
+        let elapsed = self.clock.now()
+            - previous_tx
+                .created_at
+                .expect("previous tx to have timestamp");
+        let std_elapsed = elapsed
+            .to_std()
+            .map_err(|e| crate::Error::Other(format!("Failed to convert time: {}", e)))?;
+
+        if std_elapsed >= self.config.gas_bump_timeout {
+            info!(
+                "replacing tx {} because it was pending for {}s",
+                hex::encode(previous_tx.hash),
+                std_elapsed.as_secs()
+            );
+
+            let fragments = self
+                .fragments_submitted_by_tx(previous_tx.hash)
+                .await?
+                .expect("previous tx to have fragments");
+            self.submit_fragments(fragments, Some(previous_tx)).await?;
+        }
+
+        Ok(())
+    }
 }
 
 impl<L1, F, Db, C> Runner for StateCommitter<L1, F, Db, C>
@@ -199,25 +228,7 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         match self.get_pending_transaction().await? {
-            Some(previous_tx) => {
-                let elapsed = self.clock.now()
-                    - previous_tx
-                        .created_at
-                        .expect("previous tx to have timestamp");
-                let std_elapsed = elapsed
-                    .to_std()
-                    .map_err(|e| crate::Error::Other(format!("Failed to convert time: {}", e)))?;
-                if std_elapsed >= self.config.gas_bump_timeout {
-                    info!(
-                        "replacing tx {} because it was pending for {}s",
-                        hex::encode(previous_tx.hash),
-                        std_elapsed.as_secs()
-                    );
-                    self.submit_fragments_if_ready(Some(previous_tx)).await?
-                }
-
-                return Ok(());
-            }
+            Some(previous_tx) => self.resubmit_fragments_if_stalled(previous_tx).await?,
             None => self.submit_fragments_if_ready(None).await?,
         };
 

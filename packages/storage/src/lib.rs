@@ -56,6 +56,10 @@ impl Storage for Postgres {
             .await?)
     }
 
+    async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>> {
+        Ok(self._fragments_submitted_by_tx(tx_hash).await?)
+    }
+
     async fn missing_blocks(
         &self,
         starting_height: u32,
@@ -108,6 +112,10 @@ impl Storage for Postgres {
 
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
         Ok(self._get_pending_txs().await?)
+    }
+
+    async fn get_latest_pending_txs(&self) -> Result<Option<ports::types::L1Tx>> {
+        Ok(self._get_latest_pending_txs().await?)
     }
 
     async fn has_pending_txs(&self) -> Result<bool> {

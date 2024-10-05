@@ -123,8 +123,8 @@ pub fn state_committer(
             lookback_window: config.app.bundle.block_height_lookback,
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
-            gas_bump_timeout: Duration::from_secs(300), //TODO: make this configurable
-            max_gas_price: 1_000_000_000,
+            gas_bump_timeout: config.app.gas_bump_timeout,
+            gas_bump_max_fee: config.app.gas_bump_max_fee,
         },
         SystemClock,
     );

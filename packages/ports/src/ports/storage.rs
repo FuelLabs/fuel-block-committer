@@ -186,12 +186,14 @@ pub trait Storage: Send + Sync {
         fragments: NonEmpty<NonNegative<i32>>,
     ) -> Result<()>;
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+    async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
     async fn oldest_nonfinalized_fragments(
         &self,
         starting_height: u32,
         limit: usize,
     ) -> Result<Vec<BundleFragment>>;
+    async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
 }
@@ -225,12 +227,14 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+                async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
                 async fn oldest_nonfinalized_fragments(
                     &self,
                     starting_height: u32,
                     limit: usize,
                 ) -> Result<Vec<BundleFragment>>;
+                async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
         }
@@ -266,12 +270,14 @@ impl<T: Storage + Send + Sync> Storage for &T {
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
+                async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
                 async fn oldest_nonfinalized_fragments(
                     &self,
                     starting_height: u32,
                     limit: usize,
                 ) -> Result<Vec<BundleFragment>>;
+                async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
         }
