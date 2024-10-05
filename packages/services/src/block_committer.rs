@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn will_do_nothing_if_latest_block_is_stale_and_completed() {
+    async fn will_do_nothing_if_latest_block_is_completed_and_not_stale() {
         // given
         let secret_key = given_secret_key();
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
