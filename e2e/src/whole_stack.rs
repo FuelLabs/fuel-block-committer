@@ -104,7 +104,8 @@ impl WholeStack {
         let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
 
         let request_timeout = Duration::from_secs(5);
-        let max_fee = 1_000_000_000_000;
+        // 0.004 ETH
+        let max_fee = 4000000000000000;
 
         let (contract_args, deployed_contract) =
             deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
