@@ -152,14 +152,6 @@ where
         Ok(NonEmpty::collect(existing_fragments))
     }
 
-    async fn fragments_submitted_by_tx(
-        &self,
-        tx_hash: [u8; 32],
-    ) -> Result<Option<NonEmpty<BundleFragment>>> {
-        let fragments = self.storage.fragments_submitted_by_tx(tx_hash).await?;
-        Ok(NonEmpty::collect(fragments))
-    }
-
     async fn should_submit_fragments(&self, fragment_count: NonZeroUsize) -> Result<bool> {
         if fragment_count >= self.config.fragments_to_accumulate {
             return Ok(true);
@@ -180,38 +172,51 @@ where
         Ok(expired)
     }
 
-    async fn submit_fragments_if_ready(&self, previous_tx: Option<L1Tx>) -> Result<()> {
+    async fn submit_fragments_if_ready(&self) -> Result<()> {
         if let Some(fragments) = self.next_fragments_to_submit().await? {
             if self
                 .should_submit_fragments(fragments.len_nonzero())
                 .await?
             {
-                self.submit_fragments(fragments, previous_tx).await?;
+                self.submit_fragments(fragments, None).await?;
             }
         }
         Ok(())
     }
 
-    async fn resubmit_fragments_if_stalled(&self, previous_tx: L1Tx) -> Result<()> {
-        let elapsed = self.clock.now()
-            - previous_tx
-                .created_at
-                .expect("previous tx to have timestamp");
-        let std_elapsed = elapsed
-            .to_std()
-            .map_err(|e| crate::Error::Other(format!("Failed to convert time: {}", e)))?;
+    fn elapsed_since_tx_submitted(&self, tx: &L1Tx) -> Result<Duration> {
+        let created_at = tx.created_at.expect("tx to have timestamp");
+        let elapsed = self.clock.elapsed(created_at);
 
-        if std_elapsed >= self.config.gas_bump_timeout {
+        Ok(elapsed?)
+    }
+
+    async fn fragments_submitted_by_tx(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<NonEmpty<BundleFragment>> {
+        let fragments = self.storage.fragments_submitted_by_tx(tx_hash).await?;
+
+        match NonEmpty::collect(fragments) {
+            Some(fragments) => Ok(fragments),
+            None => Err(crate::Error::Other(format!(
+                "no fragments found for previously submitted tx {}",
+                hex::encode(tx_hash)
+            ))),
+        }
+    }
+
+    async fn resubmit_fragments_if_stalled(&self, previous_tx: L1Tx) -> Result<()> {
+        let elapsed = self.elapsed_since_tx_submitted(&previous_tx)?;
+
+        if elapsed >= self.config.gas_bump_timeout {
             info!(
-                "replacing tx {} because it was pending for {}s",
+                "replacing tx {} because it was pending for {}s", // TODO add gas params?
                 hex::encode(previous_tx.hash),
-                std_elapsed.as_secs()
+                elapsed.as_secs()
             );
 
-            let fragments = self
-                .fragments_submitted_by_tx(previous_tx.hash)
-                .await?
-                .expect("previous tx to have fragments");
+            let fragments = self.fragments_submitted_by_tx(previous_tx.hash).await?;
             self.submit_fragments(fragments, Some(previous_tx)).await?;
         }
 
@@ -229,7 +234,7 @@ where
     async fn run(&mut self) -> Result<()> {
         match self.get_pending_transaction().await? {
             Some(previous_tx) => self.resubmit_fragments_if_stalled(previous_tx).await?,
-            None => self.submit_fragments_if_ready(None).await?,
+            None => self.submit_fragments_if_ready().await?,
         };
 
         Ok(())
@@ -240,7 +245,7 @@ where
 mod tests {
     use std::time::Duration;
 
-    use clock::TestClock;
+    use clock::{SystemClock, TestClock};
 
     use super::*;
     use crate::{test_utils, Runner, StateCommitter};
@@ -468,6 +473,58 @@ mod tests {
 
         // then
         // Mocks validate that the fragments have been sent despite insufficient accumulation
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
+        // given
+        // init test clock with actual time to be able to compare with db timestamps
+        let clock = TestClock::new(SystemClock {}.now());
+        let setup = test_utils::Setup::init().await;
+
+        let fragments = setup.insert_fragments(0, 5).await;
+
+        let tx_hash_1 = [6; 32];
+        let tx_hash_2 = [7; 32];
+        let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
+            (
+                Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+                tx_hash_1,
+            ),
+            (
+                Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+                tx_hash_2,
+            ),
+        ]);
+
+        let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
+        let mut state_committer = StateCommitter::new(
+            l1_mock_submit,
+            fuel_mock,
+            setup.db(),
+            Config {
+                lookback_window: 1000,
+                fragment_accumulation_timeout: Duration::from_secs(60),
+                fragments_to_accumulate: 5.try_into().unwrap(),
+                gas_bump_timeout: Duration::from_secs(60),
+                ..Default::default()
+            },
+            clock.clone(),
+        );
+
+        // Submit the initial fragments
+        state_committer.run().await?;
+
+        // Advance time beyond the gas bump timeout, we need to advance a bit more
+        // because the db clock record the transaction
+        clock.advance_time(Duration::from_secs(80));
+
+        // when
+        state_committer.run().await?;
+
+        // then
+        // Mocks validate that the fragments have been sent again
         Ok(())
     }
 }

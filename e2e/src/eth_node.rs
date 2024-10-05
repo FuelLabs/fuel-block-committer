@@ -77,6 +77,7 @@ impl EthNodeProcess {
         &self,
         kms_key: KmsKey,
         contract_args: ContractArgs,
+        request_timeout: Duration,
     ) -> anyhow::Result<DeployedContract> {
         let prepared_transactions =
             CreateTransactions::prepare(self.ws_url(), &kms_key, contract_args).await?;
@@ -87,7 +88,13 @@ impl EthNodeProcess {
             .deploy(self.ws_url(), &kms_key)
             .await?;
 
-        DeployedContract::connect(self.ws_url(), proxy_contract_address, kms_key).await
+        DeployedContract::connect(
+            self.ws_url(),
+            proxy_contract_address,
+            kms_key,
+            request_timeout,
+        )
+        .await
     }
 
     fn wallet(&self, index: u32) -> PrivateKeySigner {

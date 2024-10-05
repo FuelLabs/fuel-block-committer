@@ -65,6 +65,12 @@ impl From<ports::storage::Error> for Error {
     }
 }
 
+impl From<String> for Error {
+    fn from(error: String) -> Self {
+        Self::Other(error)
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[trait_variant::make(Send)]

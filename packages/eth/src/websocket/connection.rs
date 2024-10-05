@@ -80,8 +80,8 @@ pub struct WsConnection {
 }
 
 impl WsConnection {
-    async fn get_next_blob_fee(&self) -> Result<u128> {
-        self.provider
+    async fn get_next_blob_fee(&self, provider: &WsProvider) -> Result<u128> {
+        provider
             .get_block_by_number(BlockNumberOrTag::Latest, false)
             .await?
             .ok_or(Error::Network(
@@ -94,14 +94,18 @@ impl WsConnection {
             ))
     }
 
-    async fn get_bumped_fees(&self, previous_tx: &L1Tx) -> Result<(u128, u128, u128)> {
-        let next_blob_fee = self.get_next_blob_fee().await?;
+    async fn get_bumped_fees(
+        &self,
+        previous_tx: &L1Tx,
+        provider: &WsProvider,
+    ) -> Result<(u128, u128, u128)> {
+        let next_blob_fee = self.get_next_blob_fee(provider).await?;
         let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
 
         let Eip1559Estimation {
             max_fee_per_gas,
             max_priority_fee_per_gas,
-        } = self.provider.estimate_eip1559_fees(None).await?;
+        } = provider.estimate_eip1559_fees(None).await?;
 
         let max_fee_per_gas = max(max_fee_per_gas, previous_tx.max_fee.saturating_mul(2));
         let max_priority_fee_per_gas = max(
@@ -240,7 +244,7 @@ impl EthApi for WsConnection {
         let blob_tx = match previous_tx {
             Some(previous_tx) => {
                 let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-                    self.get_bumped_fees(&previous_tx).await?;
+                    self.get_bumped_fees(&previous_tx, blob_provider).await?;
 
                 TransactionRequest::default()
                     .with_max_fee_per_gas(max_fee_per_gas)
@@ -411,6 +415,9 @@ impl WsConnection {
 #[cfg(test)]
 mod tests {
 
+    use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
+    use ports::l1::FragmentEncoder;
+
     use super::*;
 
     #[test]
@@ -419,5 +426,81 @@ mod tests {
             WsConnection::calculate_commit_height(10, 3.try_into().unwrap()),
             U256::from(3)
         );
+    }
+
+    #[tokio::test]
+    async fn submit_fragments_will_bump_gas_prices() {
+        // given
+        let anvil = Anvil::new()
+            .args(["--hardfork", "cancun"])
+            .try_spawn()
+            .unwrap();
+
+        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+        let blob_signer: PrivateKeySigner = anvil.keys()[1].clone().into();
+
+        let wallet = EthereumWallet::from(signer.clone());
+        let blob_wallet = EthereumWallet::from(blob_signer.clone());
+
+        let ws = WsConnect::new(anvil.ws_endpoint());
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet.clone())
+            .on_ws(ws.clone())
+            .await
+            .unwrap();
+        let blob_provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(blob_wallet.clone())
+            .on_ws(ws)
+            .await
+            .unwrap();
+
+        let connection = WsConnection {
+            provider: provider.clone(),
+            address: signer.address(),
+            blob_provider: Some(blob_provider.clone()),
+            blob_signer_address: Some(blob_signer.address()),
+            contract: FuelStateContract::new(
+                Address::from_slice([0u8; 20].as_ref()),
+                provider.clone(),
+            ),
+            commit_interval: 3.try_into().unwrap(),
+            send_tx_request_timeout: Duration::from_secs(10),
+            metrics: Default::default(),
+        };
+
+        let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
+        let fragment = Eip4844BlobEncoder {}.encode(data).unwrap();
+        let sidecar = Eip4844BlobEncoder::decode(fragment.clone()).unwrap();
+
+        // create a tx with the help of the provider to get gas fields, hash etc
+        let tx = TransactionRequest::default()
+            .with_blob_sidecar(sidecar)
+            .with_to(blob_signer.address());
+        let tx = blob_provider.fill(tx).await.unwrap();
+        let SendableTx::Envelope(tx) = tx else {
+            panic!("Expected an envelope. This is a bug.");
+        };
+        let previous_tx = L1Tx {
+            hash: tx.tx_hash().0,
+            nonce: tx.nonce() as u32,
+            max_fee: tx.max_fee_per_gas(),
+            priority_fee: tx.max_priority_fee_per_gas().unwrap(),
+            blob_fee: tx.max_fee_per_blob_gas().unwrap(),
+            ..Default::default()
+        };
+
+        // when
+        let (submitted_tx, _) = connection
+            .submit_state_fragments(fragment, Some(previous_tx.clone()))
+            .await
+            .unwrap();
+
+        // then
+        assert_eq!(submitted_tx.nonce, previous_tx.nonce);
+        assert_eq!(submitted_tx.max_fee, 2 * previous_tx.max_fee);
+        assert_eq!(submitted_tx.priority_fee, 2 * previous_tx.priority_fee);
+        assert_eq!(submitted_tx.blob_fee, 2 * previous_tx.blob_fee);
     }
 }
