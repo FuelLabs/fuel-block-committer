@@ -22,7 +22,7 @@ pub trait EthApi {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>>;
-    async fn is_in_mempool(&self, tx_hash: [u8; 32]) -> Result<bool>;
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<ports::types::Fragment>,
@@ -116,8 +116,8 @@ where
         response
     }
 
-    async fn is_in_mempool(&self, tx_hash: [u8; 32]) -> Result<bool> {
-        let response = self.adapter.is_in_mempool(tx_hash).await;
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        let response = self.adapter.is_squeezed_out(tx_hash).await;
         self.note_network_status(&response);
         response
     }

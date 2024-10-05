@@ -45,8 +45,8 @@ where
             let Some(tx_response) = self.l1_adapter.get_transaction_response(tx.hash).await? else {
                 // not included in block - check what happened to the tx
 
-                match (tx.state, self.l1_adapter.is_in_mempool(tx.hash).await?) {
-                    (TransactionState::Pending, false) => {
+                match (tx.state, self.l1_adapter.is_squeezed_out(tx.hash).await?) {
+                    (TransactionState::Pending, true) => {
                         //not in the mempool anymore set it to failed
                         self.storage
                             .update_tx_state(tx.hash, TransactionState::Failed)
@@ -57,8 +57,9 @@ where
                             hex::encode(tx.hash)
                         );
                     }
-                    (TransactionState::IncludedInBlock, true) => {
-                        // if tx was in block and reorg happened we need to set the tx to pending
+
+                    (TransactionState::IncludedInBlock, false) => {
+                        // if tx was in block and reorg happened now it is in the mempool - we need to set the tx to pending
                         self.storage
                             .update_tx_state(tx.hash, TransactionState::Pending)
                             .await?;

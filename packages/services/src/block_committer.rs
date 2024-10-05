@@ -336,7 +336,7 @@ mod tests {
             self.api.get_transaction_response(tx_hash).await
         }
 
-        async fn is_in_mempool(&self, _tx_hash: [u8; 32]) -> ports::l1::Result<bool> {
+        async fn is_squeezed_out(&self, _tx_hash: [u8; 32]) -> ports::l1::Result<bool> {
             unimplemented!()
         }
     }

@@ -168,7 +168,7 @@ pub(crate) mod test_utils {
                         async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
                         async fn balance(&self, address: ports::types::Address) -> ports::l1::Result<U256>;
                         async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> ports::l1::Result<Option<TransactionResponse>>;
-                        async fn is_in_mempool(&self, tx_hash: [u8; 32]) -> ports::l1::Result<bool>;
+                        async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> ports::l1::Result<bool>;
                     }
                 }
             }

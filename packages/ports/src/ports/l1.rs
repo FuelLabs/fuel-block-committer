@@ -48,7 +48,7 @@ pub trait Api {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>>;
-    async fn is_in_mempool(&self, tx_hash: [u8; 32]) -> Result<bool>;
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
 }
 
 pub trait FragmentEncoder {
