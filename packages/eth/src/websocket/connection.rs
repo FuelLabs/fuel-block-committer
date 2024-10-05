@@ -124,14 +124,14 @@ impl WsConnection {
         ))
     }
 
-    fn is_max_fee_exceeded(&self, tx: &L1Tx, gas_limit: u128, num_fragments: u64) -> bool {
+    fn get_max_fee(tx: &L1Tx, gas_limit: u128, num_fragments: usize) -> u128 {
         let max_fee = tx.max_fee.saturating_mul(gas_limit).saturating_add(
             tx.blob_fee
                 .saturating_mul(num_fragments as u128)
                 .saturating_mul(DATA_GAS_PER_BLOB as u128),
         );
 
-        max_fee > self.tx_max_fee
+        max_fee
     }
 }
 
@@ -289,8 +289,17 @@ impl EthApi for WsConnection {
             ..Default::default()
         };
 
-        if self.is_max_fee_exceeded(&l1_tx, blob_tx.gas_limit(), num_fragments as u64) {
-            return Err(Error::Other("max fee exceeded".to_string()));
+        info!("sending blob tx with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
+
+        let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
+        if max_fee > self.tx_max_fee {
+            return Err(Error::Other(
+                format!(
+                    "max fee exceeded: tried {}, limit {}",
+                    max_fee, self.tx_max_fee
+                )
+                .to_string(),
+            ));
         }
 
         let send_fut = blob_provider.send_tx_envelope(blob_tx);
@@ -423,6 +432,8 @@ impl WsConnection {
 #[cfg(test)]
 mod tests {
 
+    use std::u128;
+
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
     use ports::l1::FragmentEncoder;
 
@@ -474,7 +485,7 @@ mod tests {
                 provider.clone(),
             ),
             commit_interval: 3.try_into().unwrap(),
-            tx_max_fee: 1_000_000_000,
+            tx_max_fee: u128::MAX,
             send_tx_request_timeout: Duration::from_secs(10),
             metrics: Default::default(),
         };
@@ -511,5 +522,62 @@ mod tests {
         assert_eq!(submitted_tx.max_fee, 2 * previous_tx.max_fee);
         assert_eq!(submitted_tx.priority_fee, 2 * previous_tx.priority_fee);
         assert_eq!(submitted_tx.blob_fee, 2 * previous_tx.blob_fee);
+    }
+
+    #[tokio::test]
+    async fn submit_fragments_fails_if_max_fee_limit_exceeded() {
+        // given
+        let anvil = Anvil::new()
+            .args(["--hardfork", "cancun"])
+            .try_spawn()
+            .unwrap();
+
+        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+        let blob_signer: PrivateKeySigner = anvil.keys()[1].clone().into();
+
+        let wallet = EthereumWallet::from(signer.clone());
+        let blob_wallet = EthereumWallet::from(blob_signer.clone());
+
+        let ws = WsConnect::new(anvil.ws_endpoint());
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet.clone())
+            .on_ws(ws.clone())
+            .await
+            .unwrap();
+        let blob_provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(blob_wallet.clone())
+            .on_ws(ws)
+            .await
+            .unwrap();
+
+        let tx_max_fee = 1;
+        let connection = WsConnection {
+            provider: provider.clone(),
+            address: signer.address(),
+            blob_provider: Some(blob_provider.clone()),
+            blob_signer_address: Some(blob_signer.address()),
+            contract: FuelStateContract::new(
+                Address::from_slice([0u8; 20].as_ref()),
+                provider.clone(),
+            ),
+            commit_interval: 3.try_into().unwrap(),
+            tx_max_fee,
+            send_tx_request_timeout: Duration::from_secs(10),
+            metrics: Default::default(),
+        };
+
+        let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
+        let fragment = Eip4844BlobEncoder {}.encode(data).unwrap();
+
+        // when
+        let result = connection.submit_state_fragments(fragment, None).await;
+
+        // then
+        let result = result.expect_err("should return an error");
+        assert!(result
+            .to_string()
+            .contains(&format!("limit {}", tx_max_fee)));
     }
 }
