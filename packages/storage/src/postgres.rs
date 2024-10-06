@@ -272,7 +272,7 @@ impl Postgres {
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
-            SELECT f.*
+            SELECT DISTINCT f.*
             FROM l1_fragments f
             LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
             LEFT JOIN l1_blob_transaction t ON t.id = tf.transaction_id
