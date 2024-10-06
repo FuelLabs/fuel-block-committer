@@ -85,7 +85,6 @@ where
             skip_nonces.insert(tx.nonce);
 
             if !tx_response.succeeded() {
-                // todo dzematile sve na failed sa ovim nonce
                 noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Failed));
 
                 info!("failed blob tx {}", hex::encode(tx.hash));
