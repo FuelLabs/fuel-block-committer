@@ -724,30 +724,35 @@ mod tests {
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
         let (fragment_1, fragment_2) = (fragment_ids[0], fragment_ids[1]);
-        let tx_1 = L1Tx {
+        let inserted_1 = L1Tx {
             hash: rand::random::<[u8; 32]>(),
             ..Default::default()
         };
-        let tx_2_hash = rand::random::<[u8; 32]>();
-        let tx_2 = L1Tx {
-            hash: tx_2_hash,
+        let mut inserted_2 = L1Tx {
+            hash: rand::random::<[u8; 32]>(),
+            nonce: 1,
+            max_fee: 2000000000000,
+            priority_fee: 1500000000,
+            blob_fee: 100,
             ..Default::default()
         };
         storage
-            .record_pending_tx(tx_1, nonempty![fragment_1])
+            .record_pending_tx(inserted_1, nonempty![fragment_1])
             .await?;
         storage
             .record_pending_tx(
-                tx_2,
+                inserted_2.clone(),
                 NonEmpty::collect(vec![fragment_2]).expect("non empty"),
             )
             .await?;
 
         // when
-        let actual = storage.get_latest_pending_txs().await?.unwrap();
+        let retrieved = storage.get_latest_pending_txs().await?.unwrap();
 
         // then
-        assert_eq!(actual.hash, tx_2_hash);
+        inserted_2.id = retrieved.id;
+        inserted_2.created_at = retrieved.created_at;
+        assert_eq!(retrieved, inserted_2);
 
         Ok(())
     }

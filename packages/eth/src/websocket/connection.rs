@@ -282,7 +282,6 @@ impl EthApi for WsConnection {
             ));
         };
         let tx_id = *blob_tx.tx_hash();
-        info!("sending blob tx: {tx_id}",);
 
         let l1_tx = L1Tx {
             hash: tx_id.0,
@@ -297,7 +296,7 @@ impl EthApi for WsConnection {
             ..Default::default()
         };
 
-        info!("sending blob tx with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
+        info!("sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
 
         let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
         if max_fee > self.tx_max_fee {
