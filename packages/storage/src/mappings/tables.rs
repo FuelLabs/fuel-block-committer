@@ -100,10 +100,19 @@ impl L1FuelBlockSubmissionTx {
 
 // Assumes that the BigDecimal is non-negative and has no fractional part
 fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128, crate::error::Error> {
-    let (digits, _scale) = value.into_bigint_and_exponent();
+    let (digits, scale) = value.clone().into_bigint_and_exponent();
+
+    if scale > 0 {
+        return Err(crate::error::Error::Conversion(format!(
+            "Expected whole number, got fractual from db: {value}"
+        )));
+    }
+
     let result: u128 = digits
         .try_into()
         .map_err(|_| crate::error::Error::Conversion("Digits exceed u128 range".to_string()))?;
+
+    let result = result.saturating_mul(10u128.saturating_pow(scale.unsigned_abs() as u32));
 
     Ok(result)
 }
