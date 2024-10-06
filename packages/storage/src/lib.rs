@@ -732,7 +732,7 @@ mod tests {
         storage
             .record_pending_tx(
                 tx_1,
-                NonEmpty::collect(vec![fragment_1]).expect("non empty"),
+                nonempty![fragment_1],
             )
             .await?;
         storage
