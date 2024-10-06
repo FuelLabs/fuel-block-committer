@@ -730,10 +730,7 @@ mod tests {
             ..Default::default()
         };
         storage
-            .record_pending_tx(
-                tx_1,
-                nonempty![fragment_1],
-            )
+            .record_pending_tx(tx_1, nonempty![fragment_1])
             .await?;
         storage
             .record_pending_tx(

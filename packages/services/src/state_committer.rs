@@ -211,7 +211,7 @@ where
 
         if elapsed >= self.config.gas_bump_timeout {
             info!(
-                "replacing tx {} because it was pending for {}s", // TODO add gas params?
+                "replacing tx {} because it was pending for {}s",
                 hex::encode(previous_tx.hash),
                 elapsed.as_secs()
             );
