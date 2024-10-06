@@ -135,6 +135,7 @@ where
 
     async fn get_pending_transaction(&self) -> Result<Option<L1Tx>> {
         let tx = self.storage.get_latest_pending_txs().await?;
+
         Ok(tx)
     }
 
@@ -206,7 +207,11 @@ where
         }
     }
 
-    async fn resubmit_fragments_if_stalled(&self, previous_tx: L1Tx) -> Result<()> {
+    async fn resubmit_fragments_if_stalled(&self) -> Result<()> {
+        let Some(previous_tx) = self.get_pending_transaction().await? else {
+            return Ok(());
+        };
+
         let elapsed = self.elapsed_since_tx_submitted(&previous_tx)?;
 
         if elapsed >= self.config.gas_bump_timeout {
@@ -232,9 +237,10 @@ where
     C: Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
-        match self.get_pending_transaction().await? {
-            Some(previous_tx) => self.resubmit_fragments_if_stalled(previous_tx).await?,
-            None => self.submit_fragments_if_ready().await?,
+        if self.storage.has_nonfinalized_txs().await? {
+            self.resubmit_fragments_if_stalled().await?
+        } else {
+            self.submit_fragments_if_ready().await?
         };
 
         Ok(())

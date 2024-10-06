@@ -189,6 +189,7 @@ pub trait Storage: Send + Sync {
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
     async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
+    async fn has_nonfinalized_txs(&self) -> Result<bool>;
     async fn oldest_nonfinalized_fragments(
         &self,
         starting_height: u32,
@@ -197,6 +198,11 @@ pub trait Storage: Send + Sync {
     async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
+    async fn batch_update_tx_states(
+        &self,
+        selective_changes: Vec<([u8; 32], TransactionState)>,
+        noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+    ) -> Result<()>;
 }
 
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
@@ -231,6 +237,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
+                async fn has_nonfinalized_txs(&self) -> Result<bool>;
                 async fn oldest_nonfinalized_fragments(
                     &self,
                     starting_height: u32,
@@ -239,6 +246,11 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
+                async fn batch_update_tx_states(
+                    &self,
+                    selective_changes: Vec<([u8; 32], TransactionState)>,
+                    noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+                ) -> Result<()>;
         }
     }
 }
@@ -275,6 +287,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
+                async fn has_nonfinalized_txs(&self) -> Result<bool>;
                 async fn oldest_nonfinalized_fragments(
                     &self,
                     starting_height: u32,
@@ -283,6 +296,11 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
                 async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()>;
+                async fn batch_update_tx_states(
+                    &self,
+                    selective_changes: Vec<([u8; 32], TransactionState)>,
+                    noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+                ) -> Result<()>;
         }
     }
 }

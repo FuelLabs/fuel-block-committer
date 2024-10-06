@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
@@ -40,7 +42,16 @@ where
     async fn check_non_finalized_txs(&mut self, non_finalized_txs: Vec<L1Tx>) -> crate::Result<()> {
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
+        let mut skip_nonces = HashSet::new();
+
+        let mut selective_change = vec![];
+        let mut noncewide_changes = vec![];
+
         for tx in non_finalized_txs {
+            if skip_nonces.contains(&tx.nonce) {
+                continue;
+            }
+
             // get response if tx is included in a block
             let Some(tx_response) = self.l1_adapter.get_transaction_response(tx.hash).await? else {
                 // not included in block - check what happened to the tx
@@ -48,9 +59,7 @@ where
                 match (tx.state, self.l1_adapter.is_squeezed_out(tx.hash).await?) {
                     (TransactionState::Pending, true) => {
                         //not in the mempool anymore set it to failed
-                        self.storage
-                            .update_tx_state(tx.hash, TransactionState::Failed)
-                            .await?;
+                        selective_change.push((tx.hash, tx.nonce, TransactionState::Failed));
 
                         info!(
                             "blob tx {} not found in mempool. Setting to failed",
@@ -60,9 +69,7 @@ where
 
                     (TransactionState::IncludedInBlock, false) => {
                         // if tx was in block and reorg happened now it is in the mempool - we need to set the tx to pending
-                        self.storage
-                            .update_tx_state(tx.hash, TransactionState::Pending)
-                            .await?;
+                        selective_change.push((tx.hash, tx.nonce, TransactionState::Pending));
 
                         info!(
                             "blob tx {} returned to mempool. Setting to pending",
@@ -75,10 +82,11 @@ where
                 continue;
             };
 
+            skip_nonces.insert(tx.nonce);
+
             if !tx_response.succeeded() {
-                self.storage
-                    .update_tx_state(tx.hash, TransactionState::Failed)
-                    .await?;
+                // todo dzematile sve na failed sa ovim nonce
+                noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Failed));
 
                 info!("failed blob tx {}", hex::encode(tx.hash));
                 continue;
@@ -89,9 +97,8 @@ where
             {
                 // tx included in block but is not yet finalized
                 if tx.state == TransactionState::Pending {
-                    self.storage
-                        .update_tx_state(tx.hash, TransactionState::IncludedInBlock)
-                        .await?;
+                    // todo dzematile sve ostale na failed a ovu na included in block
+                    noncewide_changes.push((tx.hash, tx.nonce, TransactionState::IncludedInBlock));
 
                     info!(
                         "blob tx {} included in block {}",
@@ -103,9 +110,12 @@ where
                 continue;
             }
 
-            self.storage
-                .update_tx_state(tx.hash, TransactionState::Finalized(self.clock.now()))
-                .await?;
+            // dzematile sve ostale na failed a ovu na finalized
+            noncewide_changes.push((
+                tx.hash,
+                tx.nonce,
+                TransactionState::Finalized(self.clock.now()),
+            ));
 
             info!("blob tx {} finalized", hex::encode(tx.hash));
 
@@ -113,6 +123,16 @@ where
                 .last_eth_block_w_blob
                 .set(i64::try_from(tx_response.block_number()).unwrap_or(i64::MAX))
         }
+
+        selective_change.retain(|(_, nonce, _)| !skip_nonces.contains(nonce));
+        let selective_change: Vec<_> = selective_change
+            .into_iter()
+            .map(|(hash, _, state)| (hash, state))
+            .collect();
+
+        self.storage
+            .batch_update_tx_states(selective_change, noncewide_changes)
+            .await?;
 
         Ok(())
     }

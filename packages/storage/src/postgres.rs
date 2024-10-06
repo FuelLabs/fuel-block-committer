@@ -546,6 +546,17 @@ impl Postgres {
         .has_pending_transactions.unwrap_or(false))
     }
 
+    pub(crate) async fn _has_nonfinalized_txs(&self) -> Result<bool> {
+        Ok(sqlx::query!(
+            "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1 OR state = $2) AS has_nonfinalized_transactions;",
+            i16::from(L1TxState::Pending),
+            i16::from(L1TxState::IncludedInBlock)
+        )
+        .fetch_one(&self.connection_pool)
+        .await?
+        .has_nonfinalized_transactions.unwrap_or(false))
+    }
+
     pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,
@@ -604,6 +615,68 @@ impl Postgres {
         )
         .execute(&self.connection_pool)
         .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _batch_update_tx_states(
+        &self,
+        selective_changes: Vec<([u8; 32], TransactionState)>,
+        noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        for change in selective_changes {
+            let hash = change.0;
+            let state = change.1;
+
+            let finalized_at = match &state {
+                TransactionState::Finalized(date_time) => Some(*date_time),
+                _ => None,
+            };
+            let state = i16::from(L1TxState::from(&state));
+
+            sqlx::query!(
+                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
+                state,
+                finalized_at,
+                hash.as_slice(),
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        for change in noncewide_changes {
+            let hash = change.0;
+            let nonce = change.1;
+            let state = change.2;
+
+            let finalized_at = match &state {
+                TransactionState::Finalized(date_time) => Some(*date_time),
+                _ => None,
+            };
+            let state = i16::from(L1TxState::from(&state));
+
+            sqlx::query!(
+                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE nonce = $3",
+                i16::from(L1TxState::Failed),
+                Option::<DateTime<Utc>>::None,
+                i64::from(nonce),
+            )
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query!(
+                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
+                state,
+                finalized_at,
+                hash.as_slice(),
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
 
         Ok(())
     }
