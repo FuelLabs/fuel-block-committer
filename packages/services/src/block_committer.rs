@@ -338,6 +338,10 @@ mod tests {
         ) -> ports::l1::Result<Option<TransactionResponse>> {
             self.api.get_transaction_response(tx_hash).await
         }
+
+        async fn is_squeezed_out(&self, _tx_hash: [u8; 32]) -> ports::l1::Result<bool> {
+            unimplemented!()
+        }
     }
 
     fn given_l1_that_expects_submission(block: FuelBlock) -> MockL1 {

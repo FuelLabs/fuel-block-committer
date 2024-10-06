@@ -469,6 +469,20 @@ impl Postgres {
         .has_pending_transactions.unwrap_or(false))
     }
 
+    pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
+        sqlx::query_as!(
+            tables::L1Tx,
+            "SELECT * FROM l1_blob_transaction WHERE state = $1 or state = $2",
+            i16::from(L1TxState::IncludedInBlock),
+            i16::from(L1TxState::Pending)
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
     pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,

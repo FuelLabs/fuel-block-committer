@@ -87,6 +87,10 @@ impl WebsocketClient {
         Ok(self.inner.get_transaction_response(tx_hash).await?)
     }
 
+    pub(crate) async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        Ok(self.inner.is_squeezed_out(tx_hash).await?)
+    }
+
     pub(crate) async fn balance(&self, address: Address) -> Result<U256> {
         Ok(self.inner.balance(address).await?)
     }

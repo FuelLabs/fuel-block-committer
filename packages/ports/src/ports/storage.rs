@@ -185,6 +185,7 @@ pub trait Storage: Send + Sync {
         tx: L1Tx,
         fragments: NonEmpty<NonNegative<i32>>,
     ) -> Result<()>;
+    async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
     async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
     async fn has_pending_txs(&self) -> Result<bool>;
@@ -226,6 +227,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     tx: L1Tx,
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
+                async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;
@@ -269,6 +271,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                     tx: L1Tx,
                     fragment_id: NonEmpty<NonNegative<i32>>,
                 ) -> Result<()>;
+                async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn get_pending_txs(&self) -> Result<Vec<L1Tx>>;
                 async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
                 async fn has_pending_txs(&self) -> Result<bool>;

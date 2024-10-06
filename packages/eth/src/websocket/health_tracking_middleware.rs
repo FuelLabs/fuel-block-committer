@@ -22,6 +22,7 @@ pub trait EthApi {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>>;
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<ports::types::Fragment>,
@@ -112,6 +113,12 @@ where
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
         let response = self.adapter.get_transaction_response(tx_hash).await;
+        self.note_network_status(&response);
+        response
+    }
+
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        let response = self.adapter.is_squeezed_out(tx_hash).await;
         self.note_network_status(&response);
         response
     }

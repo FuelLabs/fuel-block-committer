@@ -110,6 +110,10 @@ impl Storage for Postgres {
         Ok(self._record_pending_tx(tx, fragment_ids).await?)
     }
 
+    async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
+        Ok(self._get_non_finalized_txs().await?)
+    }
+
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
         Ok(self._get_pending_txs().await?)
     }

@@ -328,6 +328,7 @@ impl L1Tx {
                 )
             }
             (2, _) => Ok(TransactionState::Failed),
+            (3, _) => Ok(TransactionState::IncludedInBlock),
             _ => {
                 bail!(
                     "L1SubmissionTx(id={}) has invalid state {}",
@@ -400,6 +401,7 @@ pub enum L1TxState {
     Pending,
     Finalized,
     Failed,
+    IncludedInBlock,
 }
 
 impl From<L1TxState> for i16 {
@@ -408,6 +410,7 @@ impl From<L1TxState> for i16 {
             L1TxState::Pending => 0,
             L1TxState::Finalized => 1,
             L1TxState::Failed => 2,
+            L1TxState::IncludedInBlock => 3,
         }
     }
 }
@@ -416,6 +419,7 @@ impl From<&TransactionState> for L1TxState {
     fn from(value: &TransactionState) -> Self {
         match value {
             TransactionState::Pending => Self::Pending,
+            TransactionState::IncludedInBlock => Self::IncludedInBlock,
             TransactionState::Finalized(_) => Self::Finalized,
             TransactionState::Failed => Self::Failed,
         }
