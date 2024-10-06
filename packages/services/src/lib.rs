@@ -276,6 +276,52 @@ pub(crate) mod test_utils {
                 }
                 l1_mock
             }
+
+            pub fn txs_reorg(
+                heights: &[u32],
+                tx_height: u32,
+                first_status: ([u8; 32], TxStatus),
+            ) -> ports::l1::MockApi {
+                let mut l1_mock = ports::l1::MockApi::new();
+
+                for height in heights {
+                    let l1_height = L1Height::from(*height);
+                    l1_mock
+                        .expect_get_block_number()
+                        .times(1)
+                        .returning(move || Box::pin(async move { Ok(l1_height) }));
+                }
+
+                let (tx_id, status) = first_status;
+
+                let height = L1Height::from(tx_height);
+                l1_mock
+                    .expect_get_transaction_response()
+                    .with(eq(tx_id))
+                    .times(1)
+                    .return_once(move |_| {
+                        Box::pin(async move {
+                            Ok(Some(TransactionResponse::new(
+                                height.into(),
+                                matches!(status, TxStatus::Success),
+                            )))
+                        })
+                    });
+
+                l1_mock
+                    .expect_get_transaction_response()
+                    .with(eq(tx_id))
+                    .times(1)
+                    .return_once(move |_| Box::pin(async move { Ok(None) }));
+
+                l1_mock
+                    .expect_is_squeezed_out()
+                    .with(eq(tx_id))
+                    .times(1)
+                    .return_once(move |_| Box::pin(async move { Ok(false) }));
+
+                l1_mock
+            }
         }
 
         pub mod fuel {
