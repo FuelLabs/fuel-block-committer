@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS l1_transactions (
     hash  BYTEA NOT NULL UNIQUE,
     state SMALLINT NOT NULL,
     CHECK (octet_length(hash) = 32),
-    CHECK (state IN (0, 1, 2, 3))
+    CHECK (state IN (0, 1, 2))
 );
 
 CREATE TABLE IF NOT EXISTS l1_transaction_fragments (
