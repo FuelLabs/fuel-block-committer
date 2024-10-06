@@ -4,7 +4,7 @@ use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
 use delegate::delegate;
-use ports::types::{Address, Fragment, NonEmpty, TransactionResponse, U256};
+use ports::types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
 
 use crate::{
     error::{Error, Result},

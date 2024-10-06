@@ -62,7 +62,7 @@ impl Committer {
                 "COMMITTER__FUEL__BLOCK_PRODUCER_ADDRESS",
                 get_field!(fuel_block_producer_addr),
             )
-            .env("COMMITTER__FUEL__MAX_FULL_BLOCKS_PER_REQUEST", "100")
+            .env("COMMITTER__FUEL__MAX_FULL_BLOCKS_PER_REQUEST", "10")
             .env("COMMITTER__APP__DB__PORT", db_port.to_string())
             .env("COMMITTER__APP__DB__HOST", "localhost")
             .env("COMMITTER__APP__DB__USERNAME", "username")
@@ -252,7 +252,10 @@ impl CommitterProcess {
     }
 
     async fn fetch_latest_committed_block(&self) -> anyhow::Result<u64> {
-        self.fetch_metric_value("latest_committed_block").await
+        let metric = self
+            .fetch_metric_value("height_of_latest_commitment")
+            .await?;
+        Ok(metric)
     }
 
     async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {

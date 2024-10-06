@@ -60,7 +60,11 @@ pub struct Postgres {
 
 impl RegistersMetrics for Postgres {
     fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
-        vec![Box::new(self.metrics.height_of_latest_commitment.clone())]
+        vec![
+            Box::new(self.metrics.height_of_latest_commitment.clone()),
+            Box::new(self.metrics.seconds_since_last_finalized_fragment.clone()),
+            Box::new(self.metrics.lowest_unbundled_height.clone()),
+        ]
     }
 }
 

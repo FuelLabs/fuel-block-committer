@@ -73,7 +73,7 @@ sol!(
 #[derive(Clone)]
 pub struct WsConnection {
     provider: WsProvider,
-    address: Address,
+    main_address: Address,
     blob_provider: Option<WsProvider>,
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
@@ -161,7 +161,7 @@ impl Default for Metrics {
             .expect("to be correctly configured"),
 
             blob_unused_bytes: prometheus::Histogram::with_opts(histogram_opts!(
-                "blob_utilization",
+                "blob_unused_bytes",
                 "unused bytes per blob",
                 metrics::custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
             ))
@@ -182,7 +182,11 @@ impl EthApi for WsConnection {
             max_fee_per_gas,
             max_priority_fee_per_gas,
         } = self.provider.estimate_eip1559_fees(None).await?;
-        let nonce = self.provider.get_transaction_count(self.address).await?;
+
+        let nonce = self
+            .provider
+            .get_transaction_count(self.main_address)
+            .await?;
         let tx_request = tx_request
             .max_fee_per_gas(max_fee_per_gas)
             .max_priority_fee_per_gas(max_priority_fee_per_gas)
@@ -359,6 +363,7 @@ impl WsConnection {
         tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> Result<Self> {
+        let address = main_signer.address();
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), main_signer).await?;
 
@@ -385,6 +390,7 @@ impl WsConnection {
 
         Ok(Self {
             provider,
+            main_address: address,
             blob_provider,
             blob_signer_address,
             contract,
@@ -483,7 +489,7 @@ mod tests {
 
         let connection = WsConnection {
             provider: provider.clone(),
-            address: signer.address(),
+            main_address: signer.address(),
             blob_provider: Some(blob_provider.clone()),
             blob_signer_address: Some(blob_signer.address()),
             contract: FuelStateContract::new(
@@ -561,7 +567,7 @@ mod tests {
         let tx_max_fee = 1;
         let connection = WsConnection {
             provider: provider.clone(),
-            address: signer.address(),
+            main_address: signer.address(),
             blob_provider: Some(blob_provider.clone()),
             blob_signer_address: Some(blob_signer.address()),
             contract: FuelStateContract::new(
