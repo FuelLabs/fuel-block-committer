@@ -1,14 +1,15 @@
 use std::{
-    cmp::min,
+    cmp::{max, min},
     num::NonZeroU32,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    time::Duration,
 };
 
 use alloy::{
-    eips::eip4844::BYTES_PER_BLOB,
+    consensus::Transaction,
+    eips::{
+        eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
+        BlockNumberOrTag,
+    },
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
@@ -24,7 +25,7 @@ use metrics::{
 };
 use ports::{
     l1::FragmentsSubmitted,
-    types::{BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse},
+    types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse},
 };
 use tracing::info;
 use url::Url;
@@ -73,13 +74,65 @@ sol!(
 pub struct WsConnection {
     provider: WsProvider,
     address: Address,
-    first_tx_gas_estimation_multiplier: Option<u64>,
-    first_blob_tx_sent: Arc<AtomicBool>,
     blob_provider: Option<WsProvider>,
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
+    tx_max_fee: u128,
+    send_tx_request_timeout: Duration,
     metrics: Metrics,
+}
+
+impl WsConnection {
+    async fn get_next_blob_fee(&self, provider: &WsProvider) -> Result<u128> {
+        provider
+            .get_block_by_number(BlockNumberOrTag::Latest, false)
+            .await?
+            .ok_or(Error::Network(
+                "get_block_by_number returned None".to_string(),
+            ))?
+            .header
+            .next_block_blob_fee()
+            .ok_or(Error::Network(
+                "next_block_blob_fee returned None".to_string(),
+            ))
+    }
+
+    async fn get_bumped_fees(
+        &self,
+        previous_tx: &L1Tx,
+        provider: &WsProvider,
+    ) -> Result<(u128, u128, u128)> {
+        let next_blob_fee = self.get_next_blob_fee(provider).await?;
+        let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
+
+        let Eip1559Estimation {
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+        } = provider.estimate_eip1559_fees(None).await?;
+
+        let max_fee_per_gas = max(max_fee_per_gas, previous_tx.max_fee.saturating_mul(2));
+        let max_priority_fee_per_gas = max(
+            max_priority_fee_per_gas,
+            previous_tx.priority_fee.saturating_mul(2),
+        );
+
+        Ok((
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+            max_fee_per_blob_gas,
+        ))
+    }
+
+    fn get_max_fee(tx: &L1Tx, gas_limit: u128, num_fragments: usize) -> u128 {
+        let max_fee = tx.max_fee.saturating_mul(gas_limit).saturating_add(
+            tx.blob_fee
+                .saturating_mul(num_fragments as u128)
+                .saturating_mul(DATA_GAS_PER_BLOB as u128),
+        );
+
+        max_fee
+    }
 }
 
 impl RegistersMetrics for WsConnection {
@@ -135,7 +188,10 @@ impl EthApi for WsConnection {
             .max_priority_fee_per_gas(max_priority_fee_per_gas)
             .nonce(nonce);
 
-        let tx = self.provider.send_transaction(tx_request).await?;
+        let send_fut = self.provider.send_transaction(tx_request);
+        let tx = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+            .await
+            .map_err(|_| Error::Network("timed out trying to submit block".to_string()))??;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
         let submission_tx = BlockSubmissionTx {
@@ -174,10 +230,19 @@ impl EthApi for WsConnection {
         Self::convert_to_tx_response(tx_receipt)
     }
 
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        Ok(self
+            .provider
+            .get_transaction_by_hash(tx_hash.into())
+            .await?
+            .is_none())
+    }
+
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted> {
+        previous_tx: Option<L1Tx>,
+    ) -> Result<(L1Tx, ports::l1::FragmentsSubmitted)> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
@@ -192,27 +257,16 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
 
-        let blob_tx = match (
-            self.first_blob_tx_sent.load(Ordering::Relaxed),
-            self.first_tx_gas_estimation_multiplier,
-        ) {
-            (false, Some(gas_estimation_multiplier)) => {
-                let max_fee_per_blob_gas = blob_provider.get_blob_base_fee().await?;
-                let Eip1559Estimation {
-                    max_fee_per_gas,
-                    max_priority_fee_per_gas,
-                } = blob_provider.estimate_eip1559_fees(None).await?;
+        let blob_tx = match previous_tx {
+            Some(previous_tx) => {
+                let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
+                    self.get_bumped_fees(&previous_tx, blob_provider).await?;
 
                 TransactionRequest::default()
-                    .with_max_fee_per_blob_gas(
-                        max_fee_per_blob_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
-                    .with_max_fee_per_gas(
-                        max_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
-                    .with_max_priority_fee_per_gas(
-                        max_priority_fee_per_gas.saturating_mul(gas_estimation_multiplier.into()),
-                    )
+                    .with_max_fee_per_gas(max_fee_per_gas)
+                    .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
+                    .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
+                    .with_nonce(previous_tx.nonce as u64)
                     .with_blob_sidecar(sidecar)
                     .with_to(*blob_signer_address)
             }
@@ -230,9 +284,36 @@ impl EthApi for WsConnection {
         let tx_id = *blob_tx.tx_hash();
         info!("sending blob tx: {tx_id}",);
 
-        let _ = blob_provider.send_tx_envelope(blob_tx).await?;
+        let l1_tx = L1Tx {
+            hash: tx_id.0,
+            nonce: blob_tx.nonce() as u32, // TODO: conversion
+            max_fee: blob_tx.max_fee_per_gas(),
+            priority_fee: blob_tx
+                .max_priority_fee_per_gas()
+                .expect("eip4844 tx to have priority fee"),
+            blob_fee: blob_tx
+                .max_fee_per_blob_gas()
+                .expect("eip4844 tx to have blob fee"),
+            ..Default::default()
+        };
 
-        self.first_blob_tx_sent.store(true, Ordering::Relaxed);
+        info!("sending blob tx with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
+
+        let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
+        if max_fee > self.tx_max_fee {
+            return Err(Error::Other(
+                format!(
+                    "max fee exceeded: tried {}, limit {}",
+                    max_fee, self.tx_max_fee
+                )
+                .to_string(),
+            ));
+        }
+
+        let send_fut = blob_provider.send_tx_envelope(blob_tx);
+        let _ = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+            .await
+            .map_err(|_| Error::Network("timed out trying to send blob tx".to_string()))??;
 
         self.metrics.blobs_per_tx.observe(num_fragments as f64);
 
@@ -240,10 +321,11 @@ impl EthApi for WsConnection {
             self.metrics.blob_unused_bytes.observe(bytes.into());
         }
 
-        Ok(FragmentsSubmitted {
-            tx: tx_id.0,
+        let fragments_submitted = FragmentsSubmitted {
             num_fragments: num_fragments.try_into().expect("cannot be zero"),
-        })
+        };
+
+        Ok((l1_tx, fragments_submitted))
     }
 
     #[cfg(feature = "test-helpers")]
@@ -274,7 +356,8 @@ impl WsConnection {
         contract_address: Address,
         main_signer: AwsSigner,
         blob_signer: Option<AwsSigner>,
-        first_tx_gas_estimation_multiplier: Option<u64>,
+        tx_max_fee: u128,
+        send_tx_request_timeout: Duration,
     ) -> Result<Self> {
         let address = main_signer.address();
         let ws = WsConnect::new(url);
@@ -308,9 +391,9 @@ impl WsConnection {
             blob_signer_address,
             contract,
             commit_interval,
+            tx_max_fee,
+            send_tx_request_timeout,
             metrics: Default::default(),
-            first_blob_tx_sent: Arc::new(AtomicBool::new(false)),
-            first_tx_gas_estimation_multiplier,
         })
     }
 
@@ -357,6 +440,11 @@ impl WsConnection {
 #[cfg(test)]
 mod tests {
 
+    use std::u128;
+
+    use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
+    use ports::l1::FragmentEncoder;
+
     use super::*;
 
     #[test]
@@ -365,5 +453,139 @@ mod tests {
             WsConnection::calculate_commit_height(10, 3.try_into().unwrap()),
             U256::from(3)
         );
+    }
+
+    #[tokio::test]
+    async fn submit_fragments_will_bump_gas_prices() {
+        // given
+        let anvil = Anvil::new()
+            .args(["--hardfork", "cancun"])
+            .try_spawn()
+            .unwrap();
+
+        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+        let blob_signer: PrivateKeySigner = anvil.keys()[1].clone().into();
+
+        let wallet = EthereumWallet::from(signer.clone());
+        let blob_wallet = EthereumWallet::from(blob_signer.clone());
+
+        let ws = WsConnect::new(anvil.ws_endpoint());
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet.clone())
+            .on_ws(ws.clone())
+            .await
+            .unwrap();
+        let blob_provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(blob_wallet.clone())
+            .on_ws(ws)
+            .await
+            .unwrap();
+
+        let connection = WsConnection {
+            provider: provider.clone(),
+            address: signer.address(),
+            blob_provider: Some(blob_provider.clone()),
+            blob_signer_address: Some(blob_signer.address()),
+            contract: FuelStateContract::new(
+                Address::from_slice([0u8; 20].as_ref()),
+                provider.clone(),
+            ),
+            commit_interval: 3.try_into().unwrap(),
+            tx_max_fee: u128::MAX,
+            send_tx_request_timeout: Duration::from_secs(10),
+            metrics: Default::default(),
+        };
+
+        let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
+        let fragment = Eip4844BlobEncoder {}.encode(data).unwrap();
+        let sidecar = Eip4844BlobEncoder::decode(fragment.clone()).unwrap();
+
+        // create a tx with the help of the provider to get gas fields, hash etc
+        let tx = TransactionRequest::default()
+            .with_blob_sidecar(sidecar)
+            .with_to(blob_signer.address());
+        let tx = blob_provider.fill(tx).await.unwrap();
+        let SendableTx::Envelope(tx) = tx else {
+            panic!("Expected an envelope. This is a bug.");
+        };
+        let previous_tx = L1Tx {
+            hash: tx.tx_hash().0,
+            nonce: tx.nonce() as u32,
+            max_fee: tx.max_fee_per_gas(),
+            priority_fee: tx.max_priority_fee_per_gas().unwrap(),
+            blob_fee: tx.max_fee_per_blob_gas().unwrap(),
+            ..Default::default()
+        };
+
+        // when
+        let (submitted_tx, _) = connection
+            .submit_state_fragments(fragment, Some(previous_tx.clone()))
+            .await
+            .unwrap();
+
+        // then
+        assert_eq!(submitted_tx.nonce, previous_tx.nonce);
+        assert_eq!(submitted_tx.max_fee, 2 * previous_tx.max_fee);
+        assert_eq!(submitted_tx.priority_fee, 2 * previous_tx.priority_fee);
+        assert_eq!(submitted_tx.blob_fee, 2 * previous_tx.blob_fee);
+    }
+
+    #[tokio::test]
+    async fn submit_fragments_fails_if_max_fee_limit_exceeded() {
+        // given
+        let anvil = Anvil::new()
+            .args(["--hardfork", "cancun"])
+            .try_spawn()
+            .unwrap();
+
+        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+        let blob_signer: PrivateKeySigner = anvil.keys()[1].clone().into();
+
+        let wallet = EthereumWallet::from(signer.clone());
+        let blob_wallet = EthereumWallet::from(blob_signer.clone());
+
+        let ws = WsConnect::new(anvil.ws_endpoint());
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet.clone())
+            .on_ws(ws.clone())
+            .await
+            .unwrap();
+        let blob_provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(blob_wallet.clone())
+            .on_ws(ws)
+            .await
+            .unwrap();
+
+        let tx_max_fee = 1;
+        let connection = WsConnection {
+            provider: provider.clone(),
+            address: signer.address(),
+            blob_provider: Some(blob_provider.clone()),
+            blob_signer_address: Some(blob_signer.address()),
+            contract: FuelStateContract::new(
+                Address::from_slice([0u8; 20].as_ref()),
+                provider.clone(),
+            ),
+            commit_interval: 3.try_into().unwrap(),
+            tx_max_fee,
+            send_tx_request_timeout: Duration::from_secs(10),
+            metrics: Default::default(),
+        };
+
+        let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
+        let fragment = Eip4844BlobEncoder {}.encode(data).unwrap();
+
+        // when
+        let result = connection.submit_state_fragments(fragment, None).await;
+
+        // then
+        let result = result.expect_err("should return an error");
+        assert!(result
+            .to_string()
+            .contains(&format!("limit {}", tx_max_fee)));
     }
 }

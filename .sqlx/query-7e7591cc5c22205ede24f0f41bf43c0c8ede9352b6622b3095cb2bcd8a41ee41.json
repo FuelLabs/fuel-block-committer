@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM l1_blob_transaction WHERE state = $1",
+  "query": "SELECT * FROM l1_blob_transaction WHERE state = $1 or state = $2",
   "describe": {
     "columns": [
       {
@@ -51,6 +51,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int2",
         "Int2"
       ]
     },
@@ -66,5 +67,5 @@
       false
     ]
   },
-  "hash": "980d05880864c73f7634f44d2139821e779e8ab35f38f01f2663503bda4f35c4"
+  "hash": "7e7591cc5c22205ede24f0f41bf43c0c8ede9352b6622b3095cb2bcd8a41ee41"
 }

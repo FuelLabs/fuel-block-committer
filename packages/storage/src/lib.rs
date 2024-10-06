@@ -56,6 +56,10 @@ impl Storage for Postgres {
             .await?)
     }
 
+    async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>> {
+        Ok(self._fragments_submitted_by_tx(tx_hash).await?)
+    }
+
     async fn missing_blocks(
         &self,
         starting_height: u32,
@@ -100,14 +104,22 @@ impl Storage for Postgres {
 
     async fn record_pending_tx(
         &self,
-        tx_hash: [u8; 32],
+        tx: L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
     ) -> Result<()> {
-        Ok(self._record_pending_tx(tx_hash, fragment_ids).await?)
+        Ok(self._record_pending_tx(tx, fragment_ids).await?)
+    }
+
+    async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
+        Ok(self._get_non_finalized_txs().await?)
     }
 
     async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
         Ok(self._get_pending_txs().await?)
+    }
+
+    async fn get_latest_pending_txs(&self) -> Result<Option<ports::types::L1Tx>> {
+        Ok(self._get_latest_pending_txs().await?)
     }
 
     async fn has_pending_txs(&self) -> Result<bool> {
@@ -364,17 +376,18 @@ mod tests {
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
-        let tx_hash = rand::random::<[u8; 32]>();
-        storage
-            .record_pending_tx(tx_hash, fragment_ids)
-            .await
-            .unwrap();
+        let hash = rand::random::<[u8; 32]>();
+        let tx = L1Tx {
+            hash,
+            ..Default::default()
+        };
+        storage.record_pending_tx(tx, fragment_ids).await.unwrap();
 
         let finalization_time = Utc::now();
 
         // when
         storage
-            .update_tx_state(tx_hash, TransactionState::Finalized(finalization_time))
+            .update_tx_state(hash, TransactionState::Finalized(finalization_time))
             .await
             .unwrap();
 
@@ -678,6 +691,63 @@ mod tests {
 
         // then
         assert_eq!(missing_blocks, vec![0..=2, 6..=7, 11..=current_height]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_retrieve_fragments_submitted_by_tx() -> Result<()> {
+        // given
+        let storage = start_db().await;
+
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let hash = rand::random::<[u8; 32]>();
+        let tx = L1Tx {
+            hash,
+            ..Default::default()
+        };
+        storage.record_pending_tx(tx, fragment_ids).await?;
+
+        // when
+        let fragments = storage.fragments_submitted_by_tx(hash).await?;
+
+        // then
+        assert_eq!(fragments.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_get_latest_pending_txs() -> Result<()> {
+        // given
+        let storage = start_db().await;
+
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let (fragment_1, fragment_2) = (fragment_ids[0], fragment_ids[1]);
+        let tx_1 = L1Tx {
+            hash: rand::random::<[u8; 32]>(),
+            ..Default::default()
+        };
+        let tx_2_hash = rand::random::<[u8; 32]>();
+        let tx_2 = L1Tx {
+            hash: tx_2_hash,
+            ..Default::default()
+        };
+        storage
+            .record_pending_tx(tx_1, nonempty![fragment_1])
+            .await?;
+        storage
+            .record_pending_tx(
+                tx_2,
+                NonEmpty::collect(vec![fragment_2]).expect("non empty"),
+            )
+            .await?;
+
+        // when
+        let actual = storage.get_latest_pending_txs().await?.unwrap();
+
+        // then
+        assert_eq!(actual.hash, tx_2_hash);
 
         Ok(())
     }

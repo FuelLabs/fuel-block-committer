@@ -32,9 +32,14 @@ metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
 url = { workspace = true }
 
 [dev-dependencies]
+alloy = { workspace = true, features = [
+  "signer-local", 
+  "node-bindings"
+]}
 pretty_assertions = { workspace = true, features = ["default"] }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["l1", "test-helpers"] }

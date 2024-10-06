@@ -245,6 +245,30 @@ impl Postgres {
         Ok(fragments)
     }
 
+    pub(crate) async fn _fragments_submitted_by_tx(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> Result<Vec<ports::storage::BundleFragment>> {
+        let fragments = sqlx::query_as!(
+            tables::BundleFragment,
+            r#"
+            SELECT f.*
+            FROM l1_fragments f
+            JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+            JOIN l1_blob_transaction t ON t.id = tf.transaction_id
+            WHERE t.hash = $1
+        "#,
+            tx_hash.as_slice()
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .try_collect()?;
+
+        Ok(fragments)
+    }
+
     pub(crate) async fn _missing_blocks(
         &self,
         starting_height: u32,
@@ -402,15 +426,20 @@ impl Postgres {
 
     pub(crate) async fn _record_pending_tx(
         &self,
-        tx_hash: [u8; 32],
+        submission_tx: ports::types::L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
+        let row = tables::L1Tx::from(submission_tx);
         let tx_id = sqlx::query!(
-            "INSERT INTO l1_blob_transaction (hash, state) VALUES ($1, $2) RETURNING id",
-            tx_hash.as_slice(),
-            i16::from(L1TxState::Pending)
+            "INSERT INTO l1_blob_transaction (hash, state, nonce, max_fee, priority_fee, blob_fee) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            row.hash,
+            i16::from(L1TxState::Pending),
+            row.nonce,
+            row.max_fee,
+            row.priority_fee,
+            row.blob_fee,
         )
         .fetch_one(&mut *tx)
         .await?
@@ -440,6 +469,20 @@ impl Postgres {
         .has_pending_transactions.unwrap_or(false))
     }
 
+    pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
+        sqlx::query_as!(
+            tables::L1Tx,
+            "SELECT * FROM l1_blob_transaction WHERE state = $1 or state = $2",
+            i16::from(L1TxState::IncludedInBlock),
+            i16::from(L1TxState::Pending)
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
     pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,
@@ -451,6 +494,18 @@ impl Postgres {
         .into_iter()
         .map(TryFrom::try_from)
         .collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _get_latest_pending_txs(&self) -> Result<Option<ports::types::L1Tx>> {
+        sqlx::query_as!(
+            tables::L1Tx,
+            "SELECT * FROM l1_blob_transaction WHERE state = $1 ORDER BY created_at DESC LIMIT 1",
+            i16::from(L1TxState::Pending)
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .map(TryFrom::try_from)
+        .transpose()
     }
 
     pub(crate) async fn _update_tx_state(

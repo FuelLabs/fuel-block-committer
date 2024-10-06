@@ -22,13 +22,27 @@ pub struct DeployedContract {
 }
 
 impl DeployedContract {
-    pub async fn connect(url: Url, address: Address, key: KmsKey) -> anyhow::Result<Self> {
+    pub async fn connect(
+        url: Url,
+        address: Address,
+        key: KmsKey,
+        tx_max_fee: u128,
+        request_timeout: Duration,
+    ) -> anyhow::Result<Self> {
         let blob_wallet = None;
         let aws_client = AwsClient::new(AwsConfig::for_testing(key.url).await);
 
-        let chain_state_contract =
-            WebsocketClient::connect(url, address, key.id, blob_wallet, 5, aws_client, None)
-                .await?;
+        let chain_state_contract = WebsocketClient::connect(
+            url,
+            address,
+            key.id,
+            blob_wallet,
+            5,
+            aws_client,
+            tx_max_fee,
+            request_timeout,
+        )
+        .await?;
 
         Ok(Self {
             address,

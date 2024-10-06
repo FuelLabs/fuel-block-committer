@@ -22,10 +22,12 @@ pub trait EthApi {
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>>;
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<ports::types::Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted>;
+        previous_tx: Option<ports::types::L1Tx>,
+    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -115,6 +117,12 @@ where
         response
     }
 
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        let response = self.adapter.is_squeezed_out(tx_hash).await;
+        self.note_network_status(&response);
+        response
+    }
+
     async fn balance(&self, address: Address) -> Result<U256> {
         let response = self.adapter.balance(address).await;
         self.note_network_status(&response);
@@ -124,8 +132,12 @@ where
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted> {
-        let response = self.adapter.submit_state_fragments(fragments).await;
+        previous: Option<ports::types::L1Tx>,
+    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)> {
+        let response = self
+            .adapter
+            .submit_state_fragments(fragments, previous)
+            .await;
         self.note_network_status(&response);
         response
     }
