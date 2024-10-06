@@ -27,14 +27,14 @@ async fn main() -> Result<()> {
         .validate()
         .with_context(|| "config validation failed")?;
 
-    let storage = setup::storage(&config)
+    let metrics_registry = Registry::default();
+
+    let storage = setup::storage(&config, &metrics_registry)
         .await
         .with_context(|| "failed to connect to database")?;
 
     let internal_config = config::Internal::default();
     let cancel_token = CancellationToken::new();
-
-    let metrics_registry = Registry::default();
 
     let (fuel_adapter, fuel_health_check) =
         setup::fuel_adapter(&config, &internal_config, &metrics_registry);
@@ -59,7 +59,6 @@ async fn main() -> Result<()> {
         storage.clone(),
         fuel_adapter.clone(),
         &config,
-        &metrics_registry,
         cancel_token.clone(),
     );
 

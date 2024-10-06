@@ -22,7 +22,6 @@ pub struct BlockCommitter<L1, Db, Fuel, BlockValidator, Clock> {
     clock: Clock,
     commit_interval: NonZeroU32,
     num_blocks_to_finalize_tx: u64,
-    metrics: Metrics,
 }
 
 #[derive(Debug)]
@@ -33,43 +32,6 @@ enum Action {
     },
     Post,
     DoNothing,
-}
-
-struct Metrics {
-    latest_fuel_block: IntGauge,
-    latest_committed_block: IntGauge,
-}
-
-impl<L1, Db, Fuel, BlockValidator, Clock> RegistersMetrics
-    for BlockCommitter<L1, Db, Fuel, BlockValidator, Clock>
-{
-    fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![
-            Box::new(self.metrics.latest_fuel_block.clone()),
-            Box::new(self.metrics.latest_committed_block.clone()),
-        ]
-    }
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        let latest_fuel_block = IntGauge::with_opts(Opts::new(
-            "latest_fuel_block",
-            "The height of the latest fuel block.",
-        ))
-        .expect("fuel_network_errors metric to be correctly configured");
-
-        let latest_committed_block = IntGauge::with_opts(Opts::new(
-            "latest_committed_block",
-            "The height of the latest fuel block committed on Ethereum.",
-        ))
-        .expect("latest_committed_block metric to be correctly configured");
-
-        Self {
-            latest_fuel_block,
-            latest_committed_block,
-        }
-    }
 }
 
 impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockValidator, Clock> {
@@ -90,7 +52,6 @@ impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockVali
             clock,
             commit_interval,
             num_blocks_to_finalize_tx,
-            metrics: Metrics::default(),
         }
     }
 }
@@ -125,10 +86,6 @@ where
             &latest_block.header,
             &latest_block.consensus,
         )?;
-
-        self.metrics
-            .latest_fuel_block
-            .set(i64::from(latest_block.header.height));
 
         Ok(latest_block)
     }
@@ -217,10 +174,6 @@ where
                 "finalized submission for block: {block_height} with tx: {}",
                 hex::encode(tx_hash)
             );
-
-            self.metrics
-                .latest_committed_block
-                .set(i64::from(block_height));
         }
 
         Ok(())
@@ -272,7 +225,6 @@ where
 mod tests {
     use clock::SystemClock;
     use fuel_crypto::{Message, SecretKey, Signature};
-    use metrics::prometheus::{proto::Metric, Registry};
     use mockall::predicate::eq;
     use ports::{
         fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
@@ -561,98 +513,6 @@ mod tests {
 
         // then
         // Mock verifies that submit was called with the appropriate block
-    }
-
-    #[tokio::test]
-    async fn updates_block_metric_regardless_if_block_is_published() {
-        // given
-        let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-        let block = given_a_block(5, &secret_key);
-        let fuel_adapter = given_fetcher(vec![block]);
-
-        let db = db_with_submissions(vec![0, 2, 4]).await;
-
-        let mut l1 = FullL1Mock::default();
-        l1.contract.expect_submit().never();
-        l1.api
-            .expect_get_block_number()
-            .returning(|| Box::pin(async { Ok(4u32.into()) }));
-        l1.api
-            .expect_get_transaction_response()
-            .returning(|_| Box::pin(async { Ok(None) }));
-
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
-
-        let registry = Registry::default();
-        block_committer.register_metrics(&registry);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        let metrics = registry.gather();
-        let latest_block_metric = metrics
-            .iter()
-            .find(|metric| metric.get_name() == "latest_fuel_block")
-            .and_then(|metric| metric.get_metric().first())
-            .map(Metric::get_gauge)
-            .unwrap();
-
-        assert_eq!(latest_block_metric.get_value(), 5f64);
-    }
-
-    #[tokio::test]
-    async fn updates_latest_committed_block_metric() {
-        // given
-        let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-        let latest_height = 4;
-        let latest_block = given_a_block(latest_height, &secret_key);
-        let fuel_adapter = given_fetcher(vec![latest_block]);
-
-        let db = db_with_submissions(vec![0, 2, 4]).await;
-        let tx_response = TransactionResponse::new(latest_height as u64, true);
-        let l1 =
-            given_l1_that_expects_transaction_response(latest_height, [4; 32], Some(tx_response));
-
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
-
-        let registry = Registry::default();
-        block_committer.register_metrics(&registry);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        let metrics = registry.gather();
-        let latest_committed_block_metric = metrics
-            .iter()
-            .find(|metric| metric.get_name() == "latest_committed_block")
-            .and_then(|metric| metric.get_metric().first())
-            .map(Metric::get_gauge)
-            .unwrap();
-
-        assert_eq!(
-            latest_committed_block_metric.get_value(),
-            f64::from(latest_height)
-        );
     }
 
     #[tokio::test]

@@ -44,7 +44,6 @@ pub fn block_committer(
     storage: Database,
     fuel: FuelApi,
     config: &config::Config,
-    registry: &Registry,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
     let validator = BlockValidator::new(*config.fuel.block_producer_address);
@@ -58,8 +57,6 @@ pub fn block_committer(
         commit_interval,
         config.app.num_blocks_to_finalize_tx,
     );
-
-    block_committer.register_metrics(registry);
 
     schedule_polling(
         config.app.block_check_interval,
@@ -260,9 +257,11 @@ pub fn logger() {
         .init();
 }
 
-pub async fn storage(config: &config::Config) -> Result<Database> {
+pub async fn storage(config: &config::Config, registry: &Registry) -> Result<Database> {
     let postgres = Database::connect(&config.app.db).await?;
     postgres.migrate().await?;
+
+    postgres.register_metrics(registry);
 
     Ok(postgres)
 }

@@ -196,6 +196,8 @@ impl HttpClient {
         match self.client.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();
+                let height = chain_info.latest_block.header.height;
+                self.metrics.fuel_height.set(height.into());
                 Ok(chain_info.latest_block)
             }
             Err(err) => {
