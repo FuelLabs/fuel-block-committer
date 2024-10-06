@@ -9,25 +9,25 @@ use ports::types::{Address, Fragment, NonEmpty, TransactionResponse, U256};
 use crate::{
     error::{Error, Result},
     metrics::Metrics,
-    websocket::event_streamer::EthEventStreamer,
 };
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EthApi {
-    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self, address: Address) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
-    fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
     async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>>;
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<ports::types::Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted>;
+        previous_tx: Option<ports::types::L1Tx>,
+    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -92,12 +92,11 @@ where
 {
     delegate! {
         to self.adapter {
-            fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer;
             fn commit_interval(&self) -> NonZeroU32;
         }
     }
 
-    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+    async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx> {
         let response = self.adapter.submit(hash, height).await;
         self.note_network_status(&response);
         response
@@ -118,6 +117,12 @@ where
         response
     }
 
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        let response = self.adapter.is_squeezed_out(tx_hash).await;
+        self.note_network_status(&response);
+        response
+    }
+
     async fn balance(&self, address: Address) -> Result<U256> {
         let response = self.adapter.balance(address).await;
         self.note_network_status(&response);
@@ -127,8 +132,12 @@ where
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> Result<ports::l1::FragmentsSubmitted> {
-        let response = self.adapter.submit_state_fragments(fragments).await;
+        previous: Option<ports::types::L1Tx>,
+    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)> {
+        let response = self
+            .adapter
+            .submit_state_fragments(fragments, previous)
+            .await;
         self.note_network_status(&response);
         response
     }

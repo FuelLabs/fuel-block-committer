@@ -1,13 +1,11 @@
-use std::{num::NonZeroU32, pin::Pin};
+use std::num::NonZeroU32;
 
 use alloy::primitives::U256;
 use delegate::delegate;
-use futures::{stream::TryStreamExt, Stream};
 use ports::{
-    l1::{Api, Contract, EventStreamer, FragmentsSubmitted, Result},
-    types::{Fragment, FuelBlockCommittedOnL1, L1Height, NonEmpty, TransactionResponse},
+    l1::{Api, Contract, FragmentsSubmitted, Result},
+    types::{BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, TransactionResponse},
 };
-use websocket::EthEventStreamer;
 
 mod aws;
 mod error;
@@ -21,13 +19,9 @@ pub use websocket::WebsocketClient;
 impl Contract for WebsocketClient {
     delegate! {
         to self {
-            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()>;
+            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
             fn commit_interval(&self) -> NonZeroU32;
         }
-    }
-
-    fn event_streamer(&self, height: L1Height) -> Box<dyn EventStreamer + Send + Sync> {
-        Box::new(self.event_streamer(height.into()))
     }
 }
 
@@ -40,9 +34,11 @@ impl Api for WebsocketClient {
             async fn submit_state_fragments(
                 &self,
                 fragments: NonEmpty<Fragment>,
-            ) -> Result<FragmentsSubmitted>;
+                previous_tx: Option<ports::types::L1Tx>,
+            ) -> Result<(L1Tx, FragmentsSubmitted)>;
             async fn balance(&self, address: Address) -> Result<U256>;
             async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
+            async fn is_squeezed_out(&self, tx_hash: [u8; 32],) -> Result<bool>;
         }
     }
 
@@ -51,16 +47,5 @@ impl Api for WebsocketClient {
         let height = L1Height::try_from(block_num)?;
 
         Ok(height)
-    }
-}
-
-#[async_trait::async_trait]
-impl EventStreamer for EthEventStreamer {
-    async fn establish_stream(
-        &self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<FuelBlockCommittedOnL1>> + '_ + Send>>> {
-        let stream = self.establish_stream().await?.map_err(Into::into);
-
-        Ok(Box::pin(stream))
     }
 }

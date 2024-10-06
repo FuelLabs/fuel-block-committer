@@ -67,9 +67,6 @@ pub struct Eth {
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
-    /// To manually be enabled if a transaction gets stuck. Geth requires a multiplier of 2. Should
-    /// be removed once the tx manager is implemented.
-    pub first_tx_gas_estimation_multiplier: Option<u64>,
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
@@ -99,8 +96,16 @@ pub struct App {
     pub tx_finalization_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
+    /// Interval after which to bump a pending tx
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub gas_bump_timeout: Duration,
+    /// Max gas fee we permit a tx to have in wei
+    pub tx_max_fee: u64,
     ///// Contains configs relating to block state posting to l1
     pub bundle: BundleConfig,
+    //// Duration for timeout when sending tx requests
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub send_tx_request_timeout: Duration,
 }
 
 /// Configuration settings for managing fuel block bundling and fragment submission operations.
@@ -191,7 +196,6 @@ where
 #[derive(Debug, Clone)]
 pub struct Internal {
     pub fuel_errors_before_unhealthy: usize,
-    pub between_eth_event_stream_restablishing_attempts: Duration,
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
 }
@@ -200,7 +204,6 @@ impl Default for Internal {
     fn default() -> Self {
         Self {
             fuel_errors_before_unhealthy: 3,
-            between_eth_event_stream_restablishing_attempts: Duration::from_secs(3),
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
         }

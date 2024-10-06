@@ -1,14 +1,13 @@
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, time::Duration};
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::{primitives::Address, signers::Signer};
 use ports::{
     l1::{FragmentsSubmitted, Result},
-    types::{Fragment, NonEmpty, TransactionResponse, U256},
+    types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse, U256},
 };
 use url::Url;
 
-pub use self::event_streamer::EthEventStreamer;
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
@@ -16,7 +15,6 @@ use self::{
 use crate::AwsClient;
 
 mod connection;
-mod event_streamer;
 mod health_tracking_middleware;
 
 #[derive(Clone)]
@@ -34,7 +32,8 @@ impl WebsocketClient {
         blob_pool_key_arn: Option<String>,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
-        first_tx_gas_estimation_multiplier: Option<u64>,
+        tx_max_fee: u128,
+        send_tx_request_timeout: Duration,
     ) -> ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
@@ -52,7 +51,8 @@ impl WebsocketClient {
             contract_address,
             main_signer,
             blob_signer,
-            first_tx_gas_estimation_multiplier,
+            tx_max_fee,
+            send_tx_request_timeout,
         )
         .await?;
 
@@ -68,11 +68,7 @@ impl WebsocketClient {
         self.inner.connection_health_checker()
     }
 
-    pub(crate) fn event_streamer(&self, eth_block_height: u64) -> EthEventStreamer {
-        self.inner.event_streamer(eth_block_height)
-    }
-
-    pub(crate) async fn submit(&self, hash: [u8; 32], height: u32) -> Result<()> {
+    pub(crate) async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx> {
         Ok(self.inner.submit(hash, height).await?)
     }
 
@@ -91,6 +87,10 @@ impl WebsocketClient {
         Ok(self.inner.get_transaction_response(tx_hash).await?)
     }
 
+    pub(crate) async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {
+        Ok(self.inner.is_squeezed_out(tx_hash).await?)
+    }
+
     pub(crate) async fn balance(&self, address: Address) -> Result<U256> {
         Ok(self.inner.balance(address).await?)
     }
@@ -98,8 +98,12 @@ impl WebsocketClient {
     pub(crate) async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-    ) -> ports::l1::Result<FragmentsSubmitted> {
-        Ok(self.inner.submit_state_fragments(fragments).await?)
+        previous_tx: Option<ports::types::L1Tx>,
+    ) -> ports::l1::Result<(L1Tx, FragmentsSubmitted)> {
+        Ok(self
+            .inner
+            .submit_state_fragments(fragments, previous_tx)
+            .await?)
     }
 
     #[cfg(feature = "test-helpers")]

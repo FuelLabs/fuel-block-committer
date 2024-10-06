@@ -1,7 +1,6 @@
 mod block_bundler;
 mod block_committer;
 mod block_importer;
-mod commit_listener;
 mod health_reporter;
 mod state_committer;
 mod state_listener;
@@ -15,7 +14,6 @@ pub use block_bundler::{
 };
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
-pub use commit_listener::CommitListener;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 pub use state_listener::StateListener;
@@ -64,6 +62,12 @@ impl From<validator::Error> for Error {
 impl From<ports::storage::Error> for Error {
     fn from(error: ports::storage::Error) -> Self {
         Self::Storage(error.to_string())
+    }
+}
+
+impl From<String> for Error {
+    fn from(error: String) -> Self {
+        Self::Other(error)
     }
 }
 
@@ -126,7 +130,9 @@ pub(crate) mod test_utils {
             use mockall::{predicate::eq, Sequence};
             use ports::{
                 l1::FragmentsSubmitted,
-                types::{Fragment, L1Height, NonEmpty, TransactionResponse, U256},
+                types::{
+                    BlockSubmissionTx, Fragment, L1Height, NonEmpty, TransactionResponse, U256,
+                },
             };
 
             pub struct FullL1Mock {
@@ -152,8 +158,7 @@ pub(crate) mod test_utils {
             impl ports::l1::Contract for FullL1Mock {
                 delegate! {
                     to self.contract {
-                        async fn submit(&self, hash: [u8;32], height: u32) -> ports::l1::Result<()>;
-                        fn event_streamer(&self, height: L1Height) -> Box<dyn ports::l1::EventStreamer + Send + Sync>;
+                        async fn submit(&self, hash: [u8;32], height: u32) -> ports::l1::Result<BlockSubmissionTx>;
                         fn commit_interval(&self) -> std::num::NonZeroU32;
                     }
                 }
@@ -165,14 +170,17 @@ pub(crate) mod test_utils {
                         async fn submit_state_fragments(
                             &self,
                             fragments: NonEmpty<Fragment>,
-                        ) -> ports::l1::Result<FragmentsSubmitted>;
+                            previous_tx: Option<ports::types::L1Tx>,
+                        ) -> ports::l1::Result<(ports::types::L1Tx, FragmentsSubmitted)>;
                         async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
                         async fn balance(&self, address: ports::types::Address) -> ports::l1::Result<U256>;
                         async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> ports::l1::Result<Option<TransactionResponse>>;
+                        async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> ports::l1::Result<bool>;
                     }
                 }
             }
 
+            #[derive(Clone, Copy)]
             pub enum TxStatus {
                 Success,
                 Failure,
@@ -188,7 +196,7 @@ pub(crate) mod test_utils {
                 for (fragment, tx_id) in expectations {
                     l1_mock
                         .expect_submit_state_fragments()
-                        .withf(move |data| {
+                        .withf(move |data, _previous_tx| {
                             if let Some(fragment) = &fragment {
                                 data == fragment
                             } else {
@@ -196,15 +204,55 @@ pub(crate) mod test_utils {
                             }
                         })
                         .once()
-                        .return_once(move |fragments| {
+                        .return_once(move |fragments, _previous_tx| {
                             Box::pin(async move {
-                                Ok(FragmentsSubmitted {
-                                    tx: tx_id,
-                                    num_fragments: min(fragments.len(), 6).try_into().unwrap(),
-                                })
+                                Ok((
+                                    ports::types::L1Tx {
+                                        hash: tx_id,
+                                        ..Default::default()
+                                    },
+                                    FragmentsSubmitted {
+                                        num_fragments: min(fragments.len(), 6).try_into().unwrap(),
+                                    },
+                                ))
                             })
                         })
                         .in_sequence(&mut sequence);
+                }
+
+                l1_mock
+            }
+
+            pub fn txs_finished_multiple_heights(
+                heights: &[u32],
+                tx_height: u32,
+                statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
+            ) -> ports::l1::MockApi {
+                let mut l1_mock = ports::l1::MockApi::new();
+
+                for height in heights {
+                    let l1_height = L1Height::from(*height);
+                    l1_mock
+                        .expect_get_block_number()
+                        .times(1)
+                        .returning(move || Box::pin(async move { Ok(l1_height) }));
+                }
+
+                for expectation in statuses {
+                    let (tx_id, status) = expectation;
+
+                    let height: u64 = tx_height.into();
+                    l1_mock
+                        .expect_get_transaction_response()
+                        .with(eq(tx_id))
+                        .returning(move |_| {
+                            Box::pin(async move {
+                                Ok(Some(TransactionResponse::new(
+                                    height,
+                                    matches!(status, TxStatus::Success),
+                                )))
+                            })
+                        });
                 }
 
                 l1_mock
@@ -238,6 +286,52 @@ pub(crate) mod test_utils {
                             })
                         });
                 }
+                l1_mock
+            }
+
+            pub fn txs_reorg(
+                heights: &[u32],
+                tx_height: u32,
+                first_status: ([u8; 32], TxStatus),
+            ) -> ports::l1::MockApi {
+                let mut l1_mock = ports::l1::MockApi::new();
+
+                for height in heights {
+                    let l1_height = L1Height::from(*height);
+                    l1_mock
+                        .expect_get_block_number()
+                        .times(1)
+                        .returning(move || Box::pin(async move { Ok(l1_height) }));
+                }
+
+                let (tx_id, status) = first_status;
+
+                let height = L1Height::from(tx_height);
+                l1_mock
+                    .expect_get_transaction_response()
+                    .with(eq(tx_id))
+                    .times(1)
+                    .return_once(move |_| {
+                        Box::pin(async move {
+                            Ok(Some(TransactionResponse::new(
+                                height.into(),
+                                matches!(status, TxStatus::Success),
+                            )))
+                        })
+                    });
+
+                l1_mock
+                    .expect_get_transaction_response()
+                    .with(eq(tx_id))
+                    .times(1)
+                    .return_once(move |_| Box::pin(async move { Ok(None) }));
+
+                l1_mock
+                    .expect_is_squeezed_out()
+                    .with(eq(tx_id))
+                    .times(1)
+                    .return_once(move |_| Box::pin(async move { Ok(false) }));
+
                 l1_mock
             }
         }

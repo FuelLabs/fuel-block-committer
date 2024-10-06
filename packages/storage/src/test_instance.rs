@@ -8,7 +8,8 @@ use delegate::delegate;
 use ports::{
     storage::{BundleFragment, FuelBlock, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, DateTime, Fragment, L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
+        TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -170,9 +171,10 @@ impl DbWithProcess {
 impl Storage for DbWithProcess {
     delegate! {
         to self.db {
-            async fn insert(&self, submission: BlockSubmission) -> ports::storage::Result<()>;
+            async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> ports::storage::Result<NonNegative<i32>>;
+            async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> ports::storage::Result<Vec<BlockSubmissionTx>>;
+            async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<BlockSubmission>;
             async fn submission_w_latest_block(&self) -> ports::storage::Result<Option<BlockSubmission>>;
-            async fn set_submission_completed(&self, fuel_block_hash: [u8; 32]) -> ports::storage::Result<BlockSubmission>;
             async fn insert_blocks(&self, blocks: NonEmpty<FuelBlock>) -> ports::storage::Result<()>;
             async fn missing_blocks(&self, starting_height: u32, current_height: u32) -> ports::storage::Result<Vec<RangeInclusive<u32>>>;
             async fn lowest_sequence_of_unbundled_blocks(
@@ -187,16 +189,19 @@ impl Storage for DbWithProcess {
             ) -> ports::storage::Result<()>;
             async fn record_pending_tx(
                 &self,
-                tx_hash: [u8; 32],
+                tx: L1Tx,
                 fragment_ids: NonEmpty<NonNegative<i32>>,
             ) -> ports::storage::Result<()>;
+            async fn get_non_finalized_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
             async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
+            async fn get_latest_pending_txs(&self) -> ports::storage::Result<Option<L1Tx>>;
             async fn has_pending_txs(&self) -> ports::storage::Result<bool>;
             async fn oldest_nonfinalized_fragments(
                 &self,
                 starting_height: u32,
                 limit: usize,
             ) -> ports::storage::Result<Vec<BundleFragment>>;
+            async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> ports::storage::Result<Vec<BundleFragment>>;
             async fn last_time_a_fragment_was_finalized(&self) -> ports::storage::Result<Option<DateTime<Utc>>>;
             async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<()>;
         }

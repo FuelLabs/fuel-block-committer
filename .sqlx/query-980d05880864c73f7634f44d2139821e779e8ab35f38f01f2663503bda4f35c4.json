@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM l1_blob_transaction WHERE state = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "finalized_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "max_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "priority_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "blob_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "980d05880864c73f7634f44d2139821e779e8ab35f38f01f2663503bda4f35c4"
+}

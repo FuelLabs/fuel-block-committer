@@ -29,6 +29,12 @@ mod test_helpers {
     }
 
     impl TestClock {
+        pub fn new(time: DateTime<Utc>) -> Self {
+            Self {
+                epoch_millis: Arc::new(AtomicI64::new(time.timestamp_millis())),
+            }
+        }
+
         pub fn advance_time(&self, adv: Duration) {
             let new_time = self.now() + adv;
             self.epoch_millis.store(

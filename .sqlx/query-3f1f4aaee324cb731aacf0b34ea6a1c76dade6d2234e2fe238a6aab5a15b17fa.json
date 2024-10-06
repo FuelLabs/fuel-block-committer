@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM l1_transaction WHERE state = $1 AND submission_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "submission_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "priority_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "finalized_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "state",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3f1f4aaee324cb731aacf0b34ea6a1c76dade6d2234e2fe238a6aab5a15b17fa"
+}

@@ -5,23 +5,23 @@
     "columns": [
       {
         "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
         "name": "fuel_block_hash",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "fuel_block_height",
         "type_info": "Int8"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "completed",
         "type_info": "Bool"
-      },
-      {
-        "ordinal": 3,
-        "name": "submittal_height",
-        "type_info": "Int8"
       }
     ],
     "parameters": {
