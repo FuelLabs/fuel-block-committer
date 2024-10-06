@@ -11,6 +11,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 delegate = { workspace = true, optional = true }
+metrics = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 ports = { workspace = true, features = ["storage"] }

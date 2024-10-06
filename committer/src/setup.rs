@@ -265,9 +265,11 @@ pub fn logger() {
         .init();
 }
 
-pub async fn storage(config: &config::Config) -> Result<Database> {
+pub async fn storage(config: &config::Config, registry: &Registry) -> Result<Database> {
     let postgres = Database::connect(&config.app.db).await?;
     postgres.migrate().await?;
+
+    postgres.register_metrics(registry);
 
     Ok(postgres)
 }

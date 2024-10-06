@@ -1,6 +1,7 @@
 use std::ops::RangeInclusive;
 
 use itertools::Itertools;
+use metrics::{prometheus::IntGauge, RegistersMetrics};
 use ports::{
     storage::SequentialFuelBlocks,
     types::{
@@ -16,9 +17,51 @@ use sqlx::{
 use super::error::{Error, Result};
 use crate::mappings::tables::{self, L1TxState};
 
+#[derive(Debug, Clone)]
+struct Metrics {
+    height_of_latest_commitment: IntGauge,
+    seconds_since_last_finalized_fragment: IntGauge,
+    lowest_unbundled_height: IntGauge,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let height_of_latest_commitment = IntGauge::new(
+            "height_of_latest_commitment",
+            "The height of the latest commitment",
+        )
+        .expect("height_of_latest_commitment gauge to be correctly configured");
+
+        let seconds_since_last_finalized_fragment = IntGauge::new(
+            "seconds_since_last_finalized_fragment",
+            "The number of seconds since the last finalized fragment",
+        )
+        .expect("seconds_since_last_finalized_fragment gauge to be correctly configured");
+
+        let lowest_unbundled_height = IntGauge::new(
+            "lowest_unbundled_height",
+            "The height of the lowest block unbundled block",
+        )
+        .expect("lowest_unbundled_height gauge to be correctly configured");
+
+        Self {
+            height_of_latest_commitment,
+            seconds_since_last_finalized_fragment,
+            lowest_unbundled_height,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Postgres {
     connection_pool: sqlx::Pool<sqlx::Postgres>,
+    metrics: Metrics,
+}
+
+impl RegistersMetrics for Postgres {
+    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+        vec![Box::new(self.metrics.height_of_latest_commitment.clone())]
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -61,7 +104,10 @@ impl Postgres {
             .await
             .map_err(crate::error::Error::from)?;
 
-        Ok(Self { connection_pool })
+        Ok(Self {
+            connection_pool,
+            metrics: Metrics::default(),
+        })
     }
 
     #[cfg(feature = "test-helpers")]
@@ -217,14 +263,22 @@ impl Postgres {
     pub(crate) async fn _submission_w_latest_block(
         &self,
     ) -> crate::error::Result<Option<BlockSubmission>> {
-        sqlx::query_as!(
+        let submission = sqlx::query_as!(
             tables::L1FuelBlockSubmission,
             "SELECT * FROM l1_fuel_block_submission ORDER BY fuel_block_height DESC LIMIT 1"
         )
         .fetch_optional(&self.connection_pool)
         .await?
         .map(BlockSubmission::try_from)
-        .transpose()
+        .transpose()?;
+
+        if let Some(submission) = &submission {
+            self.metrics
+                .height_of_latest_commitment
+                .set(submission.block_height.into());
+        }
+
+        Ok(submission)
     }
 
     pub(crate) async fn _last_time_a_fragment_was_finalized(
@@ -245,6 +299,16 @@ impl Postgres {
         .fetch_optional(&self.connection_pool)
         .await?
         .and_then(|response| response.last_fragment_time);
+
+        if let Some(last_fragment_time) = response {
+            let now = Utc::now();
+            let seconds_since_last_finalized_fragment =
+                now.signed_duration_since(last_fragment_time).num_seconds();
+            self.metrics
+                .seconds_since_last_finalized_fragment
+                .set(seconds_since_last_finalized_fragment);
+        }
+
         Ok(response)
     }
 
@@ -273,11 +337,20 @@ impl Postgres {
         .await
         .map_err(Error::from)?;
 
-        Ok(response
+        let sequential_blocks = response
             .into_iter()
             .map(ports::storage::FuelBlock::try_from)
             .try_collect_nonempty()?
-            .map(SequentialFuelBlocks::from_first_sequence))
+            .map(SequentialFuelBlocks::from_first_sequence);
+
+        if let Some(sequential_blocks) = &sequential_blocks {
+            let lowest_unbundled_height = *sequential_blocks.height_range().start();
+            self.metrics
+                .lowest_unbundled_height
+                .set(lowest_unbundled_height.into());
+        }
+
+        Ok(sequential_blocks)
     }
 
     pub(crate) async fn _set_submission_completed(

@@ -5927,6 +5927,7 @@ dependencies = [
  "delegate",
  "hex",
  "itertools 0.13.0",
+ "metrics",
  "ports",
  "rand",
  "serde",
