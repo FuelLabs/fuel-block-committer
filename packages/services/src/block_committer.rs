@@ -1,9 +1,5 @@
 use std::num::NonZeroU32;
 
-use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
-    RegistersMetrics,
-};
 use ports::{
     fuel::FuelBlock,
     storage::Storage,
