@@ -204,7 +204,6 @@ impl Storage for DbWithProcess {
             ) -> ports::storage::Result<Vec<BundleFragment>>;
             async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> ports::storage::Result<Vec<BundleFragment>>;
             async fn last_time_a_fragment_was_finalized(&self) -> ports::storage::Result<Option<DateTime<Utc>>>;
-            async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<()>;
             async fn batch_update_tx_states(
                 &self,
                 selective_changes: Vec<([u8; 32], TransactionState)>,
