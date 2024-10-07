@@ -42,8 +42,9 @@ where
     async fn check_non_finalized_txs(&mut self, non_finalized_txs: Vec<L1Tx>) -> crate::Result<()> {
         let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
+        // we need to accumulate all the changes and then update the db atomically
+        // to avoid race conditions with other services
         let mut skip_nonces = HashSet::new();
-
         let mut selective_change = vec![];
         let mut noncewide_changes = vec![];
 
@@ -96,7 +97,6 @@ where
             {
                 // tx included in block but is not yet finalized
                 if tx.state == TransactionState::Pending {
-                    // todo dzematile sve ostale na failed a ovu na included in block
                     noncewide_changes.push((tx.hash, tx.nonce, TransactionState::IncludedInBlock));
 
                     info!(

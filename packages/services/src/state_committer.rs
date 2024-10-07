@@ -135,7 +135,6 @@ where
 
     async fn get_pending_transaction(&self) -> Result<Option<L1Tx>> {
         let tx = self.storage.get_latest_pending_txs().await?;
-
         Ok(tx)
     }
 
