@@ -86,6 +86,7 @@ where
             skip_nonces.insert(tx.nonce);
 
             if !tx_response.succeeded() {
+                // set tx to failed all txs with the same nonce to failed
                 noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Failed));
 
                 info!("failed blob tx {}", hex::encode(tx.hash));
@@ -97,6 +98,7 @@ where
             {
                 // tx included in block but is not yet finalized
                 if tx.state == TransactionState::Pending {
+                    // set tx to included and all txs with the same nonce to failed
                     noncewide_changes.push((tx.hash, tx.nonce, TransactionState::IncludedInBlock));
 
                     info!(
@@ -109,7 +111,7 @@ where
                 continue;
             }
 
-            // dzematile sve ostale na failed a ovu na finalized
+            // st tx to finalized and all txs with the same nonce to failed
             noncewide_changes.push((
                 tx.hash,
                 tx.nonce,
