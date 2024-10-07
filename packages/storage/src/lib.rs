@@ -398,11 +398,7 @@ mod tests {
         let finalization_time = Utc::now();
 
         // when
-        let changes = vec![(
-            hash,
-            nonce,
-            TransactionState::Finalized(finalization_time),
-        )];
+        let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
         storage
             .batch_update_tx_states(vec![], changes)
             .await
