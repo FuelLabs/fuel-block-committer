@@ -133,7 +133,7 @@ where
         }
     }
 
-    async fn get_pending_transaction(&self) -> Result<Option<L1Tx>> {
+    async fn latest_pending_transaction(&self) -> Result<Option<L1Tx>> {
         let tx = self.storage.get_latest_pending_txs().await?;
         Ok(tx)
     }
@@ -207,7 +207,7 @@ where
     }
 
     async fn resubmit_fragments_if_stalled(&self) -> Result<()> {
-        let Some(previous_tx) = self.get_pending_transaction().await? else {
+        let Some(previous_tx) = self.latest_pending_transaction().await? else {
             return Ok(());
         };
 
