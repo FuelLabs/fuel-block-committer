@@ -25,6 +25,7 @@ pub struct WebsocketClient {
 }
 
 impl WebsocketClient {
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect(
         url: Url,
         contract_address: Address,
