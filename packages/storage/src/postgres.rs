@@ -276,7 +276,7 @@ impl Postgres {
                     AND b.end_height >= $2
                     ORDER BY f.id, b.start_height ASC, f.idx ASC
                 ) AS sub
-                ORDER BY sub.start_height ASC
+                ORDER BY sub.start_height ASC, sub.idx ASC
                 LIMIT $3;
         "#,
             i16::from(L1TxState::Failed),
