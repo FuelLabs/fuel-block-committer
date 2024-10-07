@@ -22,12 +22,18 @@ pub struct StateListener<L1, Db, C> {
 }
 
 impl<L1, Db, C> StateListener<L1, Db, C> {
-    pub fn new(l1_adapter: L1, storage: Db, num_blocks_to_finalize: u64, clock: C) -> Self {
+    pub fn new(
+        l1_adapter: L1,
+        storage: Db,
+        num_blocks_to_finalize: u64,
+        clock: C,
+        last_finalization_time_metric: IntGauge,
+    ) -> Self {
         Self {
             l1_adapter,
             storage,
             num_blocks_to_finalize,
-            metrics: Metrics::default(),
+            metrics: Metrics::new(last_finalization_time_metric),
             clock,
         }
     }
@@ -112,11 +118,10 @@ where
             }
 
             // st tx to finalized and all txs with the same nonce to failed
-            noncewide_changes.push((
-                tx.hash,
-                tx.nonce,
-                TransactionState::Finalized(self.clock.now()),
-            ));
+            let now = self.clock.now();
+            noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Finalized(now)));
+
+            self.metrics.last_finalization_time.set(now.timestamp());
 
             info!("blob tx {} finalized", hex::encode(tx.hash));
 
@@ -161,16 +166,20 @@ where
 #[derive(Clone)]
 struct Metrics {
     last_eth_block_w_blob: IntGauge,
+    last_finalization_time: IntGauge,
 }
 
 impl<L1, Db, C> RegistersMetrics for StateListener<L1, Db, C> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.metrics.last_eth_block_w_blob.clone())]
+        vec![
+            Box::new(self.metrics.last_eth_block_w_blob.clone()),
+            Box::new(self.metrics.last_finalization_time.clone()),
+        ]
     }
 }
 
-impl Default for Metrics {
-    fn default() -> Self {
+impl Metrics {
+    fn new(last_finalization_time: IntGauge) -> Self {
         let last_eth_block_w_blob = IntGauge::with_opts(Opts::new(
             "last_eth_block_w_blob",
             "The height of the latest Ethereum block used for state submission.",
@@ -179,6 +188,7 @@ impl Default for Metrics {
 
         Self {
             last_eth_block_w_blob,
+            last_finalization_time,
         }
     }
 }
@@ -215,8 +225,13 @@ mod tests {
 
         let test_clock = TestClock::default();
         let now = test_clock.now();
-        let mut listener =
-            StateListener::new(l1_mock, setup.db(), num_blocks_to_finalize, test_clock);
+        let mut listener = StateListener::new(
+            l1_mock,
+            setup.db(),
+            num_blocks_to_finalize,
+            test_clock,
+            IntGauge::new("test", "test").unwrap(),
+        );
 
         // when
         listener.run().await.unwrap();
@@ -263,6 +278,7 @@ mod tests {
             setup.db(),
             num_blocks_to_finalize,
             TestClock::default(),
+            IntGauge::new("test", "test").unwrap(),
         );
 
         // when
@@ -310,6 +326,7 @@ mod tests {
             setup.db(),
             num_blocks_to_finalize,
             test_clock.clone(),
+            IntGauge::new("test", "test").unwrap(),
         );
 
         {
@@ -377,6 +394,7 @@ mod tests {
             setup.db(),
             num_blocks_to_finalize,
             test_clock.clone(),
+            IntGauge::new("test", "test").unwrap(),
         );
 
         {
@@ -438,6 +456,7 @@ mod tests {
             setup.db(),
             num_blocks_to_finalize,
             TestClock::default(),
+            IntGauge::new("test", "test").unwrap(),
         );
 
         // when

@@ -20,7 +20,6 @@ use crate::mappings::tables::{self, L1TxState};
 #[derive(Debug, Clone)]
 struct Metrics {
     height_of_latest_commitment: IntGauge,
-    seconds_since_last_finalized_fragment: IntGauge,
     lowest_unbundled_height: IntGauge,
 }
 
@@ -32,12 +31,6 @@ impl Default for Metrics {
         )
         .expect("height_of_latest_commitment gauge to be correctly configured");
 
-        let seconds_since_last_finalized_fragment = IntGauge::new(
-            "seconds_since_last_finalized_fragment",
-            "The number of seconds since the last finalized fragment",
-        )
-        .expect("seconds_since_last_finalized_fragment gauge to be correctly configured");
-
         let lowest_unbundled_height = IntGauge::new(
             "lowest_unbundled_height",
             "The height of the lowest block unbundled block",
@@ -46,7 +39,6 @@ impl Default for Metrics {
 
         Self {
             height_of_latest_commitment,
-            seconds_since_last_finalized_fragment,
             lowest_unbundled_height,
         }
     }
@@ -62,7 +54,6 @@ impl RegistersMetrics for Postgres {
     fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
         vec![
             Box::new(self.metrics.height_of_latest_commitment.clone()),
-            Box::new(self.metrics.seconds_since_last_finalized_fragment.clone()),
             Box::new(self.metrics.lowest_unbundled_height.clone()),
         ]
     }
@@ -435,15 +426,6 @@ impl Postgres {
         .fetch_optional(&self.connection_pool)
         .await?
         .and_then(|response| response.last_fragment_time);
-
-        if let Some(last_fragment_time) = response {
-            let now = Utc::now();
-            let seconds_since_last_finalized_fragment =
-                now.signed_duration_since(last_fragment_time).num_seconds();
-            self.metrics
-                .seconds_since_last_finalized_fragment
-                .set(seconds_since_last_finalized_fragment);
-        }
 
         Ok(response)
     }

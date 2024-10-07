@@ -441,8 +441,6 @@ impl WsConnection {
 #[cfg(test)]
 mod tests {
 
-    use std::u128;
-
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
     use ports::l1::FragmentEncoder;
 
