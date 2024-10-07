@@ -26,7 +26,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "fuel-block-committer.serviceAccountName" . }}
+      serviceAccountName: {{ include "fuel-block-committer.fullname" . }}-app-sa
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
