@@ -262,23 +262,38 @@ impl Postgres {
         let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
-            r#"
-                SELECT sub.id, sub.idx, sub.bundle_id, sub.data, sub.unused_bytes, sub.total_bytes
-                FROM (
-                    SELECT DISTINCT ON (f.id) 
-                        f.*, 
-                        b.start_height
-                    FROM l1_fragments f
-                    LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-                    LEFT JOIN l1_blob_transaction t ON t.id = tf.transaction_id
-                    JOIN bundles b ON b.id = f.bundle_id
-                    WHERE (t.id IS NULL OR t.state = $1)
-                    AND b.end_height >= $2
-                    ORDER BY f.id, b.start_height ASC, f.idx ASC
-                ) AS sub
-                ORDER BY sub.start_height ASC, sub.idx ASC
-                LIMIT $3;
-        "#,
+            r#"SELECT 
+        sub.id, 
+        sub.idx, 
+        sub.bundle_id, 
+        sub.data, 
+        sub.unused_bytes, 
+        sub.total_bytes
+    FROM (
+        SELECT DISTINCT ON (f.id) 
+            f.*, 
+            b.start_height
+        FROM l1_fragments f
+        JOIN bundles b ON b.id = f.bundle_id
+        WHERE 
+            b.end_height >= $2
+            AND NOT EXISTS (
+                SELECT 1
+                FROM l1_transaction_fragments tf
+                JOIN l1_blob_transaction t ON t.id = tf.transaction_id
+                WHERE tf.fragment_id = f.id 
+                  AND t.state <> $1
+            )
+        ORDER BY 
+            f.id, 
+            b.start_height ASC, 
+            f.idx ASC
+    ) AS sub
+    ORDER BY 
+        sub.start_height ASC, 
+        sub.idx ASC
+    LIMIT $3;
+"#,
             i16::from(L1TxState::Failed),
             i64::from(starting_height),
             limit
