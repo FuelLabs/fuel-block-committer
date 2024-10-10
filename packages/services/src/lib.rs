@@ -82,9 +82,9 @@ pub trait Runner: Send + Sync {
 pub(crate) mod test_utils {
 
     pub fn encode_and_merge(blocks: NonEmpty<ports::fuel::FullFuelBlock>) -> NonEmpty<u8> {
-        block_importer::encode_blocks(blocks)
+        block_importer::encode_blocks(blocks.map(MaybeCompressedFuelBlock::from))
             .into_iter()
-            .flat_map(|b| b.data)
+            .flat_map(|b| b.data())
             .collect_nonempty()
             .expect("is not empty")
     }
@@ -106,6 +106,7 @@ pub(crate) mod test_utils {
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
     use mocks::l1::TxStatus;
+    use ports::fuel::MaybeCompressedFuelBlock;
     use ports::{
         storage::Storage,
         types::{CollectNonEmpty, DateTime, Fragment, NonEmpty, Utc},
@@ -339,17 +340,17 @@ pub(crate) mod test_utils {
         pub mod fuel {
             use std::{iter, ops::RangeInclusive};
 
+            use crate::block_importer;
             use fuel_crypto::{Message, SecretKey, Signature};
             use futures::{stream, StreamExt};
             use itertools::Itertools;
+            use ports::fuel::MaybeCompressedFuelBlock;
             use ports::{
                 fuel::{FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock},
                 storage::SequentialFuelBlocks,
                 types::{nonempty, CollectNonEmpty, NonEmpty},
             };
             use rand::{RngCore, SeedableRng};
-
-            use crate::block_importer;
 
             pub fn generate_block(
                 height: u32,
@@ -405,9 +406,9 @@ pub(crate) mod test_utils {
                 secret_key: &SecretKey,
                 num_tx: usize,
                 tx_size: usize,
-            ) -> ports::storage::FuelBlock {
+            ) -> ports::storage::SerializedFuelBlock {
                 let block = generate_block(height, secret_key, num_tx, tx_size);
-                block_importer::encode_blocks(nonempty![block])
+                block_importer::encode_blocks(nonempty![block.into()])
                     .first()
                     .clone()
             }
@@ -470,7 +471,9 @@ pub(crate) mod test_utils {
                         let blocks_batch = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
-                            .cloned().collect();
+                            .map(MaybeCompressedFuelBlock::from)
+                            .cloned()
+                            .collect();
 
                         stream::iter(iter::once(Ok(blocks_batch))).boxed()
                     });
@@ -635,6 +638,7 @@ pub(crate) mod test_utils {
                                 size_per_tx,
                             )
                         })
+                        .map(MaybeCompressedFuelBlock::from)
                         .collect_nonempty()
                         .unwrap();
 

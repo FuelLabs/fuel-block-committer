@@ -38,6 +38,12 @@ pub enum MaybeCompressedFuelBlock {
     Uncompressed(FullFuelBlock),
 }
 
+impl From<FullFuelBlock> for MaybeCompressedFuelBlock {
+    fn from(block: FullFuelBlock) -> Self {
+        Self::Uncompressed(block)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
