@@ -51,7 +51,17 @@ pub struct FullBlock {
 
 #[derive(cynic::QueryVariables, Debug)]
 pub struct DaCompressedBlockWithBlockIdByHeightArgs {
-    pub height: U32,
+    height: U32,
+    block_height: Option<U32>,
+}
+
+impl DaCompressedBlockWithBlockIdByHeightArgs {
+    pub fn new(height: u32) -> Self {
+        Self {
+            height: height.into(),
+            block_height: Some(height.into()),
+        }
+    }
 }
 
 #[derive(cynic::QueryFragment, Debug)]
@@ -63,6 +73,7 @@ pub struct DaCompressedBlockWithBlockIdByHeightArgs {
 pub struct DaCompressedBlockWithBlockIdByHeightQuery {
     #[arguments(height: $height)]
     pub da_compressed_block: Option<DaCompressedBlock>,
+    #[arguments(height: $block_height)]
     pub block: Option<Block>,
 }
 
@@ -150,9 +161,7 @@ impl ClientExt for FuelClient {
         height: u32,
     ) -> std::io::Result<Option<DaCompressedBlockWithBlockId>> {
         let query = DaCompressedBlockWithBlockIdByHeightQuery::build(
-            DaCompressedBlockWithBlockIdByHeightArgs {
-                height: height.into(),
-            },
+            DaCompressedBlockWithBlockIdByHeightArgs::new(height),
         );
         let da_compressed_block = self.query(query).await?;
 
