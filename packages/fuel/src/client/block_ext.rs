@@ -1,5 +1,4 @@
 use cynic::QueryBuilder;
-use fuel_core_client::client::schema::block::Block;
 use fuel_core_client::client::schema::da_compressed::DaCompressedBlock;
 use fuel_core_client::client::schema::U32;
 use fuel_core_client::client::{

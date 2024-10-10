@@ -2812,6 +2812,7 @@ dependencies = [
  "cynic",
  "delegate",
  "fuel-core-client",
+ "fuel-core-types",
  "futures",
  "metrics",
  "ports",
