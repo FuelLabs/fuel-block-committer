@@ -1,7 +1,5 @@
-use std::ops::RangeInclusive;
-
 use crate::{metrics::Metrics, Error, Result};
-use block_ext::{ClientExt, FullBlock};
+use block_ext::ClientExt;
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
@@ -18,7 +16,8 @@ use futures::{stream, Stream};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::fuel::{CompressedBlock, FuelBytes32, MaybeCompressedFuelBlock};
+use ports::fuel::{CompressedBlock, MaybeCompressedFuelBlock};
+use std::ops::RangeInclusive;
 use url::Url;
 
 mod block_ext;
@@ -128,7 +127,7 @@ impl HttpClient {
         }
 
         impl Progress {
-            fn consume(&mut self, result: PaginatedResult<FullBlock, String>) -> Vec<FullBlock> {
+            fn consume<T>(&mut self, result: PaginatedResult<T, String>) -> Vec<T> {
                 self.blocks_so_far += result.results.len();
                 self.cursor = result.cursor;
                 result.results
@@ -160,13 +159,16 @@ impl HttpClient {
                 .expect("should be parseable");
             if let Ok(Some(response)) = self
                 .client
-                .da_compressed_block(query_block_height.into())
+                .da_compressed_block_with_id(query_block_height.into())
                 .await
             {
-                // todo: extract block hash from the response
-                let compressed_block =
-                    CompressedBlock::new(query_block_height, FuelBytes32::zeroed(), response);
-                let results = vec![MaybeCompressedFuelBlock::Compressed(compressed_block)];
+                let compressed_block = MaybeCompressedFuelBlock::Compressed(CompressedBlock::new(
+                    query_block_height,
+                    response.block.id.into(),
+                    response.da_compressed_block.bytes.into(),
+                ));
+
+                let results = vec![compressed_block];
                 Ok(Some((results, current_progress)))
             } else {
                 let request = PaginationRequest {
