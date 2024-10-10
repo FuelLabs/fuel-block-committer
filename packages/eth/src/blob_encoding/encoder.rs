@@ -196,11 +196,10 @@ fn merge_into_sidecar(
 
 #[cfg(test)]
 mod tests {
-    use c_kzg::{BYTES_PER_BLOB, BYTES_PER_FIELD_ELEMENT};
+
     use ports::l1::FragmentEncoder;
-    use proptest::{prop_assert_eq, test_runner::Config};
+    use proptest::prop_assert_eq;
     use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use test_case::test_case;
 
     use super::*;

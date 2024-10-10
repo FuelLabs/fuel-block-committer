@@ -2655,7 +2655,6 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "rand",
- "rayon",
  "serde",
  "test-case",
  "thiserror",
