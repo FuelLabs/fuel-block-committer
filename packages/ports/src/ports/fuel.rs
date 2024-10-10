@@ -51,7 +51,7 @@ impl MaybeCompressedFuelBlock {
             Self::Compressed(_) => Err(Error::Other(
                 "Cannot convert compressed block to uncompressed".to_string(),
             )),
-            Self::Uncompressed(block) => Ok(block.clone()),
+            Self::Uncompressed(block) => Ok(block),
         }
     }
 }

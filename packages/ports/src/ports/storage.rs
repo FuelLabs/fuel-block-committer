@@ -10,7 +10,7 @@ use crate::fuel::CompressedBlock;
 use crate::ports;
 use crate::types::{
     BlockSubmission, BlockSubmissionTx, CollectNonEmpty, Fragment, L1Tx, NonEmpty, NonNegative,
-    TransactionState,
+    TransactionState, TryCollectNonEmpty,
 };
 use delegate::delegate;
 pub use futures::stream::BoxStream;
@@ -156,12 +156,35 @@ impl TryFrom<NonEmpty<SerializedFuelBlock>> for SequentialFuelBlocks {
     type Error = InvalidSequence;
 
     fn try_from(blocks: NonEmpty<SerializedFuelBlock>) -> std::result::Result<Self, Self::Error> {
-        let fuel_blocks = blocks
-            .into_iter()
-            .collect_nonempty()
-            .expect("at least one block");
+        let is_sorted = blocks
+            .iter()
+            .tuple_windows()
+            .all(|(l, r)| l.height() < r.height());
 
-        fuel_blocks.try_into()
+        if !is_sorted {
+            return Err(InvalidSequence::new(
+                "blocks are not sorted by height".to_string(),
+            ));
+        }
+
+        let is_sequential = blocks
+            .iter()
+            .tuple_windows()
+            .all(|(l, r)| l.height() + 1 == r.height());
+        if !is_sequential {
+            return Err(InvalidSequence::new(
+                "blocks are not sequential by height".to_string(),
+            ));
+        }
+
+        let blocks = blocks
+            .into_iter()
+            .map(FuelBlock::try_from)
+            .try_collect_nonempty()
+            .map_err(|e| InvalidSequence::new(format!("failed to convert blocks: {}", e)))?
+            .ok_or(InvalidSequence::new("at least one block".to_string()))?;
+
+        Ok(Self { blocks })
     }
 }
 
@@ -175,7 +198,7 @@ impl TryFrom<SerializedFuelBlock> for ports::storage::FuelBlock {
                 height: block.height,
                 data: NonEmpty::collect(block.data).expect("at least one byte"),
             }),
-            SerializedFuelBlock::Uncompressed(block) => Ok(block.into()),
+            SerializedFuelBlock::Uncompressed(block) => Ok(block),
         }
     }
 }

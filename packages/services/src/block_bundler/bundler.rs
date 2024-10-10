@@ -597,11 +597,13 @@ mod tests {
         let blocks = nonempty![
             generate_storage_block(0, &secret_key, 0, 100),
             generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob())
-        ];
+        ]
+        .try_into()
+        .unwrap();
 
         let mut bundler = Bundler::new(
             Eip4844BlobEncoder,
-            blocks.clone().try_into().unwrap(),
+            blocks,
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(), // Default step size
         );

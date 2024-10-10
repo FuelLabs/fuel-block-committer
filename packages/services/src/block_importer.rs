@@ -479,7 +479,7 @@ mod tests {
                         .map(|height| {
                             test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100)
                         })
-                        .map(MaybeCompressedFuelBlock::Uncompressed)
+                        .map(MaybeCompressedFuelBlock::from)
                         .collect();
 
                     futures::stream::once(async { Ok(blocks) }).boxed()

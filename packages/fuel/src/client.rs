@@ -159,7 +159,7 @@ impl HttpClient {
                 .expect("should be parseable");
             if let Ok(Some(response)) = self
                 .client
-                .da_compressed_block_with_id(query_block_height.into())
+                .da_compressed_block_with_id(query_block_height)
                 .await
             {
                 let compressed_block = MaybeCompressedFuelBlock::Compressed(CompressedBlock::new(
@@ -191,7 +191,7 @@ impl HttpClient {
                     .consume(response)
                     .into_iter()
                     .map(ports::fuel::FullFuelBlock::try_from)
-                    .map(|full_block| full_block.map(MaybeCompressedFuelBlock::Uncompressed))
+                    .map(|full_block| full_block.map(MaybeCompressedFuelBlock::from))
                     .collect::<Result<_>>()?;
 
                 if results.is_empty() {

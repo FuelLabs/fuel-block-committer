@@ -640,7 +640,7 @@ pub(crate) mod test_utils {
                                 size_per_tx,
                             )
                         })
-                        .map(MaybeCompressedFuelBlock::Uncompressed)
+                        .map(MaybeCompressedFuelBlock::from)
                         .collect_nonempty()
                         .unwrap();
 
