@@ -14,6 +14,7 @@ alloy = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
 delegate = { workspace = true, optional = true }
 fuel-core-client = { workspace = true, optional = true }
+fuel-core-types = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 itertools = { workspace = true, features = ["use_std"], optional = true }
 mockall = { workspace = true, optional = true }

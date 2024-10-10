@@ -1,13 +1,13 @@
+use crate::{validator::Validator, Result, Runner};
 use futures::TryStreamExt;
 use itertools::chain;
+use ports::fuel::MaybeCompressedFuelBlock;
 use ports::{
     fuel::{Consensus, FuelPoAConsensus, FullFuelBlock, Genesis},
     storage::Storage,
     types::{CollectNonEmpty, NonEmpty},
 };
 use tracing::info;
-
-use crate::{validator::Validator, Result, Runner};
 
 /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
 /// into local storage. It fetches blocks from the Fuel API, validates them,
@@ -42,11 +42,11 @@ where
     FuelApi: ports::fuel::Api,
     BlockValidator: Validator,
 {
-    async fn import_blocks(&self, blocks: NonEmpty<FullFuelBlock>) -> Result<()> {
+    async fn import_blocks(&self, blocks: NonEmpty<MaybeCompressedFuelBlock>) -> Result<()> {
         let db_blocks = encode_blocks(blocks);
 
-        let starting_height = db_blocks.first().height;
-        let ending_height = db_blocks.last().height;
+        let starting_height = db_blocks.first().height();
+        let ending_height = db_blocks.last().height();
 
         self.storage.insert_blocks(db_blocks).await?;
 
@@ -55,10 +55,17 @@ where
         Ok(())
     }
 
-    fn validate_blocks(&self, blocks: &[FullFuelBlock]) -> Result<()> {
+    fn validate_blocks(&self, blocks: &[MaybeCompressedFuelBlock]) -> Result<()> {
         for block in blocks {
-            self.block_validator
-                .validate(block.id, &block.header, &block.consensus)?;
+            match block {
+                MaybeCompressedFuelBlock::Uncompressed(block) => {
+                    self.block_validator
+                        .validate(block.id, &block.header, &block.consensus)?;
+                }
+                MaybeCompressedFuelBlock::Compressed(_) => {
+                    // We don't validate compressed blocks
+                }
+            }
         }
 
         Ok(())
@@ -66,14 +73,21 @@ where
 }
 
 pub(crate) fn encode_blocks(
-    blocks: NonEmpty<FullFuelBlock>,
-) -> NonEmpty<ports::storage::FuelBlock> {
+    blocks: NonEmpty<MaybeCompressedFuelBlock>,
+) -> NonEmpty<ports::storage::SerializedFuelBlock> {
     blocks
         .into_iter()
-        .map(|full_block| ports::storage::FuelBlock {
-            hash: *full_block.id,
-            height: full_block.header.height,
-            data: encode_block_data(full_block),
+        .map(|full_block| match full_block {
+            MaybeCompressedFuelBlock::Compressed(compressed) => {
+                ports::storage::SerializedFuelBlock::Compressed(compressed)
+            }
+            MaybeCompressedFuelBlock::Uncompressed(block) => {
+                ports::storage::SerializedFuelBlock::Uncompressed(ports::storage::FuelBlock {
+                    hash: *block.id,
+                    height: block.header.height,
+                    data: encode_block_data(block),
+                })
+            }
         })
         .collect_nonempty()
         .expect("should be non-empty")

@@ -70,7 +70,10 @@ impl Storage for Postgres {
             .map_err(Into::into)
     }
 
-    async fn insert_blocks(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> Result<()> {
+    async fn insert_blocks(
+        &self,
+        blocks: NonEmpty<ports::storage::SerializedFuelBlock>,
+    ) -> Result<()> {
         Ok(self._insert_blocks(blocks).await?)
     }
 

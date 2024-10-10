@@ -239,7 +239,6 @@ pub fn fuel_adapter(
     let fuel_adapter = FuelApi::new(
         &config.fuel.graphql_endpoint,
         internal_config.fuel_errors_before_unhealthy,
-        config.fuel.max_full_blocks_per_request,
     );
     fuel_adapter.register_metrics(registry);
 

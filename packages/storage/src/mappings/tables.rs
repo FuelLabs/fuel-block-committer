@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use num_bigint::BigInt;
+use ports::storage::SerializedFuelBlock;
 use ports::types::{BlockSubmissionTx, DateTime, NonEmpty, NonNegative, TransactionState, Utc};
 use sqlx::types::BigDecimal;
 
@@ -282,6 +283,16 @@ impl From<ports::storage::FuelBlock> for FuelBlock {
             hash: value.hash.to_vec(),
             height: value.height.into(),
             data: value.data.into(),
+        }
+    }
+}
+
+impl From<ports::storage::SerializedFuelBlock> for FuelBlock {
+    fn from(value: SerializedFuelBlock) -> Self {
+        Self {
+            hash: value.hash(),
+            height: value.height().into(),
+            data: value.data(),
         }
     }
 }

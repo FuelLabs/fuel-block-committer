@@ -4577,6 +4577,7 @@ dependencies = [
  "async-trait",
  "delegate",
  "fuel-core-client",
+ "fuel-core-types",
  "futures",
  "itertools 0.13.0",
  "mockall",
