@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use num_bigint::BigInt;
+use ports::storage::SerializedFuelBlock;
 use ports::types::{BlockSubmissionTx, DateTime, NonEmpty, NonNegative, TransactionState, Utc};
 use sqlx::types::BigDecimal;
 
@@ -273,6 +274,7 @@ impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
 pub struct FuelBlock {
     pub hash: Vec<u8>,
     pub height: i64,
+    // this can either be a CompressedBlock or Uncompressed. The first byte of the data will tell us which one it is
     pub data: Vec<u8>,
 }
 
@@ -282,6 +284,33 @@ impl From<ports::storage::FuelBlock> for FuelBlock {
             hash: value.hash.to_vec(),
             height: value.height.into(),
             data: value.data.into(),
+        }
+    }
+}
+
+impl From<SerializedFuelBlock> for FuelBlock {
+    fn from(value: SerializedFuelBlock) -> Self {
+        match value {
+            SerializedFuelBlock::Uncompressed(_) => {
+                // add the version byte to the data
+                let mut data = vec![0u8];
+                data.extend_from_slice(&*value.data());
+                Self {
+                    hash: value.hash(),
+                    height: value.height().into(),
+                    data,
+                }
+            }
+            SerializedFuelBlock::Compressed(_) => {
+                // add the version byte to the data
+                let mut data = vec![1u8];
+                data.extend_from_slice(&*value.data());
+                Self {
+                    hash: value.hash(),
+                    height: value.height().into(),
+                    data,
+                }
+            }
         }
     }
 }
@@ -302,8 +331,23 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
             ))
         })?;
 
-        let data = NonEmpty::collect(value.data)
-            .ok_or_else(|| crate::error::Error::Conversion("Invalid db `data`.".to_string()))?;
+        let data = match value.data[0] {
+            0 => {
+                let data = value.data[1..].to_vec();
+                NonEmpty::collect(data).ok_or_else(|| {
+                    crate::error::Error::Conversion("db block data is invalid".to_owned())
+                })?
+            }
+            1 => {
+                let data = value.data[1..].to_vec();
+                NonEmpty::collect(data).ok_or_else(|| {
+                    crate::error::Error::Conversion("db block data is invalid".to_owned())
+                })?
+            }
+            _ => {
+                bail!("Invalid version byte in FuelBlock data: {}", value.data[0]);
+            }
+        };
 
         Ok(Self {
             height,

@@ -6,15 +6,16 @@ use std::{
     sync::Arc,
 };
 
-use delegate::delegate;
-pub use futures::stream::BoxStream;
-use itertools::Itertools;
-pub use sqlx::types::chrono::{DateTime, Utc};
-
+use crate::fuel::CompressedBlock;
+use crate::ports;
 use crate::types::{
     BlockSubmission, BlockSubmissionTx, CollectNonEmpty, Fragment, L1Tx, NonEmpty, NonNegative,
     TransactionState,
 };
+use delegate::delegate;
+pub use futures::stream::BoxStream;
+use itertools::Itertools;
+pub use sqlx::types::chrono::{DateTime, Utc};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -145,6 +146,63 @@ impl TryFrom<NonEmpty<FuelBlock>> for SequentialFuelBlocks {
     }
 }
 
+impl TryFrom<NonEmpty<SerializedFuelBlock>> for SequentialFuelBlocks {
+    type Error = InvalidSequence;
+
+    fn try_from(blocks: NonEmpty<SerializedFuelBlock>) -> std::result::Result<Self, Self::Error> {
+        let fuel_blocks = blocks
+            .into_iter()
+            .collect_nonempty()
+            .expect("at least one block");
+
+        fuel_blocks.try_into()
+    }
+}
+
+impl TryFrom<SerializedFuelBlock> for ports::storage::FuelBlock {
+    type Error = Error;
+
+    fn try_from(value: SerializedFuelBlock) -> std::result::Result<Self, Self::Error> {
+        match value {
+            SerializedFuelBlock::Compressed(block) => Ok(ports::storage::FuelBlock {
+                hash: block.hash.into(),
+                height: block.height,
+                data: NonEmpty::collect(block.data).expect("at least one byte"),
+            }),
+            SerializedFuelBlock::Uncompressed(block) => Ok(block.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SerializedFuelBlock {
+    Compressed(CompressedBlock),
+    Uncompressed(FuelBlock),
+}
+
+impl SerializedFuelBlock {
+    pub fn height(&self) -> u32 {
+        match self {
+            SerializedFuelBlock::Compressed(block) => block.height,
+            SerializedFuelBlock::Uncompressed(block) => block.height,
+        }
+    }
+
+    pub fn hash(&self) -> Vec<u8> {
+        match self {
+            SerializedFuelBlock::Compressed(block) => block.hash.to_vec(),
+            SerializedFuelBlock::Uncompressed(block) => block.hash.to_vec(),
+        }
+    }
+
+    pub fn data(&self) -> Vec<u8> {
+        match self {
+            SerializedFuelBlock::Compressed(block) => block.data.clone(),
+            SerializedFuelBlock::Uncompressed(block) => block.data.clone().into(),
+        }
+    }
+}
+
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 pub trait Storage: Send + Sync {
@@ -163,7 +221,7 @@ pub trait Storage: Send + Sync {
         state: TransactionState,
     ) -> Result<BlockSubmission>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-    async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
+    async fn insert_blocks(&self, block: NonEmpty<SerializedFuelBlock>) -> Result<()>;
     async fn missing_blocks(
         &self,
         starting_height: u32,
@@ -206,7 +264,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-                async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
+                async fn insert_blocks(&self, block: NonEmpty<SerializedFuelBlock>) -> Result<()>;
                 async fn missing_blocks(
                     &self,
                     starting_height: u32,
@@ -250,7 +308,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-                async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
+                async fn insert_blocks(&self, block: NonEmpty<SerializedFuelBlock>) -> Result<()>;
                 async fn missing_blocks(
                     &self,
                     starting_height: u32,

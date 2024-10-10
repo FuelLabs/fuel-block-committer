@@ -4,9 +4,11 @@ use std::{
     sync::{Arc, Weak},
 };
 
+use super::postgres::{DbConfig, Postgres};
 use delegate::delegate;
+use ports::storage::SerializedFuelBlock;
 use ports::{
-    storage::{BundleFragment, FuelBlock, SequentialFuelBlocks, Storage},
+    storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
         TransactionState, Utc,
@@ -18,8 +20,6 @@ use testcontainers::{
     runners::AsyncRunner,
     Image,
 };
-
-use super::postgres::{DbConfig, Postgres};
 
 struct PostgresImage {
     username: String,
@@ -175,7 +175,7 @@ impl Storage for DbWithProcess {
             async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> ports::storage::Result<Vec<BlockSubmissionTx>>;
             async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<BlockSubmission>;
             async fn submission_w_latest_block(&self) -> ports::storage::Result<Option<BlockSubmission>>;
-            async fn insert_blocks(&self, blocks: NonEmpty<FuelBlock>) -> ports::storage::Result<()>;
+            async fn insert_blocks(&self, blocks: NonEmpty<SerializedFuelBlock>) -> ports::storage::Result<()>;
             async fn missing_blocks(&self, starting_height: u32, current_height: u32) -> ports::storage::Result<Vec<RangeInclusive<u32>>>;
             async fn lowest_sequence_of_unbundled_blocks(
                 &self,

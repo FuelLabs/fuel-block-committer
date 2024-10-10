@@ -351,7 +351,7 @@ impl Postgres {
 
     pub(crate) async fn _insert_blocks(
         &self,
-        blocks: NonEmpty<ports::storage::FuelBlock>,
+        blocks: NonEmpty<ports::storage::SerializedFuelBlock>,
     ) -> Result<()> {
         // Currently: hash, height and data
         const FIELDS_PER_BLOCK: u16 = 3;

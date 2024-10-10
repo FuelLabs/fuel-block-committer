@@ -70,7 +70,10 @@ impl Storage for Postgres {
             .map_err(Into::into)
     }
 
-    async fn insert_blocks(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> Result<()> {
+    async fn insert_blocks(
+        &self,
+        blocks: NonEmpty<ports::storage::SerializedFuelBlock>,
+    ) -> Result<()> {
         Ok(self._insert_blocks(blocks).await?)
     }
 
@@ -133,14 +136,14 @@ impl Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use itertools::Itertools;
+    use ports::storage::SerializedFuelBlock;
     use ports::{
         storage::{Error, Storage},
         types::{nonempty, CollectNonEmpty},
     };
     use rand::{thread_rng, Rng, SeedableRng};
-
-    use super::*;
 
     // Helper function to create a storage instance for testing
     async fn start_db() -> DbWithProcess {
@@ -420,6 +423,7 @@ mod tests {
                     data: block_data,
                 }
             })
+            .map(SerializedFuelBlock::Uncompressed)
             .collect_nonempty()
             .expect("shouldn't be empty");
 

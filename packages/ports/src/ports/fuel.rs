@@ -1,5 +1,6 @@
 use std::ops::RangeInclusive;
 
+use crate::types::NonEmpty;
 pub use fuel_core_client::client::types::{
     block::{
         Block as FuelBlock, Consensus as FuelConsensus, Genesis, Genesis as FuelGenesis,
@@ -8,6 +9,7 @@ pub use fuel_core_client::client::types::{
     primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32, PublicKey as FuelPublicKey},
     Consensus,
 };
+pub use futures::stream::BoxStream;
 
 #[derive(Debug, Clone)]
 pub struct FullFuelBlock {
@@ -17,9 +19,48 @@ pub struct FullFuelBlock {
     pub raw_transactions: Vec<NonEmpty<u8>>,
 }
 
-pub use futures::stream::BoxStream;
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CompressedBlock {
+    pub(crate) height: u32,
+    pub(crate) hash: FuelBytes32,
+    pub(crate) data: Vec<u8>,
+}
 
-use crate::types::NonEmpty;
+impl CompressedBlock {
+    pub fn new(height: u32, hash: FuelBytes32, data: Vec<u8>) -> Self {
+        Self { height, hash, data }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MaybeCompressedFuelBlock {
+    Compressed(CompressedBlock),
+    Uncompressed(FullFuelBlock),
+}
+
+impl MaybeCompressedFuelBlock {
+    pub fn height(&self) -> u32 {
+        match self {
+            Self::Compressed(block) => block.height,
+            Self::Uncompressed(block) => block.header.height,
+        }
+    }
+
+    pub fn into_uncompressed(self) -> Result<FullFuelBlock> {
+        match self {
+            Self::Compressed(_) => Err(Error::Other(
+                "Cannot convert compressed block to uncompressed".to_string(),
+            )),
+            Self::Uncompressed(block) => Ok(block.clone()),
+        }
+    }
+}
+
+impl From<FullFuelBlock> for MaybeCompressedFuelBlock {
+    fn from(block: FullFuelBlock) -> Self {
+        Self::Uncompressed(block)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -39,7 +80,7 @@ pub trait Api: Send + Sync {
     fn full_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<Vec<FullFuelBlock>>>;
+    ) -> BoxStream<'_, Result<Vec<MaybeCompressedFuelBlock>>>;
     async fn latest_block(&self) -> Result<FuelBlock>;
     async fn latest_height(&self) -> Result<u32>;
 }

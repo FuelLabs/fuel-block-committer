@@ -27,7 +27,7 @@ impl ports::fuel::Api for client::HttpClient {
     fn full_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<Vec<ports::fuel::FullFuelBlock>>> {
+    ) -> BoxStream<'_, Result<Vec<ports::fuel::MaybeCompressedFuelBlock>>> {
         self.block_in_height_range(range).boxed()
     }
 }
@@ -101,7 +101,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("localhost:12344").unwrap();
 
-        let fuel_adapter = HttpClient::new(&url, 1, 1.try_into().unwrap());
+        let fuel_adapter = HttpClient::new(&url, 1);
 
         let registry = Registry::default();
         fuel_adapter.register_metrics(&registry);
@@ -128,7 +128,7 @@ mod tests {
         // killing the node once the SDK supports it.
         let url = Url::parse("http://localhost:12344").unwrap();
 
-        let fuel_adapter = client::HttpClient::new(&url, 3, 1.try_into().unwrap());
+        let fuel_adapter = client::HttpClient::new(&url, 3);
         let health_check = fuel_adapter.connection_health_checker();
 
         assert!(health_check.healthy());

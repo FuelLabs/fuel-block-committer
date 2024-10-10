@@ -1,4 +1,6 @@
 use cynic::QueryBuilder;
+use fuel_core_client::client::schema::da_compressed::DaCompressedBlock;
+use fuel_core_client::client::schema::U32;
 use fuel_core_client::client::{
     pagination::{PaginatedResult, PaginationRequest},
     schema::{
@@ -10,7 +12,6 @@ use fuel_core_client::client::{
     },
     FuelClient,
 };
-use fuel_core_types::fuel_crypto::PublicKey;
 use ports::types::NonEmpty;
 
 #[derive(cynic::QueryFragment, Debug)]
@@ -47,6 +48,45 @@ pub struct FullBlock {
     pub transactions: Vec<OpaqueTransaction>,
 }
 
+#[derive(cynic::QueryVariables, Debug)]
+pub struct DaCompressedBlockWithBlockIdByHeightArgs {
+    height: U32,
+    block_height: Option<U32>,
+}
+
+impl DaCompressedBlockWithBlockIdByHeightArgs {
+    pub fn new(height: u32) -> Self {
+        Self {
+            height: height.into(),
+            block_height: Some(height.into()),
+        }
+    }
+}
+
+#[derive(cynic::QueryFragment, Debug)]
+#[cynic(
+    schema_path = "./target/schema.sdl",
+    graphql_type = "Query",
+    variables = "DaCompressedBlockWithBlockIdByHeightArgs"
+)]
+pub struct DaCompressedBlockWithBlockIdByHeightQuery {
+    #[arguments(height: $height)]
+    pub da_compressed_block: Option<DaCompressedBlock>,
+    #[arguments(height: $block_height)]
+    pub block: Option<OnlyBlockId>,
+}
+
+pub struct DaCompressedBlockWithBlockId {
+    pub da_compressed_block: DaCompressedBlock,
+    pub block_id: BlockId,
+}
+
+#[derive(cynic::QueryFragment, Debug)]
+#[cynic(schema_path = "./target/schema.sdl", graphql_type = "Block")]
+pub struct OnlyBlockId {
+    pub id: BlockId,
+}
+
 impl TryFrom<FullBlock> for ports::fuel::FullFuelBlock {
     type Error = crate::Error;
 
@@ -79,23 +119,6 @@ impl TryFrom<FullBlock> for ports::fuel::FullFuelBlock {
         })
     }
 }
-
-impl FullBlock {
-    /// Returns the block producer public key, if any.
-    pub fn block_producer(&self) -> Option<PublicKey> {
-        let message = self.header.id.clone().into_message();
-        match &self.consensus {
-            Consensus::Genesis(_) => Some(Default::default()),
-            Consensus::PoAConsensus(poa) => {
-                let signature = poa.signature.clone().into_signature();
-                let producer_pub_key = signature.recover(&message);
-                producer_pub_key.ok()
-            }
-            Consensus::Unknown => None,
-        }
-    }
-}
-
 impl From<FullBlockConnection> for PaginatedResult<FullBlock, String> {
     fn from(conn: FullBlockConnection) -> Self {
         PaginatedResult {
@@ -121,6 +144,11 @@ pub trait ClientExt {
         &self,
         request: PaginationRequest<String>,
     ) -> std::io::Result<PaginatedResult<FullBlock, String>>;
+
+    async fn da_compressed_block_with_id(
+        &self,
+        height: u32,
+    ) -> std::io::Result<Option<DaCompressedBlockWithBlockId>>;
 }
 
 impl ClientExt for FuelClient {
@@ -131,5 +159,27 @@ impl ClientExt for FuelClient {
         let query = FullBlocksQuery::build(request.into());
         let blocks = self.query(query).await?.blocks.into();
         Ok(blocks)
+    }
+
+    async fn da_compressed_block_with_id(
+        &self,
+        height: u32,
+    ) -> std::io::Result<Option<DaCompressedBlockWithBlockId>> {
+        let query = DaCompressedBlockWithBlockIdByHeightQuery::build(
+            DaCompressedBlockWithBlockIdByHeightArgs::new(height),
+        );
+        let da_compressed_block = self.query(query).await?;
+
+        if let (Some(da_compressed), Some(block)) = (
+            da_compressed_block.da_compressed_block,
+            da_compressed_block.block,
+        ) {
+            Ok(Some(DaCompressedBlockWithBlockId {
+                da_compressed_block: da_compressed,
+                block_id: block.id,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }

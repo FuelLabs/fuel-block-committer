@@ -1,6 +1,5 @@
-use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
-
-use block_ext::{ClientExt, FullBlock};
+use crate::{metrics::Metrics, Error, Result};
+use block_ext::ClientExt;
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
@@ -17,9 +16,9 @@ use futures::{stream, Stream};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
+use ports::fuel::{CompressedBlock, MaybeCompressedFuelBlock};
+use std::ops::RangeInclusive;
 use url::Url;
-
-use crate::{metrics::Metrics, Error, Result};
 
 mod block_ext;
 
@@ -28,22 +27,16 @@ pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
-    full_blocks_req_size: NonZeroU32,
 }
 
 impl HttpClient {
     #[must_use]
-    pub fn new(
-        url: &Url,
-        unhealthy_after_n_errors: usize,
-        full_blocks_req_size: NonZeroU32,
-    ) -> Self {
+    pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
         Self {
             client,
             metrics: Metrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
-            full_blocks_req_size,
         }
     }
 
@@ -113,7 +106,7 @@ impl HttpClient {
     pub(crate) fn block_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> impl Stream<Item = Result<Vec<ports::fuel::FullFuelBlock>>> + '_ {
+    ) -> impl Stream<Item = Result<Vec<MaybeCompressedFuelBlock>>> + '_ {
         struct Progress {
             cursor: Option<String>,
             blocks_so_far: usize,
@@ -134,7 +127,7 @@ impl HttpClient {
         }
 
         impl Progress {
-            fn consume(&mut self, result: PaginatedResult<FullBlock, String>) -> Vec<FullBlock> {
+            fn consume<T>(&mut self, result: PaginatedResult<T, String>) -> Vec<T> {
                 self.blocks_so_far += result.results.len();
                 self.cursor = result.cursor;
                 result.results
@@ -142,6 +135,10 @@ impl HttpClient {
 
             fn take_cursor(&mut self) -> Option<String> {
                 self.cursor.take()
+            }
+
+            fn take_cursor_as_u32(&mut self) -> Option<u32> {
+                self.cursor.as_ref().and_then(|s| s.parse().ok())
             }
 
             fn remaining(&self) -> i32 {
@@ -156,38 +153,52 @@ impl HttpClient {
                 return Ok(None);
             }
 
-            let request = PaginationRequest {
-                cursor: current_progress.take_cursor(),
-                results: min(
-                    current_progress.remaining(),
-                    self.full_blocks_req_size
-                        .get()
-                        .try_into()
-                        .unwrap_or(i32::MAX),
-                ),
-                direction: PageDirection::Forward,
-            };
-
-            let response = self
+            // if the da compressed block doesn't exist, make a call to get the full block
+            let query_block_height = current_progress
+                .take_cursor_as_u32()
+                .expect("should be parseable");
+            if let Ok(Some(response)) = self
                 .client
-                .full_blocks(request.clone())
+                .da_compressed_block_with_id(query_block_height.into())
                 .await
-                .map_err(|e| {
-                    Error::Network(format!(
-                        "While sending request for full blocks: {request:?} got error: {e}"
-                    ))
-                })?;
+            {
+                let compressed_block = MaybeCompressedFuelBlock::Compressed(CompressedBlock::new(
+                    query_block_height,
+                    response.block_id.into(),
+                    response.da_compressed_block.bytes.into(),
+                ));
 
-            let results: Vec<_> = current_progress
-                .consume(response)
-                .into_iter()
-                .map(ports::fuel::FullFuelBlock::try_from)
-                .collect::<Result<_>>()?;
-
-            if results.is_empty() {
-                Ok(None)
-            } else {
+                let results = vec![compressed_block];
                 Ok(Some((results, current_progress)))
+            } else {
+                let request = PaginationRequest {
+                    cursor: current_progress.take_cursor(),
+                    results: 1,
+                    direction: PageDirection::Forward,
+                };
+
+                let response = self
+                    .client
+                    .full_blocks(request.clone())
+                    .await
+                    .map_err(|e| {
+                        Error::Network(format!(
+                            "While sending request for full blocks: {request:?} got error: {e}"
+                        ))
+                    })?;
+
+                let results: Vec<_> = current_progress
+                    .consume(response)
+                    .into_iter()
+                    .map(ports::fuel::FullFuelBlock::try_from)
+                    .map(|full_block| full_block.map(MaybeCompressedFuelBlock::Uncompressed))
+                    .collect::<Result<_>>()?;
+
+                if results.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some((results, current_progress)))
+                }
             }
         })
     }

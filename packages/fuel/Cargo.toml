@@ -14,7 +14,7 @@ build = "build.rs"
 cynic = { version = "2.2", features = ["http-reqwest"] }
 delegate = { workspace = true }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
-fuel-core-types = { workspace = true }
+fuel-core-types = { workspace = true, optional = true }
 futures = { workspace = true }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["fuel"] }
@@ -28,4 +28,4 @@ tokio = { workspace = true, features = ["macros"] }
 fuel-core-client = { workspace = true }
 
 [features]
-test-helpers = []
+test-helpers = ["dep:fuel-core-types"]
