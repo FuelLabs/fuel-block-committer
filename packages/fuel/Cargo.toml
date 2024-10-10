@@ -22,9 +22,10 @@ url = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }
+fuel-core-types = { workspace = true, optional = true }
 
 [build-dependencies]
 fuel-core-client = { workspace = true }
 
 [features]
-test-helpers = []
+test-helpers = ["dep:fuel-core-types"]
