@@ -2,7 +2,11 @@ use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
 use eth::{AwsConfig, Eip4844BlobEncoder};
-use metrics::{prometheus::Registry, HealthChecker, RegistersMetrics};
+use metrics::{
+    prometheus::{IntGauge, Registry},
+    HealthChecker, RegistersMetrics,
+};
+use ports::storage::Storage;
 use services::{
     BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, Runner, WalletBalanceTracker,
 };
@@ -156,18 +160,28 @@ pub fn block_importer(
     )
 }
 
+pub fn last_finalization_metric() -> IntGauge {
+    IntGauge::new(
+        "seconds_since_last_finalized_fragment",
+        "The number of seconds since the last finalized fragment",
+    )
+    .expect("seconds_since_last_finalized_fragment gauge to be correctly configured")
+}
+
 pub fn state_listener(
     l1: L1,
     storage: Database,
     cancel_token: CancellationToken,
     registry: &Registry,
     config: &config::Config,
+    last_finalization: IntGauge,
 ) -> tokio::task::JoinHandle<()> {
     let state_listener = services::StateListener::new(
         l1,
         storage,
         config.app.num_blocks_to_finalize_tx,
         SystemClock,
+        last_finalization,
     );
 
     state_listener.register_metrics(registry);
@@ -257,11 +271,19 @@ pub fn logger() {
         .init();
 }
 
-pub async fn storage(config: &config::Config, registry: &Registry) -> Result<Database> {
+pub async fn storage(
+    config: &config::Config,
+    registry: &Registry,
+    last_finalization: &IntGauge,
+) -> Result<Database> {
     let postgres = Database::connect(&config.app.db).await?;
     postgres.migrate().await?;
 
     postgres.register_metrics(registry);
+
+    if let Some(last_fragment_time) = postgres.last_time_a_fragment_was_finalized().await? {
+        last_finalization.set(last_fragment_time.timestamp());
+    }
 
     Ok(postgres)
 }

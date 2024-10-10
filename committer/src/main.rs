@@ -8,6 +8,7 @@ use api::launch_api_server;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
 use ports::l1::Contract;
+use setup::last_finalization_metric;
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
@@ -29,7 +30,8 @@ async fn main() -> Result<()> {
 
     let metrics_registry = Registry::default();
 
-    let storage = setup::storage(&config, &metrics_registry)
+    let finalization_metric = last_finalization_metric();
+    let storage = setup::storage(&config, &metrics_registry, &finalization_metric)
         .await
         .with_context(|| "failed to connect to database")?;
 
@@ -92,6 +94,7 @@ async fn main() -> Result<()> {
             cancel_token.clone(),
             &metrics_registry,
             &config,
+            finalization_metric,
         );
 
         handles.push(state_committer_handle);
