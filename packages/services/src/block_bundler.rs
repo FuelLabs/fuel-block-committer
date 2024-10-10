@@ -423,7 +423,7 @@ mod tests {
 
         let clock = TestClock::default();
 
-        let latest_height = blocks.last().header.height;
+        let latest_height = blocks.last().height();
         let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
 
         let mut block_bundler = BlockBundler::new(
@@ -458,7 +458,7 @@ mod tests {
 
         assert!(setup
             .db()
-            .lowest_sequence_of_unbundled_blocks(blocks.last().header.height, 1)
+            .lowest_sequence_of_unbundled_blocks(blocks.last().height(), 1)
             .await?
             .is_none());
 
@@ -482,7 +482,7 @@ mod tests {
             .await;
 
         let mut block_bundler = BlockBundler::new(
-            mocks::fuel::latest_height_is(fuel_blocks.last().header.height),
+            mocks::fuel::latest_height_is(fuel_blocks.last().height()),
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
@@ -778,7 +778,7 @@ mod tests {
 
         let blocks_to_bundle: Vec<_> = blocks
             .iter()
-            .filter(|block| block.header.height >= starting_height)
+            .filter(|block| block.height() >= starting_height)
             .cloned()
             .collect();
 
@@ -788,7 +788,8 @@ mod tests {
             "Expected only one block to be within the lookback window"
         );
         assert_eq!(
-            blocks_to_bundle[0].header.height, 3,
+            blocks_to_bundle[0].height(),
+            3,
             "Expected block at height 3 to be within the lookback window"
         );
 
@@ -866,7 +867,7 @@ mod tests {
             })
             .await;
 
-        let latest_height = blocks.last().header.height;
+        let latest_height = blocks.last().height();
         let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
 
         let registry = metrics::prometheus::Registry::new();
@@ -903,10 +904,7 @@ mod tests {
             .get_gauge()
             .get_value() as i64;
 
-        assert_eq!(
-            last_bundled_block_height,
-            blocks.last().header.height as i64
-        );
+        assert_eq!(last_bundled_block_height, blocks.last().height() as i64);
 
         // Check that the blocks_per_bundle metric has recorded the correct number of blocks
         let blocks_per_bundle_metric = gathered_metrics

@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::fuel::CompressedBlock;
+use crate::ports;
 use crate::types::{
     BlockSubmission, BlockSubmissionTx, CollectNonEmpty, Fragment, L1Tx, NonEmpty, NonNegative,
     TransactionState,
@@ -142,6 +143,34 @@ impl TryFrom<NonEmpty<FuelBlock>> for SequentialFuelBlocks {
         }
 
         Ok(Self { blocks })
+    }
+}
+
+impl TryFrom<NonEmpty<SerializedFuelBlock>> for SequentialFuelBlocks {
+    type Error = InvalidSequence;
+
+    fn try_from(blocks: NonEmpty<SerializedFuelBlock>) -> std::result::Result<Self, Self::Error> {
+        let fuel_blocks = blocks
+            .into_iter()
+            .collect_nonempty()
+            .expect("at least one block");
+
+        fuel_blocks.try_into()
+    }
+}
+
+impl TryFrom<SerializedFuelBlock> for ports::storage::FuelBlock {
+    type Error = Error;
+
+    fn try_from(value: SerializedFuelBlock) -> std::result::Result<Self, Self::Error> {
+        match value {
+            SerializedFuelBlock::Compressed(block) => Ok(ports::storage::FuelBlock {
+                hash: block.hash.into(),
+                height: block.height,
+                data: NonEmpty::collect(block.data).expect("at least one byte"),
+            }),
+            SerializedFuelBlock::Uncompressed(block) => Ok(block.into()),
+        }
     }
 }
 

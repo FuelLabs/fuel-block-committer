@@ -195,18 +195,17 @@ where
 #[cfg(test)]
 mod tests {
 
-    use fuel_crypto::SecretKey;
-    use futures::StreamExt;
-    use itertools::Itertools;
-    use mockall::{predicate::eq, Sequence};
-    use ports::types::nonempty;
-    use rand::{rngs::StdRng, SeedableRng};
-
     use super::*;
     use crate::{
         test_utils::{self, Blocks, ImportedBlocks},
         BlockValidator, Error,
     };
+    use fuel_crypto::SecretKey;
+    use futures::StreamExt;
+    use itertools::Itertools;
+    use mockall::{predicate::eq, Sequence};
+    use ports::types::{nonempty, TryCollectNonEmpty};
+    use rand::{rngs::StdRng, SeedableRng};
 
     #[tokio::test]
     async fn imports_first_block_when_db_is_empty() -> Result<()> {
@@ -232,7 +231,8 @@ mod tests {
             .await?
             .unwrap();
 
-        let expected_block = encode_blocks(nonempty![block]);
+        let expected_block =
+            encode_blocks(nonempty![MaybeCompressedFuelBlock::Uncompressed(block)]);
 
         assert_eq!(all_blocks.into_inner(), expected_block);
 
@@ -295,7 +295,9 @@ mod tests {
         let all_blocks = existing_blocks
             .into_iter()
             .chain(new_blocks.clone())
-            .collect_nonempty()
+            .map(MaybeCompressedFuelBlock::into_uncompressed)
+            .try_collect_non_empty()
+            .unwrap()
             .unwrap();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
@@ -472,6 +474,7 @@ mod tests {
                         .map(|height| {
                             test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100)
                         })
+                        .map(MaybeCompressedFuelBlock::Uncompressed)
                         .collect();
 
                     futures::stream::once(async { Ok(blocks) }).boxed()

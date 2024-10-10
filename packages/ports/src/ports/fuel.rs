@@ -38,6 +38,24 @@ pub enum MaybeCompressedFuelBlock {
     Uncompressed(FullFuelBlock),
 }
 
+impl MaybeCompressedFuelBlock {
+    pub fn height(&self) -> u32 {
+        match self {
+            Self::Compressed(block) => block.height,
+            Self::Uncompressed(block) => block.header.height,
+        }
+    }
+
+    pub fn into_uncompressed(self) -> Result<FullFuelBlock> {
+        match self {
+            Self::Compressed(_) => Err(Error::Other(
+                "Cannot convert compressed block to uncompressed".to_string(),
+            )),
+            Self::Uncompressed(block) => Ok(block.clone()),
+        }
+    }
+}
+
 impl From<FullFuelBlock> for MaybeCompressedFuelBlock {
     fn from(block: FullFuelBlock) -> Self {
         Self::Uncompressed(block)

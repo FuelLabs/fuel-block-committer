@@ -81,8 +81,10 @@ pub trait Runner: Send + Sync {
 #[cfg(test)]
 pub(crate) mod test_utils {
 
-    pub fn encode_and_merge(blocks: NonEmpty<ports::fuel::FullFuelBlock>) -> NonEmpty<u8> {
-        block_importer::encode_blocks(blocks.map(MaybeCompressedFuelBlock::from))
+    pub fn encode_and_merge(
+        blocks: NonEmpty<ports::fuel::MaybeCompressedFuelBlock>,
+    ) -> NonEmpty<u8> {
+        block_importer::encode_blocks(blocks)
             .into_iter()
             .flat_map(|b| b.data())
             .collect_nonempty()
@@ -471,8 +473,8 @@ pub(crate) mod test_utils {
                         let blocks_batch = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
-                            .map(MaybeCompressedFuelBlock::from)
                             .cloned()
+                            .map(MaybeCompressedFuelBlock::from)
                             .collect();
 
                         stream::iter(iter::once(Ok(blocks_batch))).boxed()
@@ -493,7 +495,7 @@ pub(crate) mod test_utils {
 
     #[derive(Debug)]
     pub struct ImportedBlocks {
-        pub fuel_blocks: NonEmpty<ports::fuel::FullFuelBlock>,
+        pub fuel_blocks: NonEmpty<ports::fuel::MaybeCompressedFuelBlock>,
         pub storage_blocks: NonEmpty<ports::storage::FuelBlock>,
         pub secret_key: SecretKey,
     }
@@ -573,7 +575,7 @@ pub(crate) mod test_utils {
             );
 
             let mut fuel_api = ports::fuel::MockApi::new();
-            let latest_height = fuel_blocks.last().header.height;
+            let latest_height = fuel_blocks.last().height();
             fuel_api
                 .expect_latest_height()
                 .returning(move || Box::pin(async move { Ok(latest_height) }));
@@ -638,11 +640,11 @@ pub(crate) mod test_utils {
                                 size_per_tx,
                             )
                         })
-                        .map(MaybeCompressedFuelBlock::from)
+                        .map(MaybeCompressedFuelBlock::Uncompressed)
                         .collect_nonempty()
                         .unwrap();
 
-                    let storage_blocks = encode_blocks(fuel_blocks.clone());
+                    let storage_blocks = encode_blocks(fuel_blocks.clone()).into();
 
                     let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone(), false);
 
