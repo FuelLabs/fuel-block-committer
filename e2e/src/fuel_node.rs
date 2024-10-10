@@ -108,6 +108,8 @@ impl FuelNode {
             .arg("--debug")
             .arg(format!("--native-executor-version={executor_version}"))
             .env("CONSENSUS_KEY_SECRET", format!("{}", secret_key))
+            .arg("--da-compression")
+            .arg("1hr")
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null());
 
