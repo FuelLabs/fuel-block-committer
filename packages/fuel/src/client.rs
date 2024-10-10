@@ -164,7 +164,7 @@ impl HttpClient {
             {
                 let compressed_block = MaybeCompressedFuelBlock::Compressed(CompressedBlock::new(
                     query_block_height,
-                    response.block.id.into(),
+                    response.block_id.into(),
                     response.da_compressed_block.bytes.into(),
                 ));
 

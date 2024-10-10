@@ -74,12 +74,18 @@ pub struct DaCompressedBlockWithBlockIdByHeightQuery {
     #[arguments(height: $height)]
     pub da_compressed_block: Option<DaCompressedBlock>,
     #[arguments(height: $block_height)]
-    pub block: Option<Block>,
+    pub block: Option<OnlyBlockId>,
 }
 
 pub struct DaCompressedBlockWithBlockId {
     pub da_compressed_block: DaCompressedBlock,
-    pub block: Block,
+    pub block_id: BlockId,
+}
+
+#[derive(cynic::QueryFragment, Debug)]
+#[cynic(schema_path = "./target/schema.sdl", graphql_type = "Block")]
+pub struct OnlyBlockId {
+    pub id: BlockId,
 }
 
 impl TryFrom<FullBlock> for ports::fuel::FullFuelBlock {
@@ -171,7 +177,7 @@ impl ClientExt for FuelClient {
         ) {
             Ok(Some(DaCompressedBlockWithBlockId {
                 da_compressed_block: da_compressed,
-                block,
+                block_id: block.id,
             }))
         } else {
             Ok(None)
