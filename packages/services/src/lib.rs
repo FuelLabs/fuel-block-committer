@@ -109,6 +109,7 @@ pub(crate) mod test_utils {
     use fuel_crypto::SecretKey;
     use mocks::l1::TxStatus;
     use ports::fuel::MaybeCompressedFuelBlock;
+    use ports::types::TryCollectNonEmpty;
     use ports::{
         storage::Storage,
         types::{CollectNonEmpty, DateTime, Fragment, NonEmpty, Utc},
@@ -439,14 +440,14 @@ pub(crate) mod test_utils {
             }
 
             pub fn these_blocks_exist(
-                blocks: impl IntoIterator<Item = ports::fuel::FullFuelBlock>,
+                blocks: impl IntoIterator<Item = ports::fuel::MaybeCompressedFuelBlock>,
                 enforce_tight_range: bool,
             ) -> ports::fuel::MockApi {
                 let mut fuel_mock = ports::fuel::MockApi::default();
 
                 let blocks = blocks
                     .into_iter()
-                    .sorted_by_key(|b| b.header.height)
+                    .sorted_by_key(|b| b.height())
                     .collect::<Vec<_>>();
 
                 let latest_block = blocks.last().expect("Must have at least one block").clone();
@@ -454,9 +455,8 @@ pub(crate) mod test_utils {
                 let lowest_height = blocks
                     .first()
                     .expect("Must have at least one block")
-                    .header
-                    .height;
-                let highest_height = latest_block.header.height;
+                    .height();
+                let highest_height = latest_block.height();
 
                 fuel_mock
                     .expect_latest_height()
@@ -472,7 +472,7 @@ pub(crate) mod test_utils {
 
                         let blocks_batch = blocks
                             .iter()
-                            .filter(move |b| range.contains(&b.header.height))
+                            .filter(move |b| range.contains(&b.height()))
                             .cloned()
                             .map(MaybeCompressedFuelBlock::from)
                             .collect();
@@ -644,7 +644,12 @@ pub(crate) mod test_utils {
                         .collect_nonempty()
                         .unwrap();
 
-                    let storage_blocks = encode_blocks(fuel_blocks.clone()).into();
+                    let storage_blocks = encode_blocks(fuel_blocks.clone())
+                        .into_iter()
+                        .map(|b| b.try_into())
+                        .try_collect_nonempty()
+                        .unwrap()
+                        .unwrap();
 
                     let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone(), false);
 

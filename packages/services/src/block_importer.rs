@@ -204,7 +204,7 @@ mod tests {
     use futures::StreamExt;
     use itertools::Itertools;
     use mockall::{predicate::eq, Sequence};
-    use ports::types::{nonempty, TryCollectNonEmpty};
+    use ports::types::nonempty;
     use rand::{rngs::StdRng, SeedableRng};
 
     #[tokio::test]
@@ -216,7 +216,8 @@ mod tests {
         let secret_key = SecretKey::random(&mut rng);
         let block = test_utils::mocks::fuel::generate_block(0, &secret_key, 1, 100);
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
+        let fuel_mock =
+            test_utils::mocks::fuel::these_blocks_exist(vec![block.clone().into()], true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
         let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
@@ -232,9 +233,11 @@ mod tests {
             .unwrap();
 
         let expected_block =
-            encode_blocks(nonempty![MaybeCompressedFuelBlock::Uncompressed(block)]);
+            encode_blocks(nonempty![MaybeCompressedFuelBlock::Uncompressed(block)])
+                .try_into()
+                .unwrap();
 
-        assert_eq!(all_blocks.into_inner(), expected_block);
+        assert_eq!(all_blocks, expected_block);
 
         Ok(())
     }
@@ -251,7 +254,8 @@ mod tests {
         let incorrect_secret_key = SecretKey::random(&mut rng);
         let block = test_utils::mocks::fuel::generate_block(0, &incorrect_secret_key, 1, 100);
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
+        let fuel_mock =
+            test_utils::mocks::fuel::these_blocks_exist(vec![block.clone().into()], true);
 
         let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
 
@@ -290,14 +294,13 @@ mod tests {
 
         let new_blocks = (3..=5)
             .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
+            .map(MaybeCompressedFuelBlock::from)
             .collect_vec();
 
         let all_blocks = existing_blocks
             .into_iter()
             .chain(new_blocks.clone())
-            .map(MaybeCompressedFuelBlock::into_uncompressed)
-            .try_collect_non_empty()
-            .unwrap()
+            .collect_nonempty()
             .unwrap();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
@@ -315,9 +318,9 @@ mod tests {
             .await?
             .unwrap();
 
-        let expected_blocks = encode_blocks(all_blocks);
+        let expected_blocks = encode_blocks(all_blocks).try_into().unwrap();
 
-        pretty_assertions::assert_eq!(stored_blocks.into_inner(), expected_blocks);
+        pretty_assertions::assert_eq!(stored_blocks, expected_blocks);
 
         Ok(())
     }
@@ -338,6 +341,7 @@ mod tests {
         let starting_height = 8;
         let new_blocks = (starting_height..=13)
             .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
+            .map(MaybeCompressedFuelBlock::from)
             .collect_nonempty()
             .unwrap();
 
@@ -357,7 +361,7 @@ mod tests {
             .unwrap();
         let expected_blocks = encode_blocks(new_blocks);
 
-        pretty_assertions::assert_eq!(stored_new_blocks.into_inner(), expected_blocks);
+        pretty_assertions::assert_eq!(stored_new_blocks, expected_blocks.try_into().unwrap());
 
         Ok(())
     }
@@ -408,8 +412,9 @@ mod tests {
         let lookback_window = 2;
 
         let secret_key = SecretKey::random(&mut StdRng::from_seed([0; 32]));
-        let blocks_to_import = (3..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100));
+        let blocks_to_import = (3..=5).map(|height| {
+            test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100).into()
+        });
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks_to_import, true);
         let block_validator = BlockValidator::new(*secret_key.public_key().hash());
