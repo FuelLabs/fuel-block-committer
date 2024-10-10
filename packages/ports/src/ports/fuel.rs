@@ -38,30 +38,6 @@ pub enum MaybeCompressedFuelBlock {
     Uncompressed(FullFuelBlock),
 }
 
-impl MaybeCompressedFuelBlock {
-    pub fn as_full_block(&self) -> Option<&FullFuelBlock> {
-        match self {
-            MaybeCompressedFuelBlock::Uncompressed(block) => Some(block),
-            _ => None,
-        }
-    }
-
-    pub fn as_compressed_block(&self) -> Option<&CompressedBlock> {
-        match self {
-            MaybeCompressedFuelBlock::Compressed(block) => Some(block),
-            _ => None,
-        }
-    }
-
-    pub fn is_compressed(&self) -> bool {
-        matches!(self, MaybeCompressedFuelBlock::Compressed(_))
-    }
-
-    pub fn is_uncompressed(&self) -> bool {
-        matches!(self, MaybeCompressedFuelBlock::Uncompressed(_))
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
