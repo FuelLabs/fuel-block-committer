@@ -36,10 +36,7 @@ tokio = { workspace = true, features = ["time"] }
 url = { workspace = true }
 
 [dev-dependencies]
-alloy = { workspace = true, features = [
-  "signer-local", 
-  "node-bindings"
-]}
+alloy = { workspace = true, features = ["signer-local", "node-bindings"] }
 pretty_assertions = { workspace = true, features = ["default"] }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["l1", "test-helpers"] }
@@ -47,6 +44,7 @@ rand = { workspace = true, features = ["small_rng"] }
 test-case = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 rayon = { workspace = true }
+proptest = { workspace = true, features = ["default"] }
 
 [features]
 test-helpers = []

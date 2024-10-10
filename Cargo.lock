@@ -2653,6 +2653,7 @@ dependencies = [
  "mockall",
  "ports",
  "pretty_assertions",
+ "proptest",
  "rand",
  "rayon",
  "serde",
