@@ -146,12 +146,6 @@ impl TryFrom<NonEmpty<FuelBlock>> for SequentialFuelBlocks {
     }
 }
 
-impl From<SequentialFuelBlocks> for NonEmpty<FuelBlock> {
-    fn from(blocks: SequentialFuelBlocks) -> Self {
-        blocks.blocks
-    }
-}
-
 impl TryFrom<NonEmpty<SerializedFuelBlock>> for SequentialFuelBlocks {
     type Error = InvalidSequence;
 
