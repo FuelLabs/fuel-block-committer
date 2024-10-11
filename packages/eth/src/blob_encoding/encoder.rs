@@ -310,6 +310,7 @@ mod tests {
             let sidecar = Eip4844BlobEncoder::decode(fragments).unwrap();
 
             let mut builder = SidecarBuilder::<SimpleCoder>::new();
+            // TODO: ingest more at once
             for byte in &data {
                 builder.ingest(std::slice::from_ref(byte));
             }

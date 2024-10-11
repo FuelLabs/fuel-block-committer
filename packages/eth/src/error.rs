@@ -55,3 +55,46 @@ impl From<Error> for ports::l1::Error {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy::rpc::json_rpc::ErrorPayload;
+
+    use super::*;
+
+    #[test]
+    fn correctly_detects_tx_execution_error() {
+        for code in 32_000..=32613 {
+            let err = RpcError::ErrorResp(ErrorPayload {
+                code: -code,
+                message: "some message".to_owned(),
+                data: None,
+            });
+
+            let our_error = crate::error::Error::from(err);
+            let Error::TxExecution(msg) = our_error else {
+                panic!("Expected TxExecution got: {}", our_error)
+            };
+
+            assert!(msg.contains("some message"));
+        }
+    }
+
+    #[test]
+    fn rest_of_the_error_range_is_classified_as_network_caused() {
+        for code in [31_999, 32614] {
+            let err = RpcError::ErrorResp(ErrorPayload {
+                code: -code,
+                message: "some message".to_owned(),
+                data: None,
+            });
+
+            let our_error = crate::error::Error::from(err);
+            let Error::Network(msg) = our_error else {
+                panic!("Expected Network got: {}", our_error)
+            };
+
+            assert!(msg.contains("some message"));
+        }
+    }
+}

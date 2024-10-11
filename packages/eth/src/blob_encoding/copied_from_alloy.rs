@@ -35,6 +35,7 @@ impl PartialSidecar {
     }
 
     pub fn unused_bytes_in_last_fe(&self) -> usize {
+        // The first byte is always "used" by the coder because it always leaves it empty.
         31usize.saturating_sub(self.amount_last_ingested)
     }
 

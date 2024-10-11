@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eth::{AwsConfig, Eip4844BlobEncoder};
+use eth::{AwsConfig, Eip4844BlobEncoder, KmsKeys};
 use metrics::{
     prometheus::{IntGauge, Registry},
     HealthChecker, RegistersMetrics,
@@ -206,12 +206,16 @@ pub async fn l1_adapter(
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        config.eth.main_key_arn.clone(),
-        config.eth.blob_pool_key_arn.clone(),
+        KmsKeys {
+            main_key_arn: config.eth.main_key_arn.clone(),
+            blob_pool_key_arn: config.eth.blob_pool_key_arn.clone(),
+        },
         internal_config.eth_errors_before_unhealthy,
         aws_client,
-        config.app.tx_max_fee as u128,
-        config.app.send_tx_request_timeout,
+        eth::TxConfig {
+            tx_max_fee: config.app.tx_max_fee as u128,
+            send_tx_request_timeout: config.app.send_tx_request_timeout,
+        },
     )
     .await?;
 
