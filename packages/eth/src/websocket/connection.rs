@@ -125,13 +125,11 @@ impl WsConnection {
     }
 
     fn get_max_fee(tx: &L1Tx, gas_limit: u128, num_fragments: usize) -> u128 {
-        let max_fee = tx.max_fee.saturating_mul(gas_limit).saturating_add(
+        tx.max_fee.saturating_mul(gas_limit).saturating_add(
             tx.blob_fee
                 .saturating_mul(num_fragments as u128)
                 .saturating_mul(DATA_GAS_PER_BLOB as u128),
-        );
-
-        max_fee
+        )
     }
 }
 
@@ -442,8 +440,6 @@ impl WsConnection {
 
 #[cfg(test)]
 mod tests {
-
-    use std::u128;
 
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
     use ports::l1::FragmentEncoder;

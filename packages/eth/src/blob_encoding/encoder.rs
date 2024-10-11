@@ -37,19 +37,14 @@ impl Eip4844BlobEncoder {
 
 impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
     fn encode(&self, data: NonEmpty<u8>) -> ports::l1::Result<NonEmpty<Fragment>> {
-        let builder = SidecarBuilder::<SimpleCoder>::from_coder_and_data(
-            SimpleCoder::default(),
-            &Vec::from(data),
-        );
-
-        let single_blobs =
-            split_sidecar(builder).map_err(|e| ports::l1::Error::Other(e.to_string()))?;
-
-        Ok(single_blobs
+        let fragments = encode_into_blobs(data)
+            .map_err(|e| ports::l1::Error::Other(e.to_string()))?
             .into_iter()
-            .map(|blob| blob.encode())
+            .map(|blob| blob.as_fragment())
             .collect_nonempty()
-            .expect("cannot be empty"))
+            .expect("cannot be empty");
+
+        Ok(fragments)
     }
 
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64 {
@@ -107,7 +102,7 @@ impl SingleBlob {
         })
     }
 
-    fn encode(&self) -> Fragment {
+    fn as_fragment(&self) -> Fragment {
         let mut bytes = Vec::with_capacity(Self::SIZE);
         bytes.extend_from_slice(self.blobs.as_slice());
         bytes.extend_from_slice(self.commitment.as_ref());
@@ -122,10 +117,17 @@ impl SingleBlob {
     }
 }
 
-fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<SingleBlob>> {
-    let num_bytes = u32::try_from(builder.len()).map_err(|_| {
-        crate::error::Error::Other("cannot handle more than u32::MAX bytes".to_string())
-    })?;
+fn encode_into_blobs(data: NonEmpty<u8>) -> crate::error::Result<NonEmpty<SingleBlob>> {
+    let builder = SidecarBuilder::<SimpleCoder>::from_coder_and_data(
+        SimpleCoder::default(),
+        &Vec::from(data),
+    );
+    let total_used_bytes = u32::try_from(builder.len())
+        .map_err(|_| {
+            crate::error::Error::Other("cannot handle more than u32::MAX bytes".to_string())
+        })?
+        .saturating_sub(builder.unused_bytes_in_last_fe() as u32);
+
     let sidecar = builder
         .build()
         .map_err(|e| crate::error::Error::Other(e.to_string()))?;
@@ -138,8 +140,12 @@ fn split_sidecar(builder: SidecarBuilder) -> crate::error::Result<NonEmpty<Singl
         return Err(crate::error::Error::Other("no blobs to split".to_string()));
     }
 
-    let unused_data_in_last_blob =
-        (BYTES_PER_BLOB as u32).saturating_sub(num_bytes % BYTES_PER_BLOB as u32);
+    let remainder = total_used_bytes % BYTES_PER_BLOB as u32;
+    let unused_data_in_last_blob = if remainder == 0 {
+        0
+    } else {
+        BYTES_PER_BLOB as u32 - remainder
+    };
 
     // blobs not consumed here because that would place them on the stack at some point. the aloy
     // type being huge it then causes a stack overflow
@@ -190,9 +196,10 @@ fn merge_into_sidecar(
 
 #[cfg(test)]
 mod tests {
+
     use ports::l1::FragmentEncoder;
+    use proptest::prop_assert_eq;
     use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use test_case::test_case;
 
     use super::*;
@@ -250,50 +257,46 @@ mod tests {
         assert!(SingleBlob::decode(data).is_err());
     }
 
+    fn non_empty_rand_data(amount: usize) -> NonEmpty<u8> {
+        if amount == 0 {
+            panic!("cannot create empty data");
+        } else {
+            let mut rng = SmallRng::from_seed([0; 32]);
+            let mut data = vec![0; amount];
+            rng.fill(&mut data[..]);
+            NonEmpty::collect(data).unwrap()
+        }
+    }
+
     #[test]
     fn roundtrip_split_encode_decode_merge() {
-        let mut random_data = vec![0; 110_000];
-        let mut rng = rand::rngs::SmallRng::from_seed([0; 32]);
-        rng.fill_bytes(&mut random_data);
+        let random_data = non_empty_rand_data(110_000);
 
-        let builder = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &random_data);
-
-        let single_blobs = split_sidecar(builder.clone()).unwrap();
+        let single_blobs = encode_into_blobs(random_data.clone()).unwrap();
 
         let merged_sidecar = merge_into_sidecar(single_blobs);
-        assert_eq!(merged_sidecar, builder.build().unwrap());
 
         let should_be_original_data = SimpleCoder::default()
             .decode_all(&merged_sidecar.blobs)
             .unwrap()
             .into_iter()
             .flatten()
-            .collect_vec();
+            .collect_nonempty()
+            .unwrap();
 
         assert_eq!(should_be_original_data, random_data);
     }
 
-    #[test]
-    fn shows_unused_bytes() {
-        let mut random_data = vec![0; 1000];
-        let mut rng = rand::rngs::SmallRng::from_seed([0; 32]);
-        rng.fill_bytes(&mut random_data);
-
-        let sidecar = SidecarBuilder::from_coder_and_data(SimpleCoder::default(), &random_data);
-
-        let single_blobs = split_sidecar(sidecar.clone()).unwrap();
-
-        assert_eq!(single_blobs.len(), 1);
-        assert_eq!(single_blobs[0].unused_bytes, 129984);
-    }
-
-    #[test]
-    fn alloy_blob_encoding_issue_regression() {
-        let test = |amount| {
+    use proptest::prelude::*;
+    proptest::proptest! {
+        // // You maybe want to make this limit bigger when changing the code
+        #![proptest_config(ProptestConfig { cases: 10, .. ProptestConfig::default() })]
+        #[test]
+        fn alloy_blob_encoding_issue_regression(amount in 1..=DATA_GAS_PER_BLOB*20) {
             // given
             let encoder = Eip4844BlobEncoder;
             let mut rng = SmallRng::from_seed([0; 32]);
-            let mut data = vec![0; amount];
+            let mut data = vec![0; amount as usize];
             rng.fill_bytes(&mut data[..]);
 
             // when
@@ -307,6 +310,7 @@ mod tests {
             let sidecar = Eip4844BlobEncoder::decode(fragments).unwrap();
 
             let mut builder = SidecarBuilder::<SimpleCoder>::new();
+            // TODO: ingest more at once
             for byte in &data {
                 builder.ingest(std::slice::from_ref(byte));
             }
@@ -320,24 +324,42 @@ mod tests {
                 .flatten()
                 .collect_vec();
 
-            if data != decoded_data {
-                Err(crate::error::Error::Other(format!(
-                    "data mismatch for {amount} B"
-                )))
-            } else {
-                Ok(amount)
+            prop_assert_eq!(data, decoded_data);
+        }
+    }
+    proptest::proptest! {
+        // // You maybe want to make this limit bigger when changing the code
+        #![proptest_config(ProptestConfig { cases: 10, .. ProptestConfig::default() })]
+        #[test]
+        fn shows_unused_bytes(num_bytes in 1..=DATA_GAS_PER_BLOB*6) {
+            // given
+            let mut data = non_empty_rand_data(num_bytes as usize);
+            // because of our assertion of zeroes at end
+            *data.last_mut() = 1;
+
+
+            // when
+            let single_blobs = encode_into_blobs(data).unwrap();
+
+            // then
+            let num_blobs = single_blobs.len();
+
+            for blob in single_blobs.iter().take(num_blobs - 1) {
+                prop_assert_eq!(blob.unused_bytes, 0);
             }
-        };
 
-        let failure = (126_000..2_000_000)
-            .step_by(50_000)
-            .collect_vec()
-            .into_par_iter()
-            .map(test)
-            .find_any(|ret| ret.is_err());
+            let last_blob = single_blobs.last();
+            let unused_bytes = last_blob.unused_bytes as usize;
 
-        if let Some(Err(amount)) = failure {
-            panic!("Alloy blob issue found for {amount} B");
+            // a hacky way to validate but good enough when input data is random
+            let zeroes_at_end = last_blob
+                .blobs
+                .iter()
+                .rev()
+                .take_while(|byte| **byte == 0)
+                .count();
+
+            prop_assert_eq!(zeroes_at_end, unused_bytes);
         }
     }
 }

@@ -75,7 +75,6 @@ pub struct L1FuelBlockSubmissionTx {
     pub finalized_at: Option<DateTime<Utc>>,
 }
 
-// TODO: dry this up
 impl L1FuelBlockSubmissionTx {
     pub fn parse_state(&self) -> Result<TransactionState, crate::error::Error> {
         match (self.state, self.finalized_at) {

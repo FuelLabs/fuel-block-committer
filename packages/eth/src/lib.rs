@@ -14,7 +14,7 @@ mod websocket;
 
 pub use alloy::primitives::Address;
 pub use aws::*;
-pub use websocket::WebsocketClient;
+pub use websocket::{KmsKeys, TxConfig, WebsocketClient};
 
 impl Contract for WebsocketClient {
     delegate! {

@@ -105,6 +105,7 @@ pub(crate) mod test_utils {
     use clock::TestClock;
     use eth::Eip4844BlobEncoder;
     use fuel_crypto::SecretKey;
+    use metrics::prometheus::IntGauge;
     use mocks::l1::TxStatus;
     use ports::{
         storage::Storage,
@@ -547,10 +548,16 @@ pub(crate) mod test_utils {
 
             let l1_mock = mocks::l1::txs_finished(0, 0, [(tx, TxStatus::Success)]);
 
-            StateListener::new(l1_mock, self.db(), 0, clock.clone())
-                .run()
-                .await
-                .unwrap();
+            StateListener::new(
+                l1_mock,
+                self.db(),
+                0,
+                clock.clone(),
+                IntGauge::new("test", "test").unwrap(),
+            )
+            .run()
+            .await
+            .unwrap();
         }
 
         pub async fn insert_fragments(&self, height: u32, amount: usize) -> Vec<Fragment> {

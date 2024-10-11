@@ -1,9 +1,5 @@
 use std::num::NonZeroU32;
 
-use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
-    RegistersMetrics,
-};
 use ports::{
     fuel::FuelBlock,
     storage::Storage,
@@ -236,7 +232,7 @@ mod tests {
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{DbWithProcess, PostgresProcess};
 
-    use crate::{test_utils::mocks::l1::FullL1Mock, BlockValidator};
+    use crate::BlockValidator;
 
     use super::*;
 

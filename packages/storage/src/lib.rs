@@ -126,8 +126,18 @@ impl Storage for Postgres {
         Ok(self._has_pending_txs().await?)
     }
 
-    async fn update_tx_state(&self, hash: [u8; 32], state: TransactionState) -> Result<()> {
-        Ok(self._update_tx_state(hash, state).await?)
+    async fn has_nonfinalized_txs(&self) -> Result<bool> {
+        Ok(self._has_nonfinalized_txs().await?)
+    }
+
+    async fn batch_update_tx_states(
+        &self,
+        selective_changes: Vec<([u8; 32], TransactionState)>,
+        noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+    ) -> Result<()> {
+        Ok(self
+            ._batch_update_tx_states(selective_changes, noncewide_changes)
+            .await?)
     }
 }
 
@@ -376,18 +386,21 @@ mod tests {
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
-        let hash = rand::random::<[u8; 32]>();
         let tx = L1Tx {
-            hash,
+            hash: rand::random::<[u8; 32]>(),
             ..Default::default()
         };
+        let hash = tx.hash;
+        let nonce = tx.nonce;
+
         storage.record_pending_tx(tx, fragment_ids).await.unwrap();
 
         let finalization_time = Utc::now();
 
         // when
+        let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
         storage
-            .update_tx_state(hash, TransactionState::Finalized(finalization_time))
+            .batch_update_tx_states(vec![], changes)
             .await
             .unwrap();
 

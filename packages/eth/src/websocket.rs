@@ -24,24 +24,34 @@ pub struct WebsocketClient {
     contract_caller_address: Address,
 }
 
+#[derive(Debug, Clone)]
+pub struct KmsKeys {
+    pub main_key_arn: String,
+    pub blob_pool_key_arn: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TxConfig {
+    pub tx_max_fee: u128,
+    pub send_tx_request_timeout: Duration,
+}
+
 impl WebsocketClient {
     pub async fn connect(
         url: Url,
         contract_address: Address,
-        main_key_arn: String,
-        blob_pool_key_arn: Option<String>,
+        keys: KmsKeys,
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
-        tx_max_fee: u128,
-        send_tx_request_timeout: Duration,
+        tx_config: TxConfig,
     ) -> ports::l1::Result<Self> {
-        let blob_signer = if let Some(key_arn) = blob_pool_key_arn {
+        let blob_signer = if let Some(key_arn) = keys.blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
         } else {
             None
         };
 
-        let main_signer = aws_client.make_signer(main_key_arn).await?;
+        let main_signer = aws_client.make_signer(keys.main_key_arn).await?;
 
         let blob_poster_address = blob_signer.as_ref().map(|signer| signer.address());
         let contract_caller_address = main_signer.address();
@@ -51,8 +61,8 @@ impl WebsocketClient {
             contract_address,
             main_signer,
             blob_signer,
-            tx_max_fee,
-            send_tx_request_timeout,
+            tx_config.tx_max_fee,
+            tx_config.send_tx_request_timeout,
         )
         .await?;
 

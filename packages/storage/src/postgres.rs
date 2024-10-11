@@ -20,7 +20,6 @@ use crate::mappings::tables::{self, L1TxState};
 #[derive(Debug, Clone)]
 struct Metrics {
     height_of_latest_commitment: IntGauge,
-    seconds_since_last_finalized_fragment: IntGauge,
     lowest_unbundled_height: IntGauge,
 }
 
@@ -32,12 +31,6 @@ impl Default for Metrics {
         )
         .expect("height_of_latest_commitment gauge to be correctly configured");
 
-        let seconds_since_last_finalized_fragment = IntGauge::new(
-            "seconds_since_last_finalized_fragment",
-            "The number of seconds since the last finalized fragment",
-        )
-        .expect("seconds_since_last_finalized_fragment gauge to be correctly configured");
-
         let lowest_unbundled_height = IntGauge::new(
             "lowest_unbundled_height",
             "The height of the lowest block unbundled block",
@@ -46,7 +39,6 @@ impl Default for Metrics {
 
         Self {
             height_of_latest_commitment,
-            seconds_since_last_finalized_fragment,
             lowest_unbundled_height,
         }
     }
@@ -62,7 +54,6 @@ impl RegistersMetrics for Postgres {
     fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
         vec![
             Box::new(self.metrics.height_of_latest_commitment.clone()),
-            Box::new(self.metrics.seconds_since_last_finalized_fragment.clone()),
             Box::new(self.metrics.lowest_unbundled_height.clone()),
         ]
     }
@@ -271,17 +262,38 @@ impl Postgres {
         let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
-            r#"
-            SELECT f.*
-            FROM l1_fragments f
-            LEFT JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-            LEFT JOIN l1_blob_transaction t ON t.id = tf.transaction_id
-            JOIN bundles b ON b.id = f.bundle_id
-            WHERE (t.id IS NULL OR t.state = $1) 
-              AND b.end_height >= $2 -- Exclude bundles ending before starting_height
-            ORDER BY b.start_height ASC, f.idx ASC
-            LIMIT $3;
-        "#,
+            r#"SELECT 
+        sub.id, 
+        sub.idx, 
+        sub.bundle_id, 
+        sub.data, 
+        sub.unused_bytes, 
+        sub.total_bytes
+    FROM (
+        SELECT DISTINCT ON (f.id) 
+            f.*, 
+            b.start_height
+        FROM l1_fragments f
+        JOIN bundles b ON b.id = f.bundle_id
+        WHERE 
+            b.end_height >= $2
+            AND NOT EXISTS (
+                SELECT 1
+                FROM l1_transaction_fragments tf
+                JOIN l1_blob_transaction t ON t.id = tf.transaction_id
+                WHERE tf.fragment_id = f.id 
+                  AND t.state <> $1
+            )
+        ORDER BY 
+            f.id, 
+            b.start_height ASC, 
+            f.idx ASC
+    ) AS sub
+    ORDER BY 
+        sub.start_height ASC, 
+        sub.idx ASC
+    LIMIT $3;
+"#,
             i16::from(L1TxState::Failed),
             i64::from(starting_height),
             limit
@@ -430,15 +442,6 @@ impl Postgres {
         .await?
         .and_then(|response| response.last_fragment_time);
 
-        if let Some(last_fragment_time) = response {
-            let now = Utc::now();
-            let seconds_since_last_finalized_fragment =
-                now.signed_duration_since(last_fragment_time).num_seconds();
-            self.metrics
-                .seconds_since_last_finalized_fragment
-                .set(seconds_since_last_finalized_fragment);
-        }
-
         Ok(response)
     }
 
@@ -546,6 +549,17 @@ impl Postgres {
         .has_pending_transactions.unwrap_or(false))
     }
 
+    pub(crate) async fn _has_nonfinalized_txs(&self) -> Result<bool> {
+        Ok(sqlx::query!(
+            "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1 OR state = $2) AS has_nonfinalized_transactions;",
+            i16::from(L1TxState::Pending),
+            i16::from(L1TxState::IncludedInBlock)
+        )
+        .fetch_one(&self.connection_pool)
+        .await?
+        .has_nonfinalized_transactions.unwrap_or(false))
+    }
+
     pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,
@@ -604,6 +618,68 @@ impl Postgres {
         )
         .execute(&self.connection_pool)
         .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _batch_update_tx_states(
+        &self,
+        selective_changes: Vec<([u8; 32], TransactionState)>,
+        noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        for change in selective_changes {
+            let hash = change.0;
+            let state = change.1;
+
+            let finalized_at = match &state {
+                TransactionState::Finalized(date_time) => Some(*date_time),
+                _ => None,
+            };
+            let state = i16::from(L1TxState::from(&state));
+
+            sqlx::query!(
+                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
+                state,
+                finalized_at,
+                hash.as_slice(),
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        for change in noncewide_changes {
+            let hash = change.0;
+            let nonce = change.1;
+            let state = change.2;
+
+            let finalized_at = match &state {
+                TransactionState::Finalized(date_time) => Some(*date_time),
+                _ => None,
+            };
+            let state = i16::from(L1TxState::from(&state));
+
+            sqlx::query!(
+                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE nonce = $3",
+                i16::from(L1TxState::Failed),
+                Option::<DateTime<Utc>>::None,
+                i64::from(nonce),
+            )
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query!(
+                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
+                state,
+                finalized_at,
+                hash.as_slice(),
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
 
         Ok(())
     }

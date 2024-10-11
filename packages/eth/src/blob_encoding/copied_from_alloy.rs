@@ -15,6 +15,7 @@ pub struct PartialSidecar {
     blobs: Vec<Blob>,
     /// The number of field elements that we have ingested, total.
     fe: usize,
+    amount_last_ingested: usize,
 }
 
 impl Default for PartialSidecar {
@@ -33,12 +34,21 @@ impl PartialSidecar {
         Self::with_capacity(2)
     }
 
+    pub fn unused_bytes_in_last_fe(&self) -> usize {
+        // The first byte is always "used" by the coder because it always leaves it empty.
+        31usize.saturating_sub(self.amount_last_ingested)
+    }
+
     /// Create a new builder, preallocating room for `capacity` blobs, and push
     /// an empty blob to it.
     pub fn with_capacity(capacity: usize) -> Self {
         let mut blobs = Vec::with_capacity(capacity);
         blobs.push(Blob::new([0u8; BYTES_PER_BLOB]));
-        Self { blobs, fe: 0 }
+        Self {
+            blobs,
+            fe: 0,
+            amount_last_ingested: 0,
+        }
     }
 
     /// Get the number of unused field elements that have been allocated
@@ -92,6 +102,7 @@ impl PartialSidecar {
     /// If the data is >=32 bytes. Or if there are not enough free FEs to
     /// encode the data.
     pub fn ingest_partial_fe(&mut self, data: &[u8]) {
+        self.amount_last_ingested = data.len();
         let fe = self.next_unused_fe_mut();
         fe[1..1 + data.len()].copy_from_slice(data);
         self.fe += 1;
@@ -282,6 +293,10 @@ impl<T: SidecarCoder> SidecarBuilder<T> {
             inner: PartialSidecar::with_capacity(capacity),
             coder,
         }
+    }
+
+    pub fn unused_bytes_in_last_fe(&self) -> usize {
+        self.inner.unused_bytes_in_last_fe()
     }
 
     /// Calculate the length of bytes used by field elements in the builder.
