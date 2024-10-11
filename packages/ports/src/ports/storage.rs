@@ -190,7 +190,9 @@ impl TryFrom<SerializedFuelBlock> for ports::storage::FuelBlock {
             SerializedFuelBlock::Compressed(block) => Ok(ports::storage::FuelBlock {
                 hash: block.hash.into(),
                 height: block.height,
-                data: NonEmpty::collect(block.data).expect("at least one byte"),
+                data: NonEmpty::collect(block.data).ok_or(Error::Conversion(
+                    "failed to convert compressed block data".to_string(),
+                ))?,
             }),
             SerializedFuelBlock::Uncompressed(block) => Ok(block),
         }
