@@ -2,7 +2,9 @@ use std::num::NonZeroU32;
 
 use num_bigint::BigInt;
 use ports::storage::SerializedFuelBlock;
-use ports::types::{BlockSubmissionTx, DateTime, NonEmpty, NonNegative, TransactionState, Utc};
+use ports::types::{
+    BlockSubmissionTx, CollectNonEmpty, DateTime, NonEmpty, NonNegative, TransactionState, Utc,
+};
 use sqlx::types::BigDecimal;
 
 macro_rules! bail {
@@ -315,6 +317,10 @@ impl From<SerializedFuelBlock> for FuelBlock {
     }
 }
 
+fn collect_data_without_version(data: NonEmpty<u8>) -> Option<NonEmpty<u8>> {
+    data.iter().skip(1).cloned().collect_nonempty()
+}
+
 impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
     type Error = crate::error::Error;
 
@@ -331,21 +337,26 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
             ))
         })?;
 
-        let data = match value.data[0] {
-            0 => {
-                let data = value.data[1..].to_vec();
-                NonEmpty::collect(data).ok_or_else(|| {
-                    crate::error::Error::Conversion("db block data is invalid".to_owned())
-                })?
-            }
-            1 => {
-                let data = value.data[1..].to_vec();
-                NonEmpty::collect(data).ok_or_else(|| {
-                    crate::error::Error::Conversion("db block data is invalid".to_owned())
-                })?
-            }
+        if value.data.len() <= 1 {
+            bail!(
+                "Invalid db block data: data is too short. Got len: {}",
+                value.data.len()
+            );
+        }
+
+        let data = NonEmpty::collect(value.data).ok_or_else(|| {
+            crate::error::Error::Conversion("db block data is invalid".to_owned())
+        })?;
+
+        let data = match data.first() {
+            0 => collect_data_without_version(data).ok_or_else(|| {
+                crate::error::Error::Conversion("uncompressed db block data is invalid".to_owned())
+            })?,
+            1 => collect_data_without_version(data).ok_or_else(|| {
+                crate::error::Error::Conversion("uncompressed db block data is invalid".to_owned())
+            })?,
             _ => {
-                bail!("Invalid version byte in FuelBlock data: {}", value.data[0]);
+                bail!("Invalid version byte in FuelBlock data: {}", data.first());
             }
         };
 
