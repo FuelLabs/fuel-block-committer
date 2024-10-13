@@ -27,7 +27,7 @@ impl ports::fuel::Api for client::HttpClient {
     fn compressed_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<ports::fuel::CompressedFuelBlock>> {
+    ) -> BoxStream<'_, Result<ports::types::CompressedFuelBlock>> {
         self._compressed_blocks_in_height_range(range).boxed()
     }
 }

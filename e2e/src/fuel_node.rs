@@ -26,7 +26,6 @@ pub struct FuelNodeProcess {
     _child: tokio::process::Child,
     wallet_keys: Vec<FuelSecretKey>,
     url: Url,
-    public_key: FuelPublicKey,
 }
 
 impl FuelNode {
@@ -128,7 +127,6 @@ impl FuelNode {
             _child: child,
             _db_dir: db_dir,
             url,
-            public_key,
             _snapshot_dir: snapshot_dir,
             wallet_keys,
         };
@@ -218,9 +216,5 @@ impl FuelNodeProcess {
 
     pub fn url(&self) -> &Url {
         &self.url
-    }
-
-    pub fn consensus_pub_key(&self) -> FuelPublicKey {
-        self.public_key
     }
 }

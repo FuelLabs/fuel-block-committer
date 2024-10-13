@@ -12,8 +12,8 @@ mod postgres;
 use ports::{
     storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, BlockSubmissionTx, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
-        TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
+        NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
 pub use postgres::{DbConfig, Postgres};
@@ -70,10 +70,7 @@ impl Storage for Postgres {
             .map_err(Into::into)
     }
 
-    async fn insert_blocks(
-        &self,
-        blocks: NonEmpty<ports::storage::DBCompressedBlock>,
-    ) -> Result<()> {
+    async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
         Ok(self._insert_blocks(blocks).await?)
     }
 
@@ -151,7 +148,7 @@ mod tests {
         storage::{Error, Storage},
         types::{nonempty, CollectNonEmpty},
     };
-    use rand::{thread_rng, Rng, SeedableRng};
+    use rand::{thread_rng, Rng};
 
     use super::*;
 
@@ -424,16 +421,11 @@ mod tests {
         storage: impl Storage,
         range: RangeInclusive<u32>,
     ) {
-        let mut rng = rand::rngs::SmallRng::from_entropy();
         let blocks = range
             .clone()
-            .map(|height| {
-                let block_hash: [u8; 32] = rng.gen();
-                let block_data = nonempty![height as u8];
-                ports::storage::DBCompressedBlock {
-                    height,
-                    data: block_data,
-                }
+            .map(|height| CompressedFuelBlock {
+                height,
+                data: nonempty![height as u8],
             })
             .collect_nonempty()
             .expect("shouldn't be empty");
@@ -755,10 +747,7 @@ mod tests {
             .record_pending_tx(inserted_1, nonempty![fragment_1])
             .await?;
         storage
-            .record_pending_tx(
-                inserted_2.clone(),
-                NonEmpty::collect(vec![fragment_2]).expect("non empty"),
-            )
+            .record_pending_tx(inserted_2.clone(), nonempty![fragment_2])
             .await?;
 
         // when

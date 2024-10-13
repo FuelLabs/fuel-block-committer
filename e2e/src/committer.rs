@@ -12,7 +12,6 @@ pub struct Committer {
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
-    fuel_block_producer_addr: Option<String>,
     db_port: Option<u16>,
     db_name: Option<String>,
     kms_url: Option<String>,
@@ -57,10 +56,6 @@ impl Committer {
             .env(
                 "COMMITTER__FUEL__GRAPHQL_ENDPOINT",
                 get_field!(fuel_rpc).as_str(),
-            )
-            .env(
-                "COMMITTER__FUEL__BLOCK_PRODUCER_ADDRESS",
-                get_field!(fuel_block_producer_addr),
             )
             .env("COMMITTER__APP__DB__PORT", db_port.to_string())
             .env("COMMITTER__APP__DB__HOST", "localhost")
@@ -207,11 +202,6 @@ impl Committer {
 
     pub fn with_fuel_rpc(mut self, fuel_rpc: Url) -> Self {
         self.fuel_rpc = Some(fuel_rpc);
-        self
-    }
-
-    pub fn with_fuel_block_producer_addr(mut self, fuel_block_producer_addr: String) -> Self {
-        self.fuel_block_producer_addr = Some(fuel_block_producer_addr);
         self
     }
 

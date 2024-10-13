@@ -9,7 +9,7 @@ use itertools::Itertools;
 use ports::{
     l1::FragmentEncoder,
     storage::SequentialFuelBlocks,
-    types::{CollectNonEmpty, Fragment, NonEmpty},
+    types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
 };
 use rayon::prelude::*;
 
@@ -264,7 +264,7 @@ impl Proposal {
 #[derive(Debug, Clone)]
 pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
-    blocks: NonEmpty<ports::storage::DBCompressedBlock>,
+    blocks: NonEmpty<CompressedFuelBlock>,
     best_proposal: Option<Proposal>,
     compressor: Compressor,
     attempts: VecDeque<NonZeroUsize>,
@@ -305,10 +305,7 @@ impl<T> Bundler<T> {
         }
     }
 
-    fn blocks_for_new_proposal(
-        &self,
-        block_count: NonZeroUsize,
-    ) -> NonEmpty<ports::storage::DBCompressedBlock> {
+    fn blocks_for_new_proposal(&self, block_count: NonZeroUsize) -> NonEmpty<CompressedFuelBlock> {
         self.blocks
             .iter()
             .take(block_count.get())
@@ -320,7 +317,7 @@ impl<T> Bundler<T> {
     fn blocks_bundles_for_analyzing(
         &mut self,
         num_concurrent: std::num::NonZero<usize>,
-    ) -> Vec<NonEmpty<ports::storage::DBCompressedBlock>> {
+    ) -> Vec<NonEmpty<CompressedFuelBlock>> {
         let mut blocks_for_attempts = vec![];
 
         while !self.attempts.is_empty() && blocks_for_attempts.len() < num_concurrent.get() {
@@ -428,7 +425,7 @@ fn generate_attempts(
     .collect()
 }
 
-fn merge_block_data(blocks: NonEmpty<ports::storage::DBCompressedBlock>) -> NonEmpty<u8> {
+fn merge_block_data(blocks: NonEmpty<CompressedFuelBlock>) -> NonEmpty<u8> {
     blocks
         .into_iter()
         .flat_map(|b| b.data)
@@ -439,7 +436,7 @@ fn merge_block_data(blocks: NonEmpty<ports::storage::DBCompressedBlock>) -> NonE
 fn create_proposal(
     compressor: Compressor,
     fragment_encoder: impl FragmentEncoder,
-    bundle_blocks: NonEmpty<ports::storage::DBCompressedBlock>,
+    bundle_blocks: NonEmpty<CompressedFuelBlock>,
 ) -> Result<Proposal> {
     let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
 
@@ -463,11 +460,10 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use eth::Eip4844BlobEncoder;
-    use fuel_crypto::SecretKey;
     use ports::{l1::FragmentEncoder, types::nonempty};
 
     use super::*;
-    use crate::test_utils::mocks::fuel::{generate_storage_block, generate_storage_block_sequence};
+    use crate::test_utils::mocks::fuel::{generate_block, generate_storage_block_sequence};
 
     #[test]
     fn can_disable_compression() {
@@ -494,8 +490,7 @@ mod tests {
     #[tokio::test]
     async fn finishing_will_advance_if_not_called_at_least_once() {
         // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-        let blocks = generate_storage_block_sequence(0..=10, &secret_key, 10, 100);
+        let blocks = generate_storage_block_sequence(0..=10, 1000);
 
         let bundler = Bundler::new(
             Eip4844BlobEncoder,
@@ -518,13 +513,10 @@ mod tests {
     #[tokio::test]
     async fn will_provide_a_suboptimal_bundle_if_not_advanced_enough() -> Result<()> {
         // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-
-        let stops_at_blob_boundary =
-            generate_storage_block(0, &secret_key, 1, enough_bytes_to_almost_fill_a_blob());
+        let stops_at_blob_boundary = generate_block(0, enough_bytes_to_almost_fill_a_blob());
 
         let requires_new_blob_but_doesnt_utilize_it =
-            generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob() / 3);
+            generate_block(1, enough_bytes_to_almost_fill_a_blob() / 3);
 
         let blocks: SequentialFuelBlocks = nonempty![
             stops_at_blob_boundary,
@@ -563,9 +555,8 @@ mod tests {
     #[tokio::test]
     async fn tolerates_step_too_large() -> Result<()> {
         // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
 
-        let blocks = generate_storage_block_sequence(0..=2, &secret_key, 3, 100);
+        let blocks = generate_storage_block_sequence(0..=2, 300);
 
         let step_size = NonZeroUsize::new(5).unwrap(); // Step size larger than number of blocks
 
@@ -585,6 +576,7 @@ mod tests {
         assert!(bundle.metadata.known_to_be_optimal);
         assert_eq!(bundle.metadata.block_heights, 0..=2);
         assert_eq!(bundle.metadata.optimization_attempts, 3); // 3 then 1 then 2
+
         Ok(())
     }
 
@@ -592,11 +584,9 @@ mod tests {
     #[tokio::test]
     async fn bigger_bundle_will_have_same_storage_gas_usage() -> Result<()> {
         // given
-        let secret_key = SecretKey::random(&mut rand::thread_rng());
-
         let blocks = nonempty![
-            generate_storage_block(0, &secret_key, 1, 100),
-            generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob())
+            generate_block(0, 100),
+            generate_block(1, enough_bytes_to_almost_fill_a_blob())
         ];
 
         let mut bundler = Bundler::new(

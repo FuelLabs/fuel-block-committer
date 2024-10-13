@@ -1,7 +1,9 @@
 use std::num::NonZeroU32;
 
 use num_bigint::BigInt;
-use ports::types::{BlockSubmissionTx, DateTime, NonEmpty, NonNegative, TransactionState, Utc};
+use ports::types::{
+    BlockSubmissionTx, CompressedFuelBlock, DateTime, NonEmpty, NonNegative, TransactionState, Utc,
+};
 use sqlx::types::BigDecimal;
 
 macro_rules! bail {
@@ -269,13 +271,13 @@ impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct CompressedFuelBlock {
+pub(crate) struct DBCompressedFuelBlock {
     pub height: i64,
     pub data: Vec<u8>,
 }
 
-impl From<ports::storage::DBCompressedBlock> for CompressedFuelBlock {
-    fn from(value: ports::storage::DBCompressedBlock) -> Self {
+impl From<CompressedFuelBlock> for DBCompressedFuelBlock {
+    fn from(value: CompressedFuelBlock) -> Self {
         Self {
             height: value.height.into(),
             data: value.data.into(),
@@ -283,10 +285,10 @@ impl From<ports::storage::DBCompressedBlock> for CompressedFuelBlock {
     }
 }
 
-impl TryFrom<CompressedFuelBlock> for ports::storage::DBCompressedBlock {
+impl TryFrom<DBCompressedFuelBlock> for CompressedFuelBlock {
     type Error = crate::error::Error;
 
-    fn try_from(value: CompressedFuelBlock) -> Result<Self, Self::Error> {
+    fn try_from(value: DBCompressedFuelBlock) -> Result<Self, Self::Error> {
         let height = value.height.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!(
                 "Invalid db `height` ({}). Reason: {e}",

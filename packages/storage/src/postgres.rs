@@ -5,8 +5,8 @@ use metrics::{prometheus::IntGauge, RegistersMetrics};
 use ports::{
     storage::SequentialFuelBlocks,
     types::{
-        BlockSubmission, BlockSubmissionTx, DateTime, Fragment, NonEmpty, NonNegative,
-        TransactionState, TryCollectNonEmpty, Utc,
+        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, NonEmpty,
+        NonNegative, TransactionState, TryCollectNonEmpty, Utc,
     },
 };
 use sqlx::{
@@ -361,10 +361,7 @@ impl Postgres {
         Ok(create_ranges(heights))
     }
 
-    pub(crate) async fn _insert_blocks(
-        &self,
-        blocks: NonEmpty<ports::storage::DBCompressedBlock>,
-    ) -> Result<()> {
+    pub(crate) async fn _insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
         // Currently: height and data
         const FIELDS_PER_BLOCK: u16 = 2;
         /// The maximum number of bind parameters that can be passed to a single postgres query is
@@ -375,7 +372,7 @@ impl Postgres {
 
         let queries = blocks
             .into_iter()
-            .map(tables::CompressedFuelBlock::from)
+            .map(tables::DBCompressedFuelBlock::from)
             .chunks(MAX_BLOCKS_PER_QUERY)
             .into_iter()
             .map(|chunk| {
@@ -450,7 +447,7 @@ impl Postgres {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
 
         let response = sqlx::query_as!(
-            tables::CompressedFuelBlock,
+            tables::DBCompressedFuelBlock,
             r#"
             SELECT fb.*
             FROM fuel_blocks fb WHERE fb.height >= $1
@@ -469,7 +466,7 @@ impl Postgres {
 
         let sequential_blocks = response
             .into_iter()
-            .map(ports::storage::DBCompressedBlock::try_from)
+            .map(CompressedFuelBlock::try_from)
             .try_collect_nonempty()?
             .map(SequentialFuelBlocks::from_first_sequence);
 

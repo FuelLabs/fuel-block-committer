@@ -7,9 +7,7 @@ use metrics::{
     HealthChecker, RegistersMetrics,
 };
 use ports::storage::Storage;
-use services::{
-    BlockBundler, BlockBundlerConfig, BlockCommitter, BlockValidator, Runner, WalletBalanceTracker,
-};
+use services::{BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletBalanceTracker};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -50,13 +48,10 @@ pub fn block_committer(
     config: &config::Config,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let validator = BlockValidator::new(*config.fuel.block_producer_address);
-
     let block_committer = BlockCommitter::new(
         l1,
         storage,
         fuel,
-        validator,
         SystemClock,
         commit_interval,
         config.app.num_blocks_to_finalize_tx,
@@ -144,13 +139,8 @@ pub fn block_importer(
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let validator = BlockValidator::new(*config.fuel.block_producer_address);
-    let block_importer = services::BlockImporter::new(
-        storage,
-        fuel,
-        validator,
-        config.app.bundle.block_height_lookback,
-    );
+    let block_importer =
+        services::BlockImporter::new(storage, fuel, config.app.bundle.block_height_lookback);
 
     schedule_polling(
         config.app.block_check_interval,

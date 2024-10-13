@@ -13,10 +13,7 @@ use crate::{
 
 pub enum FuelNodeType {
     Local(FuelNodeProcess),
-    Testnet {
-        url: Url,
-        block_producer_addr: String,
-    },
+    Testnet { url: Url },
 }
 
 impl FuelNodeType {
@@ -24,15 +21,6 @@ impl FuelNodeType {
         match self {
             FuelNodeType::Local(fuel_node) => fuel_node.url().clone(),
             FuelNodeType::Testnet { url, .. } => url.clone(),
-        }
-    }
-    pub fn block_producer_addr(&self) -> String {
-        match self {
-            FuelNodeType::Local(fuel_node) => hex::encode(fuel_node.consensus_pub_key().hash()),
-            FuelNodeType::Testnet {
-                block_producer_addr,
-                ..
-            } => block_producer_addr.clone(),
         }
     }
     pub fn client(&self) -> HttpClient {
@@ -77,7 +65,6 @@ impl WholeStack {
             db.clone(),
             &eth_node,
             fuel_node.url(),
-            fuel_node.block_producer_addr(),
             &deployed_contract,
             &main_key,
             &secondary_key,
@@ -110,8 +97,6 @@ impl WholeStack {
 
         let fuel_node = FuelNodeType::Testnet {
             url: "https://testnet.fuel.network/v1/graphql".parse().unwrap(),
-            block_producer_addr: "d9173046b109cc24dfa1099d3c48d8b8b810e3279344cfc3d2bd13149e18c402"
-                .to_owned(),
         };
 
         let db = start_db().await?;
@@ -124,11 +109,10 @@ impl WholeStack {
                 .with_db_port(db.port())
                 .with_db_name(db.db_name())
                 .with_state_contract_address(deployed_contract.address())
-                .with_fuel_block_producer_addr(fuel_node.block_producer_addr())
                 .with_main_key_arn(main_key.id.clone())
                 .with_kms_url(main_key.url.clone())
                 .with_bundle_accumulation_timeout("3600s".to_owned())
-                .with_bundle_blocks_to_accumulate("3600".to_string())
+                .with_bundle_blocks_to_accumulate("400".to_string())
                 .with_bundle_optimization_timeout("60s".to_owned())
                 .with_bundle_block_height_lookback("8500".to_owned())
                 .with_bundle_optimization_step("100".to_owned())
@@ -223,7 +207,6 @@ async fn start_committer(
     random_db: DbWithProcess,
     eth_node: &EthNodeProcess,
     fuel_node_url: Url,
-    fuel_node_consensus_pub_key: String,
     deployed_contract: &DeployedContract,
     main_key: &KmsKey,
     secondary_key: &KmsKey,
@@ -235,11 +218,10 @@ async fn start_committer(
         .with_db_port(random_db.port())
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
-        .with_fuel_block_producer_addr(fuel_node_consensus_pub_key)
         .with_main_key_arn(main_key.id.clone())
         .with_kms_url(main_key.url.clone())
         .with_bundle_accumulation_timeout("5s".to_owned())
-        .with_bundle_blocks_to_accumulate("400".to_string())
+        .with_bundle_blocks_to_accumulate("3600".to_string())
         .with_bundle_optimization_timeout("5s".to_owned())
         .with_bundle_block_height_lookback("20000".to_owned())
         .with_bundle_fragments_to_accumulate("3".to_owned())
