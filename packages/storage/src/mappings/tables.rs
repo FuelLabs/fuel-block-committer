@@ -269,31 +269,24 @@ impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct FuelBlock {
-    pub hash: Vec<u8>,
+pub struct CompressedFuelBlock {
     pub height: i64,
     pub data: Vec<u8>,
 }
 
-impl From<ports::storage::FuelBlock> for FuelBlock {
-    fn from(value: ports::storage::FuelBlock) -> Self {
+impl From<ports::storage::DBCompressedBlock> for CompressedFuelBlock {
+    fn from(value: ports::storage::DBCompressedBlock) -> Self {
         Self {
-            hash: value.hash.to_vec(),
             height: value.height.into(),
             data: value.data.into(),
         }
     }
 }
 
-impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
+impl TryFrom<CompressedFuelBlock> for ports::storage::DBCompressedBlock {
     type Error = crate::error::Error;
 
-    fn try_from(value: FuelBlock) -> Result<Self, Self::Error> {
-        let hash = value.hash.as_slice();
-        let Ok(block_hash) = hash.try_into() else {
-            bail!("Expected 32 bytes for `hash`, but got: {hash:?} from db",);
-        };
-
+    fn try_from(value: CompressedFuelBlock) -> Result<Self, Self::Error> {
         let height = value.height.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!(
                 "Invalid db `height` ({}). Reason: {e}",
@@ -304,11 +297,7 @@ impl TryFrom<FuelBlock> for ports::storage::FuelBlock {
         let data = NonEmpty::collect(value.data)
             .ok_or_else(|| crate::error::Error::Conversion("Invalid db `data`.".to_string()))?;
 
-        Ok(Self {
-            height,
-            hash: block_hash,
-            data,
-        })
+        Ok(Self { height, data })
     }
 }
 

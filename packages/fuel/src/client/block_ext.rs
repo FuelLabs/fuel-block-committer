@@ -117,6 +117,7 @@ pub struct OpaqueTransaction {
 
 #[trait_variant::make(Send)]
 pub trait ClientExt {
+    // TODO: @hal3e remove
     async fn full_blocks(
         &self,
         request: PaginationRequest<String>,

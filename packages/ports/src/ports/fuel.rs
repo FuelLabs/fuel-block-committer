@@ -17,6 +17,12 @@ pub struct FullFuelBlock {
     pub raw_transactions: Vec<NonEmpty<u8>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CompressedFuelBlock {
+    pub height: u32,
+    pub data: NonEmpty<u8>,
+}
+
 pub use futures::stream::BoxStream;
 
 use crate::types::NonEmpty;
@@ -36,10 +42,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg_attr(feature = "test-helpers", mockall::automock)]
 pub trait Api: Send + Sync {
     async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
-    fn full_blocks_in_height_range(
+    fn compressed_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<Vec<FullFuelBlock>>>;
+    ) -> BoxStream<'_, Result<CompressedFuelBlock>>;
     async fn latest_block(&self) -> Result<FuelBlock>;
     async fn latest_height(&self) -> Result<u32>;
 }

@@ -264,7 +264,7 @@ impl Proposal {
 #[derive(Debug, Clone)]
 pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
-    blocks: NonEmpty<ports::storage::FuelBlock>,
+    blocks: NonEmpty<ports::storage::DBCompressedBlock>,
     best_proposal: Option<Proposal>,
     compressor: Compressor,
     attempts: VecDeque<NonZeroUsize>,
@@ -308,7 +308,7 @@ impl<T> Bundler<T> {
     fn blocks_for_new_proposal(
         &self,
         block_count: NonZeroUsize,
-    ) -> NonEmpty<ports::storage::FuelBlock> {
+    ) -> NonEmpty<ports::storage::DBCompressedBlock> {
         self.blocks
             .iter()
             .take(block_count.get())
@@ -320,7 +320,7 @@ impl<T> Bundler<T> {
     fn blocks_bundles_for_analyzing(
         &mut self,
         num_concurrent: std::num::NonZero<usize>,
-    ) -> Vec<NonEmpty<ports::storage::FuelBlock>> {
+    ) -> Vec<NonEmpty<ports::storage::DBCompressedBlock>> {
         let mut blocks_for_attempts = vec![];
 
         while !self.attempts.is_empty() && blocks_for_attempts.len() < num_concurrent.get() {
@@ -428,7 +428,7 @@ fn generate_attempts(
     .collect()
 }
 
-fn merge_block_data(blocks: NonEmpty<ports::storage::FuelBlock>) -> NonEmpty<u8> {
+fn merge_block_data(blocks: NonEmpty<ports::storage::DBCompressedBlock>) -> NonEmpty<u8> {
     blocks
         .into_iter()
         .flat_map(|b| b.data)
@@ -439,7 +439,7 @@ fn merge_block_data(blocks: NonEmpty<ports::storage::FuelBlock>) -> NonEmpty<u8>
 fn create_proposal(
     compressor: Compressor,
     fragment_encoder: impl FragmentEncoder,
-    bundle_blocks: NonEmpty<ports::storage::FuelBlock>,
+    bundle_blocks: NonEmpty<ports::storage::DBCompressedBlock>,
 ) -> Result<Proposal> {
     let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
 
@@ -595,7 +595,7 @@ mod tests {
         let secret_key = SecretKey::random(&mut rand::thread_rng());
 
         let blocks = nonempty![
-            generate_storage_block(0, &secret_key, 0, 100),
+            generate_storage_block(0, &secret_key, 1, 100),
             generate_storage_block(1, &secret_key, 1, enough_bytes_to_almost_fill_a_blob())
         ];
 

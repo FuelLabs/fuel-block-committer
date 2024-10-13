@@ -108,6 +108,8 @@ impl FuelNode {
             .arg("--debug")
             .arg(format!("--native-executor-version={executor_version}"))
             .env("CONSENSUS_KEY_SECRET", format!("{}", secret_key))
+            .arg("--da-compression")
+            .arg("1hr")
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null());
 
@@ -144,7 +146,7 @@ impl FuelNode {
 
 impl FuelNodeProcess {
     pub fn client(&self) -> HttpClient {
-        HttpClient::new(&self.url, 5, 100.try_into().unwrap())
+        HttpClient::new(&self.url, 5)
     }
 
     pub async fn produce_transactions(&self, amount: usize) -> anyhow::Result<()> {

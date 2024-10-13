@@ -53,7 +53,6 @@ pub struct Fuel {
     pub graphql_endpoint: Url,
     /// Block producer address
     pub block_producer_address: ports::fuel::FuelBytes32,
-    pub max_full_blocks_per_request: NonZeroU32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

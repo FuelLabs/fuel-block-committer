@@ -81,10 +81,12 @@ pub trait Runner: Send + Sync {
 #[cfg(test)]
 pub(crate) mod test_utils {
 
+    // TODO: @hal3e remove this
     pub fn encode_and_merge(blocks: NonEmpty<ports::fuel::FullFuelBlock>) -> NonEmpty<u8> {
-        block_importer::encode_blocks(blocks)
+        blocks
             .into_iter()
-            .flat_map(|b| b.data)
+            .flat_map(|fb| fb.raw_transactions)
+            .flatten()
             .collect_nonempty()
             .expect("is not empty")
     }
@@ -344,7 +346,10 @@ pub(crate) mod test_utils {
             use futures::{stream, StreamExt};
             use itertools::Itertools;
             use ports::{
-                fuel::{FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock},
+                fuel::{
+                    CompressedFuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus,
+                    FullFuelBlock,
+                },
                 storage::SequentialFuelBlocks,
                 types::{nonempty, CollectNonEmpty, NonEmpty},
             };
@@ -406,7 +411,7 @@ pub(crate) mod test_utils {
                 secret_key: &SecretKey,
                 num_tx: usize,
                 tx_size: usize,
-            ) -> ports::storage::FuelBlock {
+            ) -> ports::storage::DBCompressedBlock {
                 let block = generate_block(height, secret_key, num_tx, tx_size);
                 block_importer::encode_blocks(nonempty![block])
                     .first()
@@ -461,19 +466,23 @@ pub(crate) mod test_utils {
                     .return_once(move || Box::pin(async move { Ok(highest_height) }));
 
                 fuel_mock
-                    .expect_full_blocks_in_height_range()
+                    .expect_compressed_blocks_in_height_range()
                     .returning(move |range| {
                         let expected_range = lowest_height..=highest_height;
                         if enforce_tight_range && range != expected_range {
                             panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
-                        let blocks_batch = blocks
+                        let blocks_batch: Vec<_> = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.header.height))
-                            .cloned().collect();
+                            .cloned()
+                            .map(|fb| Ok(CompressedFuelBlock{height: fb.header.height, data:
+                                fb.raw_transactions.iter().flatten().cloned().collect_nonempty().expect("is not empty")
+                            })) // TODO: @ha3e fix this
+                            .collect();
 
-                        stream::iter(iter::once(Ok(blocks_batch))).boxed()
+                        stream::iter(blocks_batch).boxed() // TODO: @hal3e fix this
                     });
 
                 fuel_mock
@@ -492,7 +501,7 @@ pub(crate) mod test_utils {
     #[derive(Debug)]
     pub struct ImportedBlocks {
         pub fuel_blocks: NonEmpty<ports::fuel::FullFuelBlock>,
-        pub storage_blocks: NonEmpty<ports::storage::FuelBlock>,
+        pub storage_blocks: NonEmpty<ports::storage::DBCompressedBlock>,
         pub secret_key: SecretKey,
     }
 

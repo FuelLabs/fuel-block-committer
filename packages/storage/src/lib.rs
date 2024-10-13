@@ -70,7 +70,10 @@ impl Storage for Postgres {
             .map_err(Into::into)
     }
 
-    async fn insert_blocks(&self, blocks: NonEmpty<ports::storage::FuelBlock>) -> Result<()> {
+    async fn insert_blocks(
+        &self,
+        blocks: NonEmpty<ports::storage::DBCompressedBlock>,
+    ) -> Result<()> {
         Ok(self._insert_blocks(blocks).await?)
     }
 
@@ -427,8 +430,7 @@ mod tests {
             .map(|height| {
                 let block_hash: [u8; 32] = rng.gen();
                 let block_data = nonempty![height as u8];
-                ports::storage::FuelBlock {
-                    hash: block_hash,
+                ports::storage::DBCompressedBlock {
                     height,
                     data: block_data,
                 }

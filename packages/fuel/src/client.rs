@@ -13,10 +13,11 @@ use fuel_core_client::client::{
 };
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
-use futures::{stream, Stream};
+use futures::{stream, Stream, StreamExt};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
+use ports::{fuel::CompressedFuelBlock, types::NonEmpty};
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};
@@ -28,22 +29,18 @@ pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
-    full_blocks_req_size: NonZeroU32,
+    num_buffered: NonZeroU32,
 }
 
 impl HttpClient {
     #[must_use]
-    pub fn new(
-        url: &Url,
-        unhealthy_after_n_errors: usize,
-        full_blocks_req_size: NonZeroU32,
-    ) -> Self {
+    pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
         Self {
             client,
             metrics: Metrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
-            full_blocks_req_size,
+            num_buffered: NonZeroU32::new(5).expect("is non zero"), //TODO: hal3e make this configurable
         }
     }
 
@@ -110,7 +107,8 @@ impl HttpClient {
         }
     }
 
-    pub(crate) fn block_in_height_range(
+    //TODO: @hal3e remove
+    pub(crate) fn _block_in_height_range(
         &self,
         range: RangeInclusive<u32>,
     ) -> impl Stream<Item = Result<Vec<ports::fuel::FullFuelBlock>>> + '_ {
@@ -160,10 +158,7 @@ impl HttpClient {
                 cursor: current_progress.take_cursor(),
                 results: min(
                     current_progress.remaining(),
-                    self.full_blocks_req_size
-                        .get()
-                        .try_into()
-                        .unwrap_or(i32::MAX),
+                    self.num_buffered.get().try_into().unwrap_or(i32::MAX),
                 ),
                 direction: PageDirection::Forward,
             };
@@ -190,6 +185,50 @@ impl HttpClient {
                 Ok(Some((results, current_progress)))
             }
         })
+    }
+
+    pub(crate) async fn compressed_block_at_height(
+        &self,
+        height: u32,
+    ) -> Result<Option<CompressedFuelBlock>> {
+        match self.client.da_compressed_block(height.into()).await {
+            Ok(maybe_block) => {
+                self.handle_network_success();
+                match maybe_block {
+                    Some(data) => {
+                        let non_empty_data = NonEmpty::collect(data).ok_or_else(|| {
+                            Error::Other(format!(
+                                "encountered empty compressed block at height: {}",
+                                height
+                            ))
+                        })?;
+
+                        Ok(Some(CompressedFuelBlock {
+                            height,
+                            data: non_empty_data,
+                        }))
+                    }
+                    None => Err(Error::Other(format!(
+                        "compressed block not found at height: {}",
+                        height
+                    ))),
+                }
+            }
+            Err(err) => {
+                self.handle_network_error();
+                Err(Error::Network(err.to_string()))
+            }
+        }
+    }
+
+    pub(crate) fn _compressed_blocks_in_height_range(
+        &self,
+        range: RangeInclusive<u32>,
+    ) -> impl Stream<Item = Result<CompressedFuelBlock>> + '_ {
+        stream::iter(range)
+            .map(move |height| self.compressed_block_at_height(height))
+            .buffered(self.num_buffered.get() as usize)
+            .filter_map(|result| async move { result.transpose() })
     }
 
     pub async fn latest_block(&self) -> Result<Block> {

@@ -363,10 +363,10 @@ impl Postgres {
 
     pub(crate) async fn _insert_blocks(
         &self,
-        blocks: NonEmpty<ports::storage::FuelBlock>,
+        blocks: NonEmpty<ports::storage::DBCompressedBlock>,
     ) -> Result<()> {
-        // Currently: hash, height and data
-        const FIELDS_PER_BLOCK: u16 = 3;
+        // Currently: height and data
+        const FIELDS_PER_BLOCK: u16 = 2;
         /// The maximum number of bind parameters that can be passed to a single postgres query is
         /// u16::MAX. Sqlx panics if this limit is exceeded.
         const MAX_BLOCKS_PER_QUERY: usize = (u16::MAX / FIELDS_PER_BLOCK) as usize;
@@ -375,18 +375,15 @@ impl Postgres {
 
         let queries = blocks
             .into_iter()
-            .map(tables::FuelBlock::from)
+            .map(tables::CompressedFuelBlock::from)
             .chunks(MAX_BLOCKS_PER_QUERY)
             .into_iter()
             .map(|chunk| {
-                let mut query_builder =
-                    QueryBuilder::new("INSERT INTO fuel_blocks (hash, height, data)");
+                let mut query_builder = QueryBuilder::new("INSERT INTO fuel_blocks (height, data)");
 
                 query_builder.push_values(chunk, |mut b, block| {
                     // update the constants above if you add/remove bindings
-                    b.push_bind(block.hash)
-                        .push_bind(block.height)
-                        .push_bind(block.data);
+                    b.push_bind(block.height).push_bind(block.data);
                 });
 
                 query_builder
@@ -453,7 +450,7 @@ impl Postgres {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
 
         let response = sqlx::query_as!(
-            tables::FuelBlock,
+            tables::CompressedFuelBlock,
             r#"
             SELECT fb.*
             FROM fuel_blocks fb WHERE fb.height >= $1
@@ -472,7 +469,7 @@ impl Postgres {
 
         let sequential_blocks = response
             .into_iter()
-            .map(ports::storage::FuelBlock::try_from)
+            .map(ports::storage::DBCompressedBlock::try_from)
             .try_collect_nonempty()?
             .map(SequentialFuelBlocks::from_first_sequence);
 
