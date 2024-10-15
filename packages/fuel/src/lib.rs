@@ -24,11 +24,11 @@ impl ports::fuel::Api for client::HttpClient {
         self.latest_block().await.map(|b| b.header.height)
     }
 
-    fn full_blocks_in_height_range(
+    fn compressed_blocks_in_height_range(
         &self,
         range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<Vec<ports::fuel::FullFuelBlock>>> {
-        self.block_in_height_range(range).boxed()
+    ) -> BoxStream<'_, Result<ports::types::CompressedFuelBlock>> {
+        self._compressed_blocks_in_height_range(range).boxed()
     }
 }
 
