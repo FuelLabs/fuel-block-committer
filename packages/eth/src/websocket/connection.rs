@@ -257,7 +257,7 @@ impl EthApi for WsConnection {
         let num_fragments = min(fragments.len(), 6);
 
         let limited_fragments = fragments.into_iter().take(num_fragments);
-        let sidecar = Eip4844BlobEncoder::decode(limited_fragments)?;
+        let sidecar = Eip4844BlobEncoder::construct_sidecar(limited_fragments)?;
 
         let blob_tx = match previous_tx {
             Some(previous_tx) => {
@@ -499,7 +499,7 @@ mod tests {
 
         let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
         let fragment = Eip4844BlobEncoder {}.encode(data, 1.into()).unwrap();
-        let sidecar = Eip4844BlobEncoder::decode(fragment.clone()).unwrap();
+        let sidecar = Eip4844BlobEncoder::construct_sidecar(fragment.clone()).unwrap();
 
         // create a tx with the help of the provider to get gas fields, hash etc
         let tx = TransactionRequest::default()

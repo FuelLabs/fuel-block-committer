@@ -6798,6 +6798,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "utils"
+version = "0.9.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "bitvec",
+ "c-kzg",
+ "itertools 0.13.0",
+ "rand",
+ "test-case",
+]
+
+[[package]]
 name = "uuid"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

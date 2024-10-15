@@ -8,7 +8,6 @@ use alloy::{
     },
 };
 use itertools::{izip, Itertools};
-use ports::types::{CollectNonEmpty, Fragment, NonEmpty, NonNegative};
 
 // Until the issue is fixed be careful that we use the `SidecarBuilder` and `SimpleCoder` from
 // `copied_from_alloy`, there is a unit test that should protect against accidental import from the
@@ -23,7 +22,7 @@ impl Eip4844BlobEncoder {
     pub const FRAGMENT_SIZE: usize =
         FIELD_ELEMENTS_PER_BLOB as usize * alloy::eips::eip4844::FIELD_ELEMENT_BYTES as usize;
 
-    pub(crate) fn decode(
+    pub(crate) fn construct_sidecar(
         fragments: impl IntoIterator<Item = Fragment>,
     ) -> crate::error::Result<BlobTransactionSidecar> {
         let fragments: Vec<_> = fragments
@@ -63,18 +62,10 @@ impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
     }
 }
 
-struct SingleBlob {
-    // needs to be heap allocated because it's large enough to cause a stack overflow
-    blobs: Box<Blob>,
-    commitment: Bytes48,
-    proof: Bytes48,
-    unused_bytes: u32,
-}
-
 impl SingleBlob {
     const SIZE: usize = BYTES_PER_BLOB + BYTES_PER_COMMITMENT + BYTES_PER_PROOF;
 
-    fn decode(fragment: Fragment) -> crate::error::Result<Self> {
+    pub(crate) fn decode(fragment: Fragment) -> crate::error::Result<Self> {
         let data = Vec::from(fragment.data);
         let bytes: &[u8; Self::SIZE] = data.as_slice().try_into().map_err(|_| {
             crate::error::Error::Other(format!(
@@ -176,26 +167,6 @@ fn encode_into_blobs(data: NonEmpty<u8>) -> crate::error::Result<NonEmpty<Single
         .expect("checked is not empty");
 
     Ok(single_blobs)
-}
-
-fn merge_into_sidecar(
-    single_blobs: impl IntoIterator<Item = SingleBlob>,
-) -> BlobTransactionSidecar {
-    let mut blobs = vec![];
-    let mut commitments = vec![];
-    let mut proofs = vec![];
-
-    for blob in single_blobs {
-        blobs.push(*blob.blobs);
-        commitments.push(blob.commitment);
-        proofs.push(blob.proof);
-    }
-
-    BlobTransactionSidecar {
-        blobs,
-        commitments,
-        proofs,
-    }
 }
 
 #[cfg(test)]
@@ -310,7 +281,7 @@ mod tests {
                 })?;
 
             // then
-            let sidecar = Eip4844BlobEncoder::decode(fragments).unwrap();
+            let sidecar = Eip4844BlobEncoder::construct_sidecar(fragments).unwrap();
 
             let mut builder = SidecarBuilder::<SimpleCoder>::new();
             for byte in &data {
