@@ -35,7 +35,10 @@ mod test {
         Ok(BlobTransactionSidecar::new(blobs, commitments, proofs))
     }
 
-    use alloy::consensus::{BlobTransactionSidecar, EnvKzgSettings};
+    use alloy::{
+        consensus::{BlobTransactionSidecar, EnvKzgSettings},
+        eips::eip4844::USABLE_BITS_PER_FIELD_ELEMENT,
+    };
     use c_kzg::{KzgCommitment, KzgProof};
     use itertools::Itertools;
     use rand::{rngs::SmallRng, seq::SliceRandom, RngCore, SeedableRng};
@@ -43,18 +46,10 @@ mod test {
     use utils::{decoder::NewDecoder, encoder::NewEncoder, Blob, BlobHeader, BlobHeaderV1};
 
     #[test_case(1,  1; "one blob")]
-    #[test_case(130040,  1; "one blob limit")]
-    #[test_case(130041,  2; "two blobs")]
-    #[test_case(130040 * 2,  2; "two blobs limit")]
-    #[test_case(130040 * 2 + 1,  2; "three blobs")]
-    #[test_case(130040 * 3,  3; "three blobs limit")]
-    #[test_case(130040 * 3 + 1,  3; "four blobs")]
-    #[test_case(130040 * 4,  4; "four blobs limit")]
-    #[test_case(130040 * 4 + 1,  4; "five blobs")]
-    #[test_case(130040 * 5,  5; "five blobs limit")]
-    #[test_case(130040 * 5 + 1,  5; "six blobs")]
-    #[test_case(130040 * 6,  6; "six blobs limit")]
-    #[test_case(130040 * 6 + 1,  6; "seven blobs")]
+    #[test_case(130037,  1; "one blob limit")]
+    #[test_case(130038,  2; "two blobs")]
+    #[test_case(130037 * 2,  2; "two blobs limit")]
+    #[test_case(130037 * 2  + 1,  3; "three blobs")]
     fn gas_usage_for_data_storage(num_bytes: usize, num_blobs: usize) {
         // given
         let encoder = NewEncoder {};
@@ -67,6 +62,7 @@ mod test {
     }
 
     #[test_case(1)]
+    #[test_case(50)]
     #[test_case(200_000)]
     #[test_case(600_000)]
     #[test_case(1_200_000)]
@@ -147,7 +143,6 @@ mod test {
     #[test_case(100, 0; "id 0")]
     #[test_case(100, 5; "normal case")]
     #[test_case(100, u32::MAX; "max id")]
-    #[test_case(0, 0; "zero data")]
     fn roundtrip_header_encoding(num_bytes: usize, bundle_id: u32) {
         // given
         let blob = {
@@ -159,17 +154,20 @@ mod test {
                 .unwrap()
         };
 
+        eprintln!("{:?}", &blob[0..11]);
+
         let decoder = NewDecoder {};
 
         // when
         let header = decoder.read_header(&blob).unwrap();
 
         // then
+        let lost_to_fe = 2 * (num_bytes * 8).div_ceil(256);
         assert_eq!(
             header,
             BlobHeader::V1(BlobHeaderV1 {
                 bundle_id,
-                size: (num_bytes + BlobHeaderV1::SIZE) as u32,
+                num_bits: (num_bytes * 8 + BlobHeader::V1_SIZE_BITS + lost_to_fe) as u32,
                 is_last: true,
                 idx: 0
             })

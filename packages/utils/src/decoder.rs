@@ -1,4 +1,7 @@
-use bitvec::{order::Lsb0, slice::BitSlice};
+use bitvec::{
+    order::{Lsb0, Msb0},
+    slice::BitSlice,
+};
 
 use crate::{Blob, BlobHeader, BlobHeaderV1, BlobWithProof};
 
@@ -12,9 +15,9 @@ impl NewDecoder {
     }
 
     pub fn read_header(&self, blob: &Blob) -> anyhow::Result<BlobHeader> {
-        let buffer = BitSlice::<u8, Lsb0>::from_slice(blob.as_slice());
+        let buffer = BitSlice::<u8, Msb0>::from_slice(blob.as_slice());
 
-        let (header, _) = BlobHeader::decode(buffer)?;
+        let (header, _) = BlobHeader::decode(&buffer[2..])?;
 
         Ok(header)
     }

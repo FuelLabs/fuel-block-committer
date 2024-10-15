@@ -4,37 +4,50 @@ pub mod encoder;
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlobHeaderV1 {
     pub bundle_id: u32,
-    pub size: u32,
+    /// Number of bits containing data
+    pub num_bits: u32,
     pub is_last: bool,
     pub idx: u32,
 }
 
 impl BlobHeaderV1 {
-    pub const SIZE: usize = 10;
+    const BUNDLE_ID_BITS: usize = 32;
+    const NUM_BITS_BITS: usize = 20;
+    const IS_LAST_BITS: usize = 1;
+    const IDX_SIZE_BITS: usize = 18;
+    pub const TOTAL_SIZE_BITS: usize =
+        Self::BUNDLE_ID_BITS + Self::NUM_BITS_BITS + Self::IS_LAST_BITS + Self::IDX_SIZE_BITS;
 
-    pub(crate) fn encode(&self, buffer: &mut BitVec<u8, Lsb0>) {
-        buffer.extend_from_bitslice(self.bundle_id.view_bits::<Lsb0>());
-        buffer.extend_from_bitslice(&self.size.view_bits::<Lsb0>()[..17]);
+    pub(crate) fn encode(&self, buffer: &mut BitVec<u8, Msb0>) {
+        buffer.extend_from_bitslice(self.bundle_id.view_bits::<Msb0>());
+
+        buffer.extend_from_bitslice(&self.num_bits.view_bits::<Msb0>()[32 - Self::NUM_BITS_BITS..]);
 
         buffer.push(self.is_last);
 
-        buffer.extend_from_bitslice(&self.idx.view_bits::<Lsb0>()[..14]);
+        buffer.extend_from_bitslice(&self.idx.view_bits::<Msb0>()[32 - Self::IDX_SIZE_BITS..]);
     }
 
-    pub(crate) fn decode(data: &BitSlice<u8, Lsb0>) -> Result<(Self, &BitSlice<u8, Lsb0>)> {
+    pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, &BitSlice<u8, Msb0>)> {
         // TODO: check if data is long enough
-        let bundle_id = data[0..32].load_le();
-        let size = data[32..49].load_le::<u32>();
-        let is_last = data[49];
-        let idx = data[50..64].load_le::<u32>();
+        let bundle_id = data[..Self::BUNDLE_ID_BITS].load_be();
+        let remaining_data = &data[Self::BUNDLE_ID_BITS..];
+
+        let num_bits = remaining_data[..Self::NUM_BITS_BITS].load_be::<u32>();
+        let remaining_data = &remaining_data[Self::NUM_BITS_BITS..];
+
+        let is_last = remaining_data[0];
+        let remaining_data = &remaining_data[1..];
+
+        let idx = remaining_data[..Self::IDX_SIZE_BITS].load_be::<u32>();
+        let remaining_data = &remaining_data[Self::IDX_SIZE_BITS..];
 
         let header = BlobHeaderV1 {
-            size,
+            num_bits,
             bundle_id,
             is_last,
             idx,
         };
-        let remaining_data = &data[64..];
 
         Ok((header, remaining_data))
     }
@@ -46,19 +59,29 @@ pub enum BlobHeader {
 }
 
 impl BlobHeader {
-    pub(crate) fn encode(&self, buffer: &mut BitVec<u8, Lsb0>) {
+    const VERSION_BITS: usize = 16;
+    pub const V1_SIZE_BITS: usize = BlobHeaderV1::TOTAL_SIZE_BITS + Self::VERSION_BITS;
+
+    pub(crate) fn encode(&self) -> BitVec<u8, Msb0> {
         match self {
             BlobHeader::V1(blob_header_v1) => {
+                let mut buffer = BitVec::<u8, Msb0>::new();
+
                 let version = 1u16;
-                buffer.extend_from_bitslice(version.view_bits::<Lsb0>());
-                blob_header_v1.encode(buffer);
+                buffer.extend_from_bitslice(version.view_bits::<Msb0>());
+
+                blob_header_v1.encode(&mut buffer);
+
+                buffer
             }
         }
     }
-    pub(crate) fn decode(data: &BitSlice<u8, Lsb0>) -> Result<(Self, &BitSlice<u8, Lsb0>)> {
+    pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, &BitSlice<u8, Msb0>)> {
         // TODO: check boundaries
-        let version = data[0..16].load_le::<u16>();
-        let remaining_data = &data[16..];
+        let version = data[..Self::VERSION_BITS].load_be::<u16>();
+        // eprintln!("version: {:?}", version);
+
+        let remaining_data = &data[Self::VERSION_BITS..];
         match version {
             1 => {
                 let (header, remaining_data) = BlobHeaderV1::decode(remaining_data)?;
@@ -82,4 +105,10 @@ pub struct BlobWithProof {
 pub use alloy::consensus::Bytes48;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use anyhow::{bail, Result};
-use bitvec::{field::BitField, order::Lsb0, slice::BitSlice, vec::BitVec, view::BitView};
+use bitvec::{
+    field::BitField,
+    order::{Lsb0, Msb0},
+    slice::BitSlice,
+    vec::BitVec,
+    view::BitView,
+};
