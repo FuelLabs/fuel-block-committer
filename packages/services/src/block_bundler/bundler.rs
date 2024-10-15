@@ -9,7 +9,7 @@ use itertools::Itertools;
 use ports::{
     l1::FragmentEncoder,
     storage::SequentialFuelBlocks,
-    types::{CollectNonEmpty, Fragment, NonEmpty},
+    types::{CollectNonEmpty, Fragment, NonEmpty, NonNegative},
 };
 use rayon::prelude::*;
 
@@ -212,7 +212,7 @@ pub trait Bundle {
 #[trait_variant::make(Send)]
 pub trait BundlerFactory {
     type Bundler: Bundle + Send + Sync;
-    async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler;
+    async fn build(&self, blocks: SequentialFuelBlocks, id: NonNegative<i32>) -> Self::Bundler;
 }
 
 pub struct Factory<GasCalculator> {
@@ -237,12 +237,13 @@ where
 {
     type Bundler = Bundler<GasCalculator>;
 
-    async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler {
+    async fn build(&self, blocks: SequentialFuelBlocks, id: NonNegative<i32>) -> Self::Bundler {
         Bundler::new(
             self.gas_calc.clone(),
             blocks,
             Compressor::new(self.compression_level),
             self.step_size,
+            id,
         )
     }
 }
@@ -268,6 +269,7 @@ pub struct Bundler<FragmentEncoder> {
     best_proposal: Option<Proposal>,
     compressor: Compressor,
     attempts: VecDeque<NonZeroUsize>,
+    bundle_id: NonNegative<i32>,
 }
 
 impl<T> Bundler<T> {
@@ -276,6 +278,7 @@ impl<T> Bundler<T> {
         blocks: SequentialFuelBlocks,
         compressor: Compressor,
         initial_step_size: NonZeroUsize,
+        bundle_id: NonNegative<i32>,
     ) -> Self {
         let max_blocks = blocks.len();
         let initial_step = initial_step_size;
@@ -288,6 +291,7 @@ impl<T> Bundler<T> {
             best_proposal: None,
             compressor,
             attempts,
+            bundle_id,
         }
     }
 
@@ -384,7 +388,7 @@ where
         let compressed_data_size = best_proposal.compressed_data.len_nonzero();
         let fragments = self
             .fragment_encoder
-            .encode(best_proposal.compressed_data)?;
+            .encode(best_proposal.compressed_data, self.bundle_id)?;
 
         let num_attempts = self
             .blocks
@@ -502,6 +506,7 @@ mod tests {
             blocks.clone(),
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(),
+            1u16.into(),
         );
 
         // when
@@ -509,7 +514,7 @@ mod tests {
 
         // then
         let merged = blocks.into_inner().flat_map(|b| b.data.clone());
-        let expected_fragments = Eip4844BlobEncoder.encode(merged).unwrap();
+        let expected_fragments = Eip4844BlobEncoder.encode(merged, 1.into()).unwrap();
         assert!(!bundle.metadata.known_to_be_optimal);
         assert_eq!(bundle.metadata.block_heights, 0..=10);
         assert_eq!(bundle.fragments, expected_fragments);
@@ -538,6 +543,7 @@ mod tests {
             blocks.clone(),
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(),
+            1u16.into(),
         );
 
         bundler.advance(1.try_into().unwrap()).await?;
@@ -574,6 +580,7 @@ mod tests {
             blocks.clone(),
             Compressor::no_compression(),
             step_size,
+            1u16.into(),
         );
 
         while bundler.advance(1.try_into().unwrap()).await? {}
@@ -604,6 +611,7 @@ mod tests {
             blocks.clone().try_into().unwrap(),
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(), // Default step size
+            1u16.into(),
         );
         while bundler.advance(1.try_into().unwrap()).await? {}
 

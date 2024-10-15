@@ -498,7 +498,7 @@ mod tests {
         };
 
         let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
-        let fragment = Eip4844BlobEncoder {}.encode(data).unwrap();
+        let fragment = Eip4844BlobEncoder {}.encode(data, 1.into()).unwrap();
         let sidecar = Eip4844BlobEncoder::decode(fragment.clone()).unwrap();
 
         // create a tx with the help of the provider to get gas fields, hash etc
@@ -576,7 +576,7 @@ mod tests {
         };
 
         let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
-        let fragment = Eip4844BlobEncoder {}.encode(data).unwrap();
+        let fragment = Eip4844BlobEncoder {}.encode(data, 1.into()).unwrap();
 
         // when
         let result = connection.submit_state_fragments(fragment, None).await;

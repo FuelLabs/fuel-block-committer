@@ -8,7 +8,7 @@ use alloy::{
     },
 };
 use itertools::{izip, Itertools};
-use ports::types::{CollectNonEmpty, Fragment, NonEmpty};
+use ports::types::{CollectNonEmpty, Fragment, NonEmpty, NonNegative};
 
 // Until the issue is fixed be careful that we use the `SidecarBuilder` and `SimpleCoder` from
 // `copied_from_alloy`, there is a unit test that should protect against accidental import from the
@@ -36,7 +36,11 @@ impl Eip4844BlobEncoder {
 }
 
 impl ports::l1::FragmentEncoder for Eip4844BlobEncoder {
-    fn encode(&self, data: NonEmpty<u8>) -> ports::l1::Result<NonEmpty<Fragment>> {
+    fn encode(
+        &self,
+        data: NonEmpty<u8>,
+        _id: NonNegative<i32>,
+    ) -> ports::l1::Result<NonEmpty<Fragment>> {
         let fragments = encode_into_blobs(data)
             .map_err(|e| ports::l1::Error::Other(e.to_string()))?
             .into_iter()
@@ -196,7 +200,6 @@ fn merge_into_sidecar(
 
 #[cfg(test)]
 mod tests {
-
     use ports::l1::FragmentEncoder;
     use proptest::prop_assert_eq;
     use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
@@ -301,7 +304,7 @@ mod tests {
 
             // when
             let fragments = encoder
-                .encode(NonEmpty::from_vec(data.clone()).unwrap())
+                .encode(NonEmpty::from_vec(data.clone()).unwrap(), 1.into())
                 .map_err(|e| {
                     crate::error::Error::Other(format!("cannot encode {amount}B : {}", e))
                 })?;
@@ -310,7 +313,6 @@ mod tests {
             let sidecar = Eip4844BlobEncoder::decode(fragments).unwrap();
 
             let mut builder = SidecarBuilder::<SimpleCoder>::new();
-            // TODO: ingest more at once
             for byte in &data {
                 builder.ingest(std::slice::from_ref(byte));
             }

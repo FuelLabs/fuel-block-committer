@@ -179,7 +179,8 @@ where
 
             info!("Giving {} blocks to the bundler", blocks.len());
 
-            let bundler = self.bundler_factory.build(blocks).await;
+            let next_id = self.storage.next_bundle_id().await?;
+            let bundler = self.bundler_factory.build(blocks, next_id).await;
 
             let optimization_start = self.clock.now();
             let BundleProposal {
@@ -192,7 +193,7 @@ where
             info!("Bundler proposed: {metadata}");
 
             self.storage
-                .insert_bundle_and_fragments(metadata.block_heights.clone(), fragments)
+                .insert_bundle_and_fragments(next_id, metadata.block_heights.clone(), fragments)
                 .await?;
 
             self.metrics.observe_metadata(&metadata);
@@ -274,7 +275,7 @@ mod tests {
     use ports::{
         l1::FragmentEncoder,
         storage::SequentialFuelBlocks,
-        types::{nonempty, CollectNonEmpty, Fragment, NonEmpty},
+        types::{nonempty, CollectNonEmpty, Fragment, NonEmpty, NonNegative},
     };
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -348,7 +349,7 @@ mod tests {
     impl BundlerFactory for ControllableBundlerFactory {
         type Bundler = ControllableBundler;
 
-        async fn build(&self, _: SequentialFuelBlocks) -> Self::Bundler {
+        async fn build(&self, _: SequentialFuelBlocks, _: NonNegative<i32>) -> Self::Bundler {
             self.bundler.lock().await.take().unwrap()
         }
     }
@@ -419,7 +420,7 @@ mod tests {
             })
             .await;
         let data = encode_and_merge(blocks.clone());
-        let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
+        let expected_fragments = Eip4844BlobEncoder.encode(data, 1.into()).unwrap();
 
         let clock = TestClock::default();
 
@@ -503,11 +504,11 @@ mod tests {
         // then
         let first_bundle =
             encode_and_merge(NonEmpty::from_vec(fuel_blocks[0..=1].to_vec()).unwrap());
-        let first_bundle_fragments = Eip4844BlobEncoder.encode(first_bundle).unwrap();
+        let first_bundle_fragments = Eip4844BlobEncoder.encode(first_bundle, 1.into()).unwrap();
 
         let second_bundle =
             encode_and_merge(NonEmpty::from_vec(fuel_blocks[2..=2].to_vec()).unwrap());
-        let second_bundle_fragments = Eip4844BlobEncoder.encode(second_bundle).unwrap();
+        let second_bundle_fragments = Eip4844BlobEncoder.encode(second_bundle, 1.into()).unwrap();
 
         let unsubmitted_fragments = setup
             .db()
@@ -546,7 +547,7 @@ mod tests {
 
         let first_two_blocks = blocks.iter().take(2).cloned().collect_nonempty().unwrap();
         let bundle_data = test_utils::encode_and_merge(first_two_blocks.clone());
-        let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
+        let fragments = Eip4844BlobEncoder.encode(bundle_data, 1.into()).unwrap();
 
         let mut block_bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(2),
@@ -595,11 +596,11 @@ mod tests {
 
         let block_1 = nonempty![blocks.first().clone()];
         let bundle_1 = test_utils::encode_and_merge(block_1.clone());
-        let fragments_1 = Eip4844BlobEncoder.encode(bundle_1).unwrap();
+        let fragments_1 = Eip4844BlobEncoder.encode(bundle_1, 1.into()).unwrap();
 
         let block_2 = nonempty![blocks.last().clone()];
         let bundle_2 = test_utils::encode_and_merge(block_2.clone());
-        let fragments_2 = Eip4844BlobEncoder.encode(bundle_2).unwrap();
+        let fragments_2 = Eip4844BlobEncoder.encode(bundle_2, 1.into()).unwrap();
 
         let mut bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(1),
@@ -794,7 +795,7 @@ mod tests {
 
         // Encode the blocks to be bundled
         let data = encode_and_merge(NonEmpty::from_vec(blocks_to_bundle.clone()).unwrap());
-        let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
+        let expected_fragments = Eip4844BlobEncoder.encode(data, 1.into()).unwrap();
 
         let mut block_bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(latest_height),
