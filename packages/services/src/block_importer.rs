@@ -260,7 +260,7 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test] // TODO: hal3e check this
+    #[tokio::test]
     async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;

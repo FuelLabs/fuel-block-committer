@@ -1,4 +1,9 @@
-use std::{net::Ipv4Addr, num::NonZeroUsize, str::FromStr, time::Duration};
+use std::{
+    net::Ipv4Addr,
+    num::{NonZeroU32, NonZeroUsize},
+    str::FromStr,
+    time::Duration,
+};
 
 use clap::{command, Parser};
 use eth::Address;
@@ -46,6 +51,7 @@ pub struct Fuel {
     /// URL to a fuel-core graphql endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub graphql_endpoint: Url,
+    pub num_buffered_requests: NonZeroU32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

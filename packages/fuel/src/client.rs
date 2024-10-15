@@ -22,18 +22,22 @@ pub struct HttpClient {
     client: GqlClient,
     metrics: Metrics,
     health_tracker: ConnectionHealthTracker,
-    num_buffered: NonZeroU32,
+    num_buffered_requests: NonZeroU32,
 }
 
 impl HttpClient {
     #[must_use]
-    pub fn new(url: &Url, unhealthy_after_n_errors: usize) -> Self {
+    pub fn new(
+        url: &Url,
+        unhealthy_after_n_errors: usize,
+        num_buffered_requests: NonZeroU32,
+    ) -> Self {
         let client = GqlClient::new(url).expect("Url to be well formed");
         Self {
             client,
             metrics: Metrics::default(),
             health_tracker: ConnectionHealthTracker::new(unhealthy_after_n_errors),
-            num_buffered: NonZeroU32::new(5).expect("is non zero"), //TODO: hal3e make this configurable
+            num_buffered_requests,
         }
     }
 
@@ -140,7 +144,7 @@ impl HttpClient {
     ) -> impl Stream<Item = Result<CompressedFuelBlock>> + '_ {
         stream::iter(range)
             .map(move |height| self.compressed_block_at_height(height))
-            .buffered(self.num_buffered.get() as usize)
+            .buffered(self.num_buffered_requests.get() as usize)
             .filter_map(|result| async move { result.transpose() })
     }
 
