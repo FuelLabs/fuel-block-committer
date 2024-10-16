@@ -3,14 +3,14 @@ use std::marker::PhantomData;
 use anyhow::bail;
 use bitvec::{order::Msb0, slice::BitSlice, vec::BitVec};
 
-use super::{header::BlobHeader, Blob};
+use super::{header::Header, Blob};
 
 #[derive(Default, Debug, Clone)]
-pub struct NewDecoder {
+pub struct Decoder {
     _private: PhantomData<()>,
 }
 
-impl NewDecoder {
+impl Decoder {
     pub fn decode(&self, blobs: &[Blob]) -> anyhow::Result<Vec<u8>> {
         let mut indexed_data = blobs
             .iter()
@@ -19,8 +19,8 @@ impl NewDecoder {
                 let buffer = BitSlice::<u8, Msb0>::from_slice(blob.as_slice());
 
                 // Decode the header from the buffer (starting from index 2)
-                let (header, _) = BlobHeader::decode(&buffer[2..])?;
-                let BlobHeader::V1(header) = header;
+                let (header, _) = Header::decode(&buffer[2..])?;
+                let Header::V1(header) = header;
 
                 // Calculate the start and end indices for the data
                 let data_end = header.num_bits as usize;
@@ -53,7 +53,7 @@ impl NewDecoder {
                 let first_chunk = chunks.next();
 
                 if let Some(chunk) = first_chunk {
-                    let (_, read) = BlobHeader::decode(&chunk[2..])?;
+                    let (_, read) = Header::decode(&chunk[2..])?;
                     data_bits.extend_from_bitslice(&chunk[read + 2..]);
                 }
 
@@ -69,11 +69,11 @@ impl NewDecoder {
         Ok(data)
     }
 
-    pub fn read_header(&self, blob: &Blob) -> anyhow::Result<BlobHeader> {
+    pub fn read_header(&self, blob: &Blob) -> anyhow::Result<Header> {
         let buffer = BitSlice::<u8, Msb0>::from_slice(blob.as_slice());
 
         let buffer = &buffer[2..];
-        let (header, _) = BlobHeader::decode(buffer)?;
+        let (header, _) = Header::decode(buffer)?;
 
         Ok(header)
     }

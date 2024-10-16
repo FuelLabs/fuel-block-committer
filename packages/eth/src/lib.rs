@@ -17,7 +17,7 @@ mod websocket;
 
 pub use alloy::primitives::Address;
 pub use aws::*;
-use utils::blob::{decoder::NewDecoder, encoder::NewEncoder, generate_sidecar, header::BlobHeader};
+use utils::blob::{self, generate_sidecar};
 pub use websocket::{KmsKeys, TxConfig, WebsocketClient};
 
 impl Contract for WebsocketClient {
@@ -74,12 +74,12 @@ impl BlobEncoder {
 impl ports::l1::FragmentEncoder for BlobEncoder {
     fn encode(&self, data: NonEmpty<u8>, id: NonNegative<i32>) -> Result<NonEmpty<Fragment>> {
         let data = Vec::from(data);
-        let blobs = NewEncoder::new().encode(&data, id.as_u32()).unwrap();
+        let blobs = blob::Encoder::new().encode(&data, id.as_u32()).unwrap();
 
         let bits_usage = blobs
             .iter()
             .map(|blob| {
-                let BlobHeader::V1(header) = NewDecoder::default().read_header(blob).unwrap();
+                let blob::Header::V1(header) = blob::Decoder::default().read_header(blob).unwrap();
                 header.num_bits
             })
             .collect_vec();
@@ -118,7 +118,7 @@ impl ports::l1::FragmentEncoder for BlobEncoder {
     }
 
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64 {
-        NewEncoder::default().blobs_needed_to_encode(num_bytes.get()) as u64
+        blob::Encoder::default().blobs_needed_to_encode(num_bytes.get()) as u64
     }
 }
 

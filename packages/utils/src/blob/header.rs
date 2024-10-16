@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use bitvec::{field::BitField, order::Msb0, slice::BitSlice, vec::BitVec, view::BitView};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BlobHeaderV1 {
+pub struct HeaderV1 {
     pub bundle_id: u32,
     /// Number of bits containing data
     pub num_bits: u32,
@@ -10,7 +10,7 @@ pub struct BlobHeaderV1 {
     pub idx: u32,
 }
 
-impl BlobHeaderV1 {
+impl HeaderV1 {
     const BUNDLE_ID_BITS: usize = 32;
     const NUM_BITS_BITS: usize = 21;
     const IS_LAST_BITS: usize = 1;
@@ -42,7 +42,7 @@ impl BlobHeaderV1 {
         let idx = remaining_data[..Self::IDX_SIZE_BITS].load_be::<u32>();
         let remaining_data = &remaining_data[Self::IDX_SIZE_BITS..];
 
-        let header = BlobHeaderV1 {
+        let header = HeaderV1 {
             num_bits,
             bundle_id,
             is_last,
@@ -56,17 +56,17 @@ impl BlobHeaderV1 {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum BlobHeader {
-    V1(BlobHeaderV1),
+pub enum Header {
+    V1(HeaderV1),
 }
 
-impl BlobHeader {
+impl Header {
     const VERSION_BITS: usize = 16;
-    pub const V1_SIZE_BITS: usize = BlobHeaderV1::TOTAL_SIZE_BITS + Self::VERSION_BITS;
+    pub const V1_SIZE_BITS: usize = HeaderV1::TOTAL_SIZE_BITS + Self::VERSION_BITS;
 
     pub(crate) fn encode(&self) -> BitVec<u8, Msb0> {
         match self {
-            BlobHeader::V1(blob_header_v1) => {
+            Header::V1(blob_header_v1) => {
                 let mut buffer = BitVec::<u8, Msb0>::new();
 
                 let version = 1u16;
@@ -86,8 +86,8 @@ impl BlobHeader {
         let read_version_bits = data.len() - remaining_data.len();
         match version {
             1 => {
-                let (header, read_bits) = BlobHeaderV1::decode(remaining_data)?;
-                Ok((BlobHeader::V1(header), read_bits + read_version_bits))
+                let (header, read_bits) = HeaderV1::decode(remaining_data)?;
+                Ok((Header::V1(header), read_bits + read_version_bits))
             }
             version => bail!("Unsupported version {version}"),
         }

@@ -5,12 +5,7 @@ mod test {
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, seq::SliceRandom, RngCore, SeedableRng};
     use test_case::test_case;
-    use utils::blob::{
-        decoder::NewDecoder,
-        encoder::NewEncoder,
-        generate_sidecar,
-        header::{BlobHeader, BlobHeaderV1},
-    };
+    use utils::blob::{self, generate_sidecar};
 
     #[test_case(1,  1; "one blob")]
     #[test_case(130037,  1; "one blob limit")]
@@ -19,7 +14,7 @@ mod test {
     #[test_case(130037 * 2  + 1,  3; "three blobs")]
     fn can_calculate_blobs_needed_without_encoding(num_bytes: usize, num_blobs: usize) {
         // given
-        let encoder = NewEncoder::default();
+        let encoder = blob::Encoder::default();
 
         // when
         let usage = encoder.blobs_needed_to_encode(num_bytes);
@@ -34,7 +29,7 @@ mod test {
         #[test]
         fn calculated_blobs_needed_the_same_as_if_you_encode(byte_amount in 1..=DATA_GAS_PER_BLOB*20) {
             // given
-            let encoder = NewEncoder::default();
+            let encoder = blob::Encoder::default();
 
             // when
             let usage = encoder.blobs_needed_to_encode(byte_amount as usize);
@@ -46,7 +41,7 @@ mod test {
         #[test]
         fn full(byte_amount in 1..=DATA_GAS_PER_BLOB*20) {
         // given
-        let encoder = NewEncoder::default();
+        let encoder = blob::Encoder::default();
 
         let mut data = vec![0; byte_amount as usize];
         let mut rng = SmallRng::from_seed([0; 32]);
@@ -70,7 +65,7 @@ mod test {
         }
 
         // can be decoded into original data
-        let decoded_data  = NewDecoder::default().decode(&blobs).unwrap();
+        let decoded_data  = blob::Decoder::default().decode(&blobs).unwrap();
         proptest::prop_assert_eq!(data, decoded_data);
         }
     }
@@ -82,7 +77,7 @@ mod test {
     #[test_case(1_200_000)]
     fn can_generate_proofs_and_committments_for_encoded_blobs(byte_num: usize) {
         // given
-        let encoder = NewEncoder::default();
+        let encoder = blob::Encoder::default();
 
         let mut data = vec![0; byte_num];
         let mut rng = SmallRng::from_seed([0; 32]);
@@ -108,14 +103,14 @@ mod test {
     #[test_case(1_200_000)]
     fn blobs_can_be_decoded_when_in_order(byte_num: usize) {
         // given
-        let encoder = NewEncoder::default();
+        let encoder = blob::Encoder::default();
 
         let mut data = vec![0; byte_num];
         let mut rng = SmallRng::from_seed([0; 32]);
         rng.fill_bytes(&mut data[..]);
         let blobs = encoder.encode(&data, 0).unwrap();
 
-        let decoder = NewDecoder::default();
+        let decoder = blob::Decoder::default();
 
         // when
         let decoded_data = decoder.decode(&blobs).unwrap();
@@ -130,7 +125,7 @@ mod test {
     #[test_case(1_200_000)]
     fn blobs_can_be_decoded_even_if_shuffled_around(byte_num: usize) {
         // given
-        let encoder = NewEncoder::default();
+        let encoder = blob::Encoder::default();
 
         let mut rng = SmallRng::from_seed([0; 32]);
         let data = {
@@ -145,7 +140,7 @@ mod test {
             blobs
         };
 
-        let decoder = NewDecoder::default();
+        let decoder = blob::Decoder::default();
 
         // when
         let decoded_data = decoder.decode(&blobs).unwrap();
@@ -160,7 +155,7 @@ mod test {
     fn roundtrip_header_encoding(num_bytes: usize, bundle_id: u32) {
         // given
         let blob = {
-            let encoder = NewEncoder::default();
+            let encoder = blob::Encoder::default();
             encoder
                 .encode(&vec![0; num_bytes], bundle_id)
                 .unwrap()
@@ -168,7 +163,7 @@ mod test {
                 .unwrap()
         };
 
-        let decoder = NewDecoder::default();
+        let decoder = blob::Decoder::default();
 
         // when
         let header = decoder.read_header(&blob).unwrap();
@@ -177,9 +172,9 @@ mod test {
         let lost_to_fe = 2 * (num_bytes * 8).div_ceil(256);
         assert_eq!(
             header,
-            BlobHeader::V1(BlobHeaderV1 {
+            blob::Header::V1(blob::HeaderV1 {
                 bundle_id,
-                num_bits: (num_bytes * 8 + BlobHeader::V1_SIZE_BITS + lost_to_fe) as u32,
+                num_bits: (num_bytes * 8 + blob::Header::V1_SIZE_BITS + lost_to_fe) as u32,
                 is_last: true,
                 idx: 0
             })

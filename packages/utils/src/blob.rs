@@ -5,9 +5,13 @@ pub use alloy::{
 };
 use c_kzg::{KzgCommitment, KzgProof};
 
-pub mod decoder;
-pub mod encoder;
-pub mod header;
+mod decoder;
+mod encoder;
+mod header;
+
+pub use decoder::Decoder;
+pub use encoder::Encoder;
+pub use header::*;
 
 pub type Blob = Box<[u8; BYTES_PER_BLOB]>;
 
