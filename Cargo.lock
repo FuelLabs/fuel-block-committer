@@ -6820,9 +6820,11 @@ dependencies = [
  "anyhow",
  "bitvec",
  "c-kzg",
+ "flate2",
  "itertools 0.13.0",
  "proptest",
  "rand",
+ "serde",
  "test-case",
 ]
 

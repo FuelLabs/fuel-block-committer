@@ -17,6 +17,8 @@ c-kzg = { workspace = true }
 anyhow = { workspace = true }
 # TODO: minimize features
 bitvec = { workspace = true, features = ["default"] }
+serde = { workspace = true }
+flate2 = { workspace = true, features = ["default"] }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["default"] }
