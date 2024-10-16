@@ -73,6 +73,7 @@ pub(crate) mod test_utils {
 
     use clock::TestClock;
     use eth::BlobEncoder;
+    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
     use metrics::prometheus::IntGauge;
     use mocks::l1::TxStatus;
     use ports::{
@@ -82,7 +83,6 @@ pub(crate) mod test_utils {
     };
     use rand::RngCore;
     use storage::{DbWithProcess, PostgresProcess};
-    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 
     use super::Runner;
     use crate::{

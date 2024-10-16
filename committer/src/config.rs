@@ -7,10 +7,10 @@ use std::{
 
 use clap::{command, Parser};
 use eth::Address;
+use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use storage::DbConfig;
 use url::Url;
-use fuel_block_committer_encoding::bundle::CompressionLevel;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {

@@ -1,6 +1,7 @@
 use std::{cmp::min, collections::VecDeque, fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
 
 use bytesize::ByteSize;
+use fuel_block_committer_encoding::bundle::{self, BundleV1};
 use itertools::Itertools;
 use ports::{
     l1::FragmentEncoder,
@@ -8,7 +9,6 @@ use ports::{
     types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
 };
 use rayon::prelude::*;
-use fuel_block_committer_encoding::bundle::{self, BundleV1};
 
 use crate::Result;
 

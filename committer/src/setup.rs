@@ -2,6 +2,7 @@ use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
 use eth::{AwsConfig, BlobEncoder, KmsKeys};
+use fuel_block_committer_encoding::bundle;
 use metrics::{
     prometheus::{IntGauge, Registry},
     HealthChecker, RegistersMetrics,
@@ -11,7 +12,6 @@ use services::{BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletB
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use fuel_block_committer_encoding::bundle;
 
 use crate::{config, errors::Result, AwsClient, Database, FuelApi, L1};
 

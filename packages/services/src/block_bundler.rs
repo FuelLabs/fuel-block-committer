@@ -271,6 +271,7 @@ mod tests {
     use bundler::Metadata;
     use clock::TestClock;
     use eth::BlobEncoder;
+    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
     use itertools::Itertools;
     use ports::{
         storage::SequentialFuelBlocks,
@@ -280,7 +281,6 @@ mod tests {
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,
     };
-    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 
     use super::*;
     use crate::test_utils::{self, bundle_and_encode_into_blobs, mocks, Blocks};
