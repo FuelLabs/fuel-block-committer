@@ -92,7 +92,7 @@ mod test {
     #[test_case(200_000)]
     #[test_case(600_000)]
     #[test_case(1_200_000)]
-    fn can_generate_proofs_and_committments_for_encoded_blobs(byte_num: usize) {
+    fn can_generate_proofs_and_commitments_for_encoded_blobs(byte_num: usize) {
         // given
         let encoder = blob::Encoder::default();
 
