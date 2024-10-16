@@ -102,7 +102,6 @@ mod test {
 
         // when
         let blobs = encoder.encode(&data, 0).unwrap();
-        println!("{:?}", &blobs[0][0..8]);
 
         // then
         for blob in blobs {

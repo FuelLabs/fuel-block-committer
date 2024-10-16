@@ -19,9 +19,7 @@ impl Decoder {
             anyhow::bail!("Unsupported bundle version: {version}");
         }
 
-        eprintln!("about to decompress");
         let data = self.decompress(&data[2..])?;
-        eprintln!("managed to decompress");
 
         let blocks: BundleV1 = postcard::from_bytes(&data)?;
 
