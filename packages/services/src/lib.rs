@@ -5,7 +5,6 @@ mod health_reporter;
 mod state_committer;
 mod state_listener;
 mod status_reporter;
-mod validator;
 mod wallet_balance_tracker;
 
 pub use block_bundler::{
@@ -18,7 +17,6 @@ pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 pub use state_listener::StateListener;
 pub use status_reporter::StatusReporter;
-pub use validator::BlockValidator;
 pub use wallet_balance_tracker::WalletBalanceTracker;
 
 #[derive(thiserror::Error, Debug)]
@@ -51,14 +49,6 @@ impl From<ports::fuel::Error> for Error {
     }
 }
 
-impl From<validator::Error> for Error {
-    fn from(error: validator::Error) -> Self {
-        match error {
-            validator::Error::BlockValidation(e) => Self::BlockValidation(e),
-        }
-    }
-}
-
 impl From<ports::storage::Error> for Error {
     fn from(error: ports::storage::Error) -> Self {
         Self::Storage(error.to_string())
@@ -80,15 +70,6 @@ pub trait Runner: Send + Sync {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-
-    pub fn encode_and_merge(blocks: NonEmpty<ports::fuel::FullFuelBlock>) -> NonEmpty<u8> {
-        block_importer::encode_blocks(blocks)
-            .into_iter()
-            .flat_map(|b| b.data)
-            .collect_nonempty()
-            .expect("is not empty")
-    }
-
     pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
         let size = size.into();
         if size == 0 {
@@ -104,22 +85,19 @@ pub(crate) mod test_utils {
 
     use clock::TestClock;
     use eth::BlobEncoder;
-    use fuel_crypto::SecretKey;
     use metrics::prometheus::IntGauge;
     use mocks::l1::TxStatus;
     use ports::{
         storage::Storage,
-        types::{CollectNonEmpty, DateTime, Fragment, NonEmpty, Utc},
+        types::{CollectNonEmpty, CompressedFuelBlock, DateTime, Fragment, NonEmpty, Utc},
     };
     use rand::RngCore;
     use storage::{DbWithProcess, PostgresProcess};
 
     use super::Runner;
     use crate::{
-        block_bundler::bundler::Factory,
-        block_importer::{self, encode_blocks},
-        BlockBundler, BlockBundlerConfig, BlockImporter, BlockValidator, StateCommitter,
-        StateListener,
+        block_bundler::bundler::Factory, BlockBundler, BlockBundlerConfig, BlockImporter,
+        StateCommitter, StateListener,
     };
 
     pub mod mocks {
@@ -338,142 +316,74 @@ pub(crate) mod test_utils {
         }
 
         pub mod fuel {
-            use std::{iter, ops::RangeInclusive};
+            use std::ops::RangeInclusive;
 
-            use fuel_crypto::{Message, SecretKey, Signature};
             use futures::{stream, StreamExt};
             use itertools::Itertools;
             use ports::{
-                fuel::{FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus, FullFuelBlock},
                 storage::SequentialFuelBlocks,
-                types::{nonempty, CollectNonEmpty, NonEmpty},
+                types::{CollectNonEmpty, CompressedFuelBlock, NonEmpty},
             };
             use rand::{RngCore, SeedableRng};
 
-            use crate::block_importer;
-
-            pub fn generate_block(
-                height: u32,
-                secret_key: &SecretKey,
-                num_tx: usize,
-                tx_size: usize,
-            ) -> ports::fuel::FullFuelBlock {
-                let header = given_header(height);
-
-                let mut hasher = fuel_crypto::Hasher::default();
-                hasher.input(header.prev_root.as_ref());
-                hasher.input(header.height.to_be_bytes());
-                hasher.input(header.time.0.to_be_bytes());
-                hasher.input(header.application_hash.as_ref());
-
-                let id = FuelBlockId::from(hasher.digest());
-                let id_message = Message::from_bytes(*id);
-                let signature = Signature::sign(secret_key, &id_message);
-
+            pub fn generate_block(height: u32, data_size: usize) -> CompressedFuelBlock {
                 let mut small_rng = rand::rngs::SmallRng::from_seed([0; 32]);
-                let raw_transactions = std::iter::repeat_with(|| {
-                    let mut buf = vec![0; tx_size];
-                    small_rng.fill_bytes(&mut buf);
-                    NonEmpty::collect(buf).unwrap()
-                })
-                .take(num_tx)
-                .collect::<Vec<_>>();
+                let mut buf = vec![0; data_size];
+                small_rng.fill_bytes(&mut buf);
 
-                FullFuelBlock {
-                    id,
-                    header,
-                    consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
-                    raw_transactions,
-                }
+                let data = NonEmpty::collect(buf).expect("is not empty");
+
+                CompressedFuelBlock { height, data }
             }
 
             pub fn generate_storage_block_sequence(
                 heights: RangeInclusive<u32>,
-                secret_key: &SecretKey,
-                num_tx: usize,
-                tx_size: usize,
+                data_size: usize,
             ) -> SequentialFuelBlocks {
                 heights
-                    .map(|height| generate_storage_block(height, secret_key, num_tx, tx_size))
+                    .map(|height| generate_block(height, data_size))
                     .collect_nonempty()
                     .unwrap()
                     .try_into()
                     .unwrap()
             }
 
-            pub fn generate_storage_block(
-                height: u32,
-                secret_key: &SecretKey,
-                num_tx: usize,
-                tx_size: usize,
-            ) -> ports::storage::FuelBlock {
-                let block = generate_block(height, secret_key, num_tx, tx_size);
-                block_importer::encode_blocks(nonempty![block])
-                    .first()
-                    .clone()
-            }
-
-            fn given_header(height: u32) -> FuelHeader {
-                let application_hash =
-                    "0x8b96f712e293e801d53da77113fec3676c01669c6ea05c6c92a5889fce5f649d"
-                        .parse()
-                        .unwrap();
-
-                ports::fuel::FuelHeader {
-                    id: Default::default(),
-                    da_height: Default::default(),
-                    consensus_parameters_version: Default::default(),
-                    state_transition_bytecode_version: Default::default(),
-                    transactions_count: 1,
-                    message_receipt_count: Default::default(),
-                    transactions_root: Default::default(),
-                    message_outbox_root: Default::default(),
-                    event_inbox_root: Default::default(),
-                    height,
-                    prev_root: Default::default(),
-                    time: tai64::Tai64(0),
-                    application_hash,
-                }
-            }
-
             pub fn these_blocks_exist(
-                blocks: impl IntoIterator<Item = ports::fuel::FullFuelBlock>,
+                blocks: impl IntoIterator<Item = CompressedFuelBlock>,
                 enforce_tight_range: bool,
             ) -> ports::fuel::MockApi {
                 let mut fuel_mock = ports::fuel::MockApi::default();
 
                 let blocks = blocks
                     .into_iter()
-                    .sorted_by_key(|b| b.header.height)
+                    .sorted_by_key(|b| b.height)
                     .collect::<Vec<_>>();
 
                 let latest_block = blocks.last().expect("Must have at least one block").clone();
 
-                let lowest_height = blocks
-                    .first()
-                    .expect("Must have at least one block")
-                    .header
-                    .height;
-                let highest_height = latest_block.header.height;
+                let lowest_height = blocks.first().expect("Must have at least one block").height;
+                let highest_height = latest_block.height;
 
                 fuel_mock
                     .expect_latest_height()
                     .return_once(move || Box::pin(async move { Ok(highest_height) }));
 
                 fuel_mock
-                    .expect_full_blocks_in_height_range()
+                    .expect_compressed_blocks_in_height_range()
                     .returning(move |range| {
                         let expected_range = lowest_height..=highest_height;
                         if enforce_tight_range && range != expected_range {
                             panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
-                        let blocks_batch = blocks
+                        let blocks_vec: Vec<ports::fuel::Result<_>> = blocks
                             .iter()
-                            .filter(move |b| range.contains(&b.header.height))
-                            .cloned().collect();
+                            .filter(move |b| range.contains(&b.height))
+                            .cloned()
+                            .map(Ok)
+                            .collect();
 
-                        stream::iter(iter::once(Ok(blocks_batch))).boxed()
+                        stream::iter(blocks_vec).boxed()
                     });
 
                 fuel_mock
@@ -487,13 +397,6 @@ pub(crate) mod test_utils {
                 fuel_mock
             }
         }
-    }
-
-    #[derive(Debug)]
-    pub struct ImportedBlocks {
-        pub fuel_blocks: NonEmpty<ports::fuel::FullFuelBlock>,
-        pub storage_blocks: NonEmpty<ports::storage::FuelBlock>,
-        pub secret_key: SecretKey,
     }
 
     pub struct Setup {
@@ -562,11 +465,10 @@ pub(crate) mod test_utils {
 
         pub async fn insert_fragments(&self, height: u32, amount: usize) -> Vec<Fragment> {
             let max_per_blob = (BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
-            let ImportedBlocks { fuel_blocks, .. } = self
+            let fuel_blocks = self
                 .import_blocks(Blocks::WithHeights {
                     range: height..=height,
-                    tx_per_block: amount,
-                    size_per_tx: max_per_blob,
+                    data_size: amount.saturating_mul(max_per_blob),
                 })
                 .await;
 
@@ -577,7 +479,7 @@ pub(crate) mod test_utils {
             );
 
             let mut fuel_api = ports::fuel::MockApi::new();
-            let latest_height = fuel_blocks.last().header.height;
+            let latest_height = fuel_blocks.last().height;
             fuel_api
                 .expect_latest_height()
                 .returning(move || Box::pin(async move { Ok(latest_height) }));
@@ -608,7 +510,7 @@ pub(crate) mod test_utils {
             fragments.into_iter().map(|f| f.fragment).collect()
         }
 
-        pub async fn import_blocks(&self, blocks: Blocks) -> ImportedBlocks {
+        pub async fn import_blocks(&self, blocks: Blocks) -> NonEmpty<CompressedFuelBlock> {
             let (mut block_importer, blocks) = self.block_importer(blocks);
 
             block_importer.run().await.unwrap();
@@ -620,43 +522,19 @@ pub(crate) mod test_utils {
             &self,
             blocks: Blocks,
         ) -> (
-            BlockImporter<DbWithProcess, ports::fuel::MockApi, BlockValidator>,
-            ImportedBlocks,
+            BlockImporter<DbWithProcess, ports::fuel::MockApi>,
+            NonEmpty<CompressedFuelBlock>,
         ) {
             match blocks {
-                Blocks::WithHeights {
-                    range,
-                    tx_per_block,
-                    size_per_tx,
-                } => {
-                    let secret_key = SecretKey::random(&mut rand::thread_rng());
-
-                    let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
+                Blocks::WithHeights { range, data_size } => {
                     let fuel_blocks = range
-                        .map(|height| {
-                            mocks::fuel::generate_block(
-                                height,
-                                &secret_key,
-                                tx_per_block,
-                                size_per_tx,
-                            )
-                        })
+                        .map(|height| mocks::fuel::generate_block(height, data_size))
                         .collect_nonempty()
                         .unwrap();
 
-                    let storage_blocks = encode_blocks(fuel_blocks.clone());
-
                     let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone(), false);
 
-                    (
-                        BlockImporter::new(self.db(), mock, block_validator, 1000),
-                        ImportedBlocks {
-                            fuel_blocks,
-                            secret_key,
-                            storage_blocks,
-                        },
-                    )
+                    (BlockImporter::new(self.db(), mock, 1000), fuel_blocks)
                 }
             }
         }
@@ -665,8 +543,7 @@ pub(crate) mod test_utils {
     pub enum Blocks {
         WithHeights {
             range: RangeInclusive<u32>,
-            tx_per_block: usize,
-            size_per_tx: usize,
+            data_size: usize,
         },
     }
 }

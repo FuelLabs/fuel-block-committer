@@ -196,9 +196,16 @@ impl EthApi for WsConnection {
             .map_err(|_| Error::Network("timed out trying to submit block".to_string()))??;
         tracing::info!("tx: {} submitted", tx.tx_hash());
 
+        let nonce = nonce.try_into().map_err(|_| {
+            Error::Other(
+                "could not convert `u64` nonce to `u32` when storing `BlockSubmissionTx`"
+                    .to_string(),
+            )
+        })?;
+
         let submission_tx = BlockSubmissionTx {
             hash: tx.tx_hash().0,
-            nonce: nonce as u32, // TODO: conversion
+            nonce,
             max_fee: max_fee_per_gas,
             priority_fee: max_priority_fee_per_gas,
             ..Default::default()
@@ -285,9 +292,15 @@ impl EthApi for WsConnection {
         };
         let tx_id = *blob_tx.tx_hash();
 
+        let nonce = blob_tx.nonce().try_into().map_err(|_| {
+            Error::Other(
+                "could not convert `u64` blob_tx nonce to `u32` when creating `L1Tx`".to_string(),
+            )
+        })?;
+
         let l1_tx = L1Tx {
             hash: tx_id.0,
-            nonce: blob_tx.nonce() as u32, // TODO: conversion
+            nonce,
             max_fee: blob_tx.max_fee_per_gas(),
             priority_fee: blob_tx
                 .max_priority_fee_per_gas()
