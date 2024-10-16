@@ -19,6 +19,7 @@ anyhow = { workspace = true }
 bitvec = { workspace = true, features = ["default"] }
 
 [dev-dependencies]
+proptest = { workspace = true, features = ["default"] }
 alloy = { workspace = true, features = ["consensus", "eips", "kzg"] }
 itertools = { workspace = true, features = ["use_alloc"] }
 rand = { workspace = true, features = ["std", "std_rng", "small_rng"] }

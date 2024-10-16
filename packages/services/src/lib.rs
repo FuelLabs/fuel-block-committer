@@ -103,7 +103,7 @@ pub(crate) mod test_utils {
     use std::{ops::RangeInclusive, time::Duration};
 
     use clock::TestClock;
-    use eth::Eip4844BlobEncoder;
+    use eth::BlobEncoder;
     use fuel_crypto::SecretKey;
     use metrics::prometheus::IntGauge;
     use mocks::l1::TxStatus;
@@ -561,7 +561,7 @@ pub(crate) mod test_utils {
         }
 
         pub async fn insert_fragments(&self, height: u32, amount: usize) -> Vec<Fragment> {
-            let max_per_blob = (Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
+            let max_per_blob = (BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
             let ImportedBlocks { fuel_blocks, .. } = self
                 .import_blocks(Blocks::WithHeights {
                     range: height..=height,
@@ -571,7 +571,7 @@ pub(crate) mod test_utils {
                 .await;
 
             let factory = Factory::new(
-                Eip4844BlobEncoder,
+                BlobEncoder,
                 crate::CompressionLevel::Level6,
                 1.try_into().unwrap(),
             );

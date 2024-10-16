@@ -1,56 +1,25 @@
 #[cfg(test)]
 mod test {
-    pub(crate) fn generate_sidecar(
-        blobs: impl IntoIterator<Item = Blob>,
-    ) -> anyhow::Result<BlobTransactionSidecar> {
-        let blobs = blobs
-            .into_iter()
-            .map(|blob| alloy::eips::eip4844::Blob::from(*blob))
-            .collect::<Vec<_>>();
-        let mut commitments = Vec::with_capacity(blobs.len());
-        let mut proofs = Vec::with_capacity(blobs.len());
-        let settings = EnvKzgSettings::default();
-
-        for blob in &blobs {
-            // SAFETY: same size
-            let blob =
-                unsafe { core::mem::transmute::<&alloy::eips::eip4844::Blob, &c_kzg::Blob>(blob) };
-            let commitment = KzgCommitment::blob_to_kzg_commitment(blob, settings.get())?;
-            let proof =
-                KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), settings.get())?;
-
-            // SAFETY: same size
-            unsafe {
-                commitments.push(core::mem::transmute::<
-                    c_kzg::Bytes48,
-                    alloy::eips::eip4844::Bytes48,
-                >(commitment.to_bytes()));
-                proofs.push(core::mem::transmute::<
-                    c_kzg::Bytes48,
-                    alloy::eips::eip4844::Bytes48,
-                >(proof.to_bytes()));
-            }
-        }
-
-        Ok(BlobTransactionSidecar::new(blobs, commitments, proofs))
-    }
 
     use alloy::{
         consensus::{BlobTransactionSidecar, EnvKzgSettings},
-        eips::eip4844::USABLE_BITS_PER_FIELD_ELEMENT,
+        eips::eip4844::DATA_GAS_PER_BLOB,
     };
     use c_kzg::{KzgCommitment, KzgProof};
     use itertools::Itertools;
+    use proptest::prelude::*;
     use rand::{rngs::SmallRng, seq::SliceRandom, RngCore, SeedableRng};
     use test_case::test_case;
-    use utils::{decoder::NewDecoder, encoder::NewEncoder, Blob, BlobHeader, BlobHeaderV1};
+    use utils::{
+        decoder::NewDecoder, encoder::NewEncoder, generate_sidecar, Blob, BlobHeader, BlobHeaderV1,
+    };
 
     #[test_case(1,  1; "one blob")]
     #[test_case(130037,  1; "one blob limit")]
     #[test_case(130038,  2; "two blobs")]
     #[test_case(130037 * 2,  2; "two blobs limit")]
     #[test_case(130037 * 2  + 1,  3; "three blobs")]
-    fn gas_usage_for_data_storage(num_bytes: usize, num_blobs: usize) {
+    fn can_calculate_blobs_needed_without_encoding(num_bytes: usize, num_blobs: usize) {
         // given
         let encoder = NewEncoder {};
 
@@ -59,6 +28,53 @@ mod test {
 
         // then
         assert_eq!(usage, num_blobs);
+    }
+
+    proptest::proptest! {
+        // // You maybe want to make this limit bigger when changing the code
+        #![proptest_config(ProptestConfig { cases: 10, .. ProptestConfig::default() })]
+        #[test]
+        fn calculated_blobs_needed_the_same_as_if_you_encode(byte_amount in 1..=DATA_GAS_PER_BLOB*20) {
+            // given
+            let encoder = NewEncoder{};
+
+            // when
+            let usage = encoder.blobs_needed_to_encode(byte_amount as usize);
+            let actual_blob_num = encoder.encode(&vec![0; byte_amount as usize], 0).unwrap().len();
+
+            // then
+            proptest::prop_assert_eq!(usage, actual_blob_num);
+        }
+        #[test]
+        fn full(byte_amount in 1..=DATA_GAS_PER_BLOB*20) {
+        // given
+        let encoder = NewEncoder {};
+
+        let mut data = vec![0; byte_amount as usize];
+        let mut rng = SmallRng::from_seed([0; 32]);
+        rng.fill_bytes(&mut data[..]);
+
+        // we shuffle them around
+        let blobs = {
+            let mut blobs = encoder.encode(&data, 10).unwrap();
+            blobs.shuffle(&mut rng);
+            blobs
+        };
+
+
+        // blobs are valid
+        for blob in blobs.clone() {
+            let sidecar = generate_sidecar(vec![blob]).unwrap();
+            let versioned_hashes = sidecar.versioned_hashes().collect_vec();
+            sidecar
+                .validate(&versioned_hashes, EnvKzgSettings::default().get())
+                .unwrap();
+        }
+
+        // can be decoded into original data
+        let decoded_data  = NewDecoder{}.decode(&blobs).unwrap();
+        proptest::prop_assert_eq!(data, decoded_data);
+        }
     }
 
     #[test_case(1)]
@@ -153,8 +169,6 @@ mod test {
                 .pop()
                 .unwrap()
         };
-
-        eprintln!("{:?}", &blob[0..11]);
 
         let decoder = NewDecoder {};
 

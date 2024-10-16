@@ -81,7 +81,6 @@ impl BlobHeader {
     pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
         // TODO: check boundaries
         let version = data[..Self::VERSION_BITS].load_be::<u16>();
-        // eprintln!("version: {:?}", version);
 
         let remaining_data = &data[Self::VERSION_BITS..];
         let read_version_bits = data.len() - remaining_data.len();
@@ -97,21 +96,53 @@ impl BlobHeader {
 
 pub type Blob = Box<[u8; BYTES_PER_BLOB]>;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct BlobWithProof {
-    // needs to be heap allocated because it's large enough to cause a stack overflow
-    pub blob: Blob,
-    pub commitment: [u8; 48],
-    pub proof: [u8; 48],
+// #[derive(Debug, Clone, PartialEq)]
+// pub struct BlobWithProof {
+//     // needs to be heap allocated because it's large enough to cause a stack overflow
+//     pub blob: Blob,
+//     pub commitment: [u8; 48],
+//     pub proof: [u8; 48],
+// }
+
+pub fn generate_sidecar(
+    blobs: impl IntoIterator<Item = Blob>,
+) -> anyhow::Result<BlobTransactionSidecar> {
+    let blobs = blobs
+        .into_iter()
+        .map(|blob| alloy::eips::eip4844::Blob::from(*blob))
+        .collect::<Vec<_>>();
+    let mut commitments = Vec::with_capacity(blobs.len());
+    let mut proofs = Vec::with_capacity(blobs.len());
+    let settings = EnvKzgSettings::default();
+
+    for blob in &blobs {
+        // SAFETY: same size
+        let blob =
+            unsafe { core::mem::transmute::<&alloy::eips::eip4844::Blob, &c_kzg::Blob>(blob) };
+        let commitment = KzgCommitment::blob_to_kzg_commitment(blob, settings.get())?;
+        let proof = KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), settings.get())?;
+
+        // SAFETY: same size
+        unsafe {
+            commitments.push(core::mem::transmute::<
+                c_kzg::Bytes48,
+                alloy::eips::eip4844::Bytes48,
+            >(commitment.to_bytes()));
+            proofs.push(core::mem::transmute::<
+                c_kzg::Bytes48,
+                alloy::eips::eip4844::Bytes48,
+            >(proof.to_bytes()));
+        }
+    }
+
+    Ok(BlobTransactionSidecar::new(blobs, commitments, proofs))
 }
 
 pub use alloy::consensus::Bytes48;
-use alloy::eips::eip4844::BYTES_PER_BLOB;
-use anyhow::{bail, Result};
-use bitvec::{
-    field::BitField,
-    order::{Lsb0, Msb0},
-    slice::BitSlice,
-    vec::BitVec,
-    view::BitView,
+use alloy::{
+    consensus::{BlobTransactionSidecar, EnvKzgSettings},
+    eips::eip4844::BYTES_PER_BLOB,
 };
+use anyhow::{bail, Result};
+use bitvec::{field::BitField, order::Msb0, slice::BitSlice, vec::BitVec, view::BitView};
+use c_kzg::{KzgCommitment, KzgProof};

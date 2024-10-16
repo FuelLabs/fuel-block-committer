@@ -1,11 +1,7 @@
 use anyhow::bail;
-use bitvec::{
-    order::{Lsb0, Msb0},
-    slice::BitSlice,
-    vec::BitVec,
-};
+use bitvec::{order::Msb0, slice::BitSlice, vec::BitVec};
 
-use crate::{Blob, BlobHeader, BlobHeaderV1, BlobWithProof};
+use crate::{Blob, BlobHeader};
 
 pub struct NewDecoder {}
 impl NewDecoder {
@@ -17,9 +13,8 @@ impl NewDecoder {
                 let buffer = BitSlice::<u8, Msb0>::from_slice(blob.as_slice());
 
                 // Decode the header from the buffer (starting from index 2)
-                let (header, read_bits) = BlobHeader::decode(&buffer[2..])?;
+                let (header, _) = BlobHeader::decode(&buffer[2..])?;
                 let BlobHeader::V1(header) = header;
-                eprintln!("{:?}", header);
 
                 // Calculate the start and end indices for the data
                 let data_end = header.num_bits as usize;

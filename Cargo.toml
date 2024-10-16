@@ -31,6 +31,7 @@ ports = { path = "./packages/ports", default-features = false }
 storage = { path = "./packages/storage", default-features = false }
 services = { path = "./packages/services", default-features = false }
 clock = { path = "./packages/clock", default-features = false }
+utils = { path = "./packages/utils", default-features = false }
 
 actix-web = { version = "4", default-features = false }
 bitvec = { version = "1.0", default-features = false }

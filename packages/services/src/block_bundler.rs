@@ -270,7 +270,7 @@ where
 mod tests {
     use bundler::Metadata;
     use clock::TestClock;
-    use eth::Eip4844BlobEncoder;
+    use eth::BlobEncoder;
     use itertools::Itertools;
     use ports::{
         l1::FragmentEncoder,
@@ -354,9 +354,9 @@ mod tests {
         }
     }
 
-    fn default_bundler_factory() -> bundler::Factory<Eip4844BlobEncoder> {
+    fn default_bundler_factory() -> bundler::Factory<BlobEncoder> {
         bundler::Factory::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             CompressionLevel::Disabled,
             1.try_into().unwrap(),
         )
@@ -420,7 +420,7 @@ mod tests {
             })
             .await;
         let data = encode_and_merge(blocks.clone());
-        let expected_fragments = Eip4844BlobEncoder.encode(data, 1.into()).unwrap();
+        let expected_fragments = BlobEncoder.encode(data, 1.into()).unwrap();
 
         let clock = TestClock::default();
 
@@ -504,11 +504,11 @@ mod tests {
         // then
         let first_bundle =
             encode_and_merge(NonEmpty::from_vec(fuel_blocks[0..=1].to_vec()).unwrap());
-        let first_bundle_fragments = Eip4844BlobEncoder.encode(first_bundle, 1.into()).unwrap();
+        let first_bundle_fragments = BlobEncoder.encode(first_bundle, 1.into()).unwrap();
 
         let second_bundle =
             encode_and_merge(NonEmpty::from_vec(fuel_blocks[2..=2].to_vec()).unwrap());
-        let second_bundle_fragments = Eip4844BlobEncoder.encode(second_bundle, 1.into()).unwrap();
+        let second_bundle_fragments = BlobEncoder.encode(second_bundle, 2.into()).unwrap();
 
         let unsubmitted_fragments = setup
             .db()
@@ -547,7 +547,7 @@ mod tests {
 
         let first_two_blocks = blocks.iter().take(2).cloned().collect_nonempty().unwrap();
         let bundle_data = test_utils::encode_and_merge(first_two_blocks.clone());
-        let fragments = Eip4844BlobEncoder.encode(bundle_data, 1.into()).unwrap();
+        let fragments = BlobEncoder.encode(bundle_data, 1.into()).unwrap();
 
         let mut block_bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(2),
@@ -596,11 +596,11 @@ mod tests {
 
         let block_1 = nonempty![blocks.first().clone()];
         let bundle_1 = test_utils::encode_and_merge(block_1.clone());
-        let fragments_1 = Eip4844BlobEncoder.encode(bundle_1, 1.into()).unwrap();
+        let fragments_1 = BlobEncoder.encode(bundle_1, 1.into()).unwrap();
 
         let block_2 = nonempty![blocks.last().clone()];
         let bundle_2 = test_utils::encode_and_merge(block_2.clone());
-        let fragments_2 = Eip4844BlobEncoder.encode(bundle_2, 1.into()).unwrap();
+        let fragments_2 = BlobEncoder.encode(bundle_2, 2.into()).unwrap();
 
         let mut bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(1),
@@ -795,7 +795,7 @@ mod tests {
 
         // Encode the blocks to be bundled
         let data = encode_and_merge(NonEmpty::from_vec(blocks_to_bundle.clone()).unwrap());
-        let expected_fragments = Eip4844BlobEncoder.encode(data, 1.into()).unwrap();
+        let expected_fragments = BlobEncoder.encode(data, 1.into()).unwrap();
 
         let mut block_bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(latest_height),

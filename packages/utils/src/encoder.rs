@@ -1,25 +1,12 @@
-use std::{cmp::min, io::Read};
+use std::cmp::min;
 
-use alloy::{
-    eips::eip4844::{
-        BLS_MODULUS, BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT,
-        USABLE_BYTES_PER_BLOB,
-    },
-    primitives::U256,
+use alloy::eips::eip4844::{
+    BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT,
 };
 use anyhow::Result;
-use bitvec::{
-    array::BitArray,
-    bitarr, bitvec,
-    field::BitField,
-    order::{Lsb0, Msb0},
-    slice::BitSlice,
-    vec::BitVec,
-    view::BitView,
-    BitArr,
-};
+use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
 
-use crate::{Blob, BlobHeader, BlobHeaderV1, BlobWithProof};
+use crate::{Blob, BlobHeader, BlobHeaderV1};
 
 pub struct NewEncoder {}
 

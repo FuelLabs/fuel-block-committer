@@ -33,7 +33,7 @@ use url::Url;
 use super::health_tracking_middleware::EthApi;
 use crate::{
     error::{Error, Result},
-    Eip4844BlobEncoder,
+    BlobEncoder,
 };
 
 pub type WsProvider = alloy::providers::fillers::FillProvider<
@@ -257,7 +257,7 @@ impl EthApi for WsConnection {
         let num_fragments = min(fragments.len(), 6);
 
         let limited_fragments = fragments.into_iter().take(num_fragments);
-        let sidecar = Eip4844BlobEncoder::construct_sidecar(limited_fragments)?;
+        let sidecar = BlobEncoder::sidecar_from_fragments(limited_fragments).unwrap();
 
         let blob_tx = match previous_tx {
             Some(previous_tx) => {
@@ -442,7 +442,8 @@ impl WsConnection {
 mod tests {
 
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
-    use ports::l1::FragmentEncoder;
+    use ports::{l1::FragmentEncoder, types::nonempty};
+    use utils::encoder::NewEncoder;
 
     use super::*;
 
@@ -497,9 +498,9 @@ mod tests {
             metrics: Default::default(),
         };
 
-        let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
-        let fragment = Eip4844BlobEncoder {}.encode(data, 1.into()).unwrap();
-        let sidecar = Eip4844BlobEncoder::construct_sidecar(fragment.clone()).unwrap();
+        let data = nonempty![1, 2, 3];
+        let fragments = BlobEncoder.encode(data, 1.into()).unwrap();
+        let sidecar = BlobEncoder::sidecar_from_fragments(fragments.clone()).unwrap();
 
         // create a tx with the help of the provider to get gas fields, hash etc
         let tx = TransactionRequest::default()
@@ -520,7 +521,7 @@ mod tests {
 
         // when
         let (submitted_tx, _) = connection
-            .submit_state_fragments(fragment, Some(previous_tx.clone()))
+            .submit_state_fragments(fragments, Some(previous_tx.clone()))
             .await
             .unwrap();
 
@@ -575,8 +576,8 @@ mod tests {
             metrics: Default::default(),
         };
 
-        let data = NonEmpty::collect(vec![1, 2, 3]).unwrap();
-        let fragment = Eip4844BlobEncoder {}.encode(data, 1.into()).unwrap();
+        let data = nonempty![1, 2, 3];
+        let fragment = BlobEncoder.encode(data, 1.try_into().unwrap()).unwrap();
 
         // when
         let result = connection.submit_state_fragments(fragment, None).await;

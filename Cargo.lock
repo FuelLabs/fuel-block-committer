@@ -2662,6 +2662,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "utils",
 ]
 
 [[package]]
@@ -6806,6 +6807,7 @@ dependencies = [
  "bitvec",
  "c-kzg",
  "itertools 0.13.0",
+ "proptest",
  "rand",
  "test-case",
 ]

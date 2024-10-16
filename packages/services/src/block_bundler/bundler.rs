@@ -466,7 +466,7 @@ fn create_proposal(
 mod tests {
     use std::num::NonZeroUsize;
 
-    use eth::Eip4844BlobEncoder;
+    use eth::BlobEncoder;
     use fuel_crypto::SecretKey;
     use ports::{l1::FragmentEncoder, types::nonempty};
 
@@ -502,7 +502,7 @@ mod tests {
         let blocks = generate_storage_block_sequence(0..=10, &secret_key, 10, 100);
 
         let bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone(),
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(),
@@ -514,7 +514,7 @@ mod tests {
 
         // then
         let merged = blocks.into_inner().flat_map(|b| b.data.clone());
-        let expected_fragments = Eip4844BlobEncoder.encode(merged, 1.into()).unwrap();
+        let expected_fragments = BlobEncoder.encode(merged, 1.into()).unwrap();
         assert!(!bundle.metadata.known_to_be_optimal);
         assert_eq!(bundle.metadata.block_heights, 0..=10);
         assert_eq!(bundle.fragments, expected_fragments);
@@ -539,7 +539,7 @@ mod tests {
         .unwrap();
 
         let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone(),
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(),
@@ -576,7 +576,7 @@ mod tests {
         let step_size = NonZeroUsize::new(5).unwrap(); // Step size larger than number of blocks
 
         let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone(),
             Compressor::no_compression(),
             step_size,
@@ -607,7 +607,7 @@ mod tests {
         ];
 
         let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone().try_into().unwrap(),
             Compressor::no_compression(),
             NonZeroUsize::new(1).unwrap(), // Default step size
@@ -625,8 +625,8 @@ mod tests {
     }
 
     fn enough_bytes_to_almost_fill_a_blob() -> usize {
-        let encoding_overhead = Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
-        Eip4844BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
+        let encoding_overhead = BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
+        BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
     }
     #[test]
     fn generates_steps_as_expected() {

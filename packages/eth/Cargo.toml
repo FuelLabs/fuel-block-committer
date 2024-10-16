@@ -10,6 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+utils = { workspace = true }
 serde = { workspace = true }
 c-kzg = { workspace = true }
 alloy = { workspace = true, features = [
