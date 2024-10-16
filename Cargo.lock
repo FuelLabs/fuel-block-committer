@@ -6822,6 +6822,7 @@ dependencies = [
  "c-kzg",
  "flate2",
  "itertools 0.13.0",
+ "postcard",
  "proptest",
  "rand",
  "serde",

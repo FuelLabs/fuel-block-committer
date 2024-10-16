@@ -48,10 +48,13 @@ clap = { version = "4.5", default-features = false }
 config = { version = "0.14", default-features = false }
 delegate = { version = "0.13", default-features = false }
 flate2 = { version = "1.0", default-features = false }
+postcard = { version = "1.0", default-features = false }
 fs_extra = { version = "1.3", default-features = false }
 fuel-core-chain-config = { version = "0.40", default-features = false }
 fuel-core-client = { version = "0.40", default-features = false }
-fuel-core-types = { version = "0.40", default-features = false, features = ["da-compression"] }
+fuel-core-types = { version = "0.40", default-features = false, features = [
+  "da-compression",
+] }
 fuel-crypto = { version = "0.58.2", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
