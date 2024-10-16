@@ -1,6 +1,12 @@
 use sqlx::types::chrono::{DateTime, Utc};
 
-use super::{NonNegative, TransactionState};
+use super::{NonEmpty, NonNegative, TransactionState};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompressedFuelBlock {
+    pub height: u32,
+    pub data: NonEmpty<u8>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockSubmissionTx {

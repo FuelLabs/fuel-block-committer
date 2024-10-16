@@ -5,16 +5,11 @@
     "columns": [
       {
         "ordinal": 0,
-        "name": "hash",
-        "type_info": "Bytea"
-      },
-      {
-        "ordinal": 1,
         "name": "height",
         "type_info": "Int8"
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "data",
         "type_info": "Bytea"
       }
@@ -26,7 +21,6 @@
       ]
     },
     "nullable": [
-      false,
       false,
       false
     ]

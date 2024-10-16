@@ -12,8 +12,8 @@ use itertools::Itertools;
 pub use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{
-    BlockSubmission, BlockSubmissionTx, CollectNonEmpty, Fragment, L1Tx, NonEmpty, NonNegative,
-    TransactionState,
+    BlockSubmission, BlockSubmissionTx, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx,
+    NonEmpty, NonNegative, TransactionState,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -22,13 +22,6 @@ pub enum Error {
     Database(String),
     #[error("data conversion app<->db failed: {0}")]
     Conversion(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FuelBlock {
-    pub hash: [u8; 32],
-    pub height: u32,
-    pub data: NonEmpty<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,11 +36,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequentialFuelBlocks {
-    blocks: NonEmpty<FuelBlock>,
+    blocks: NonEmpty<CompressedFuelBlock>,
 }
 
 impl IntoIterator for SequentialFuelBlocks {
-    type Item = FuelBlock;
+    type Item = CompressedFuelBlock;
     type IntoIter = Chain<Once<Self::Item>, std::vec::IntoIter<Self::Item>>;
     fn into_iter(self) -> Self::IntoIter {
         self.blocks.into_iter()
@@ -55,18 +48,18 @@ impl IntoIterator for SequentialFuelBlocks {
 }
 
 impl Index<usize> for SequentialFuelBlocks {
-    type Output = FuelBlock;
+    type Output = CompressedFuelBlock;
     fn index(&self, index: usize) -> &Self::Output {
         &self.blocks[index]
     }
 }
 
 impl SequentialFuelBlocks {
-    pub fn into_inner(self) -> NonEmpty<FuelBlock> {
+    pub fn into_inner(self) -> NonEmpty<CompressedFuelBlock> {
         self.blocks
     }
 
-    pub fn from_first_sequence(blocks: NonEmpty<FuelBlock>) -> Self {
+    pub fn from_first_sequence(blocks: NonEmpty<CompressedFuelBlock>) -> Self {
         let blocks = blocks
             .into_iter()
             .scan(None, |prev, block| match prev {
@@ -116,10 +109,10 @@ impl Display for InvalidSequence {
 
 impl std::error::Error for InvalidSequence {}
 
-impl TryFrom<NonEmpty<FuelBlock>> for SequentialFuelBlocks {
+impl TryFrom<NonEmpty<CompressedFuelBlock>> for SequentialFuelBlocks {
     type Error = InvalidSequence;
 
-    fn try_from(blocks: NonEmpty<FuelBlock>) -> std::result::Result<Self, Self::Error> {
+    fn try_from(blocks: NonEmpty<CompressedFuelBlock>) -> std::result::Result<Self, Self::Error> {
         let is_sorted = blocks
             .iter()
             .tuple_windows()
@@ -163,7 +156,7 @@ pub trait Storage: Send + Sync {
         state: TransactionState,
     ) -> Result<BlockSubmission>;
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-    async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
+    async fn insert_blocks(&self, block: NonEmpty<CompressedFuelBlock>) -> Result<()>;
     async fn missing_blocks(
         &self,
         starting_height: u32,
@@ -211,7 +204,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-                async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
+                async fn insert_blocks(&self, block: NonEmpty<CompressedFuelBlock>) -> Result<()>;
                 async fn missing_blocks(
                     &self,
                     starting_height: u32,
@@ -260,7 +253,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
-                async fn insert_blocks(&self, block: NonEmpty<FuelBlock>) -> Result<()>;
+                async fn insert_blocks(&self, block: NonEmpty<CompressedFuelBlock>) -> Result<()>;
                 async fn missing_blocks(
                     &self,
                     starting_height: u32,
@@ -308,18 +301,17 @@ mod tests {
 
     use super::*;
 
-    fn create_fuel_block(height: u32) -> FuelBlock {
+    fn create_fuel_block(height: u32) -> CompressedFuelBlock {
         let mut hash = [0; 32];
         hash[..4].copy_from_slice(&height.to_be_bytes());
 
-        FuelBlock {
-            hash,
+        CompressedFuelBlock {
             height,
             data: nonempty![0u8],
         }
     }
 
-    fn create_non_empty_fuel_blocks(block_heights: &[u32]) -> NonEmpty<FuelBlock> {
+    fn create_non_empty_fuel_blocks(block_heights: &[u32]) -> NonEmpty<CompressedFuelBlock> {
         block_heights
             .iter()
             .cloned()
@@ -401,7 +393,7 @@ mod tests {
         let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
 
         // when
-        let collected: Vec<FuelBlock> = seq_blocks.clone().into_iter().collect();
+        let collected: Vec<CompressedFuelBlock> = seq_blocks.clone().into_iter().collect();
 
         // then
         assert_eq!(

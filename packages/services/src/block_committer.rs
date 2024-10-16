@@ -8,13 +8,12 @@ use ports::{
 use tracing::info;
 
 use super::Runner;
-use crate::{validator::Validator, Error, Result};
+use crate::{Error, Result};
 
-pub struct BlockCommitter<L1, Db, Fuel, BlockValidator, Clock> {
+pub struct BlockCommitter<L1, Db, Fuel, Clock> {
     l1_adapter: L1,
     fuel_adapter: Fuel,
     storage: Db,
-    block_validator: BlockValidator,
     clock: Clock,
     commit_interval: NonZeroU32,
     num_blocks_to_finalize_tx: u64,
@@ -30,12 +29,11 @@ enum Action {
     DoNothing,
 }
 
-impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockValidator, Clock> {
+impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock> {
     pub fn new(
         l1: L1,
         storage: Db,
         fuel_adapter: Fuel,
-        block_validator: BlockValidator,
         clock: Clock,
         commit_interval: NonZeroU32,
         num_blocks_to_finalize_tx: u64,
@@ -44,7 +42,6 @@ impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockVali
             l1_adapter: l1,
             storage,
             fuel_adapter,
-            block_validator,
             clock,
             commit_interval,
             num_blocks_to_finalize_tx,
@@ -52,11 +49,10 @@ impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockVali
     }
 }
 
-impl<L1, Db, Fuel, BlockValidator, Clock> BlockCommitter<L1, Db, Fuel, BlockValidator, Clock>
+impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock>
 where
     L1: ports::l1::Contract + ports::l1::Api,
     Db: Storage,
-    BlockValidator: Validator,
     Fuel: ports::fuel::Api,
     Clock: ports::clock::Clock,
 {
@@ -75,17 +71,6 @@ where
         Ok(())
     }
 
-    async fn fetch_latest_block(&self) -> Result<FuelBlock> {
-        let latest_block = self.fuel_adapter.latest_block().await?;
-        self.block_validator.validate(
-            latest_block.id,
-            &latest_block.header,
-            &latest_block.consensus,
-        )?;
-
-        Ok(latest_block)
-    }
-
     fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
         current_block_height - (current_block_height % self.commit_interval)
     }
@@ -101,8 +86,6 @@ where
                 ))
             })?;
 
-        self.block_validator
-            .validate(fuel_block.id, &fuel_block.header, &fuel_block.consensus)?;
         Ok(fuel_block)
     }
 
@@ -176,19 +159,17 @@ where
     }
 }
 
-impl<L1, Db, Fuel, BlockValidator, Clock> Runner
-    for BlockCommitter<L1, Db, Fuel, BlockValidator, Clock>
+impl<L1, Db, Fuel, Clock> Runner for BlockCommitter<L1, Db, Fuel, Clock>
 where
     L1: ports::l1::Contract + ports::l1::Api,
     Db: Storage,
     Fuel: ports::fuel::Api,
-    BlockValidator: Validator,
     Clock: ports::clock::Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         let latest_submission = self.storage.submission_w_latest_block().await?;
 
-        let current_block = self.fetch_latest_block().await?;
+        let current_block = self.fuel_adapter.latest_block().await?;
         let current_epoch_block_height =
             self.current_epoch_block_height(current_block.header.height);
 
@@ -231,8 +212,6 @@ mod tests {
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use storage::{DbWithProcess, PostgresProcess};
-
-    use crate::BlockValidator;
 
     use super::*;
 
@@ -340,7 +319,6 @@ mod tests {
     async fn will_do_nothing_if_latest_block_is_completed_and_not_stale() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let latest_block = given_a_block(10, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
 
@@ -352,15 +330,8 @@ mod tests {
         let mut l1 = MockL1::new();
         l1.contract.expect_submit().never();
 
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
 
         // when
         block_committer.run().await.unwrap();
@@ -372,21 +343,13 @@ mod tests {
     async fn will_submit_on_latest_epoch() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let latest_block = given_a_block(10, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
 
         let l1 = given_l1_that_expects_submission(latest_block);
         let db = db_with_submissions(vec![]).await;
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
 
         // when
         block_committer.run().await.unwrap();
@@ -398,7 +361,6 @@ mod tests {
     async fn will_skip_incomplete_submission_to_submit_latest() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let latest_block = given_a_block(10, &secret_key);
         let all_blocks = vec![
             given_a_block(8, &secret_key),
@@ -410,15 +372,8 @@ mod tests {
         let l1 = given_l1_that_expects_submission(latest_block);
         let db = db_with_submissions(vec![8]).await;
 
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
 
         // when
         block_committer.run().await.unwrap();
@@ -430,22 +385,14 @@ mod tests {
     async fn will_fetch_and_submit_missed_block() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let missed_block = given_a_block(4, &secret_key);
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
 
         let l1 = given_l1_that_expects_submission(missed_block);
         let db = db_with_submissions(vec![0, 2]).await;
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
 
         // when
         block_committer.run().await.unwrap();
@@ -458,7 +405,6 @@ mod tests {
     async fn will_not_reattempt_submitting_missed_block() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let missed_block = given_a_block(4, &secret_key);
         let latest_block = given_a_block(5, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
@@ -467,15 +413,8 @@ mod tests {
 
         let l1 = given_l1_that_expects_transaction_response(5, [4; 32], None);
 
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
 
         // when
         block_committer.run().await.unwrap();
@@ -488,21 +427,13 @@ mod tests {
     async fn propagates_block_if_epoch_reached() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let block = given_a_block(4, &secret_key);
         let fuel_adapter = given_fetcher(vec![block.clone()]);
 
         let db = db_with_submissions(vec![0, 2]).await;
         let l1 = given_l1_that_expects_submission(block);
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
 
         // when
         block_committer.run().await.unwrap();
@@ -515,7 +446,6 @@ mod tests {
     async fn updates_submission_state_to_finalized() {
         // given
         let secret_key = given_secret_key();
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
         let latest_height = 4;
         let latest_block = given_a_block(latest_height, &secret_key);
         let fuel_adapter = given_fetcher(vec![latest_block]);
@@ -525,15 +455,8 @@ mod tests {
         let l1 =
             given_l1_that_expects_transaction_response(latest_height, [4; 32], Some(tx_response));
 
-        let mut block_committer = BlockCommitter::new(
-            l1,
-            db,
-            fuel_adapter,
-            block_validator,
-            SystemClock,
-            2.try_into().unwrap(),
-            1,
-        );
+        let mut block_committer =
+            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
 
         // when
         block_committer.run().await.unwrap();

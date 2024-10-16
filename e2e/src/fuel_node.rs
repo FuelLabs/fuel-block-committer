@@ -26,7 +26,6 @@ pub struct FuelNodeProcess {
     _child: tokio::process::Child,
     wallet_keys: Vec<FuelSecretKey>,
     url: Url,
-    public_key: FuelPublicKey,
 }
 
 impl FuelNode {
@@ -108,6 +107,8 @@ impl FuelNode {
             .arg("--debug")
             .arg(format!("--native-executor-version={executor_version}"))
             .env("CONSENSUS_KEY_SECRET", format!("{}", secret_key))
+            .arg("--da-compression")
+            .arg("1hr")
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null());
 
@@ -126,7 +127,6 @@ impl FuelNode {
             _child: child,
             _db_dir: db_dir,
             url,
-            public_key,
             _snapshot_dir: snapshot_dir,
             wallet_keys,
         };
@@ -144,7 +144,7 @@ impl FuelNode {
 
 impl FuelNodeProcess {
     pub fn client(&self) -> HttpClient {
-        HttpClient::new(&self.url, 5, 100.try_into().unwrap())
+        HttpClient::new(&self.url, 5, 5.try_into().unwrap())
     }
 
     pub async fn produce_transactions(&self, amount: usize) -> anyhow::Result<()> {
@@ -216,9 +216,5 @@ impl FuelNodeProcess {
 
     pub fn url(&self) -> &Url {
         &self.url
-    }
-
-    pub fn consensus_pub_key(&self) -> FuelPublicKey {
-        self.public_key
     }
 }

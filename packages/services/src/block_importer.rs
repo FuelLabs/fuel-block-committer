@@ -1,154 +1,53 @@
 use futures::TryStreamExt;
-use itertools::chain;
 use ports::{
-    fuel::{Consensus, FuelPoAConsensus, FullFuelBlock, Genesis},
     storage::Storage,
-    types::{CollectNonEmpty, NonEmpty},
+    types::{nonempty, CompressedFuelBlock, NonEmpty},
 };
 use tracing::info;
 
-use crate::{validator::Validator, Result, Runner};
+use crate::{Result, Runner};
 
 /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
-/// into local storage. It fetches blocks from the Fuel API, validates them,
+/// into local storage. It fetches blocks from the Fuel API
 /// and stores them if they are not already present.
-pub struct BlockImporter<Db, FuelApi, BlockValidator> {
+pub struct BlockImporter<Db, FuelApi> {
     storage: Db,
     fuel_api: FuelApi,
-    block_validator: BlockValidator,
     lookback_window: u32,
 }
 
-impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator> {
+impl<Db, FuelApi> BlockImporter<Db, FuelApi> {
     /// Creates a new `BlockImporter`.
-    pub fn new(
-        storage: Db,
-        fuel_api: FuelApi,
-        block_validator: BlockValidator,
-        lookback_window: u32,
-    ) -> Self {
+    pub fn new(storage: Db, fuel_api: FuelApi, lookback_window: u32) -> Self {
         Self {
             storage,
             fuel_api,
-            block_validator,
             lookback_window,
         }
     }
 }
 
-impl<Db, FuelApi, BlockValidator> BlockImporter<Db, FuelApi, BlockValidator>
+impl<Db, FuelApi> BlockImporter<Db, FuelApi>
 where
     Db: Storage,
     FuelApi: ports::fuel::Api,
-    BlockValidator: Validator,
 {
-    async fn import_blocks(&self, blocks: NonEmpty<FullFuelBlock>) -> Result<()> {
-        let db_blocks = encode_blocks(blocks);
+    async fn import_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
+        let starting_height = blocks.first().height;
+        let ending_height = blocks.last().height;
 
-        let starting_height = db_blocks.first().height;
-        let ending_height = db_blocks.last().height;
-
-        self.storage.insert_blocks(db_blocks).await?;
+        self.storage.insert_blocks(blocks).await?;
 
         info!("Imported blocks: {starting_height}..={ending_height}");
 
         Ok(())
     }
-
-    fn validate_blocks(&self, blocks: &[FullFuelBlock]) -> Result<()> {
-        for block in blocks {
-            self.block_validator
-                .validate(block.id, &block.header, &block.consensus)?;
-        }
-
-        Ok(())
-    }
 }
 
-pub(crate) fn encode_blocks(
-    blocks: NonEmpty<FullFuelBlock>,
-) -> NonEmpty<ports::storage::FuelBlock> {
-    blocks
-        .into_iter()
-        .map(|full_block| ports::storage::FuelBlock {
-            hash: *full_block.id,
-            height: full_block.header.height,
-            data: encode_block_data(full_block),
-        })
-        .collect_nonempty()
-        .expect("should be non-empty")
-}
-
-fn serialize_header(header: ports::fuel::FuelHeader) -> NonEmpty<u8> {
-    chain!(
-        *header.id,
-        header.da_height.to_be_bytes(),
-        header.consensus_parameters_version.to_be_bytes(),
-        header.state_transition_bytecode_version.to_be_bytes(),
-        header.transactions_count.to_be_bytes(),
-        header.message_receipt_count.to_be_bytes(),
-        *header.transactions_root,
-        *header.message_outbox_root,
-        *header.event_inbox_root,
-        header.height.to_be_bytes(),
-        *header.prev_root,
-        header.time.0.to_be_bytes(),
-        *header.application_hash,
-    )
-    .collect_nonempty()
-    .expect("should be non-empty")
-}
-
-fn serialize_consensus(consensus: Consensus) -> NonEmpty<u8> {
-    let mut buf = vec![];
-    match consensus {
-        Consensus::Genesis(Genesis {
-            chain_config_hash,
-            coins_root,
-            contracts_root,
-            messages_root,
-            transactions_root,
-        }) => {
-            let variant = 0u8;
-            buf.extend(chain!(
-                variant.to_be_bytes(),
-                *chain_config_hash,
-                *coins_root,
-                *contracts_root,
-                *messages_root,
-                *transactions_root,
-            ));
-        }
-        Consensus::PoAConsensus(FuelPoAConsensus { signature }) => {
-            let variant = 1u8;
-
-            buf.extend(chain!(variant.to_be_bytes(), *signature));
-        }
-        Consensus::Unknown => {
-            let variant = 2u8;
-            buf.extend(variant.to_be_bytes());
-        }
-    }
-
-    NonEmpty::from_vec(buf).expect("should be non-empty")
-}
-
-fn encode_block_data(block: FullFuelBlock) -> NonEmpty<u8> {
-    // We don't handle fwd/bwd compatibility, that should be handled once the DA compression on the core is incorporated
-    chain!(
-        serialize_header(block.header),
-        serialize_consensus(block.consensus),
-        block.raw_transactions.into_iter().flatten()
-    )
-    .collect_nonempty()
-    .expect("should be non-empty")
-}
-
-impl<Db, FuelApi, BlockValidator> Runner for BlockImporter<Db, FuelApi, BlockValidator>
+impl<Db, FuelApi> Runner for BlockImporter<Db, FuelApi>
 where
     Db: Storage + Send + Sync,
     FuelApi: ports::fuel::Api + Send + Sync,
-    BlockValidator: Validator + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         let chain_height = self.fuel_api.latest_height().await?;
@@ -160,14 +59,10 @@ where
             .await?
         {
             self.fuel_api
-                .full_blocks_in_height_range(range)
+                .compressed_blocks_in_height_range(range)
                 .map_err(crate::Error::from)
-                .try_for_each(|blocks| async {
-                    self.validate_blocks(&blocks)?;
-
-                    if let Some(blocks) = NonEmpty::from_vec(blocks) {
-                        self.import_blocks(blocks).await?;
-                    }
+                .try_for_each(|block| async {
+                    self.import_blocks(nonempty![block]).await?;
 
                     Ok(())
                 })
@@ -180,33 +75,25 @@ where
 
 #[cfg(test)]
 mod tests {
-
-    use fuel_crypto::SecretKey;
     use futures::StreamExt;
     use itertools::Itertools;
+
     use mockall::{predicate::eq, Sequence};
-    use ports::types::nonempty;
-    use rand::{rngs::StdRng, SeedableRng};
+    use ports::types::{nonempty, CollectNonEmpty};
 
     use super::*;
-    use crate::{
-        test_utils::{self, Blocks, ImportedBlocks},
-        BlockValidator, Error,
-    };
+    use crate::test_utils::{self, Blocks};
 
     #[tokio::test]
     async fn imports_first_block_when_db_is_empty() -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let mut rng = StdRng::from_seed([0; 32]);
-        let secret_key = SecretKey::random(&mut rng);
-        let block = test_utils::mocks::fuel::generate_block(0, &secret_key, 1, 100);
+        let block = test_utils::mocks::fuel::generate_block(0, 100);
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0);
 
         // when
         importer.run().await?;
@@ -218,41 +105,9 @@ mod tests {
             .await?
             .unwrap();
 
-        let expected_block = encode_blocks(nonempty![block]);
+        let expected_block = nonempty![block];
 
         assert_eq!(all_blocks.into_inner(), expected_block);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn wont_import_invalid_blocks() -> Result<()> {
-        // given
-        let setup = test_utils::Setup::init().await;
-
-        let mut rng = StdRng::from_seed([0; 32]);
-        let correct_secret_key = SecretKey::random(&mut rng);
-        let block_validator = BlockValidator::new(*correct_secret_key.public_key().hash());
-
-        let incorrect_secret_key = SecretKey::random(&mut rng);
-        let block = test_utils::mocks::fuel::generate_block(0, &incorrect_secret_key, 1, 100);
-
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
-
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
-
-        // when
-        let result = importer.run().await;
-
-        // then
-        let Err(Error::BlockValidation(msg)) = result else {
-            panic!("expected a validation error, got: {:?}", result);
-        };
-
-        assert_eq!(
-            msg,
-            r#"recovered producer addr `13d5eed3c6132bcf8dc2f92944d11fb3dc32df5ed183ab4716914eb21fd2b318` does not match expected addr`4747f47fb79e2b73b2f3c3ca1ea69d9b2b0caf8ac2d3480da6e750664f40914b`."#
-        );
 
         Ok(())
     }
@@ -262,20 +117,15 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks {
-            fuel_blocks: existing_blocks,
-            secret_key,
-            ..
-        } = setup
+        let existing_blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=2,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
         let new_blocks = (3..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, 100))
             .collect_vec();
 
         let all_blocks = existing_blocks
@@ -285,9 +135,8 @@ mod tests {
             .unwrap();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 1000);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, 1000);
 
         // when
         importer.run().await?;
@@ -299,9 +148,7 @@ mod tests {
             .await?
             .unwrap();
 
-        let expected_blocks = encode_blocks(all_blocks);
-
-        pretty_assertions::assert_eq!(stored_blocks.into_inner(), expected_blocks);
+        pretty_assertions::assert_eq!(stored_blocks.into_inner(), all_blocks);
 
         Ok(())
     }
@@ -311,24 +158,22 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks { secret_key, .. } = setup
+        setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=2,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
         let starting_height = 8;
         let new_blocks = (starting_height..=13)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100))
+            .map(|height| test_utils::mocks::fuel::generate_block(height, 100))
             .collect_nonempty()
             .unwrap();
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 5);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, 5);
 
         // when
         importer.run().await?;
@@ -339,9 +184,8 @@ mod tests {
             .lowest_sequence_of_unbundled_blocks(starting_height, 100)
             .await?
             .unwrap();
-        let expected_blocks = encode_blocks(new_blocks);
 
-        pretty_assertions::assert_eq!(stored_new_blocks.into_inner(), expected_blocks);
+        pretty_assertions::assert_eq!(stored_new_blocks.into_inner(), new_blocks);
 
         Ok(())
     }
@@ -351,23 +195,16 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks {
-            fuel_blocks,
-            storage_blocks,
-            secret_key,
-            ..
-        } = setup
+        let fuel_blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=2,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
-        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks, true);
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
+        let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(fuel_blocks.clone(), true);
 
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 0);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0);
 
         // when
         importer.run().await?;
@@ -380,7 +217,7 @@ mod tests {
             .await?
             .unwrap();
 
-        assert_eq!(stored_blocks.into_inner(), storage_blocks);
+        assert_eq!(stored_blocks.into_inner(), fuel_blocks);
 
         Ok(())
     }
@@ -391,15 +228,12 @@ mod tests {
         let setup = test_utils::Setup::init().await;
         let lookback_window = 2;
 
-        let secret_key = SecretKey::random(&mut StdRng::from_seed([0; 32]));
-        let blocks_to_import = (3..=5)
-            .map(|height| test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100));
+        let blocks_to_import =
+            (3..=5).map(|height| test_utils::mocks::fuel::generate_block(height, 100));
 
         let fuel_mock = test_utils::mocks::fuel::these_blocks_exist(blocks_to_import, true);
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
 
-        let mut importer =
-            BlockImporter::new(setup.db(), fuel_mock, block_validator, lookback_window);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, lookback_window);
 
         // when
         importer.run().await?;
@@ -431,14 +265,11 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let secret_key = SecretKey::random(&mut StdRng::from_seed([0; 32]));
-
         for range in [(3..=10), (40..=60)] {
             setup
                 .import_blocks(Blocks::WithHeights {
                     range,
-                    tx_per_block: 1,
-                    size_per_tx: 100,
+                    data_size: 100,
                 })
                 .await;
         }
@@ -449,18 +280,15 @@ mod tests {
 
         for range in [0..=2, 11..=39, 61..=100] {
             fuel_mock
-                .expect_full_blocks_in_height_range()
+                .expect_compressed_blocks_in_height_range()
                 .with(eq(range))
                 .once()
                 .in_sequence(&mut sequence)
                 .return_once(move |range| {
                     let blocks = range
-                        .map(|height| {
-                            test_utils::mocks::fuel::generate_block(height, &secret_key, 1, 100)
-                        })
-                        .collect();
+                        .map(|height| Ok(test_utils::mocks::fuel::generate_block(height, 100)));
 
-                    futures::stream::once(async { Ok(blocks) }).boxed()
+                    futures::stream::iter(blocks).boxed()
                 });
         }
 
@@ -469,9 +297,7 @@ mod tests {
             .once()
             .return_once(|| Box::pin(async { Ok(100) }));
 
-        let block_validator = BlockValidator::new(*secret_key.public_key().hash());
-
-        let mut importer = BlockImporter::new(setup.db(), fuel_mock, block_validator, 101);
+        let mut importer = BlockImporter::new(setup.db(), fuel_mock, 101);
 
         // when
         importer.run().await?;

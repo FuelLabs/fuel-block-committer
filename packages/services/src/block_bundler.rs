@@ -274,7 +274,7 @@ mod tests {
     use ports::{
         l1::FragmentEncoder,
         storage::SequentialFuelBlocks,
-        types::{nonempty, CollectNonEmpty, Fragment, NonEmpty},
+        types::{nonempty, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
     };
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -283,7 +283,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        test_utils::{self, encode_and_merge, mocks, Blocks, ImportedBlocks},
+        test_utils::{self, mocks, Blocks},
         CompressionLevel,
     };
 
@@ -368,8 +368,7 @@ mod tests {
         setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=0,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
@@ -402,29 +401,34 @@ mod tests {
         Ok(())
     }
 
+    fn merge_data(blocks: impl IntoIterator<Item = CompressedFuelBlock>) -> NonEmpty<u8> {
+        blocks
+            .into_iter()
+            .flat_map(|b| b.data)
+            .collect_nonempty()
+            .expect("is not empty")
+    }
+
     #[tokio::test]
     async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_creation(
     ) -> Result<()> {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks {
-            fuel_blocks: blocks,
-            ..
-        } = setup
+        let blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=0,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
-        let data = encode_and_merge(blocks.clone());
-        let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let clock = TestClock::default();
 
-        let latest_height = blocks.last().header.height;
+        let latest_height = blocks.last().height;
         let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
+
+        let data = merge_data(blocks.clone());
+        let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let mut block_bundler = BlockBundler::new(
             mock_fuel_api,
@@ -458,7 +462,7 @@ mod tests {
 
         assert!(setup
             .db()
-            .lowest_sequence_of_unbundled_blocks(blocks.last().header.height, 1)
+            .lowest_sequence_of_unbundled_blocks(blocks.last().height, 1)
             .await?
             .is_none());
 
@@ -473,16 +477,15 @@ mod tests {
 
         let clock = TestClock::default();
 
-        let ImportedBlocks { fuel_blocks, .. } = setup
+        let fuel_blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 1..=3,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
         let mut block_bundler = BlockBundler::new(
-            mocks::fuel::latest_height_is(fuel_blocks.last().header.height),
+            mocks::fuel::latest_height_is(fuel_blocks.last().height),
             setup.db(),
             clock.clone(),
             default_bundler_factory(),
@@ -501,12 +504,10 @@ mod tests {
         block_bundler.run().await?;
 
         // then
-        let first_bundle =
-            encode_and_merge(NonEmpty::from_vec(fuel_blocks[0..=1].to_vec()).unwrap());
+        let first_bundle = merge_data(fuel_blocks[0..=1].to_vec());
         let first_bundle_fragments = Eip4844BlobEncoder.encode(first_bundle).unwrap();
 
-        let second_bundle =
-            encode_and_merge(NonEmpty::from_vec(fuel_blocks[2..=2].to_vec()).unwrap());
+        let second_bundle = merge_data(fuel_blocks[2..=2].to_vec());
         let second_bundle_fragments = Eip4844BlobEncoder.encode(second_bundle).unwrap();
 
         let unsubmitted_fragments = setup
@@ -533,19 +534,15 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks {
-            fuel_blocks: blocks,
-            ..
-        } = setup
+        let blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=2,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
         let first_two_blocks = blocks.iter().take(2).cloned().collect_nonempty().unwrap();
-        let bundle_data = test_utils::encode_and_merge(first_two_blocks.clone());
+        let bundle_data = merge_data(first_two_blocks);
         let fragments = Eip4844BlobEncoder.encode(bundle_data).unwrap();
 
         let mut block_bundler = BlockBundler::new(
@@ -582,24 +579,20 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks {
-            fuel_blocks: blocks,
-            ..
-        } = setup
+        let blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=1,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
-        let block_1 = nonempty![blocks.first().clone()];
-        let bundle_1 = test_utils::encode_and_merge(block_1.clone());
-        let fragments_1 = Eip4844BlobEncoder.encode(bundle_1).unwrap();
+        let fragments_1 = Eip4844BlobEncoder
+            .encode(blocks.first().data.clone())
+            .unwrap();
 
-        let block_2 = nonempty![blocks.last().clone()];
-        let bundle_2 = test_utils::encode_and_merge(block_2.clone());
-        let fragments_2 = Eip4844BlobEncoder.encode(bundle_2).unwrap();
+        let fragments_2 = Eip4844BlobEncoder
+            .encode(blocks.last().data.clone())
+            .unwrap();
 
         let mut bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(1),
@@ -639,8 +632,7 @@ mod tests {
         setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=0,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
@@ -709,8 +701,7 @@ mod tests {
         setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=0,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
@@ -760,14 +751,10 @@ mod tests {
         // given
         let setup = test_utils::Setup::init().await;
 
-        let ImportedBlocks {
-            fuel_blocks: blocks,
-            ..
-        } = setup
+        let blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=3,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
@@ -778,7 +765,7 @@ mod tests {
 
         let blocks_to_bundle: Vec<_> = blocks
             .iter()
-            .filter(|block| block.header.height >= starting_height)
+            .filter(|block| block.height >= starting_height)
             .cloned()
             .collect();
 
@@ -788,12 +775,12 @@ mod tests {
             "Expected only one block to be within the lookback window"
         );
         assert_eq!(
-            blocks_to_bundle[0].header.height, 3,
+            blocks_to_bundle[0].height, 3,
             "Expected block at height 3 to be within the lookback window"
         );
 
         // Encode the blocks to be bundled
-        let data = encode_and_merge(NonEmpty::from_vec(blocks_to_bundle.clone()).unwrap());
+        let data = merge_data(blocks_to_bundle.clone());
         let expected_fragments = Eip4844BlobEncoder.encode(data).unwrap();
 
         let mut block_bundler = BlockBundler::new(
@@ -855,18 +842,14 @@ mod tests {
         let setup = test_utils::Setup::init().await;
 
         // Import two blocks with specific parameters
-        let ImportedBlocks {
-            fuel_blocks: blocks,
-            ..
-        } = setup
+        let blocks = setup
             .import_blocks(Blocks::WithHeights {
                 range: 0..=1,
-                tx_per_block: 1,
-                size_per_tx: 100,
+                data_size: 100,
             })
             .await;
 
-        let latest_height = blocks.last().header.height;
+        let latest_height = blocks.last().height;
         let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
 
         let registry = metrics::prometheus::Registry::new();
@@ -903,10 +886,7 @@ mod tests {
             .get_gauge()
             .get_value() as i64;
 
-        assert_eq!(
-            last_bundled_block_height,
-            blocks.last().header.height as i64
-        );
+        assert_eq!(last_bundled_block_height, blocks.last().height as i64);
 
         // Check that the blocks_per_bundle metric has recorded the correct number of blocks
         let blocks_per_bundle_metric = gathered_metrics
