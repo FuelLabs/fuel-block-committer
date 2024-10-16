@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::{cmp::min, marker::PhantomData};
 
 use alloy::eips::eip4844::{
     BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT,
@@ -6,9 +6,19 @@ use alloy::eips::eip4844::{
 use anyhow::Result;
 use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
 
-use crate::{Blob, BlobHeader, BlobHeaderV1};
+use super::{header::BlobHeader, Blob};
+use crate::blob::header::BlobHeaderV1;
 
-pub struct NewEncoder {}
+#[derive(Default, Debug, Clone)]
+pub struct NewEncoder {
+    _private: PhantomData<()>,
+}
+
+impl NewEncoder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 const BITS_PER_FE: usize = 256;
 const BITS_PER_BLOB: usize = FIELD_ELEMENTS_PER_BLOB as usize * BITS_PER_FE;
@@ -47,13 +57,7 @@ impl Inner {
     }
 
     fn skip_two_bits(&mut self) {
-        // eprintln!("skip_two_bits");
-        let current = self.bit_counter;
         self.bit_counter += 2;
-        // eprintln!(
-        //     "old = {:?}, self.bit_counter = {:?}",
-        //     current, self.bit_counter
-        // );
     }
 
     fn skip_header_bits(&mut self) {
@@ -63,12 +67,7 @@ impl Inner {
             }
         }
 
-        let current = self.bit_counter;
         self.bit_counter += BlobHeader::V1_SIZE_BITS;
-        // eprintln!(
-        //     "old = {:?}, self.bit_counter = {:?}",
-        //     current, self.bit_counter
-        // );
     }
 
     fn ingest(&mut self, bits: &BitSlice<u8, Msb0>) {
@@ -79,21 +78,8 @@ impl Inner {
 
         let dst = &mut self.blobs[blob_idx][start_free_blob_space..];
         dst[..bits.len()].copy_from_bitslice(bits);
-        // eprintln!(
-        //     "blobs[{}][{}..][..{}]",
-        //     blob_idx,
-        //     start_free_blob_space,
-        //     bits.len()
-        // );
-
-        let current = self.bit_counter;
 
         self.bit_counter += bits.len();
-
-        // eprintln!(
-        //     "old = {:?}, self.bit_counter = {:?}",
-        //     current, self.bit_counter
-        // );
     }
 
     fn finalize(self, id: u32) -> Vec<Blob> {
@@ -124,19 +110,7 @@ impl Inner {
                 // bits of a FE.
                 blob[2..][..BlobHeader::V1_SIZE_BITS].copy_from_bitslice(&header.encode());
 
-                // for slice in blob.chunks(256) {
-                //     let bytes: Vec<_> = slice.bytes().map(|b| b.unwrap()).collect();
-                //     let arr: [u8; const { 256 / 8 }] = bytes.try_into().unwrap();
-                //     let num = U256::from_be_bytes(arr);
-                //
-                //     // eprintln!("{num}");
-                //     assert!(num < BLS_MODULUS);
-                //     eprintln!("{}", &slice[..2]);
-                // }
-
-                let f = Box::new(blob.into_inner());
-                // eprintln!("{}", alloy::hex::encode(f.as_slice()));
-                f
+                Box::new(blob.into_inner())
             })
             .collect()
     }

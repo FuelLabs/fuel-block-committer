@@ -1,10 +1,6 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 
-use alloy::{
-    consensus::{Blob, BlobTransactionSidecar},
-    eips::eip4844::BYTES_PER_BLOB,
-    primitives::U256,
-};
+use alloy::{consensus::BlobTransactionSidecar, eips::eip4844::BYTES_PER_BLOB, primitives::U256};
 use delegate::delegate;
 use itertools::{izip, Itertools};
 use ports::{
@@ -21,7 +17,7 @@ mod websocket;
 
 pub use alloy::primitives::Address;
 pub use aws::*;
-use utils::{decoder::NewDecoder, encoder::NewEncoder, BlobHeader};
+use utils::blob::{decoder::NewDecoder, encoder::NewEncoder, generate_sidecar, header::BlobHeader};
 pub use websocket::{KmsKeys, TxConfig, WebsocketClient};
 
 impl Contract for WebsocketClient {
@@ -78,17 +74,17 @@ impl BlobEncoder {
 impl ports::l1::FragmentEncoder for BlobEncoder {
     fn encode(&self, data: NonEmpty<u8>, id: NonNegative<i32>) -> Result<NonEmpty<Fragment>> {
         let data = Vec::from(data);
-        let blobs = NewEncoder {}.encode(&data, id.as_u32()).unwrap();
+        let blobs = NewEncoder::new().encode(&data, id.as_u32()).unwrap();
 
         let bits_usage = blobs
             .iter()
             .map(|blob| {
-                let BlobHeader::V1(header) = NewDecoder {}.read_header(&blob).unwrap();
+                let BlobHeader::V1(header) = NewDecoder::default().read_header(blob).unwrap();
                 header.num_bits
             })
             .collect_vec();
 
-        let sidecar = utils::generate_sidecar(blobs).unwrap();
+        let sidecar = generate_sidecar(blobs).unwrap();
 
         let fragments = izip!(
             &sidecar.blobs,
@@ -122,7 +118,7 @@ impl ports::l1::FragmentEncoder for BlobEncoder {
     }
 
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64 {
-        NewEncoder {}.blobs_needed_to_encode(num_bytes.get()) as u64
+        NewEncoder::default().blobs_needed_to_encode(num_bytes.get()) as u64
     }
 }
 

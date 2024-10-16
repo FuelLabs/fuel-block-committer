@@ -1,9 +1,15 @@
+use std::marker::PhantomData;
+
 use anyhow::bail;
 use bitvec::{order::Msb0, slice::BitSlice, vec::BitVec};
 
-use crate::{Blob, BlobHeader};
+use super::{header::BlobHeader, Blob};
 
-pub struct NewDecoder {}
+#[derive(Default, Debug, Clone)]
+pub struct NewDecoder {
+    _private: PhantomData<()>,
+}
+
 impl NewDecoder {
     pub fn decode(&self, blobs: &[Blob]) -> anyhow::Result<Vec<u8>> {
         let mut indexed_data = blobs

@@ -456,7 +456,6 @@ mod tests {
 
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
     use ports::{l1::FragmentEncoder, types::nonempty};
-    use utils::encoder::NewEncoder;
 
     use super::*;
 
