@@ -12,9 +12,9 @@ pub struct BlobHeaderV1 {
 
 impl BlobHeaderV1 {
     const BUNDLE_ID_BITS: usize = 32;
-    const NUM_BITS_BITS: usize = 20;
+    const NUM_BITS_BITS: usize = 21;
     const IS_LAST_BITS: usize = 1;
-    const IDX_SIZE_BITS: usize = 18;
+    const IDX_SIZE_BITS: usize = 17;
     pub const TOTAL_SIZE_BITS: usize =
         Self::BUNDLE_ID_BITS + Self::NUM_BITS_BITS + Self::IS_LAST_BITS + Self::IDX_SIZE_BITS;
 
@@ -28,7 +28,7 @@ impl BlobHeaderV1 {
         buffer.extend_from_bitslice(&self.idx.view_bits::<Msb0>()[32 - Self::IDX_SIZE_BITS..]);
     }
 
-    pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, &BitSlice<u8, Msb0>)> {
+    pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
         // TODO: check if data is long enough
         let bundle_id = data[..Self::BUNDLE_ID_BITS].load_be();
         let remaining_data = &data[Self::BUNDLE_ID_BITS..];
@@ -49,7 +49,9 @@ impl BlobHeaderV1 {
             idx,
         };
 
-        Ok((header, remaining_data))
+        let amount_read = data.len().saturating_sub(remaining_data.len());
+
+        Ok((header, amount_read))
     }
 }
 
@@ -76,16 +78,17 @@ impl BlobHeader {
             }
         }
     }
-    pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, &BitSlice<u8, Msb0>)> {
+    pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
         // TODO: check boundaries
         let version = data[..Self::VERSION_BITS].load_be::<u16>();
         // eprintln!("version: {:?}", version);
 
         let remaining_data = &data[Self::VERSION_BITS..];
+        let read_version_bits = data.len() - remaining_data.len();
         match version {
             1 => {
-                let (header, remaining_data) = BlobHeaderV1::decode(remaining_data)?;
-                Ok((BlobHeader::V1(header), remaining_data))
+                let (header, read_bits) = BlobHeaderV1::decode(remaining_data)?;
+                Ok((BlobHeader::V1(header), read_bits + read_version_bits))
             }
             version => bail!("Unsupported version {version}"),
         }

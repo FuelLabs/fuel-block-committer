@@ -118,12 +118,12 @@ impl Inner {
                 let is_last = idx == idx_of_last_blob;
 
                 let remainder = self.bit_counter % BITS_PER_BLOB;
-                let num_bits = if is_last && remainder != 0 {
-                    remainder
-                } else {
+                let num_bits = if !is_last || remainder == 0 {
                     BITS_PER_BLOB
+                } else {
+                    remainder
                 };
-                // eprintln!("num_bits = {:?}", num_bits);
+                eprintln!("num_bits = {:?}", num_bits);
 
                 let header = BlobHeader::V1(BlobHeaderV1 {
                     bundle_id: id,
