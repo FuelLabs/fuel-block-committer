@@ -8,9 +8,9 @@ use std::{
 use clap::{command, Parser};
 use eth::Address;
 use serde::Deserialize;
-use services::CompressionLevel;
 use storage::DbConfig;
 use url::Url;
+use utils::bundle::CompressionLevel;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {

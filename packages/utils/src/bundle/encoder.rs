@@ -137,3 +137,30 @@ impl CompressionLevel {
         ]
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::bundle::{CompressionLevel, Encoder};
+
+    #[test]
+    fn can_disable_compression() {
+        // given
+        let compressor = Encoder::new(CompressionLevel::Disabled);
+        let data = vec![1, 2, 3];
+
+        // when
+        let compressed = compressor.compress(&data).unwrap();
+
+        // then
+        assert_eq!(data, compressed);
+    }
+
+    #[test]
+    fn all_compression_levels_work() {
+        let data = vec![1, 2, 3];
+        for level in CompressionLevel::levels() {
+            let compressor = Encoder::new(level);
+            compressor.compress(&data).unwrap();
+        }
+    }
+}

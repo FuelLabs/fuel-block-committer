@@ -281,12 +281,10 @@ mod tests {
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,
     };
+    use utils::bundle::{self, CompressionLevel};
 
     use super::*;
-    use crate::{
-        test_utils::{self, mocks, Blocks},
-        CompressionLevel,
-    };
+    use crate::test_utils::{self, mocks, Blocks};
 
     struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,
@@ -357,7 +355,7 @@ mod tests {
     fn default_bundler_factory() -> bundler::Factory<BlobEncoder> {
         bundler::Factory::new(
             BlobEncoder,
-            CompressionLevel::Disabled,
+            bundle::Encoder::new(CompressionLevel::Disabled),
             1.try_into().unwrap(),
         )
     }

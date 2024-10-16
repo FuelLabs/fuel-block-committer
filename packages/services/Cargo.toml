@@ -10,7 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-flate2 = { workspace = true, features = ["default"] }
+utils = { workspace = true }
 fuel-crypto = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }

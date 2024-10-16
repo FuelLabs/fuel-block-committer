@@ -8,8 +8,7 @@ mod status_reporter;
 mod wallet_balance_tracker;
 
 pub use block_bundler::{
-    bundler::{CompressionLevel, Factory as BundlerFactory},
-    BlockBundler, Config as BlockBundlerConfig,
+    bundler::Factory as BundlerFactory, BlockBundler, Config as BlockBundlerConfig,
 };
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
@@ -93,6 +92,7 @@ pub(crate) mod test_utils {
     };
     use rand::RngCore;
     use storage::{DbWithProcess, PostgresProcess};
+    use utils::bundle::{self, CompressionLevel};
 
     use super::Runner;
     use crate::{
@@ -474,7 +474,7 @@ pub(crate) mod test_utils {
 
             let factory = Factory::new(
                 BlobEncoder,
-                crate::CompressionLevel::Level6,
+                bundle::Encoder::new(CompressionLevel::Level6),
                 1.try_into().unwrap(),
             );
 

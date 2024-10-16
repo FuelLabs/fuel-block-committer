@@ -2859,6 +2859,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "utils",
 ]
 
 [[package]]
@@ -5620,7 +5621,6 @@ dependencies = [
  "clock",
  "delegate",
  "eth",
- "flate2",
  "fuel-crypto",
  "futures",
  "hex",
@@ -5640,6 +5640,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "trait-variant",
+ "utils",
 ]
 
 [[package]]
