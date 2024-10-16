@@ -351,7 +351,10 @@ mod tests {
     use ports::{l1::FragmentEncoder, types::nonempty};
 
     use super::*;
-    use crate::test_utils::mocks::fuel::{generate_block, generate_storage_block_sequence};
+    use crate::test_utils::{
+        bundle_and_encode_into_blobs,
+        mocks::fuel::{generate_block, generate_storage_block_sequence},
+    };
 
     #[tokio::test]
     async fn finishing_will_advance_if_not_called_at_least_once() {
@@ -370,8 +373,7 @@ mod tests {
         let bundle = bundler.finish().await.unwrap();
 
         // then
-        let merged = blocks.into_inner().flat_map(|b| b.data.clone());
-        let expected_fragments = BlobEncoder.encode(merged, 1.into()).unwrap();
+        let expected_fragments = bundle_and_encode_into_blobs(blocks.into_inner(), 1);
         assert!(!bundle.metadata.known_to_be_optimal);
         assert_eq!(bundle.metadata.block_heights, 0..=10);
         assert_eq!(bundle.fragments, expected_fragments);

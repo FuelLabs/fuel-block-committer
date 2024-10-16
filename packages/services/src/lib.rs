@@ -69,17 +69,6 @@ pub trait Runner: Send + Sync {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
-        let size = size.into();
-        if size == 0 {
-            panic!("random data size must be greater than 0");
-        }
-
-        let mut buffer = vec![0; size];
-        rand::thread_rng().fill_bytes(&mut buffer[..]);
-        NonEmpty::collect(buffer).expect("checked size, not empty")
-    }
-
     use std::{ops::RangeInclusive, time::Duration};
 
     use clock::TestClock;
@@ -99,6 +88,38 @@ pub(crate) mod test_utils {
         block_bundler::bundler::Factory, BlockBundler, BlockBundlerConfig, BlockImporter,
         StateCommitter, StateListener,
     };
+    use ports::l1::FragmentEncoder;
+
+    pub(crate) fn bundle_and_encode_into_blobs(
+        blocks: NonEmpty<CompressedFuelBlock>,
+        id: u16,
+    ) -> NonEmpty<Fragment> {
+        let blocks = blocks
+            .into_iter()
+            .map(|b| Vec::from(b.data))
+            .collect::<Vec<_>>();
+
+        let bundle = bundle::Bundle::V1(bundle::BundleV1 { blocks });
+
+        let encoded_bundle = NonEmpty::from_vec(
+            bundle::Encoder::new(CompressionLevel::Disabled)
+                .encode(bundle)
+                .unwrap(),
+        )
+        .unwrap();
+
+        BlobEncoder.encode(encoded_bundle, id.into()).unwrap()
+    }
+    pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
+        let size = size.into();
+        if size == 0 {
+            panic!("random data size must be greater than 0");
+        }
+
+        let mut buffer = vec![0; size];
+        rand::thread_rng().fill_bytes(&mut buffer[..]);
+        NonEmpty::collect(buffer).expect("checked size, not empty")
+    }
 
     pub mod mocks {
         pub mod l1 {

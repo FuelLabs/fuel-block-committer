@@ -284,7 +284,7 @@ mod tests {
     use utils::bundle::{self, CompressionLevel};
 
     use super::*;
-    use crate::test_utils::{self, mocks, Blocks};
+    use crate::test_utils::{self, bundle_and_encode_into_blobs, mocks, Blocks};
 
     struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,
@@ -426,8 +426,7 @@ mod tests {
         let latest_height = blocks.last().height;
         let mock_fuel_api = test_utils::mocks::fuel::latest_height_is(latest_height);
 
-        let data = merge_data(blocks.clone());
-        let expected_fragments = BlobEncoder.encode(data, 1.into()).unwrap();
+        let expected_fragments = bundle_and_encode_into_blobs(blocks.clone(), 1);
 
         let mut block_bundler = BlockBundler::new(
             mock_fuel_api,
@@ -503,11 +502,13 @@ mod tests {
         block_bundler.run().await?;
 
         // then
-        let first_bundle = merge_data(fuel_blocks[0..=1].to_vec());
-        let first_bundle_fragments = BlobEncoder.encode(first_bundle, 1.into()).unwrap();
+        let first_bundle_fragments = bundle_and_encode_into_blobs(
+            nonempty![fuel_blocks[0].clone(), fuel_blocks[1].clone()],
+            1,
+        );
 
-        let second_bundle = merge_data(fuel_blocks[2..=2].to_vec());
-        let second_bundle_fragments = BlobEncoder.encode(second_bundle, 2.into()).unwrap();
+        let second_bundle_fragments =
+            bundle_and_encode_into_blobs(nonempty![fuel_blocks[2].clone()], 2);
 
         let unsubmitted_fragments = setup
             .db()
@@ -541,8 +542,7 @@ mod tests {
             .await;
 
         let first_two_blocks = blocks.iter().take(2).cloned().collect_nonempty().unwrap();
-        let bundle_data = merge_data(first_two_blocks);
-        let fragments = BlobEncoder.encode(bundle_data, 1.into()).unwrap();
+        let fragments = bundle_and_encode_into_blobs(first_two_blocks, 1);
 
         let mut block_bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(2),
@@ -585,13 +585,9 @@ mod tests {
             })
             .await;
 
-        let fragments_1 = BlobEncoder
-            .encode(blocks.first().data.clone(), 1.into())
-            .unwrap();
+        let fragments_1 = bundle_and_encode_into_blobs(nonempty![blocks[0].clone()], 1);
 
-        let fragments_2 = BlobEncoder
-            .encode(blocks.last().data.clone(), 2.into())
-            .unwrap();
+        let fragments_2 = bundle_and_encode_into_blobs(nonempty![blocks[1].clone()], 2);
 
         let mut bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(1),
@@ -614,12 +610,12 @@ mod tests {
             .db()
             .oldest_nonfinalized_fragments(0, usize::MAX)
             .await?;
-        let fragments = unsubmitted_fragments
+        let db_fragments = unsubmitted_fragments
             .iter()
             .map(|f| f.fragment.clone())
             .collect::<Vec<_>>();
-        let all_fragments = fragments_1.into_iter().chain(fragments_2).collect_vec();
-        assert_eq!(fragments, all_fragments);
+        let expected_fragments = fragments_1.into_iter().chain(fragments_2).collect_vec();
+        assert_eq!(db_fragments, expected_fragments);
 
         Ok(())
     }
@@ -779,8 +775,8 @@ mod tests {
         );
 
         // Encode the blocks to be bundled
-        let data = merge_data(blocks_to_bundle.clone());
-        let expected_fragments = BlobEncoder.encode(data, 1.into()).unwrap();
+        let expected_fragments =
+            bundle_and_encode_into_blobs(NonEmpty::from_vec(blocks_to_bundle).unwrap(), 1);
 
         let mut block_bundler = BlockBundler::new(
             test_utils::mocks::fuel::latest_height_is(latest_height),
@@ -922,7 +918,8 @@ mod tests {
         assert_eq!(compression_ratio_count, 1);
 
         let compression_ratio_sum = compression_ratio_sample.get_sample_sum();
-        assert_eq!(compression_ratio_sum, 1.0); // Compression ratio is 1.0 when compression is disabled
+        // If we don't compress we loose a bit due to postcard encoding the bundle
+        assert!((0.97..=1.0).contains(&compression_ratio_sum));
 
         Ok(())
     }
