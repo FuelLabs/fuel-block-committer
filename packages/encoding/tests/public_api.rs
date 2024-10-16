@@ -168,6 +168,7 @@ mod test {
     #[test_case(100, 0; "id 0")]
     #[test_case(100, 5; "normal case")]
     #[test_case(100, u32::MAX; "max id")]
+    #[test_case(100, 26896; "prod example")]
     fn roundtrip_blob_header(num_bytes: usize, bundle_id: u32) {
         // given
         let blob = {

@@ -1,6 +1,10 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 
-use alloy::{consensus::BlobTransactionSidecar, eips::eip4844::BYTES_PER_BLOB, primitives::U256};
+use alloy::{
+    consensus::BlobTransactionSidecar,
+    eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
+    primitives::U256,
+};
 use delegate::delegate;
 use itertools::{izip, Itertools};
 use ports::{
@@ -117,8 +121,9 @@ impl ports::l1::FragmentEncoder for BlobEncoder {
         Ok(NonEmpty::from_vec(fragments).unwrap())
     }
 
+    // TODO: this needs testing
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64 {
-        blob::Encoder::default().blobs_needed_to_encode(num_bytes.get()) as u64
+        blob::Encoder::default().blobs_needed_to_encode(num_bytes.get()) as u64 * DATA_GAS_PER_BLOB
     }
 }
 
