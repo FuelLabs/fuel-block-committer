@@ -8,7 +8,7 @@ use ports::{
     types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
 };
 use rayon::prelude::*;
-use utils::bundle::{self, BundleV1};
+use fuel_block_committer_encoding::bundle::{self, BundleV1};
 
 use crate::Result;
 

@@ -11,7 +11,7 @@ use services::{BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletB
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use utils::bundle;
+use fuel_block_committer_encoding::bundle;
 
 use crate::{config, errors::Result, AwsClient, Database, FuelApi, L1};
 

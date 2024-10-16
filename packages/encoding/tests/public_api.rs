@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod test {
     use alloy::{consensus::EnvKzgSettings, eips::eip4844::DATA_GAS_PER_BLOB};
+    use fuel_block_committer_encoding::{
+        blob::{self, generate_sidecar},
+        bundle::{self, BundleV1},
+    };
     use itertools::Itertools;
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, seq::SliceRandom, RngCore, SeedableRng};
     use test_case::test_case;
-    use utils::{
-        blob::{self, generate_sidecar},
-        bundle::BundleV1,
-    };
 
     #[test_case(1,  1; "one blob")]
     #[test_case(130037,  1; "one blob limit")]
@@ -58,9 +58,9 @@ mod test {
             .take(block_count as usize)
             .collect::<Vec<_>>();
 
-        let blocks = utils::bundle::Bundle::V1(BundleV1{blocks });
+        let blocks = bundle::Bundle::V1(BundleV1{blocks });
 
-        let blocks_encoded = utils::bundle::Encoder::default().encode(blocks.clone()).unwrap();
+        let blocks_encoded = bundle::Encoder::default().encode(blocks.clone()).unwrap();
 
         // we shuffle them around
         let blobs = {
@@ -82,7 +82,7 @@ mod test {
         let decoded_blob_data  = blob::Decoder::default().decode(&blobs).unwrap();
         proptest::prop_assert_eq!(&decoded_blob_data, &blocks_encoded);
 
-        let decoded_blocks = utils::bundle::Decoder::default().decode(&decoded_blob_data).unwrap();
+        let decoded_blocks = bundle::Decoder::default().decode(&decoded_blob_data).unwrap();
         proptest::prop_assert_eq!(decoded_blocks, blocks);
         }
     }

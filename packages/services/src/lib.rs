@@ -82,7 +82,7 @@ pub(crate) mod test_utils {
     };
     use rand::RngCore;
     use storage::{DbWithProcess, PostgresProcess};
-    use utils::bundle::{self, CompressionLevel};
+    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 
     use super::Runner;
     use crate::{

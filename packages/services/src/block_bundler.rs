@@ -280,7 +280,7 @@ mod tests {
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,
     };
-    use utils::bundle::{self, CompressionLevel};
+    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 
     use super::*;
     use crate::test_utils::{self, bundle_and_encode_into_blobs, mocks, Blocks};

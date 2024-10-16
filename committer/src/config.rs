@@ -10,7 +10,7 @@ use eth::Address;
 use serde::Deserialize;
 use storage::DbConfig;
 use url::Url;
-use utils::bundle::CompressionLevel;
+use fuel_block_committer_encoding::bundle::CompressionLevel;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
