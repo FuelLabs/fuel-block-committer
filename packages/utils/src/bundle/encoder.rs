@@ -5,9 +5,15 @@ use flate2::{write::GzEncoder, Compression};
 
 use super::Bundle;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Encoder {
     compression_level: Option<Compression>,
+}
+
+impl Default for Encoder {
+    fn default() -> Self {
+        Self::new(CompressionLevel::default())
+    }
 }
 
 impl Encoder {
@@ -32,29 +38,31 @@ impl Encoder {
     }
 
     pub fn encode(&self, bundle: Bundle) -> anyhow::Result<Vec<u8>> {
+        const VERSION_SIZE: usize = std::mem::size_of::<u16>();
+
         let Bundle::V1(v1) = bundle;
 
-        let blocks_encoded = postcard::to_allocvec(&v1)?;
-
-        let version = 1u16;
-        const VERSION_SIZE: usize = std::mem::size_of::<u16>();
+        let blocks_encoded = self.compress(&postcard::to_allocvec(&v1)?)?;
         let mut bundle_data = vec![0u8; blocks_encoded.len() + VERSION_SIZE];
 
+        let version = 1u16;
         bundle_data[..VERSION_SIZE].copy_from_slice(&version.to_be_bytes());
+
         bundle_data[VERSION_SIZE..].copy_from_slice(&blocks_encoded);
 
-        self.compress(bundle_data)
+        Ok(bundle_data)
     }
 
-    fn compress(&self, data: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    // TODO: private
+    pub fn compress(&self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
         let Some(compression) = self.compression_level else {
-            return Ok(data);
+            return Ok(data.to_vec());
         };
 
         let mut encoder = GzEncoder::new(Vec::new(), compression);
-        encoder.write_all(&data)?;
+        encoder.write_all(data)?;
 
-        Ok(encoder.finish()?.into_iter().collect())
+        Ok(encoder.finish()?)
     }
 }
 

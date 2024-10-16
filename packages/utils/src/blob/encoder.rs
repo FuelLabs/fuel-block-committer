@@ -133,7 +133,6 @@ impl BlobStorage {
                 } else {
                     remainder
                 };
-                eprintln!("num_bits = {:?}", num_bits);
 
                 let header = Header::V1(HeaderV1 {
                     bundle_id: id,

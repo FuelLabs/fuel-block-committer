@@ -5,7 +5,10 @@ mod test {
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, seq::SliceRandom, RngCore, SeedableRng};
     use test_case::test_case;
-    use utils::blob::{self, generate_sidecar};
+    use utils::{
+        blob::{self, generate_sidecar},
+        bundle::BundleV1,
+    };
 
     #[test_case(1,  1; "one blob")]
     #[test_case(130037,  1; "one blob limit")]
@@ -38,22 +41,33 @@ mod test {
             // then
             proptest::prop_assert_eq!(usage, actual_blob_num);
         }
-        #[test]
-        fn full(byte_amount in 1..=DATA_GAS_PER_BLOB*20) {
-        // given
-        let encoder = blob::Encoder::default();
+    }
+    proptest::proptest! {
+        // You maybe want to make this limit bigger when changing the code
+        #![proptest_config(ProptestConfig { cases: 10, .. ProptestConfig::default() })]
 
-        let mut data = vec![0; byte_amount as usize];
+        #[test]
+        fn full_roundtrip(block_count in 1u64..=3600, block_size in 1u64..=5555) {
+        // given
         let mut rng = SmallRng::from_seed([0; 32]);
-        rng.fill_bytes(&mut data[..]);
+        let blocks = std::iter::repeat_with(|| {
+        let mut buf = vec![0; block_size as usize];
+        rng.fill(&mut buf[..]);
+        buf
+    })
+            .take(block_count as usize)
+            .collect::<Vec<_>>();
+
+        let blocks = utils::bundle::Bundle::V1(BundleV1{blocks });
+
+        let blocks_encoded = utils::bundle::Encoder::default().encode(blocks.clone()).unwrap();
 
         // we shuffle them around
         let blobs = {
-            let mut blobs = encoder.encode(&data, 10).unwrap();
+            let mut blobs = blob::Encoder::default().encode(&blocks_encoded, 10).unwrap();
             blobs.shuffle(&mut rng);
             blobs
         };
-
 
         // blobs are valid
         for blob in blobs.clone() {
@@ -65,8 +79,11 @@ mod test {
         }
 
         // can be decoded into original data
-        let decoded_data  = blob::Decoder::default().decode(&blobs).unwrap();
-        proptest::prop_assert_eq!(data, decoded_data);
+        let decoded_blob_data  = blob::Decoder::default().decode(&blobs).unwrap();
+        proptest::prop_assert_eq!(&decoded_blob_data, &blocks_encoded);
+
+        let decoded_blocks = utils::bundle::Decoder::default().decode(&decoded_blob_data).unwrap();
+        proptest::prop_assert_eq!(decoded_blocks, blocks);
         }
     }
 
@@ -152,7 +169,7 @@ mod test {
     #[test_case(100, 0; "id 0")]
     #[test_case(100, 5; "normal case")]
     #[test_case(100, u32::MAX; "max id")]
-    fn roundtrip_header_encoding(num_bytes: usize, bundle_id: u32) {
+    fn roundtrip_blob_header(num_bytes: usize, bundle_id: u32) {
         // given
         let blob = {
             let encoder = blob::Encoder::default();
