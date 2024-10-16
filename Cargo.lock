@@ -2871,6 +2871,7 @@ dependencies = [
  "bitvec",
  "c-kzg",
  "flate2",
+ "hex",
  "itertools 0.13.0",
  "postcard",
  "proptest",

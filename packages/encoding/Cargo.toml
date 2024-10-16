@@ -20,6 +20,7 @@ bitvec = { workspace = true, features = ["default"] }
 serde = { workspace = true }
 flate2 = { workspace = true, features = ["default"] }
 postcard = { workspace = true, features = ["alloc"] }
+hex = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["default"] }
