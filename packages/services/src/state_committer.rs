@@ -262,10 +262,12 @@ mod tests {
 
         let fragments = setup.insert_fragments(0, 4).await;
 
-        let tx_hash = [0; 32];
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            tx_hash,
+            L1Tx {
+                hash: [0; 32],
+                ..Default::default()
+            },
         )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
@@ -301,7 +303,10 @@ mod tests {
         let tx_hash = [1; 32];
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            tx_hash,
+            L1Tx {
+                hash: tx_hash,
+                ..Default::default()
+            },
         )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
@@ -375,7 +380,10 @@ mod tests {
         let tx_hash = [3; 32];
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
             Some(NonEmpty::from_vec(fragments).unwrap()),
-            tx_hash,
+            L1Tx {
+                hash: tx_hash,
+                ..Default::default()
+            },
         )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
@@ -414,7 +422,10 @@ mod tests {
         let tx_hash = [4; 32];
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
             Some(NonEmpty::from_vec(fragments_to_submit).unwrap()),
-            tx_hash,
+            L1Tx {
+                hash: tx_hash,
+                ..Default::default()
+            },
         )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(1);
@@ -453,7 +464,10 @@ mod tests {
         let tx_hash = [5; 32];
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([(
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            tx_hash,
+            L1Tx {
+                hash: tx_hash,
+                ..Default::default()
+            },
         )]);
 
         let fuel_mock = test_utils::mocks::fuel::latest_height_is(0);
@@ -495,11 +509,17 @@ mod tests {
         let l1_mock_submit = test_utils::mocks::l1::expects_state_submissions([
             (
                 Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-                tx_hash_1,
+                L1Tx {
+                    hash: tx_hash_1,
+                    ..Default::default()
+                },
             ),
             (
                 Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-                tx_hash_2,
+                L1Tx {
+                    hash: tx_hash_2,
+                    ..Default::default()
+                },
             ),
         ]);
 
