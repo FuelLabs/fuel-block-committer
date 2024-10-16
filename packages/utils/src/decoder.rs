@@ -22,22 +22,21 @@ impl NewDecoder {
                 eprintln!("{:?}", header);
 
                 // Calculate the start and end indices for the data
-                let data_start = read_bits + 2; // +2 to adjust for the initial slicing
                 let data_end = header.num_bits as usize;
 
                 // Slice the data excluding the header bits
                 let data = &buffer[..data_end];
 
                 // Return the index and the data slice
-                Ok((header.idx, data, data_start))
+                Ok((header.idx, data))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         // Sort the data by their indices to maintain order
-        indexed_data.sort_by_key(|(idx, _, _)| *idx);
+        indexed_data.sort_by_key(|(idx, _)| *idx);
 
         // Ensure that all indices are consecutive and starting from zero
-        for (expected_idx, (actual_idx, _, _)) in indexed_data.iter().enumerate() {
+        for (expected_idx, (actual_idx, _)) in indexed_data.iter().enumerate() {
             if expected_idx as u32 != *actual_idx {
                 bail!("Expected index {}, got {}", expected_idx, actual_idx);
             }
@@ -47,41 +46,18 @@ impl NewDecoder {
         let data = {
             let mut data_bits = BitVec::<u8, Msb0>::new();
 
-            for (_, data_slice, initial_offset) in indexed_data {
-                eprintln!("initial_offset = {:?}", initial_offset);
+            for (_, data_slice) in indexed_data {
+                let mut chunks = data_slice.chunks(256);
 
-                let mut offset = 0;
-                let data_len = data_slice.len() + initial_offset;
+                let first_chunk = chunks.next();
 
-                let mut skip = initial_offset;
-                while offset < data_len {
-                    // Determine the size of the next chunk
-                    let chunk_size = 256 - skip;
-                    eprintln!("chunk_size = {:?}", chunk_size);
+                if let Some(chunk) = first_chunk {
+                    let (_, read) = BlobHeader::decode(&chunk[2..])?;
+                    data_bits.extend_from_bitslice(&chunk[read + 2..]);
+                }
 
-                    // Get the chunk from the data slice
-                    eprintln!("offset = {:?}", offset);
-                    eprintln!("skip = {:?}", skip);
-
-                    eprintln!(
-                        "data_slice[{} + {}..{} + {}] = data_slice[{}..{}]",
-                        offset,
-                        skip,
-                        offset,
-                        chunk_size,
-                        offset + skip,
-                        offset + chunk_size
-                    );
-
-                    let chunk = &data_slice[offset + skip..offset + chunk_size];
-
-                    // Extend our BitVec with the processed chunk
-                    data_bits.extend_from_bitslice(chunk);
-
-                    // Move the offset forward
-                    offset += chunk_size;
-
-                    skip = 0;
+                for chunk in chunks {
+                    data_bits.extend_from_bitslice(&chunk[2..]);
                 }
             }
 
