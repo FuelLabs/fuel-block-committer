@@ -76,6 +76,7 @@ pub(crate) mod test_utils {
     use metrics::prometheus::IntGauge;
     use mocks::l1::TxStatus;
     use ports::{
+        l1::FragmentEncoder,
         storage::Storage,
         types::{CollectNonEmpty, CompressedFuelBlock, DateTime, Fragment, NonEmpty, Utc},
     };
@@ -88,7 +89,6 @@ pub(crate) mod test_utils {
         block_bundler::bundler::Factory, BlockBundler, BlockBundlerConfig, BlockImporter,
         StateCommitter, StateListener,
     };
-    use ports::l1::FragmentEncoder;
 
     pub(crate) fn bundle_and_encode_into_blobs(
         blocks: NonEmpty<CompressedFuelBlock>,

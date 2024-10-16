@@ -273,9 +273,8 @@ mod tests {
     use eth::BlobEncoder;
     use itertools::Itertools;
     use ports::{
-        l1::FragmentEncoder,
         storage::SequentialFuelBlocks,
-        types::{nonempty, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
+        types::{nonempty, CollectNonEmpty, Fragment, NonEmpty, NonNegative},
     };
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -398,14 +397,6 @@ mod tests {
             .is_empty());
 
         Ok(())
-    }
-
-    fn merge_data(blocks: impl IntoIterator<Item = CompressedFuelBlock>) -> NonEmpty<u8> {
-        blocks
-            .into_iter()
-            .flat_map(|b| b.data)
-            .collect_nonempty()
-            .expect("is not empty")
     }
 
     #[tokio::test]

@@ -1,7 +1,4 @@
-use std::{
-    cmp::min, collections::VecDeque, fmt::Display, io::Write, num::NonZeroUsize,
-    ops::RangeInclusive,
-};
+use std::{cmp::min, collections::VecDeque, fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
 
 use bytesize::ByteSize;
 use itertools::Itertools;
@@ -11,7 +8,7 @@ use ports::{
     types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
 };
 use rayon::prelude::*;
-use utils::bundle::{self, BundleV1, CompressionLevel};
+use utils::bundle::{self, BundleV1};
 
 use crate::Result;
 
@@ -299,14 +296,6 @@ fn generate_attempts(
     .collect()
 }
 
-fn merge_block_data(blocks: NonEmpty<CompressedFuelBlock>) -> NonEmpty<u8> {
-    blocks
-        .into_iter()
-        .flat_map(|b| b.data)
-        .collect_nonempty()
-        .expect("non-empty")
-}
-
 fn create_proposal(
     bundle_encoder: bundle::Encoder,
     fragment_encoder: impl FragmentEncoder,
@@ -347,8 +336,9 @@ fn create_proposal(
 mod tests {
     use std::num::NonZeroUsize;
 
+    use bundle::CompressionLevel;
     use eth::BlobEncoder;
-    use ports::{l1::FragmentEncoder, types::nonempty};
+    use ports::types::nonempty;
 
     use super::*;
     use crate::test_utils::{
