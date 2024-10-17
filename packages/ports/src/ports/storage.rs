@@ -169,9 +169,11 @@ pub trait Storage: Send + Sync {
     ) -> Result<Option<SequentialFuelBlocks>>;
     async fn insert_bundle_and_fragments(
         &self,
+        bundle_id: NonNegative<i32>,
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
     ) -> Result<()>;
+    async fn next_bundle_id(&self) -> Result<NonNegative<i32>>;
 
     async fn record_pending_tx(
         &self,
@@ -200,6 +202,7 @@ pub trait Storage: Send + Sync {
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
     delegate! {
         to (**self) {
+                async fn next_bundle_id(&self) -> Result<NonNegative<i32>>;
                 async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> Result<NonNegative<i32>>;
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
@@ -217,6 +220,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 ) -> Result<Option<SequentialFuelBlocks>>;
                 async fn insert_bundle_and_fragments(
                     &self,
+                    bundle_id: NonNegative<i32>,
                     block_range: RangeInclusive<u32>,
                     fragments: NonEmpty<Fragment>,
                 ) -> Result<()>;
@@ -249,6 +253,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
 impl<T: Storage + Send + Sync> Storage for &T {
     delegate! {
         to (**self) {
+                async fn next_bundle_id(&self) -> Result<NonNegative<i32>>;
                 async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> Result<NonNegative<i32>>;
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
@@ -266,6 +271,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 ) -> Result<Option<SequentialFuelBlocks>>;
                 async fn insert_bundle_and_fragments(
                     &self,
+                    bundle_id: NonNegative<i32>,
                     block_range: RangeInclusive<u32>,
                     fragments: NonEmpty<Fragment>,
                 ) -> Result<()>;
