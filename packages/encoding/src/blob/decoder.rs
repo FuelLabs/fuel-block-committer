@@ -12,6 +12,10 @@ pub struct Decoder {
 
 impl Decoder {
     pub fn decode(&self, blobs: &[Blob]) -> anyhow::Result<Vec<u8>> {
+        if blobs.is_empty() {
+            bail!("No blobs to decode");
+        }
+
         let mut indexed_data = blobs
             .iter()
             .map(|blob| {
@@ -29,17 +33,30 @@ impl Decoder {
                 let data = &buffer[..data_end];
 
                 // Return the index and the data slice
-                Ok((header.idx, data))
+                Ok((header, data))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         // Sort the data by their indices to maintain order
-        indexed_data.sort_by_key(|(idx, _)| *idx);
+        indexed_data.sort_by_key(|(header, _)| header.idx);
+        // TODO: segfault add check for when a blob has a higher idx than the ending blob
+
+        // make sure all blobs have the same bundle id
+        indexed_data.iter().skip(1).try_for_each(|(header, _)| {
+            if header.bundle_id != indexed_data[0].0.bundle_id {
+                bail!(
+                    "All blobs must have the same bundle id, got {} and {}",
+                    header.bundle_id,
+                    indexed_data[0].0.bundle_id
+                );
+            }
+            Ok(())
+        })?;
 
         // Ensure that all indices are consecutive and starting from zero
-        for (expected_idx, (actual_idx, _)) in indexed_data.iter().enumerate() {
-            if expected_idx as u32 != *actual_idx {
-                bail!("Expected index {}, got {}", expected_idx, actual_idx);
+        for (expected_idx, (header, _)) in indexed_data.iter().enumerate() {
+            if expected_idx as u32 != header.idx {
+                bail!("Expected index {}, got {}", expected_idx, header.idx);
             }
         }
 
