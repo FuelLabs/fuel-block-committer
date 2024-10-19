@@ -7,15 +7,14 @@ homepage.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+# todo reserve the crate name
+publish = true
 
 [dependencies]
-alloy = { workspace = true, features = ["consensus", "eips", "kzg"] }
-# TODO: is this a prod dep
+alloy = { workspace = true, features = ["consensus", "eips"] }
 c-kzg = { workspace = true }
 # TODO: contemplate a custom err
 anyhow = { workspace = true }
-# TODO: minimize features
 bitvec = { workspace = true, features = ["default"] }
 serde = { workspace = true }
 flate2 = { workspace = true, features = ["default"] }
@@ -23,8 +22,16 @@ postcard = { workspace = true, features = ["alloc"] }
 hex = { workspace = true }
 
 [dev-dependencies]
+fuel-block-committer-encoding = { workspace = true, features = [
+  "default",
+  "kzg",
+] }
 proptest = { workspace = true, features = ["default"] }
 alloy = { workspace = true, features = ["consensus", "eips", "kzg"] }
 itertools = { workspace = true, features = ["use_alloc"] }
 rand = { workspace = true, features = ["std", "std_rng", "small_rng"] }
 test-case = { workspace = true }
+
+[features]
+default = []
+kzg = ["alloy/kzg"]

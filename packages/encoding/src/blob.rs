@@ -1,9 +1,8 @@
-use alloy::{consensus::EnvKzgSettings, eips::eip4844::BYTES_PER_BLOB};
+use alloy::eips::eip4844::BYTES_PER_BLOB;
 pub use alloy::{
     consensus::{Blob as AlloyBlob, BlobTransactionSidecar},
     eips::eip4844::Bytes48,
 };
-use c_kzg::{KzgCommitment, KzgProof};
 
 mod decoder;
 mod encoder;
@@ -15,6 +14,7 @@ pub use header::*;
 
 pub type Blob = Box<[u8; BYTES_PER_BLOB]>;
 
+#[cfg(feature = "kzg")]
 pub fn generate_sidecar(
     blobs: impl IntoIterator<Item = Blob>,
 ) -> anyhow::Result<BlobTransactionSidecar> {
@@ -24,14 +24,15 @@ pub fn generate_sidecar(
         .collect::<Vec<_>>();
     let mut commitments = Vec::with_capacity(blobs.len());
     let mut proofs = Vec::with_capacity(blobs.len());
-    let settings = EnvKzgSettings::default();
+    let settings = alloy::consensus::EnvKzgSettings::default();
 
     for blob in &blobs {
         // SAFETY: same size
         let blob =
             unsafe { core::mem::transmute::<&alloy::eips::eip4844::Blob, &c_kzg::Blob>(blob) };
-        let commitment = KzgCommitment::blob_to_kzg_commitment(blob, settings.get())?;
-        let proof = KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), settings.get())?;
+        let commitment = c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, settings.get())?;
+        let proof =
+            c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), settings.get())?;
 
         // SAFETY: same size
         unsafe {
