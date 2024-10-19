@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test {
     use alloy::{consensus::EnvKzgSettings, eips::eip4844::DATA_GAS_PER_BLOB};
+    use bitvec::{order::Msb0, vec::BitVec};
     use fuel_block_committer_encoding::{
         blob::{self, generate_sidecar},
         bundle::{self, BundleV1},
@@ -169,32 +170,53 @@ mod test {
     #[test_case(100, 5; "normal case")]
     #[test_case(100, u32::MAX; "max id")]
     #[test_case(100, 26896; "prod example")]
+    #[test_case(200_000, 26896; "2 blobs")]
+    #[test_case(10_000_000, 8821; "many blobs")]
     fn roundtrip_blob_header(num_bytes: usize, bundle_id: u32) {
         // given
-        let blob = {
+        let blobs = {
             let encoder = blob::Encoder::default();
-            encoder
-                .encode(&vec![0; num_bytes], bundle_id)
-                .unwrap()
-                .pop()
-                .unwrap()
+            // we put all 1s so that we may use the appearence of a 0 as a marker for where the
+            // data ends
+            encoder.encode(&vec![255; num_bytes], bundle_id).unwrap()
         };
 
         let decoder = blob::Decoder::default();
 
         // when
-        let header = decoder.read_header(&blob).unwrap();
+        let headers: Vec<_> = blobs
+            .iter()
+            .map(|blob| decoder.read_header(blob).unwrap())
+            .collect();
 
         // then
-        let lost_to_fe = 2 * (num_bytes * 8).div_ceil(256);
-        assert_eq!(
-            header,
-            blob::Header::V1(blob::HeaderV1 {
-                bundle_id,
-                num_bits: (num_bytes * 8 + blob::Header::V1_SIZE_BITS + lost_to_fe) as u32,
-                is_last: true,
-                idx: 0
-            })
-        );
+        let raw_data: Vec<u8> = blobs.iter().flat_map(|b| b.as_slice()).copied().collect();
+        let bits = BitVec::<u8, Msb0>::from_vec(raw_data);
+
+        let num_zeroes_at_end = bits.iter().rev().take_while(|b| *b == false).count() as u64;
+
+        let max_num_bits = alloy::eips::eip4844::FIELD_ELEMENTS_PER_BLOB
+            * alloy::eips::eip4844::FIELD_ELEMENT_BYTES
+            * 8;
+
+        for (expected_idx, header) in headers.iter().enumerate() {
+            let expected_last = expected_idx == headers.len() - 1;
+
+            let num_bits = if expected_last {
+                max_num_bits - num_zeroes_at_end
+            } else {
+                max_num_bits
+            };
+
+            assert_eq!(
+                header,
+                &blob::Header::V1(blob::HeaderV1 {
+                    bundle_id,
+                    num_bits: num_bits as u32,
+                    is_last: expected_last,
+                    idx: expected_idx as u32
+                })
+            );
+        }
     }
 }
