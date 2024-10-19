@@ -18,9 +18,6 @@ impl Encoder {
     }
 }
 
-const BITS_PER_FE: usize = 256;
-const BITS_PER_BLOB: usize = FIELD_ELEMENTS_PER_BLOB as usize * BITS_PER_FE;
-
 impl Encoder {
     pub fn blobs_needed_to_encode(&self, num_bytes: usize) -> usize {
         const USABLE_BITS_PER_BLOB: usize =
@@ -57,12 +54,15 @@ mod storage {
         blobs: Vec<BitArray<[u8; BYTES_PER_BLOB], Msb0>>,
         bit_counter: usize,
     }
-    use alloy::eips::eip4844::{BYTES_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
+    use alloy::eips::eip4844::{
+        BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT,
+    };
     use static_assertions::const_assert;
 
     use crate::blob::{Blob, Header, HeaderV1};
 
-    use super::{BITS_PER_BLOB, BITS_PER_FE};
+    const BITS_PER_FE: usize = 256;
+    const BITS_PER_BLOB: usize = FIELD_ELEMENTS_PER_BLOB as usize * BITS_PER_FE;
 
     impl BlobStorage {
         pub fn new() -> Self {
@@ -113,6 +113,10 @@ mod storage {
         }
 
         pub fn ingest(&mut self, data: &BitSlice<u8, Msb0>) -> usize {
+            if data.is_empty() {
+                return 0;
+            }
+
             if self.at_start_of_new_blob() {
                 self.allocate();
                 self.skip_two_bits();
@@ -170,6 +174,42 @@ mod storage {
                     Box::new(blob.into_inner())
                 })
                 .collect()
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+
+        use super::*;
+
+        #[test]
+        fn ingesting_empty_data_doesnt_allocate() {
+            // given
+            let mut storage = BlobStorage::new();
+
+            // when
+            storage.ingest(BitSlice::empty());
+
+            // then
+            assert!(storage.finalize(0).is_empty());
+        }
+
+        #[test]
+        fn consuming_exactly_one_blob_doesnt_allocate_another() {
+            // given
+            let mut storage = BlobStorage::new();
+
+            // when
+            let data = bitvec::bitvec![u8, Msb0; 0; 4096 * 254 - Header::V1_SIZE_BITS];
+            let mut data_slice = &data[..];
+            while !data_slice.is_empty() {
+                let ingested = storage.ingest(data_slice);
+                data_slice = &data_slice[ingested..];
+            }
+            assert!(storage.at_start_of_new_blob());
+
+            // then
+            assert_eq!(storage.finalize(0).len(), 1);
         }
     }
 }
