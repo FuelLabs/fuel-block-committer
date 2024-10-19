@@ -10,7 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-fuel-block-committer-encoding = { workspace = true }
+fuel-block-committer-encoding = { workspace = true, features = ["kzg"] }
 serde = { workspace = true }
 c-kzg = { workspace = true }
 alloy = { workspace = true, features = [

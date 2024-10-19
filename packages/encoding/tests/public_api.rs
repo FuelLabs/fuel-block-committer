@@ -47,7 +47,7 @@ mod test {
         #![proptest_config(ProptestConfig { cases: 10, .. ProptestConfig::default() })]
 
         #[test]
-        fn full_roundtrip(block_count in 1u64..=3600, block_size in 1u64..=5555) {
+        fn encode_decode_validate_roundtrip(block_count in 1u64..=3600, block_size in 1u64..=5555, bundle_id in 0u32..=u32::MAX) {
         // given
         let mut rng = SmallRng::from_seed([0; 32]);
         let blocks = std::iter::repeat_with(|| {
@@ -64,7 +64,7 @@ mod test {
 
         // we shuffle them around
         let blobs = {
-            let mut blobs = blob::Encoder::default().encode(&blocks_encoded, 10).unwrap();
+            let mut blobs = blob::Encoder::default().encode(&blocks_encoded, bundle_id).unwrap();
             blobs.shuffle(&mut rng);
             blobs
         };
@@ -92,7 +92,7 @@ mod test {
     #[test_case(200_000)]
     #[test_case(600_000)]
     #[test_case(1_200_000)]
-    fn can_generate_proofs_and_commitments_for_encoded_blobs(byte_num: usize) {
+    fn can_generate_valid_proofs_and_commitments_for_encoded_blobs(byte_num: usize) {
         // given
         let encoder = blob::Encoder::default();
 
@@ -124,7 +124,7 @@ mod test {
         let mut data = vec![0; byte_num];
         let mut rng = SmallRng::from_seed([0; 32]);
         rng.fill_bytes(&mut data[..]);
-        let blobs = encoder.encode(&data, 0).unwrap();
+        let blobs = encoder.encode(&data, 55).unwrap();
 
         let decoder = blob::Decoder::default();
 
@@ -151,7 +151,7 @@ mod test {
         };
 
         let blobs = {
-            let mut blobs = encoder.encode(&data, 0).unwrap();
+            let mut blobs = encoder.encode(&data, 78032).unwrap();
             blobs.shuffle(&mut rng);
             blobs
         };
