@@ -1,13 +1,11 @@
-use std::{cmp::min, marker::PhantomData};
+use std::marker::PhantomData;
 
-use alloy::eips::eip4844::{
-    BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT,
-};
-use anyhow::Result;
-use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
+use alloy::eips::eip4844::{FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
+use bitvec::{order::Msb0, slice::BitSlice};
+use static_assertions::const_assert;
+use storage::BlobStorage;
 
 use super::{header::Header, Blob};
-use crate::blob::header::HeaderV1;
 
 #[derive(Default, Debug, Clone)]
 pub struct Encoder {
@@ -24,130 +22,169 @@ const BITS_PER_FE: usize = 256;
 const BITS_PER_BLOB: usize = FIELD_ELEMENTS_PER_BLOB as usize * BITS_PER_FE;
 
 impl Encoder {
-    const USABLE_BITS_PER_BLOB: usize =
-        USABLE_BITS_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB as usize;
-
-    const NUM_BITS_FOR_METADATA: usize = Header::V1_SIZE_BITS;
-    const NUM_BITS_FOR_DATA: usize = Self::USABLE_BITS_PER_BLOB - Self::NUM_BITS_FOR_METADATA;
-
     pub fn blobs_needed_to_encode(&self, num_bytes: usize) -> usize {
-        num_bytes.div_ceil(Self::NUM_BITS_FOR_DATA.saturating_div(8))
+        const USABLE_BITS_PER_BLOB: usize =
+            USABLE_BITS_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB as usize;
+
+        const NUM_BITS_FOR_METADATA: usize = Header::V1_SIZE_BITS;
+
+        const NUM_BYTES_FOR_DATA: usize =
+            (USABLE_BITS_PER_BLOB - NUM_BITS_FOR_METADATA).saturating_div(8);
+
+        const_assert!(NUM_BYTES_FOR_DATA > 0);
+
+        num_bytes.div_ceil(NUM_BYTES_FOR_DATA)
     }
 
-    pub fn encode(&self, orig_data: &[u8], id: u32) -> Result<Vec<Blob>> {
+    pub fn encode(&self, orig_data: &[u8], id: u32) -> anyhow::Result<Vec<Blob>> {
         let mut storage = BlobStorage::new();
 
-        let mut data_to_consume = BitSlice::<u8, Msb0>::from_slice(orig_data);
-        while !data_to_consume.is_empty() {
-            if storage.at_start_of_new_blob() {
-                storage.allocate();
-                storage.skip_two_bits();
-                storage.skip_header_bits();
-            } else if storage.at_start_of_new_fe() {
-                storage.skip_two_bits();
-            }
-
-            let available_fe_space = storage.bits_until_fe_end();
-
-            let data_len = min(available_fe_space, data_to_consume.len());
-            let data = &data_to_consume[..data_len];
-
-            storage.ingest(data);
-            data_to_consume = &data_to_consume[data_len..];
+        let mut data = BitSlice::<u8, Msb0>::from_slice(orig_data);
+        while !data.is_empty() {
+            let amount_ingested = storage.ingest(data);
+            data = &data[amount_ingested..];
         }
 
         Ok(storage.finalize(id))
     }
 }
 
-struct BlobStorage {
-    blobs: Vec<BitArray<[u8; BYTES_PER_BLOB], Msb0>>,
-    bit_counter: usize,
-}
+mod storage {
+    use std::cmp::min;
 
-impl BlobStorage {
-    fn new() -> Self {
-        Self {
-            blobs: vec![],
-            bit_counter: 0,
-        }
+    use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
+    pub struct BlobStorage {
+        blobs: Vec<BitArray<[u8; BYTES_PER_BLOB], Msb0>>,
+        bit_counter: usize,
     }
+    use alloy::eips::eip4844::{BYTES_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
+    use static_assertions::const_assert;
 
-    fn bits_until_fe_end(&self) -> usize {
-        BITS_PER_FE - self.bit_counter % BITS_PER_FE
-    }
+    use crate::blob::{Blob, Header, HeaderV1};
 
-    fn at_start_of_new_fe(&self) -> bool {
-        self.bit_counter % BITS_PER_FE == 0
-    }
+    use super::{BITS_PER_BLOB, BITS_PER_FE};
 
-    fn at_start_of_new_blob(&self) -> bool {
-        self.bit_counter % BITS_PER_BLOB == 0
-    }
-
-    fn current_blob_idx(&self) -> usize {
-        self.blobs.len().saturating_sub(1)
-    }
-
-    fn allocate(&mut self) {
-        self.blobs.push(BitArray::ZERO);
-    }
-
-    fn skip_two_bits(&mut self) {
-        self.bit_counter += 2;
-    }
-
-    fn skip_header_bits(&mut self) {
-        const {
-            if Header::V1_SIZE_BITS > USABLE_BITS_PER_FIELD_ELEMENT {
-                panic!("The current implementation of the encoder requires the blob header to be <= 254 bits")
+    impl BlobStorage {
+        pub fn new() -> Self {
+            Self {
+                blobs: vec![],
+                bit_counter: 0,
             }
         }
 
-        self.bit_counter += Header::V1_SIZE_BITS;
+        fn bits_until_fe_end(&self) -> usize {
+            BITS_PER_FE - self.bit_counter % BITS_PER_FE
+        }
+
+        fn at_start_of_new_fe(&self) -> bool {
+            self.bit_counter % BITS_PER_FE == 0
+        }
+
+        fn at_start_of_new_blob(&self) -> bool {
+            self.bit_counter % BITS_PER_BLOB == 0
+        }
+
+        fn current_blob_idx(&self) -> usize {
+            self.blobs.len().saturating_sub(1)
+        }
+
+        fn allocate(&mut self) {
+            self.blobs.push(BitArray::ZERO);
+        }
+
+        fn skip_two_bits(&mut self) {
+            debug_assert!(self.bits_until_fe_end() >= 2);
+            self.advance_bit_counter(2);
+        }
+
+        fn skip_header_bits(&mut self) {
+            debug_assert!(self.bits_until_fe_end() >= Header::V1_SIZE_BITS);
+            // The current implementation of the encoder requires the blob header to be <= 254 bits
+            const_assert!(Header::V1_SIZE_BITS <= USABLE_BITS_PER_FIELD_ELEMENT);
+
+            self.advance_bit_counter(Header::V1_SIZE_BITS);
+        }
+
+        fn advance_bit_counter(&mut self, num_bits: usize) {
+            self.bit_counter = self
+                .bit_counter
+                .checked_add(num_bits)
+                .expect("never to encode more more than usize::MAX / 8 bytes");
+        }
+
+        pub fn ingest(&mut self, data: &BitSlice<u8, Msb0>) -> usize {
+            if self.at_start_of_new_blob() {
+                self.allocate();
+                self.skip_two_bits();
+                self.skip_header_bits();
+            } else if self.at_start_of_new_fe() {
+                self.skip_two_bits();
+            }
+
+            let available_fe_space = self.bits_until_fe_end();
+
+            let data_len = min(available_fe_space, data.len());
+
+            let data_to_ingest = &data[..data_len];
+
+            debug_assert!(self.bits_until_fe_end() >= data_len);
+
+            let blob_idx = self.current_blob_idx();
+            let start_free_blob_space = self.bit_counter % BITS_PER_BLOB;
+
+            let dst = &mut self.blobs[blob_idx][start_free_blob_space..];
+            dst[..data_to_ingest.len()].copy_from_bitslice(data_to_ingest);
+
+            self.advance_bit_counter(data_to_ingest.len());
+
+            data_len
+        }
+
+        pub fn finalize(self, id: u32) -> Vec<Blob> {
+            let idx_of_last_blob = self.current_blob_idx();
+            self.blobs
+                .into_iter()
+                .enumerate()
+                .map(|(idx, mut blob)| {
+                    let is_last = idx == idx_of_last_blob;
+
+                    let remainder = self.bit_counter % BITS_PER_BLOB;
+                    let num_bits = if !is_last || remainder == 0 {
+                        BITS_PER_BLOB
+                    } else {
+                        remainder
+                    };
+
+                    let header = Header::V1(HeaderV1 {
+                        bundle_id: id,
+                        num_bits: num_bits as u32,
+                        is_last,
+                        idx: idx as u32,
+                    });
+
+                    // Checked during compile time that the BlobHeader, when encoded, won't be
+                    // bigger than 254 bits so we don't have to worry about writing over the first 2
+                    // bits of a FE.
+                    blob[2..][..Header::V1_SIZE_BITS].copy_from_bitslice(&header.encode());
+
+                    Box::new(blob.into_inner())
+                })
+                .collect()
+        }
     }
+}
 
-    fn ingest(&mut self, bits: &BitSlice<u8, Msb0>) {
-        debug_assert!(self.bits_until_fe_end() >= bits.len());
+#[cfg(test)]
+mod test {
+    #[test]
+    fn can_handle_zero_input() {
+        // given
+        let no_data = [];
 
-        let blob_idx = self.current_blob_idx();
-        let start_free_blob_space = self.bit_counter % BITS_PER_BLOB;
+        // when
+        let blobs = super::Encoder::new().encode(&no_data, 0).unwrap();
 
-        let dst = &mut self.blobs[blob_idx][start_free_blob_space..];
-        dst[..bits.len()].copy_from_bitslice(bits);
-
-        self.bit_counter += bits.len();
-    }
-
-    fn finalize(self, id: u32) -> Vec<Blob> {
-        let idx_of_last_blob = self.current_blob_idx();
-        self.blobs
-            .into_iter()
-            .enumerate()
-            .map(|(idx, mut blob)| {
-                let is_last = idx == idx_of_last_blob;
-
-                let remainder = self.bit_counter % BITS_PER_BLOB;
-                let num_bits = if !is_last || remainder == 0 {
-                    BITS_PER_BLOB
-                } else {
-                    remainder
-                };
-
-                let header = Header::V1(HeaderV1 {
-                    bundle_id: id,
-                    num_bits: num_bits as u32,
-                    is_last,
-                    idx: idx as u32,
-                });
-
-                // Checked during compile time that the BlobHeader, when encoded, won't be
-                // bigger than 254 bits so we don't have to worry about writing over the first 2
-                // bits of a FE.
-                blob[2..][..Header::V1_SIZE_BITS].copy_from_bitslice(&header.encode());
-
-                Box::new(blob.into_inner())
-            })
-            .collect()
+        // then
+        assert!(blobs.is_empty());
     }
 }

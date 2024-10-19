@@ -2878,6 +2878,7 @@ dependencies = [
  "proptest",
  "rand",
  "serde",
+ "static_assertions",
  "test-case",
 ]
 
