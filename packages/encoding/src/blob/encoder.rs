@@ -5,9 +5,8 @@ use static_assertions::const_assert;
 mod storage;
 use storage::Storage;
 
-use crate::constants::{FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
-
 use super::{header::Header, Blob};
+use crate::constants::{FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
 
 #[derive(Default, Debug, Clone)]
 pub struct Encoder {

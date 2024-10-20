@@ -4,9 +4,8 @@ use anyhow::bail;
 use bitvec::{order::Msb0, slice::BitSlice};
 use itertools::Itertools;
 
-use crate::blob::{Blob, Header};
-
 use super::super::HeaderV1;
+use crate::blob::{Blob, Header};
 
 struct BlobWithHeader<'a> {
     header: HeaderV1,
