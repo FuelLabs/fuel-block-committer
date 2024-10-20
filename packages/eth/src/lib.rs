@@ -50,8 +50,10 @@ impl BlobEncoder {
 
             sidecar.blobs.push(Default::default());
             let current_blob = sidecar.blobs.last_mut().expect("just added it");
+
             sidecar.commitments.push(Default::default());
             let current_commitment = sidecar.commitments.last_mut().expect("just added it");
+
             sidecar.proofs.push(Default::default());
             let current_proof = sidecar.proofs.last_mut().expect("just added it");
 
@@ -127,7 +129,6 @@ impl ports::l1::FragmentEncoder for BlobEncoder {
         Ok(NonEmpty::from_vec(fragments).expect("known to be non-empty"))
     }
 
-    // TODO: this needs testing
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64 {
         blob::Encoder::default().blobs_needed_to_encode(num_bytes.get()) as u64 * DATA_GAS_PER_BLOB
     }
@@ -152,5 +153,28 @@ impl Api for WebsocketClient {
         let height = L1Height::try_from(block_num)?;
 
         Ok(height)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
+    use fuel_block_committer_encoding::blob;
+    use ports::l1::FragmentEncoder;
+
+    use crate::BlobEncoder;
+
+    #[test]
+    fn gas_usage_correctly_calculated() {
+        // given
+        let num_bytes = 400_000;
+        let encoder = blob::Encoder::default();
+        assert_eq!(encoder.blobs_needed_to_encode(num_bytes), 4);
+
+        // when
+        let gas_usage = BlobEncoder.gas_usage(num_bytes.try_into().unwrap());
+
+        // then
+        assert_eq!(gas_usage, 4 * DATA_GAS_PER_BLOB);
     }
 }
