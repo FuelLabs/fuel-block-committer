@@ -42,7 +42,7 @@ impl BlobEncoder {
 
     pub(crate) fn sidecar_from_fragments(
         fragments: impl IntoIterator<Item = Fragment>,
-    ) -> crate::Result<BlobTransactionSidecar> {
+    ) -> crate::error::Result<BlobTransactionSidecar> {
         let mut sidecar = BlobTransactionSidecar::default();
 
         for fragment in fragments {

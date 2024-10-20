@@ -264,7 +264,7 @@ impl EthApi for WsConnection {
         let num_fragments = min(fragments.len(), 6);
 
         let limited_fragments = fragments.into_iter().take(num_fragments);
-        let sidecar = BlobEncoder::sidecar_from_fragments(limited_fragments).unwrap();
+        let sidecar = BlobEncoder::sidecar_from_fragments(limited_fragments)?;
 
         let blob_tx = match previous_tx {
             Some(previous_tx) => {
