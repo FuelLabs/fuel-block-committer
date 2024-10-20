@@ -12,7 +12,7 @@ pub struct Decoder {
 
 impl Decoder {
     pub fn decode(&self, blobs: &[Blob]) -> anyhow::Result<Vec<u8>> {
-        let blobs = validator::BlobValidator::for_blobs(blobs)?;
+        let blobs = validator::Validator::for_blobs(blobs)?;
 
         let data = {
             let mut data_bits = BitVec::<u8, Msb0>::new();

@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use bitvec::{field::BitField, order::Msb0, slice::BitSlice, vec::BitVec, view::BitView};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HeaderV1 {
     pub bundle_id: u32,
     /// Number of bits containing data
@@ -62,7 +62,7 @@ impl HeaderV1 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Header {
     V1(HeaderV1),
 }

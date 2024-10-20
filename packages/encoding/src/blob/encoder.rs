@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use bitvec::{order::Msb0, slice::BitSlice};
 use static_assertions::const_assert;
 mod storage;
-use storage::BlobStorage;
+use storage::Storage;
 
 use crate::constants::{FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
 
@@ -15,15 +15,17 @@ pub struct Encoder {
 }
 
 impl Encoder {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 }
 
 impl Encoder {
-    pub fn blobs_needed_to_encode(&self, num_bytes: usize) -> usize {
-        const USABLE_BITS_PER_BLOB: usize =
-            USABLE_BITS_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB as usize;
+    #[must_use]
+    pub const fn blobs_needed_to_encode(&self, num_bytes: usize) -> usize {
+        #[allow(clippy::cast_possible_truncation)]
+        const USABLE_BITS_PER_BLOB: usize = USABLE_BITS_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB;
 
         const NUM_BITS_FOR_METADATA: usize = Header::V1_SIZE_BITS;
 
@@ -36,7 +38,7 @@ impl Encoder {
     }
 
     pub fn encode(&self, orig_data: &[u8], id: u32) -> anyhow::Result<Vec<Blob>> {
-        let mut storage = BlobStorage::new();
+        let mut storage = Storage::new();
 
         let mut data = BitSlice::<u8, Msb0>::from_slice(orig_data);
         while !data.is_empty() {

@@ -1,37 +1,38 @@
 use std::cmp::min;
 
-use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
+use bitvec::{boxed::BitBox, order::Msb0, slice::BitSlice};
 
 use crate::{
     blob::{Blob, Header, HeaderV1},
     constants::{BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT},
 };
-pub struct BlobStorage {
-    blobs: Vec<BitArray<[u8; BYTES_PER_BLOB], Msb0>>,
+pub struct Storage {
+    // a BitArray was not used so that we don't risk overflowing the stack
+    blobs: Vec<BitBox<u8, Msb0>>,
     bit_counter: usize,
 }
 use static_assertions::const_assert;
 
 const BITS_PER_FE: usize = 256;
-const BITS_PER_BLOB: usize = FIELD_ELEMENTS_PER_BLOB as usize * BITS_PER_FE;
+const BITS_PER_BLOB: usize = FIELD_ELEMENTS_PER_BLOB * BITS_PER_FE;
 
-impl BlobStorage {
-    pub fn new() -> Self {
+impl Storage {
+    pub const fn new() -> Self {
         Self {
             blobs: vec![],
             bit_counter: 0,
         }
     }
 
-    fn bits_until_fe_end(&self) -> usize {
+    const fn bits_until_fe_end(&self) -> usize {
         BITS_PER_FE - self.bit_counter % BITS_PER_FE
     }
 
-    fn at_start_of_new_fe(&self) -> bool {
+    const fn at_start_of_new_fe(&self) -> bool {
         self.bit_counter % BITS_PER_FE == 0
     }
 
-    fn at_start_of_new_blob(&self) -> bool {
+    const fn at_start_of_new_blob(&self) -> bool {
         self.bit_counter % BITS_PER_BLOB == 0
     }
 
@@ -40,7 +41,8 @@ impl BlobStorage {
     }
 
     fn allocate(&mut self) {
-        self.blobs.push(BitArray::ZERO);
+        self.blobs
+            .push(bitvec::bitvec![u8, Msb0; 0; BITS_PER_BLOB].into_boxed_bitslice());
     }
 
     fn skip_two_bits(&mut self) {
@@ -112,9 +114,10 @@ impl BlobStorage {
 
                 let header = Header::V1(HeaderV1 {
                     bundle_id: id,
-                    num_bits: num_bits as u32,
+                    num_bits: u32::try_from(num_bits)
+                        .expect("never going to be bigger than u32::MAX"),
                     is_last,
-                    idx: idx as u32,
+                    idx: u32::try_from(idx).expect("the total blob number to fit in a u32"),
                 });
 
                 // Checked during compile time that the BlobHeader, when encoded, won't be
@@ -122,7 +125,9 @@ impl BlobStorage {
                 // bits of a FE.
                 blob[2..][..Header::V1_SIZE_BITS].copy_from_bitslice(&header.encode());
 
-                Box::new(blob.into_inner())
+                blob.into_boxed_slice()
+                    .try_into()
+                    .expect("to have the exact size of a Blob")
             })
             .collect()
     }
@@ -136,7 +141,7 @@ mod tests {
     #[test]
     fn ingesting_empty_data_doesnt_allocate() {
         // given
-        let mut storage = BlobStorage::new();
+        let mut storage = Storage::new();
 
         // when
         storage.ingest(BitSlice::empty());
@@ -148,7 +153,7 @@ mod tests {
     #[test]
     fn consuming_exactly_one_blob_doesnt_allocate_another() {
         // given
-        let mut storage = BlobStorage::new();
+        let mut storage = Storage::new();
 
         // when
         let data = bitvec::bitvec![u8, Msb0; 0; 4096 * 254 - Header::V1_SIZE_BITS];

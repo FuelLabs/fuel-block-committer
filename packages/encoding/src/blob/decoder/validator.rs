@@ -13,12 +13,12 @@ struct BlobWithHeader<'a> {
     data: &'a BitSlice<u8, Msb0>,
 }
 
-pub struct BlobValidator<'a> {
-    pub(crate) blobs: Vec<BlobWithHeader<'a>>,
+pub struct Validator<'a> {
+    blobs: Vec<BlobWithHeader<'a>>,
 }
 
-impl<'a> BlobValidator<'a> {
-    pub(crate) fn for_blobs(blobs: &'a [Blob]) -> anyhow::Result<Self> {
+impl<'a> Validator<'a> {
+    pub fn for_blobs(blobs: &'a [Blob]) -> anyhow::Result<Self> {
         let blobs  = blobs
                     .iter()
                     .map(|blob| {
@@ -47,7 +47,7 @@ impl<'a> BlobValidator<'a> {
         Ok(Self { blobs })
     }
 
-    pub(crate) fn validated_blobs(mut self) -> anyhow::Result<Vec<&'a BitSlice<u8, Msb0>>> {
+    pub fn validated_blobs(mut self) -> anyhow::Result<Vec<&'a BitSlice<u8, Msb0>>> {
         self.blobs.sort_by_key(|blob| blob.header.idx);
 
         if self.blobs.is_empty() {
@@ -64,7 +64,7 @@ impl<'a> BlobValidator<'a> {
         Ok(self.blobs.into_iter().map(|blob| blob.data).collect())
     }
 
-    pub(crate) fn no_duplicates_in_idx(&self) -> anyhow::Result<()> {
+    fn no_duplicates_in_idx(&self) -> anyhow::Result<()> {
         let duplicates = self
             .blobs
             .iter()
@@ -83,7 +83,7 @@ impl<'a> BlobValidator<'a> {
         Ok(())
     }
 
-    pub(crate) fn has_no_missing_idx(&self, highest_idx: u32) -> anyhow::Result<()> {
+    fn has_no_missing_idx(&self, highest_idx: u32) -> anyhow::Result<()> {
         let present_idxs: HashSet<u32> = self.blobs.iter().map(|blob| blob.header.idx).collect();
 
         let missing_idxs: Vec<u32> = (0..=highest_idx)
@@ -101,7 +101,7 @@ impl<'a> BlobValidator<'a> {
         Ok(())
     }
 
-    pub(crate) fn last_blob_correctly_marked(&self, highest_idx: u32) -> anyhow::Result<()> {
+    fn last_blob_correctly_marked(&self, highest_idx: u32) -> anyhow::Result<()> {
         let blobs_marked_as_last: Vec<_> = self
             .blobs
             .iter()
@@ -132,7 +132,7 @@ impl<'a> BlobValidator<'a> {
         Ok(())
     }
 
-    pub(crate) fn all_blobs_belong_to_same_bundle(&self) -> anyhow::Result<()> {
+    fn all_blobs_belong_to_same_bundle(&self) -> anyhow::Result<()> {
         // BTreeSet so that we can get a sorted list of bundle ids, easier to test
         let unique_bundle_ids: BTreeSet<_> = self
             .blobs
