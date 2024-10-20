@@ -24,8 +24,10 @@ impl Storage {
         }
     }
 
-    const fn bits_until_fe_end(&self) -> usize {
-        BITS_PER_FE - self.bit_counter % BITS_PER_FE
+    fn bits_until_fe_end(&self) -> usize {
+        BITS_PER_FE
+            .checked_sub(self.bit_counter % BITS_PER_FE)
+            .expect("should never underflow")
     }
 
     const fn at_start_of_new_fe(&self) -> bool {

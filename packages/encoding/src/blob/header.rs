@@ -97,11 +97,19 @@ impl Header {
         let version = data[..Self::VERSION_BITS].load_be::<u16>();
 
         let remaining_data = &data[Self::VERSION_BITS..];
-        let read_version_bits = data.len() - remaining_data.len();
+        let read_version_bits = data
+            .len()
+            .checked_sub(remaining_data.len())
+            .expect("remaining_data should always be smaller than data");
         match version {
             1 => {
                 let (header, read_bits) = HeaderV1::decode(remaining_data)?;
-                Ok((Self::V1(header), read_bits + read_version_bits))
+                Ok((
+                    Self::V1(header),
+                    read_bits
+                        .checked_add(read_version_bits)
+                        .expect("never to encode more than usize bits"),
+                ))
             }
             version => bail!("Unsupported version {version}"),
         }

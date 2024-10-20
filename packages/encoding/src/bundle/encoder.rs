@@ -48,7 +48,13 @@ impl Encoder {
         let blocks_encoded = self
             .compress(&postcard_encoded)
             .context("could not compress postcard encoded BundleV1")?;
-        let mut bundle_data = vec![0u8; blocks_encoded.len() + VERSION_SIZE];
+        let mut bundle_data = vec![
+            0u8;
+            blocks_encoded
+                .len()
+                .checked_add(VERSION_SIZE)
+                .expect("never to encode more than usize::MAX")
+        ];
 
         let version = 1u16;
         bundle_data[..VERSION_SIZE].copy_from_slice(&version.to_be_bytes());
