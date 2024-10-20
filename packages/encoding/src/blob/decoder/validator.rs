@@ -8,12 +8,12 @@ use crate::blob::{Blob, Header};
 
 use super::super::HeaderV1;
 
-pub(crate) struct BlobWithHeader<'a> {
-    pub(crate) header: HeaderV1,
-    pub(crate) data: &'a BitSlice<u8, Msb0>,
+struct BlobWithHeader<'a> {
+    header: HeaderV1,
+    data: &'a BitSlice<u8, Msb0>,
 }
 
-pub(crate) struct BlobValidator<'a> {
+pub struct BlobValidator<'a> {
     pub(crate) blobs: Vec<BlobWithHeader<'a>>,
 }
 

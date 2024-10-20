@@ -3,7 +3,7 @@ mod encoder;
 pub use decoder::*;
 pub use encoder::*;
 
-#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BundleV1 {
     pub blocks: Vec<Vec<u8>>,
 }
@@ -18,7 +18,7 @@ impl std::fmt::Debug for BundleV1 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Bundle {
     V1(BundleV1),
 }

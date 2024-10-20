@@ -18,7 +18,7 @@ impl HeaderV1 {
     pub const TOTAL_SIZE_BITS: usize =
         Self::BUNDLE_ID_BITS + Self::NUM_BITS_BITS + Self::IS_LAST_BITS + Self::IDX_SIZE_BITS;
 
-    pub(crate) fn encode(&self, buffer: &mut BitVec<u8, Msb0>) {
+    fn encode(&self, buffer: &mut BitVec<u8, Msb0>) {
         buffer.extend_from_bitslice(self.bundle_id.view_bits::<Msb0>());
 
         buffer.extend_from_bitslice(&self.num_bits.view_bits::<Msb0>()[32 - Self::NUM_BITS_BITS..]);
@@ -28,7 +28,15 @@ impl HeaderV1 {
         buffer.extend_from_bitslice(&self.idx.view_bits::<Msb0>()[32 - Self::IDX_SIZE_BITS..]);
     }
 
-    pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
+    fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
+        if data.len() < Self::TOTAL_SIZE_BITS {
+            bail!(
+                "not enough data to decode header, expected {} bits, got {}",
+                Self::TOTAL_SIZE_BITS,
+                data.len()
+            )
+        }
+
         let bundle_id = data[..Self::BUNDLE_ID_BITS].load_be();
         let remaining_data = &data[Self::BUNDLE_ID_BITS..];
 
@@ -41,9 +49,9 @@ impl HeaderV1 {
         let idx = remaining_data[..Self::IDX_SIZE_BITS].load_be::<u32>();
         let remaining_data = &remaining_data[Self::IDX_SIZE_BITS..];
 
-        let header = HeaderV1 {
-            num_bits,
+        let header = Self {
             bundle_id,
+            num_bits,
             is_last,
             idx,
         };
@@ -65,7 +73,7 @@ impl Header {
 
     pub(crate) fn encode(&self) -> BitVec<u8, Msb0> {
         match self {
-            Header::V1(blob_header_v1) => {
+            Self::V1(blob_header_v1) => {
                 let mut buffer = BitVec::<u8, Msb0>::new();
 
                 let version = 1u16;
@@ -78,10 +86,10 @@ impl Header {
         }
     }
     pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
-        if data.len() < Self::VERSION_BITS + HeaderV1::TOTAL_SIZE_BITS {
+        if data.len() < Self::VERSION_BITS {
             bail!(
-                "not enough data to decode header, expected at least {} bits, got {}",
-                Self::VERSION_BITS + HeaderV1::TOTAL_SIZE_BITS,
+                "not enough data to decode header version, expected {} bits, got {}",
+                Self::VERSION_BITS,
                 data.len()
             );
         }
@@ -93,7 +101,7 @@ impl Header {
         match version {
             1 => {
                 let (header, read_bits) = HeaderV1::decode(remaining_data)?;
-                Ok((Header::V1(header), read_bits + read_version_bits))
+                Ok((Self::V1(header), read_bits + read_version_bits))
             }
             version => bail!("Unsupported version {version}"),
         }
@@ -127,7 +135,7 @@ mod test {
     }
 
     #[test]
-    fn complains_if_not_enough_data_is_given() {
+    fn complains_if_not_enough_data_is_given_for_version() {
         // given
         let encoded_header = Header::V1(super::HeaderV1 {
             bundle_id: 0,
@@ -143,7 +151,28 @@ mod test {
         // then
         assert_eq!(
             err.to_string(),
-            "not enough data to decode header, expected at least 87 bits, got 10"
+            "not enough data to decode header version, expected 16 bits, got 10"
+        );
+    }
+
+    #[test]
+    fn complains_if_not_enough_data_is_given_for_header() {
+        // given
+        let encoded_header = Header::V1(super::HeaderV1 {
+            bundle_id: 0,
+            num_bits: 0,
+            is_last: false,
+            idx: 0,
+        })
+        .encode();
+
+        // when
+        let err = Header::decode(&encoded_header[..18]).unwrap_err();
+
+        // then
+        assert_eq!(
+            err.to_string(),
+            "not enough data to decode header, expected 71 bits, got 2"
         );
     }
 

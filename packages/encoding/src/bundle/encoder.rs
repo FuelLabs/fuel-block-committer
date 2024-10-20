@@ -95,7 +95,7 @@ impl<'a> serde::Deserialize<'a> for CompressionLevel {
     {
         let as_string = String::deserialize(deserializer)?;
 
-        CompressionLevel::from_str(&as_string)
+        Self::from_str(&as_string)
             .map_err(|e| serde::de::Error::custom(format!("Invalid compression level: {e}")))
     }
 }
@@ -124,6 +124,7 @@ impl FromStr for CompressionLevel {
 
 #[allow(dead_code)]
 impl CompressionLevel {
+    #[must_use]
     pub fn levels() -> Vec<Self> {
         vec![
             Self::Disabled,

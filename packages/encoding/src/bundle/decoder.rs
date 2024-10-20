@@ -20,8 +20,7 @@ impl Decoder {
             anyhow::bail!("Unsupported bundle version: {version}");
         }
 
-        let data = self
-            .decompress(&data[2..])
+        let data = Self::decompress(&data[2..])
             .with_context(|| "failed to decompress BundleV1 contents")?;
 
         let blocks: BundleV1 = postcard::from_bytes(&data)
@@ -30,7 +29,7 @@ impl Decoder {
         Ok(super::Bundle::V1(blocks))
     }
 
-    fn decompress(&self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+    fn decompress(data: &[u8]) -> anyhow::Result<Vec<u8>> {
         let mut decoder = GzDecoder::new(data);
 
         let mut buf = vec![];
