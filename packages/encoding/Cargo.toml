@@ -21,6 +21,7 @@ flate2 = { workspace = true, features = ["default"] }
 postcard = { workspace = true, features = ["alloc"] }
 hex = { workspace = true }
 static_assertions = { workspace = true }
+itertools = { workspace = true, features = ["use_std"] }
 
 [dev-dependencies]
 fuel-block-committer-encoding = { workspace = true, features = [

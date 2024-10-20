@@ -1,135 +1,36 @@
-use std::{collections::HashSet, marker::PhantomData};
+use std::marker::PhantomData;
 
-use anyhow::bail;
 use bitvec::{order::Msb0, slice::BitSlice, vec::BitVec};
 
-use super::{header::Header, Blob, HeaderV1};
+use super::{header::Header, Blob};
+mod validator;
 
 #[derive(Default, Debug, Clone)]
 pub struct Decoder {
     _private: PhantomData<()>,
 }
 
-struct BlobWithHeader<'a> {
-    header: HeaderV1,
-    data: &'a BitSlice<u8, Msb0>,
-}
-
 impl Decoder {
     pub fn decode(&self, blobs: &[Blob]) -> anyhow::Result<Vec<u8>> {
-        if blobs.is_empty() {
-            bail!("No blobs to decode");
-        }
+        let blobs = validator::BlobValidator::for_blobs(blobs)?;
 
-        let mut blobs = blobs
-            .iter()
-            .map(|blob| {
-                let buffer = BitSlice::<u8, Msb0>::from_slice(blob.as_slice());
-
-                let (header, _) = Header::decode(&buffer[2..])?;
-                let Header::V1(header) = header;
-                let max_bits_per_blob = 4096 * 256;
-                if header.num_bits > max_bits_per_blob {
-                    bail!(
-                        "num_bits of blob (bundle_id: {}, idx: {}) is greater than the maximum allowed value of {max_bits_per_blob}", header.bundle_id, header.idx
-                    );
-                }
-
-                let data_end = header.num_bits as usize;
-
-                let data = &buffer[..data_end];
-
-                Ok(BlobWithHeader {
-                                    header,
-                                    data,
-                                })
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        blobs.sort_by_key(|blob| blob.header.idx);
-
-        blobs.iter().skip(1).try_for_each(|blob| {
-            if blob.header.bundle_id != blobs[0].header.bundle_id {
-                bail!(
-                    "All blobs must have the same bundle id, got {} and {}",
-                    blob.header.bundle_id,
-                    blobs[0].header.bundle_id
-                );
-            }
-            Ok(())
-        })?;
-
-        let blobs_marked_as_last: Vec<_> =
-            blobs.iter().filter(|blob| blob.header.is_last).collect();
-
-        if blobs_marked_as_last.is_empty() {
-            bail!("no blob is marked as last");
-        }
-
-        let highest_idx = blobs.last().expect("At least one blob").header.idx;
-        if blobs_marked_as_last.len() > 1 {
-            let msg = blobs_marked_as_last
-                .iter()
-                .map(|blob| blob.header.idx.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            bail!("multiple blobs marked as being the last blob. blobs with indexes: {msg}");
-        }
-
-        if blobs_marked_as_last[0].header.idx != highest_idx {
-            bail!(
-                "blob with highest index is {}, but the blob marked as last has index {}",
-                highest_idx,
-                blobs_marked_as_last[0].header.idx
-            );
-        }
-
-        let present_idxs: HashSet<u32> = blobs.iter().map(|blob| blob.header.idx).collect();
-
-        let missing_idxs: Vec<u32> = (0..=highest_idx)
-            .filter(|idx| !present_idxs.contains(idx))
-            .collect();
-
-        if !missing_idxs.is_empty() {
-            let msg = missing_idxs
-                .iter()
-                .map(|idx| idx.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            bail!("missing blobs with indexes: {msg}");
-        }
-
-        // Ensure that all indices are consecutive and starting from zero
-        for (expected_idx, blob) in blobs.iter().enumerate() {
-            if expected_idx as u32 != blob.header.idx {
-                bail!(
-                    "unexpected blob idx of {}, expected the idx of {}",
-                    blob.header.idx,
-                    expected_idx
-                );
-            }
-        }
-
-        // Collect all data, skipping the first two bits of every 256-bit chunk
         let data = {
             let mut data_bits = BitVec::<u8, Msb0>::new();
 
-            for blob in blobs {
-                let mut chunks = blob.data.chunks(256);
+            for blob in blobs.validated_blobs()? {
+                let mut field_element_data = blob.chunks(256).map(|chunk| &chunk[2..]);
 
-                let first_chunk = chunks.next();
+                let first_chunk = field_element_data.next();
 
                 if let Some(chunk) = first_chunk {
-                    let (_, read) = Header::decode(&chunk[2..])?;
-                    data_bits.extend_from_bitslice(&chunk[read + 2..]);
+                    data_bits.extend_from_bitslice(&chunk[Header::V1_SIZE_BITS..]);
                 }
 
-                for chunk in chunks {
-                    data_bits.extend_from_bitslice(&chunk[2..]);
+                for chunk in field_element_data {
+                    data_bits.extend_from_bitslice(chunk);
                 }
             }
 
-            // Convert the BitVec into a Vec<u8>
             data_bits.into_vec()
         };
 
@@ -178,7 +79,7 @@ mod test {
         // then
         assert_eq!(
             err.to_string(),
-            "All blobs must have the same bundle id, got 1 and 0"
+            "All blobs must have the same bundle id, got {0, 1}"
         );
     }
 
@@ -200,10 +101,7 @@ mod test {
             .unwrap_err();
 
         // then
-        assert_eq!(
-            err.to_string(),
-            "unexpected blob idx of 0, expected the idx of 1"
-        );
+        assert_eq!(err.to_string(), "found duplicate blob idxs: 0");
     }
 
     #[test]
