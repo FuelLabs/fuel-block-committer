@@ -2647,7 +2647,6 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
- "c-kzg",
  "delegate",
  "fuel-block-committer-encoding",
  "futures",

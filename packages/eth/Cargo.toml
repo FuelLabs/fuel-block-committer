@@ -23,7 +23,6 @@ alloy = { workspace = true, features = [
 async-trait = { workspace = true }
 aws-config = { workspace = true, features = ["default"] }
 aws-sdk-kms = { workspace = true, features = ["default"] }
-c-kzg = { workspace = true }
 delegate = { workspace = true }
 fuel-block-committer-encoding = { workspace = true, features = ["kzg"] }
 futures = { workspace = true }

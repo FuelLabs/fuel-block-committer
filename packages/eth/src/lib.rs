@@ -40,7 +40,7 @@ impl BlobEncoder {
     #[cfg(feature = "test-helpers")]
     pub const FRAGMENT_SIZE: usize = BYTES_PER_BLOB;
 
-    pub fn sidecar_from_fragments(
+    pub(crate) fn sidecar_from_fragments(
         fragments: impl IntoIterator<Item = Fragment>,
     ) -> crate::Result<BlobTransactionSidecar> {
         let mut sidecar = BlobTransactionSidecar::default();
