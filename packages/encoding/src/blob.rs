@@ -1,9 +1,3 @@
-use alloy::eips::eip4844::BYTES_PER_BLOB;
-pub use alloy::{
-    consensus::{Blob as AlloyBlob, BlobTransactionSidecar},
-    eips::eip4844::Bytes48,
-};
-
 mod decoder;
 mod encoder;
 mod header;
@@ -12,12 +6,14 @@ pub use decoder::Decoder;
 pub use encoder::Encoder;
 pub use header::*;
 
+use crate::constants::BYTES_PER_BLOB;
+
 pub type Blob = Box<[u8; BYTES_PER_BLOB]>;
 
 #[cfg(feature = "kzg")]
 pub fn generate_sidecar(
     blobs: impl IntoIterator<Item = Blob>,
-) -> anyhow::Result<BlobTransactionSidecar> {
+) -> anyhow::Result<alloy::consensus::BlobTransactionSidecar> {
     let blobs = blobs
         .into_iter()
         .map(|blob| alloy::eips::eip4844::Blob::from(*blob))
@@ -47,5 +43,9 @@ pub fn generate_sidecar(
         }
     }
 
-    Ok(BlobTransactionSidecar::new(blobs, commitments, proofs))
+    Ok(alloy::consensus::BlobTransactionSidecar::new(
+        blobs,
+        commitments,
+        proofs,
+    ))
 }

@@ -11,9 +11,8 @@ rust-version.workspace = true
 publish = true
 
 [dependencies]
-alloy = { workspace = true, features = ["consensus", "eips"] }
+alloy = { workspace = true, features = ["consensus", "eips"], optional = true }
 c-kzg = { workspace = true }
-# TODO: contemplate a custom err
 anyhow = { workspace = true }
 bitvec = { workspace = true, features = ["default"] }
 serde = { workspace = true }

@@ -1,16 +1,16 @@
 use std::cmp::min;
 
 use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
+
+use crate::{
+    blob::{Blob, Header, HeaderV1},
+    constants::{BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT},
+};
 pub struct BlobStorage {
     blobs: Vec<BitArray<[u8; BYTES_PER_BLOB], Msb0>>,
     bit_counter: usize,
 }
-use alloy::eips::eip4844::{
-    BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT,
-};
 use static_assertions::const_assert;
-
-use crate::blob::{Blob, Header, HeaderV1};
 
 const BITS_PER_FE: usize = 256;
 const BITS_PER_BLOB: usize = FIELD_ELEMENTS_PER_BLOB as usize * BITS_PER_FE;

@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 
-use alloy::eips::eip4844::{FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
 use bitvec::{order::Msb0, slice::BitSlice};
 use static_assertions::const_assert;
 mod storage;
 use storage::BlobStorage;
+
+use crate::constants::{FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT};
 
 use super::{header::Header, Blob};
 
