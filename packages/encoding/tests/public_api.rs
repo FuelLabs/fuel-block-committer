@@ -176,7 +176,7 @@ mod test {
         // given
         let blobs = {
             let encoder = blob::Encoder::default();
-            // we put all 1s so that we may use the appearence of a 0 as a marker for where the
+            // we put all 1s so that we may use the appearance of a 0 as a marker for where the
             // data ends
             encoder.encode(&vec![255; num_bytes], bundle_id).unwrap()
         };
