@@ -3,11 +3,16 @@ use std::{collections::HashSet, marker::PhantomData};
 use anyhow::bail;
 use bitvec::{order::Msb0, slice::BitSlice, vec::BitVec};
 
-use super::{header::Header, Blob};
+use super::{header::Header, Blob, HeaderV1};
 
 #[derive(Default, Debug, Clone)]
 pub struct Decoder {
     _private: PhantomData<()>,
+}
+
+struct BlobWithHeader<'a> {
+    header: HeaderV1,
+    data: &'a BitSlice<u8, Msb0>,
 }
 
 impl Decoder {
@@ -16,75 +21,70 @@ impl Decoder {
             bail!("No blobs to decode");
         }
 
-        // TODO: check the num bits being out of bounds of a blob size
-
-        let mut indexed_data = blobs
+        let mut blobs = blobs
             .iter()
             .map(|blob| {
-                // Convert the blob into a BitSlice for bit-level manipulation
                 let buffer = BitSlice::<u8, Msb0>::from_slice(blob.as_slice());
 
-                // Decode the header from the buffer (starting from index 2)
                 let (header, _) = Header::decode(&buffer[2..])?;
                 let Header::V1(header) = header;
+                let max_bits_per_blob = 4096 * 256;
+                if header.num_bits > max_bits_per_blob {
+                    bail!(
+                        "num_bits of blob (bundle_id: {}, idx: {}) is greater than the maximum allowed value of {max_bits_per_blob}", header.bundle_id, header.idx
+                    );
+                }
 
-                // Calculate the start and end indices for the data
                 let data_end = header.num_bits as usize;
 
-                // Slice the data excluding the header bits
                 let data = &buffer[..data_end];
 
-                // Return the index and the data slice
-                Ok((header, data))
+                Ok(BlobWithHeader {
+                                    header,
+                                    data,
+                                })
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        // Sort the data by their indices to maintain order
-        indexed_data.sort_by_key(|(header, _)| header.idx);
+        blobs.sort_by_key(|blob| blob.header.idx);
 
-        // TODO: segfault add check for when a blob has a higher idx than the ending blob
-
-        // make sure all blobs have the same bundle id
-        indexed_data.iter().skip(1).try_for_each(|(header, _)| {
-            if header.bundle_id != indexed_data[0].0.bundle_id {
+        blobs.iter().skip(1).try_for_each(|blob| {
+            if blob.header.bundle_id != blobs[0].header.bundle_id {
                 bail!(
                     "All blobs must have the same bundle id, got {} and {}",
-                    header.bundle_id,
-                    indexed_data[0].0.bundle_id
+                    blob.header.bundle_id,
+                    blobs[0].header.bundle_id
                 );
             }
             Ok(())
         })?;
 
-        let blobs_marked_as_last: Vec<_> = indexed_data
-            .iter()
-            .filter(|(header, _)| header.is_last)
-            .collect();
+        let blobs_marked_as_last: Vec<_> =
+            blobs.iter().filter(|blob| blob.header.is_last).collect();
 
         if blobs_marked_as_last.is_empty() {
             bail!("no blob is marked as last");
         }
 
-        let highest_idx = indexed_data.last().expect("At least one blob").0.idx;
+        let highest_idx = blobs.last().expect("At least one blob").header.idx;
         if blobs_marked_as_last.len() > 1 {
             let msg = blobs_marked_as_last
                 .iter()
-                .map(|(header, _)| header.idx.to_string())
+                .map(|blob| blob.header.idx.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
             bail!("multiple blobs marked as being the last blob. blobs with indexes: {msg}");
         }
 
-        if blobs_marked_as_last[0].0.idx != highest_idx {
+        if blobs_marked_as_last[0].header.idx != highest_idx {
             bail!(
                 "blob with highest index is {}, but the blob marked as last has index {}",
                 highest_idx,
-                blobs_marked_as_last[0].0.idx
+                blobs_marked_as_last[0].header.idx
             );
         }
 
-        let present_idxs: HashSet<u32> =
-            indexed_data.iter().map(|(header, _)| header.idx).collect();
+        let present_idxs: HashSet<u32> = blobs.iter().map(|blob| blob.header.idx).collect();
 
         let missing_idxs: Vec<u32> = (0..=highest_idx)
             .filter(|idx| !present_idxs.contains(idx))
@@ -100,11 +100,11 @@ impl Decoder {
         }
 
         // Ensure that all indices are consecutive and starting from zero
-        for (expected_idx, (header, _)) in indexed_data.iter().enumerate() {
-            if expected_idx as u32 != header.idx {
+        for (expected_idx, blob) in blobs.iter().enumerate() {
+            if expected_idx as u32 != blob.header.idx {
                 bail!(
                     "unexpected blob idx of {}, expected the idx of {}",
-                    header.idx,
+                    blob.header.idx,
                     expected_idx
                 );
             }
@@ -114,8 +114,8 @@ impl Decoder {
         let data = {
             let mut data_bits = BitVec::<u8, Msb0>::new();
 
-            for (_, data_slice) in indexed_data {
-                let mut chunks = data_slice.chunks(256);
+            for blob in blobs {
+                let mut chunks = blob.data.chunks(256);
 
                 let first_chunk = chunks.next();
 
@@ -148,7 +148,9 @@ impl Decoder {
 
 #[cfg(test)]
 mod test {
-    use crate::blob;
+    use bitvec::{order::Msb0, vec::BitVec};
+
+    use crate::blob::{self, Blob, Header};
 
     #[test]
     fn complains_if_no_blobs_are_given() {
@@ -303,6 +305,38 @@ mod test {
         assert_eq!(
             err.to_string(),
             "blob with highest index is 2, but the blob marked as last has index 1"
+        );
+    }
+
+    #[test]
+    fn fails_if_num_of_bits_more_than_what_can_fit_in_a_blob() {
+        // given
+        let mut blobs = blob::Encoder::default()
+            .encode(&vec![0; 100_000], 0)
+            .unwrap();
+        assert_eq!(blobs.len(), 1);
+        let blob = blobs.pop().unwrap();
+        let mut blob_data = BitVec::<u8, Msb0>::from_slice(blob.as_slice());
+
+        let corrupted_header = blob::Header::V1(blob::HeaderV1 {
+            bundle_id: 0,
+            num_bits: 256 * 4096 + 1,
+            is_last: true,
+            idx: 0,
+        });
+
+        blob_data[2..2 + Header::V1_SIZE_BITS].copy_from_bitslice(&corrupted_header.encode());
+        let corrupted_blob: Blob = blob_data.into_vec().into_boxed_slice().try_into().unwrap();
+
+        // when
+        let err = super::Decoder::default()
+            .decode(&[corrupted_blob])
+            .unwrap_err();
+
+        // then
+        assert_eq!(
+            err.to_string(),
+            "num_bits of blob (bundle_id: 0, idx: 0) is greater than the maximum allowed value of 1048576"
         );
     }
 }
