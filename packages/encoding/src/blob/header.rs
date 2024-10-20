@@ -56,7 +56,10 @@ impl HeaderV1 {
             idx,
         };
 
-        let amount_read = data.len().saturating_sub(remaining_data.len());
+        let amount_read = data
+            .len()
+            .checked_sub(remaining_data.len())
+            .expect("remaining data to always be smaller than original data");
 
         Ok((header, amount_read))
     }
