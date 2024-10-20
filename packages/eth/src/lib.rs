@@ -49,26 +49,21 @@ impl BlobEncoder {
             let data = Vec::from(fragment.data);
 
             sidecar.blobs.push(Default::default());
+            let current_blob = sidecar.blobs.last_mut().expect("just added it");
             sidecar.commitments.push(Default::default());
+            let current_commitment = sidecar.commitments.last_mut().expect("just added it");
             sidecar.proofs.push(Default::default());
+            let current_proof = sidecar.proofs.last_mut().expect("just added it");
 
             let read_location = data.as_slice();
 
-            sidecar.blobs.last_mut().unwrap()[..].copy_from_slice(&read_location[..BYTES_PER_BLOB]);
+            current_blob.copy_from_slice(&read_location[..BYTES_PER_BLOB]);
             let read_location = &read_location[BYTES_PER_BLOB..];
 
-            sidecar
-                .commitments
-                .last_mut()
-                .unwrap()
-                .copy_from_slice(&read_location[..48]);
+            current_commitment.copy_from_slice(&read_location[..48]);
             let read_location = &read_location[48..];
 
-            sidecar
-                .proofs
-                .last_mut()
-                .unwrap()
-                .copy_from_slice(&read_location[..48]);
+            current_proof.copy_from_slice(&read_location[..48]);
         }
 
         Ok(sidecar)
@@ -78,17 +73,25 @@ impl BlobEncoder {
 impl ports::l1::FragmentEncoder for BlobEncoder {
     fn encode(&self, data: NonEmpty<u8>, id: NonNegative<i32>) -> Result<NonEmpty<Fragment>> {
         let data = Vec::from(data);
-        let blobs = blob::Encoder::new().encode(&data, id.as_u32()).unwrap();
+        let encoder = blob::Encoder::default();
+        let decoder = blob::Decoder::default();
 
-        let bits_usage = blobs
+        let blobs = encoder.encode(&data, id.as_u32()).map_err(|e| {
+            crate::error::Error::Other(format!("failed to encode data as blobs: {e}"))
+        })?;
+
+        let bits_usage: Vec<_> = blobs
             .iter()
             .map(|blob| {
-                let blob::Header::V1(header) = blob::Decoder::default().read_header(blob).unwrap();
-                header.num_bits
+                let blob::Header::V1(header) = decoder.read_header(blob).map_err(|e| {
+                    crate::error::Error::Other(format!("failed to read blob header: {e}"))
+                })?;
+                Result::Ok(header.num_bits)
             })
-            .collect_vec();
+            .try_collect()?;
 
-        let sidecar = generate_sidecar(blobs).unwrap();
+        let sidecar = generate_sidecar(blobs)
+            .map_err(|e| crate::error::Error::Other(format!("failed to generate sidecar: {e}")))?;
 
         let fragments = izip!(
             &sidecar.blobs,
@@ -111,14 +114,17 @@ impl ports::l1::FragmentEncoder for BlobEncoder {
             let bits_per_blob = BYTES_PER_BLOB as u32 * 8;
 
             Fragment {
-                data: NonEmpty::from_vec(data_commitment_and_proof).unwrap(),
+                data: NonEmpty::from_vec(data_commitment_and_proof).expect("known to be non-empty"),
                 unused_bytes: bits_per_blob.saturating_sub(used_bits).saturating_div(8),
-                total_bytes: bits_per_blob.saturating_div(8).try_into().unwrap(),
+                total_bytes: bits_per_blob
+                    .saturating_div(8)
+                    .try_into()
+                    .expect("known to be non-zero"),
             }
         })
         .collect();
 
-        Ok(NonEmpty::from_vec(fragments).unwrap())
+        Ok(NonEmpty::from_vec(fragments).expect("known to be non-empty"))
     }
 
     // TODO: this needs testing
