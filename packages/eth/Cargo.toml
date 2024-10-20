@@ -10,9 +10,6 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-fuel-block-committer-encoding = { workspace = true, features = ["kzg"] }
-serde = { workspace = true }
-c-kzg = { workspace = true }
 alloy = { workspace = true, features = [
   "consensus",
   "network",
@@ -26,14 +23,17 @@ alloy = { workspace = true, features = [
 async-trait = { workspace = true }
 aws-config = { workspace = true, features = ["default"] }
 aws-sdk-kms = { workspace = true, features = ["default"] }
+c-kzg = { workspace = true }
 delegate = { workspace = true }
+fuel-block-committer-encoding = { workspace = true, features = ["kzg"] }
 futures = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
+serde = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
+tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
@@ -42,13 +42,13 @@ alloy = { workspace = true, features = [
   "node-bindings",
   "json-rpc",
 ] }
-pretty_assertions = { workspace = true, features = ["default"] }
 mockall = { workspace = true }
 ports = { workspace = true, features = ["l1", "test-helpers"] }
+pretty_assertions = { workspace = true, features = ["default"] }
+proptest = { workspace = true, features = ["default"] }
 rand = { workspace = true, features = ["small_rng"] }
 test-case = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
-proptest = { workspace = true, features = ["default"] }
 
 [features]
 test-helpers = []

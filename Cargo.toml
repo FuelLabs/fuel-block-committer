@@ -4,13 +4,13 @@ members = [
   "committer",
   "e2e",
   "packages/clock",
+  "packages/encoding",
   "packages/eth",
   "packages/fuel",
   "packages/metrics",
   "packages/ports",
   "packages/services",
   "packages/storage",
-  "packages/encoding",
 ]
 
 [workspace.package]

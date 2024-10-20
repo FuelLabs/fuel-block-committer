@@ -4,7 +4,7 @@ use bitvec::{boxed::BitBox, order::Msb0, slice::BitSlice};
 
 use crate::{
     blob::{Blob, Header, HeaderV1},
-    constants::{BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT},
+    constants::{FIELD_ELEMENTS_PER_BLOB, USABLE_BITS_PER_FIELD_ELEMENT},
 };
 pub struct Storage {
     // a BitArray was not used so that we don't risk overflowing the stack
