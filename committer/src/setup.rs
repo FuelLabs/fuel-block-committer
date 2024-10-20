@@ -1,7 +1,8 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eth::{AwsConfig, Eip4844BlobEncoder, KmsKeys};
+use eth::{AwsConfig, BlobEncoder, KmsKeys};
+use fuel_block_committer_encoding::bundle;
 use metrics::{
     prometheus::{IntGauge, Registry},
     HealthChecker, RegistersMetrics,
@@ -73,8 +74,8 @@ pub fn block_bundler(
     registry: &Registry,
 ) -> tokio::task::JoinHandle<()> {
     let bundler_factory = services::BundlerFactory::new(
-        Eip4844BlobEncoder,
-        config.app.bundle.compression_level,
+        BlobEncoder,
+        bundle::Encoder::new(config.app.bundle.compression_level),
         config.app.bundle.optimization_step,
     );
 

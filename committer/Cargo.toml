@@ -10,15 +10,16 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-num_cpus = { workspace = true }
 actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["default", "derive"] }
 clock = { workspace = true }
 config = { workspace = true, features = ["toml", "async"] }
 eth = { workspace = true }
 fuel = { workspace = true }
+fuel-block-committer-encoding = { workspace = true }
 humantime = { workspace = true }
 metrics = { workspace = true }
+num_cpus = { workspace = true }
 ports = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

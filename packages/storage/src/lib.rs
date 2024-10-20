@@ -19,6 +19,9 @@ use ports::{
 pub use postgres::{DbConfig, Postgres};
 
 impl Storage for Postgres {
+    async fn next_bundle_id(&self) -> Result<NonNegative<i32>> {
+        Ok(self._next_bundle_id().await?)
+    }
     async fn record_block_submission(
         &self,
         submission_tx: BlockSubmissionTx,
@@ -76,11 +79,12 @@ impl Storage for Postgres {
 
     async fn insert_bundle_and_fragments(
         &self,
+        bundle_id: NonNegative<i32>,
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
     ) -> Result<()> {
         Ok(self
-            ._insert_bundle_and_fragments(block_range, fragments)
+            ._insert_bundle_and_fragments(bundle_id, block_range, fragments)
             .await?)
     }
 
@@ -179,8 +183,10 @@ mod tests {
     async fn ensure_some_fragments_exists_in_the_db(
         storage: impl Storage,
     ) -> NonEmpty<NonNegative<i32>> {
+        let next_id = storage.next_bundle_id().await.unwrap();
         storage
             .insert_bundle_and_fragments(
+                next_id,
                 0..=0,
                 nonempty!(
                     Fragment {
@@ -356,9 +362,10 @@ mod tests {
         };
         let fragments = nonempty![fragment_1.clone(), fragment_2.clone()];
 
+        let next_id = storage.next_bundle_id().await.unwrap();
         // when
         storage
-            .insert_bundle_and_fragments(block_range.clone(), fragments.clone())
+            .insert_bundle_and_fragments(next_id, block_range.clone(), fragments.clone())
             .await
             .unwrap();
 
@@ -449,8 +456,9 @@ mod tests {
         .collect_nonempty()
         .unwrap();
 
+        let next_id = storage.next_bundle_id().await.unwrap();
         storage
-            .insert_bundle_and_fragments(range, fragments)
+            .insert_bundle_and_fragments(next_id, range, fragments)
             .await
             .unwrap();
     }
@@ -584,8 +592,10 @@ mod tests {
         let starting_height = 10;
 
         // Insert a bundle that ends before the starting_height
+        let next_id = storage.next_bundle_id().await.unwrap();
         storage
             .insert_bundle_and_fragments(
+                next_id,
                 1..=5, // Bundle ends at 5
                 nonempty!(Fragment {
                     data: nonempty![0],
@@ -602,8 +612,11 @@ mod tests {
             unused_bytes: 1000,
             total_bytes: 100.try_into().unwrap(),
         };
+
+        let next_id = storage.next_bundle_id().await.unwrap();
         storage
             .insert_bundle_and_fragments(
+                next_id,
                 10..=15, // Bundle ends at 15
                 nonempty!(fragment.clone()),
             )
@@ -633,8 +646,10 @@ mod tests {
             unused_bytes: 1000,
             total_bytes: 100.try_into().unwrap(),
         };
+        let next_id = storage.next_bundle_id().await.unwrap();
         storage
             .insert_bundle_and_fragments(
+                next_id,
                 5..=10, // Bundle ends at 10
                 nonempty!(fragment.clone()),
             )
@@ -650,6 +665,39 @@ mod tests {
         // then
         assert_eq!(fragments.len(), 1);
         assert_eq!(fragments[0].fragment, fragment);
+    }
+
+    #[tokio::test]
+    async fn can_get_next_bundle_id() {
+        // given
+        let storage = start_db().await;
+        let starting_height = 10;
+
+        // Insert a bundle that ends exactly at the starting_height
+        let fragment = Fragment {
+            data: nonempty![2],
+            unused_bytes: 1000,
+            total_bytes: 100.try_into().unwrap(),
+        };
+        let next_id = storage.next_bundle_id().await.unwrap();
+        storage
+            .insert_bundle_and_fragments(
+                next_id,
+                5..=10, // Bundle ends at 10
+                nonempty!(fragment.clone()),
+            )
+            .await
+            .unwrap();
+        let fragments = storage
+            .oldest_nonfinalized_fragments(starting_height, 10)
+            .await
+            .unwrap();
+
+        // when
+        let next_id = storage.next_bundle_id().await.unwrap();
+
+        // then
+        assert_eq!(next_id.get(), fragments[0].id.get() + 1);
     }
 
     #[tokio::test]
