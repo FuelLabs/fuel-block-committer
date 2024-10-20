@@ -53,6 +53,7 @@ impl<'a> BlobValidator<'a> {
         if self.blobs.is_empty() {
             bail!("No blobs to decode");
         }
+
         let highest_idx = self.blobs.last().expect("At least one blob").header.idx;
 
         self.all_blobs_belong_to_same_bundle()?;

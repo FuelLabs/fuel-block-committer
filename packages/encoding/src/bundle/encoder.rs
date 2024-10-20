@@ -1,6 +1,6 @@
 use std::{io::Write, str::FromStr};
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use flate2::{write::GzEncoder, Compression};
 
 use super::Bundle;
@@ -42,7 +42,12 @@ impl Encoder {
 
         let Bundle::V1(v1) = bundle;
 
-        let blocks_encoded = self.compress(&postcard::to_allocvec(&v1)?)?;
+        let postcard_encoded =
+            postcard::to_allocvec(&v1).context("could not postcard encode BundleV1 contents")?;
+
+        let blocks_encoded = self
+            .compress(&postcard_encoded)
+            .context("could not compress postcard encoded BundleV1")?;
         let mut bundle_data = vec![0u8; blocks_encoded.len() + VERSION_SIZE];
 
         let version = 1u16;
@@ -53,8 +58,7 @@ impl Encoder {
         Ok(bundle_data)
     }
 
-    // TODO: private
-    pub fn compress(&self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+    fn compress(&self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
         let Some(compression) = self.compression_level else {
             return Ok(data.to_vec());
         };

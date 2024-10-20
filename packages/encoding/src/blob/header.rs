@@ -29,7 +29,6 @@ impl HeaderV1 {
     }
 
     pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
-        // TODO: check if data is long enough
         let bundle_id = data[..Self::BUNDLE_ID_BITS].load_be();
         let remaining_data = &data[Self::BUNDLE_ID_BITS..];
 
@@ -79,7 +78,14 @@ impl Header {
         }
     }
     pub(crate) fn decode(data: &BitSlice<u8, Msb0>) -> Result<(Self, usize)> {
-        // TODO: check boundaries
+        if data.len() < Self::VERSION_BITS + HeaderV1::TOTAL_SIZE_BITS {
+            bail!(
+                "not enough data to decode header, expected at least {} bits, got {}",
+                Self::VERSION_BITS + HeaderV1::TOTAL_SIZE_BITS,
+                data.len()
+            );
+        }
+
         let version = data[..Self::VERSION_BITS].load_be::<u16>();
 
         let remaining_data = &data[Self::VERSION_BITS..];
@@ -91,5 +97,74 @@ impl Header {
             }
             version => bail!("Unsupported version {version}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use bitvec::{field::BitField, order::Msb0};
+
+    use super::Header;
+
+    #[test]
+    fn detects_unsupported_version() {
+        // given
+        let mut encoded_header = Header::V1(super::HeaderV1 {
+            bundle_id: 0,
+            num_bits: 0,
+            is_last: false,
+            idx: 0,
+        })
+        .encode();
+
+        encoded_header[0..16].store_be(2u16);
+
+        // when
+        let header = Header::decode(&encoded_header).unwrap_err();
+
+        // then
+        assert_eq!(header.to_string(), "Unsupported version 2");
+    }
+
+    #[test]
+    fn complains_if_not_enough_data_is_given() {
+        // given
+        let encoded_header = Header::V1(super::HeaderV1 {
+            bundle_id: 0,
+            num_bits: 0,
+            is_last: false,
+            idx: 0,
+        })
+        .encode();
+
+        // when
+        let err = Header::decode(&encoded_header[..10]).unwrap_err();
+
+        // then
+        assert_eq!(
+            err.to_string(),
+            "not enough data to decode header, expected at least 87 bits, got 10"
+        );
+    }
+
+    #[test]
+    fn reports_correct_amount_read() {
+        // given
+        let mut encoded_header = Header::V1(super::HeaderV1 {
+            bundle_id: 0,
+            num_bits: 0,
+            is_last: false,
+            idx: 0,
+        })
+        .encode();
+
+        // some extra data that should be ignored
+        encoded_header.extend_from_bitslice(&bitvec::bitvec![u8, Msb0; 0; 10]);
+
+        // when
+        let (_, amount_read) = Header::decode(&encoded_header).unwrap();
+
+        // then
+        assert_eq!(amount_read, 87);
     }
 }
