@@ -772,4 +772,46 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn can_update_costs() -> Result<()> {
+        // given
+        let storage = start_db().await;
+
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let tx = L1Tx {
+            hash: rand::random::<[u8; 32]>(),
+            ..Default::default()
+        };
+        let hash = tx.hash;
+        let nonce = tx.nonce;
+
+        storage.record_pending_tx(tx, fragment_ids).await.unwrap();
+
+        let finalization_time = Utc::now();
+
+        let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
+        storage
+            .batch_update_tx_states(vec![], changes)
+            .await
+            .unwrap();
+
+        let total_fee = 1000u128;
+        let da_block_height = 5000u64;
+        let cost_per_tx = vec![(hash, total_fee, da_block_height)];
+
+        // when
+        storage.update_costs(cost_per_tx.clone()).await?;
+
+        // then
+
+        // Fetch the bundle_cost record
+        let bundle_cost = storage.get_finalized_costs(0, 10).await?;
+
+        assert_eq!(bundle_cost.len(), 1);
+        assert_eq!(bundle_cost[0].cost, total_fee);
+        assert_eq!(bundle_cost[0].da_block_height, da_block_height);
+
+        Ok(())
+    }
 }
