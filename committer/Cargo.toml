@@ -10,28 +10,56 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+# CPU count detection
 num_cpus = { workspace = true }
+
+# Asynchronous web server
 actix-web = { workspace = true, features = ["macros"] }
+
+# Command-line argument parser
 clap = { workspace = true, features = ["default", "derive"] }
+
+# Time management
 clock = { workspace = true }
+humantime = { workspace = true }
+
+# Configuration management
 config = { workspace = true, features = ["toml", "async"] }
+
+# Ethereum and Fuel support
 eth = { workspace = true }
 fuel = { workspace = true }
-humantime = { workspace = true }
+
+# Metrics collection
 metrics = { workspace = true }
+
+# Working with ports
 ports = { workspace = true }
+
+# Data serialization and deserialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-services = { workspace = true }
-storage = { workspace = true }
+
+# Error handling
 thiserror = { workspace = true }
+
+# Asynchronous runtime
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-util = { workspace = true }
+
+# Logging and tracing
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
+
+# URL handling
 url = { workspace = true }
 
+# Services and data storage
+services = { workspace = true }
+storage = { workspace = true }
+
 [dev-dependencies]
+# Testing helpers
 anyhow = { workspace = true }
 ports = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }
