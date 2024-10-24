@@ -12,8 +12,8 @@ mod postgres;
 use ports::{
     storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
-        NonEmpty, NonNegative, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
 pub use postgres::{DbConfig, Postgres};
@@ -138,6 +138,18 @@ impl Storage for Postgres {
         Ok(self
             ._batch_update_tx_states(selective_changes, noncewide_changes)
             .await?)
+    }
+
+    async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()> {
+        Ok(self._update_costs(cost_per_tx).await?)
+    }
+
+    async fn get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>> {
+        Ok(self._get_finalized_costs(from_block_height, limit).await?)
     }
 }
 
@@ -757,6 +769,48 @@ mod tests {
         inserted_2.id = retrieved.id;
         inserted_2.created_at = retrieved.created_at;
         assert_eq!(retrieved, inserted_2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_update_costs() -> Result<()> {
+        // given
+        let storage = start_db().await;
+
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let tx = L1Tx {
+            hash: rand::random::<[u8; 32]>(),
+            ..Default::default()
+        };
+        let hash = tx.hash;
+        let nonce = tx.nonce;
+
+        storage.record_pending_tx(tx, fragment_ids).await.unwrap();
+
+        let finalization_time = Utc::now();
+
+        let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
+        storage
+            .batch_update_tx_states(vec![], changes)
+            .await
+            .unwrap();
+
+        let total_fee = 1000u128;
+        let da_block_height = 5000u64;
+        let cost_per_tx = vec![(hash, total_fee, da_block_height)];
+
+        // when
+        storage.update_costs(cost_per_tx.clone()).await?;
+
+        // then
+
+        // Fetch the bundle_cost record
+        let bundle_cost = storage.get_finalized_costs(0, 10).await?;
+
+        assert_eq!(bundle_cost.len(), 1);
+        assert_eq!(bundle_cost[0].cost, total_fee);
+        assert_eq!(bundle_cost[0].da_block_height, da_block_height);
 
         Ok(())
     }

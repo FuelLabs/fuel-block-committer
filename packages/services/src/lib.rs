@@ -1,6 +1,7 @@
 mod block_bundler;
 mod block_committer;
 mod block_importer;
+mod cost_reporter;
 mod health_reporter;
 mod state_committer;
 mod state_listener;
@@ -13,6 +14,7 @@ pub use block_bundler::{
 };
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
+pub use cost_reporter::CostReporter;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 pub use state_listener::StateListener;
@@ -229,6 +231,8 @@ pub(crate) mod test_utils {
                                 Ok(Some(TransactionResponse::new(
                                     height,
                                     matches!(status, TxStatus::Success),
+                                    100,
+                                    100,
                                 )))
                             })
                         });
@@ -261,6 +265,8 @@ pub(crate) mod test_utils {
                                 Ok(Some(TransactionResponse::new(
                                     height.into(),
                                     matches!(status, TxStatus::Success),
+                                    100,
+                                    100,
                                 )))
                             })
                         });
@@ -295,6 +301,8 @@ pub(crate) mod test_utils {
                             Ok(Some(TransactionResponse::new(
                                 height.into(),
                                 matches!(status, TxStatus::Success),
+                                100,
+                                100,
                             )))
                         })
                     });

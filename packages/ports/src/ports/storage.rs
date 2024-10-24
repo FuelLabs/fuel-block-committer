@@ -12,8 +12,8 @@ use itertools::Itertools;
 pub use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{
-    BlockSubmission, BlockSubmissionTx, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx,
-    NonEmpty, NonNegative, TransactionState,
+    BlockSubmission, BlockSubmissionTx, BundleCost, CollectNonEmpty, CompressedFuelBlock, Fragment,
+    L1Tx, NonEmpty, NonNegative, TransactionState,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -195,6 +195,12 @@ pub trait Storage: Send + Sync {
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
     ) -> Result<()>;
+    async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
+    async fn get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>>;
 }
 
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
@@ -242,6 +248,8 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     selective_changes: Vec<([u8; 32], TransactionState)>,
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
                 ) -> Result<()>;
+                async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
+                async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> Result<Vec<BundleCost>>;
         }
     }
 }
@@ -291,6 +299,8 @@ impl<T: Storage + Send + Sync> Storage for &T {
                     selective_changes: Vec<([u8; 32], TransactionState)>,
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
                 ) -> Result<()>;
+                async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
+                async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> Result<Vec<BundleCost>>;
         }
     }
 }

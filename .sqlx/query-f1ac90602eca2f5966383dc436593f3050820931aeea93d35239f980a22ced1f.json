@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                bc.bundle_id,\n                bc.cost,\n                bc.size,\n                bc.da_block_height,\n                bc.is_finalized,\n                b.start_height,\n                b.end_height\n            FROM\n                bundle_cost bc\n                JOIN bundles b ON bc.bundle_id = b.id\n            WHERE\n                b.start_height >= $1 AND bc.is_finalized = TRUE\n            ORDER BY\n                b.start_height ASC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bundle_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "cost",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "size",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "da_block_height",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_finalized",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "start_height",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "end_height",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f1ac90602eca2f5966383dc436593f3050820931aeea93d35239f980a22ced1f"
+}

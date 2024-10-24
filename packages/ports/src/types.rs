@@ -7,6 +7,7 @@ mod non_empty;
 pub use non_empty::*;
 
 mod block_submission;
+mod bundle_cost;
 mod fragment;
 #[cfg(feature = "l1")]
 mod fuel_block_committed_on_l1;
@@ -16,6 +17,7 @@ mod state_submission;
 mod transactions;
 
 pub use block_submission::*;
+pub use bundle_cost::*;
 pub use fragment::*;
 #[cfg(feature = "l1")]
 pub use fuel_block_committed_on_l1::*;

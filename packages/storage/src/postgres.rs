@@ -1,12 +1,13 @@
-use std::ops::RangeInclusive;
+use std::{collections::HashMap, ops::RangeInclusive};
 
+use crate::postgres::tables::u128_to_bigdecimal;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use ports::{
     storage::SequentialFuelBlocks,
     types::{
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, NonEmpty,
-        NonNegative, TransactionState, TryCollectNonEmpty, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        NonEmpty, NonNegative, TransactionState, TryCollectNonEmpty, Utc,
     },
 };
 use sqlx::{
@@ -57,6 +58,12 @@ impl RegistersMetrics for Postgres {
             Box::new(self.metrics.lowest_unbundled_height.clone()),
         ]
     }
+}
+
+struct BundleCostUpdate {
+    cost_contribution: u128,
+    size_contribution: u64,
+    latest_da_block_height: u64,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -676,6 +683,134 @@ impl Postgres {
         tx.commit().await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn _update_costs(
+        &self,
+        cost_per_tx: Vec<([u8; 32], u128, u64)>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        // A map to accumulate cost and size contributions per bundle
+        let mut bundle_updates: HashMap<i32, BundleCostUpdate> = HashMap::new();
+
+        for (hash, total_fee, da_block_height) in cost_per_tx {
+            let row = sqlx::query!(
+                r#"
+                SELECT
+                    f.bundle_id,
+                    SUM(f.total_bytes)::BIGINT AS total_bytes,
+                    SUM(f.unused_bytes)::BIGINT AS unused_bytes
+                FROM
+                    l1_blob_transaction t
+                    JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id
+                    JOIN l1_fragments f ON tf.fragment_id = f.id
+                WHERE
+                    t.hash = $1
+                GROUP BY
+                    f.bundle_id
+                "#,
+                hash.as_slice()
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+
+            let bundle_id = row.bundle_id;
+            let total_bytes: i64 = row.total_bytes.unwrap_or(0);
+            let unused_bytes: i64 = row.unused_bytes.unwrap_or(0);
+            let size_contribution = (total_bytes - unused_bytes) as u64;
+
+            // Accumulate contributions in the bundle_updates map
+            let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
+                cost_contribution: 0,
+                size_contribution: 0,
+                latest_da_block_height: 0,
+            });
+
+            entry.cost_contribution += total_fee;
+            entry.size_contribution += size_contribution;
+            entry.latest_da_block_height = da_block_height; // Update with the latest da_block_height
+        }
+
+        // update the bundle_cost table for each affected bundle
+        for (bundle_id, update) in bundle_updates {
+            // check if any fragment in the bundle is not associated with a finalized transaction
+            let is_finalized = sqlx::query!(
+                r#"
+                SELECT COUNT(*) = 0 AS "is_finalized"
+                FROM l1_fragments f
+                LEFT JOIN l1_transaction_fragments tf ON f.id = tf.fragment_id
+                LEFT JOIN l1_blob_transaction t ON tf.transaction_id = t.id
+                WHERE f.bundle_id = $1 AND (t.state IS DISTINCT FROM $2)
+                "#,
+                bundle_id,
+                i16::from(L1TxState::Finalized),
+            )
+            .fetch_one(&mut *tx)
+            .await?
+            .is_finalized;
+
+            sqlx::query!(
+                r#"
+                INSERT INTO bundle_cost (
+                    bundle_id, cost, size, da_block_height, is_finalized
+                ) VALUES (
+                    $1, $2, $3, $4, $5
+                )
+                ON CONFLICT (bundle_id) DO UPDATE SET
+                    cost = bundle_cost.cost + EXCLUDED.cost,
+                    size = bundle_cost.size + EXCLUDED.size,
+                    da_block_height = EXCLUDED.da_block_height,
+                    is_finalized = EXCLUDED.is_finalized
+                "#,
+                bundle_id,
+                u128_to_bigdecimal(update.cost_contribution),
+                update.size_contribution as i64,
+                update.latest_da_block_height as i64,
+                is_finalized,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>> {
+        sqlx::query_as!(
+            tables::BundleCost,
+            r#"
+            SELECT
+                bc.bundle_id,
+                bc.cost,
+                bc.size,
+                bc.da_block_height,
+                bc.is_finalized,
+                b.start_height,
+                b.end_height
+            FROM
+                bundle_cost bc
+                JOIN bundles b ON bc.bundle_id = b.id
+            WHERE
+                b.start_height >= $1 AND bc.is_finalized = TRUE
+            ORDER BY
+                b.start_height ASC
+            LIMIT $2
+            "#,
+            from_block_height as i64,
+            limit as i64
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(BundleCost::try_from)
+        .collect::<Result<Vec<_>>>()
     }
 
     pub(crate) async fn _insert_bundle_and_fragments(

@@ -5,6 +5,7 @@ pub enum TransactionState {
     Pending,
     IncludedInBlock,
     Finalized(DateTime<Utc>),
+    SqueezedOut,
     Failed,
 }
 
@@ -12,13 +13,17 @@ pub enum TransactionState {
 pub struct TransactionResponse {
     block_number: u64,
     succeeded: bool,
+    fee: u128,
+    blob_fee: u128,
 }
 
 impl TransactionResponse {
-    pub fn new(block_number: u64, succeeded: bool) -> Self {
+    pub fn new(block_number: u64, succeeded: bool, fee: u128, blob_fee: u128) -> Self {
         Self {
             block_number,
             succeeded,
+            fee,
+            blob_fee,
         }
     }
 
@@ -28,6 +33,10 @@ impl TransactionResponse {
 
     pub fn succeeded(&self) -> bool {
         self.succeeded
+    }
+
+    pub fn total_fee(&self) -> u128 {
+        self.fee.saturating_add(self.blob_fee)
     }
 
     pub fn confirmations(&self, current_block_number: u64) -> u64 {

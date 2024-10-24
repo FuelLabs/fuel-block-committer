@@ -451,7 +451,7 @@ mod tests {
         let fuel_adapter = given_fetcher(vec![latest_block]);
 
         let db = db_with_submissions(vec![0, 2, 4]).await;
-        let tx_response = TransactionResponse::new(latest_height as u64, true);
+        let tx_response = TransactionResponse::new(latest_height as u64, true, 100, 0);
         let l1 =
             given_l1_that_expects_transaction_response(latest_height, [4; 32], Some(tx_response));
 

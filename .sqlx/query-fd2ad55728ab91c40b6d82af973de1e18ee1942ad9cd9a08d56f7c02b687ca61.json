@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT COUNT(*) = 0 AS \"is_finalized\"\n                FROM l1_fragments f\n                LEFT JOIN l1_transaction_fragments tf ON f.id = tf.fragment_id\n                LEFT JOIN l1_blob_transaction t ON tf.transaction_id = t.id\n                WHERE f.bundle_id = $1 AND (t.state IS DISTINCT FROM $2)\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_finalized",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fd2ad55728ab91c40b6d82af973de1e18ee1942ad9cd9a08d56f7c02b687ca61"
+}

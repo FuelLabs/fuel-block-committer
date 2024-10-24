@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO bundle_cost (\n                    bundle_id, cost, size, da_block_height, is_finalized\n                ) VALUES (\n                    $1, $2, $3, $4, $5\n                )\n                ON CONFLICT (bundle_id) DO UPDATE SET\n                    cost = bundle_cost.cost + EXCLUDED.cost,\n                    size = bundle_cost.size + EXCLUDED.size,\n                    da_block_height = EXCLUDED.da_block_height,\n                    is_finalized = EXCLUDED.is_finalized\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Numeric",
+        "Int8",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6989cabec71adc8953079f03e4dd4b6322c18b97011bffcbe0cc91e46b1d345"
+}
