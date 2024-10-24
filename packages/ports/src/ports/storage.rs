@@ -12,8 +12,8 @@ use itertools::Itertools;
 pub use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{
-    BlockSubmission, BlockSubmissionTx, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx,
-    NonEmpty, NonNegative, TransactionState,
+    BlockSubmission, BlockSubmissionTx, BundleCost, CollectNonEmpty, CompressedFuelBlock, Fragment,
+    L1Tx, NonEmpty, NonNegative, TransactionState,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -22,17 +22,6 @@ pub enum Error {
     Database(String),
     #[error("data conversion app<->db failed: {0}")]
     Conversion(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BundleCost {
-    pub bundle_id: u32,
-    pub cost: u128,
-    pub size: u64,
-    pub da_block_height: u64,
-    pub starting_block_height: u64,
-    pub ending_block_height: u64,
-    pub finalized: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,7 +196,11 @@ pub trait Storage: Send + Sync {
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
     ) -> Result<()>;
     async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
-    async fn get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>>;
+    async fn get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>>;
 }
 
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
@@ -256,7 +249,7 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
                 ) -> Result<()>;
                 async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
-                async fn get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>>;
+                async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> Result<Vec<BundleCost>>;
         }
     }
 }
@@ -307,7 +300,7 @@ impl<T: Storage + Send + Sync> Storage for &T {
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
                 ) -> Result<()>;
                 async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
-                async fn get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>>;
+                async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> Result<Vec<BundleCost>>;
         }
     }
 }

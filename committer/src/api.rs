@@ -8,6 +8,7 @@ use actix_web::{
     error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
 };
 use ports::storage::Storage;
+use serde::Deserialize;
 use services::{CostReporter, HealthReporter, StatusReporter};
 
 use crate::{
@@ -83,15 +84,26 @@ async fn metrics(registry: web::Data<Arc<Registry>>) -> impl Responder {
     std::result::Result::<_, InternalError<_>>::Ok(text)
 }
 
-#[get("/costs/{bundle_id}")]
+#[derive(Deserialize)]
+struct CostQueryParams {
+    from_block_height: u32,
+    limit: Option<usize>,
+}
+
+#[get("/costs")]
 async fn costs(
     data: web::Data<Arc<CostReporter<Database>>>,
-    bundle_id: web::Path<i64>,
+    query: web::Query<CostQueryParams>,
 ) -> impl Responder {
-    let id = bundle_id.into_inner();
+    let limit = query.limit.unwrap_or(100);
 
-    match data.get_bundle_cost(id).await {
-        Ok(report) => HttpResponse::Ok().json(report),
+    if limit == 0 || limit > 1000 {
+        return HttpResponse::BadRequest()
+            .body("Invalid 'limit' parameter. Must be between 1 and 1000.");
+    }
+
+    match data.get_costs(query.from_block_height, limit).await {
+        Ok(bundle_costs) => HttpResponse::Ok().json(bundle_costs),
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
 }

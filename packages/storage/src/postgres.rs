@@ -1,13 +1,13 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
-use crate::{mappings::tables::bigdecimal_to_u128, postgres::tables::u128_to_bigdecimal};
+use crate::postgres::tables::u128_to_bigdecimal;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use ports::{
-    storage::{BundleCost, SequentialFuelBlocks},
+    storage::SequentialFuelBlocks,
     types::{
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, NonEmpty,
-        NonNegative, TransactionState, TryCollectNonEmpty, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        NonEmpty, NonNegative, TransactionState, TryCollectNonEmpty, Utc,
     },
 };
 use sqlx::{
@@ -778,8 +778,13 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>> {
-        let row = sqlx::query!(
+    pub(crate) async fn _get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>> {
+        sqlx::query_as!(
+            tables::BundleCost,
             r#"
             SELECT
                 bc.bundle_id,
@@ -793,24 +798,19 @@ impl Postgres {
                 bundle_cost bc
                 JOIN bundles b ON bc.bundle_id = b.id
             WHERE
-                bc.bundle_id = $1
+                b.start_height >= $1 AND bc.is_finalized = TRUE
+            ORDER BY
+                b.start_height ASC
+            LIMIT $2
             "#,
-            bundle_id as i64
+            from_block_height as i64,
+            limit as i64
         )
-        .fetch_optional(&self.connection_pool)
-        .await?;
-
-        let Some(row) = row else { return Ok(None) };
-
-        Ok(Some(BundleCost {
-            bundle_id: row.bundle_id as u32,
-            cost: bigdecimal_to_u128(row.cost)?,
-            size: row.size as u64,
-            da_block_height: row.da_block_height as u64,
-            finalized: row.is_finalized,
-            starting_block_height: row.start_height as u64,
-            ending_block_height: row.end_height as u64,
-        }))
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(BundleCost::try_from)
+        .collect::<Result<Vec<_>>>()
     }
 
     pub(crate) async fn _insert_bundle_and_fragments(

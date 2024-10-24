@@ -4584,6 +4584,7 @@ dependencies = [
  "mockall",
  "nonempty",
  "rand",
+ "serde",
  "sqlx",
  "thiserror",
  "trait-variant",

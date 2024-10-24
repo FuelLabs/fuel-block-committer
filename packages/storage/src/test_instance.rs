@@ -6,10 +6,10 @@ use std::{
 
 use delegate::delegate;
 use ports::{
-    storage::{BundleCost, BundleFragment, SequentialFuelBlocks, Storage},
+    storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
-        NonEmpty, NonNegative, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -210,7 +210,7 @@ impl Storage for DbWithProcess {
                 noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
             ) -> ports::storage::Result<()>;
             async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> ports::storage::Result<()>;
-            async fn get_bundle_cost(&self, bundle_id: u64) -> ports::storage::Result<Option<BundleCost>>;
+            async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> ports::storage::Result<Vec<BundleCost>>;
         }
     }
 }

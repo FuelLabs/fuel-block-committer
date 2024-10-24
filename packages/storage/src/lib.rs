@@ -10,10 +10,10 @@ pub use test_instance::*;
 mod error;
 mod postgres;
 use ports::{
-    storage::{BundleCost, BundleFragment, Result, SequentialFuelBlocks, Storage},
+    storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
-        NonEmpty, NonNegative, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
 pub use postgres::{DbConfig, Postgres};
@@ -144,8 +144,12 @@ impl Storage for Postgres {
         Ok(self._update_costs(cost_per_tx).await?)
     }
 
-    async fn get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>> {
-        Ok(self._get_bundle_cost(bundle_id).await?)
+    async fn get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>> {
+        Ok(self._get_finalized_costs(from_block_height, limit).await?)
     }
 }
 
