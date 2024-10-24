@@ -54,6 +54,8 @@ where
         let mut selective_change = vec![];
         let mut noncewide_changes = vec![];
 
+        let mut cost_per_tx = vec![];
+
         for tx in non_finalized_txs {
             if skip_nonces.contains(&tx.nonce) {
                 continue;
@@ -120,6 +122,7 @@ where
             // st tx to finalized and all txs with the same nonce to failed
             let now = self.clock.now();
             noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Finalized(now)));
+            cost_per_tx.push((tx.hash, tx_response.total_fee(), tx_response.block_number()));
 
             self.metrics.last_finalization_time.set(now.timestamp());
 
@@ -139,6 +142,8 @@ where
         self.storage
             .batch_update_tx_states(selective_change, noncewide_changes)
             .await?;
+
+        self.storage.update_costs(cost_per_tx).await?;
 
         Ok(())
     }

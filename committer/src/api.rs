@@ -8,7 +8,7 @@ use actix_web::{
     error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
 };
 use ports::storage::Storage;
-use services::{HealthReporter, StatusReporter};
+use services::{CostReporter, HealthReporter, StatusReporter};
 
 use crate::{
     config::Config,
@@ -19,21 +19,24 @@ use crate::{
 pub async fn launch_api_server(
     config: &Config,
     metrics_registry: Registry,
-    storage: impl Storage + 'static,
+    storage: impl Storage + 'static + Clone,
     fuel_health_check: HealthChecker,
     eth_health_check: HealthChecker,
 ) -> Result<()> {
     let metrics_registry = Arc::new(metrics_registry);
-    let status_reporter = Arc::new(StatusReporter::new(storage));
+    let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
     let health_reporter = Arc::new(HealthReporter::new(fuel_health_check, eth_health_check));
+    let cost_reporter = Arc::new(CostReporter::new(storage));
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(Arc::clone(&metrics_registry)))
             .app_data(web::Data::new(Arc::clone(&status_reporter)))
             .app_data(web::Data::new(Arc::clone(&health_reporter)))
+            .app_data(web::Data::new(Arc::clone(&cost_reporter)))
             .service(status)
             .service(metrics)
             .service(health)
+            .service(costs)
     })
     .bind((config.app.host, config.app.port))
     .map_err(|e| Error::Other(e.to_string()))?
@@ -78,6 +81,19 @@ async fn metrics(registry: web::Data<Arc<Registry>>) -> impl Responder {
     let text = String::from_utf8(buf).map_err(map_to_internal_err)?;
 
     std::result::Result::<_, InternalError<_>>::Ok(text)
+}
+
+#[get("/costs/{bundle_id}")]
+async fn costs(
+    data: web::Data<Arc<CostReporter<Database>>>,
+    bundle_id: web::Path<i64>,
+) -> impl Responder {
+    let id = bundle_id.into_inner();
+
+    match data.get_bundle_cost(id).await {
+        Ok(report) => HttpResponse::Ok().json(report),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
 }
 
 fn map_to_internal_err(error: impl std::error::Error) -> InternalError<String> {

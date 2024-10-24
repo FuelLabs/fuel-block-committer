@@ -100,7 +100,7 @@ impl L1FuelBlockSubmissionTx {
 }
 
 // Assumes that the BigDecimal is non-negative and has no fractional part
-fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128, crate::error::Error> {
+pub(crate) fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128, crate::error::Error> {
     let (digits, scale) = value.clone().into_bigint_and_exponent();
 
     if scale > 0 {
@@ -118,7 +118,7 @@ fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128, crate::error::Error> {
     Ok(result)
 }
 
-fn u128_to_bigdecimal(value: u128) -> BigDecimal {
+pub(crate) fn u128_to_bigdecimal(value: u128) -> BigDecimal {
     let digits = BigInt::from(value);
     BigDecimal::new(digits, 0)
 }
@@ -399,8 +399,9 @@ impl TryFrom<L1Tx> for ports::types::L1Tx {
 pub enum L1TxState {
     Pending,
     Finalized,
-    Failed,
+    SqueezedOut,
     IncludedInBlock,
+    Failed,
 }
 
 impl From<L1TxState> for i16 {
@@ -408,8 +409,9 @@ impl From<L1TxState> for i16 {
         match value {
             L1TxState::Pending => 0,
             L1TxState::Finalized => 1,
-            L1TxState::Failed => 2,
+            L1TxState::SqueezedOut => 2,
             L1TxState::IncludedInBlock => 3,
+            L1TxState::Failed => 4,
         }
     }
 }
@@ -421,6 +423,7 @@ impl From<&TransactionState> for L1TxState {
             TransactionState::IncludedInBlock => Self::IncludedInBlock,
             TransactionState::Finalized(_) => Self::Finalized,
             TransactionState::Failed => Self::Failed,
+            TransactionState::SqueezedOut => Self::SqueezedOut,
         }
     }
 }

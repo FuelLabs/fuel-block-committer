@@ -25,6 +25,17 @@ pub enum Error {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleCost {
+    pub bundle_id: u32,
+    pub cost: u128,
+    pub size: u64,
+    pub da_block_height: u64,
+    pub starting_block_height: u64,
+    pub ending_block_height: u64,
+    pub finalized: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleFragment {
     pub id: NonNegative<i32>,
     pub idx: NonNegative<i32>,
@@ -195,6 +206,8 @@ pub trait Storage: Send + Sync {
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
     ) -> Result<()>;
+    async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
+    async fn get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>>;
 }
 
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
@@ -242,6 +255,8 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                     selective_changes: Vec<([u8; 32], TransactionState)>,
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
                 ) -> Result<()>;
+                async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
+                async fn get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>>;
         }
     }
 }
@@ -291,6 +306,8 @@ impl<T: Storage + Send + Sync> Storage for &T {
                     selective_changes: Vec<([u8; 32], TransactionState)>,
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
                 ) -> Result<()>;
+                async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()>;
+                async fn get_bundle_cost(&self, bundle_id: u64) -> Result<Option<BundleCost>>;
         }
     }
 }

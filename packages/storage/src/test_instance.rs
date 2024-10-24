@@ -6,7 +6,7 @@ use std::{
 
 use delegate::delegate;
 use ports::{
-    storage::{BundleFragment, SequentialFuelBlocks, Storage},
+    storage::{BundleCost, BundleFragment, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
         NonEmpty, NonNegative, TransactionState, Utc,
@@ -209,6 +209,8 @@ impl Storage for DbWithProcess {
                 selective_changes: Vec<([u8; 32], TransactionState)>,
                 noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
             ) -> ports::storage::Result<()>;
+            async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> ports::storage::Result<()>;
+            async fn get_bundle_cost(&self, bundle_id: u64) -> ports::storage::Result<Option<BundleCost>>;
         }
     }
 }
