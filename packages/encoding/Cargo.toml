@@ -1,0 +1,39 @@
+[package]
+name = "fuel-block-committer-encoding"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
+publish = true
+
+[dependencies]
+# alloy only really needed when generating proofs, and since the core doesn't
+# need to do that we've gated it behing the `kzg` feature flag.
+alloy = { workspace = true, features = ["consensus", "eips"], optional = true }
+anyhow = { workspace = true }
+bitvec = { workspace = true, features = ["default"] }
+c-kzg = { workspace = true }
+flate2 = { workspace = true, features = ["default"] }
+hex = { workspace = true }
+itertools = { workspace = true, features = ["use_std"] }
+postcard = { workspace = true, features = ["alloc"] }
+serde = { workspace = true }
+static_assertions = { workspace = true }
+
+[dev-dependencies]
+alloy = { workspace = true, features = ["consensus", "eips", "kzg"] }
+fuel-block-committer-encoding = { workspace = true, features = [
+  "default",
+  "kzg",
+] }
+itertools = { workspace = true, features = ["use_alloc"] }
+proptest = { workspace = true, features = ["default"] }
+rand = { workspace = true, features = ["std", "std_rng", "small_rng"] }
+test-case = { workspace = true }
+
+[features]
+default = []
+kzg = ["alloy/kzg"]

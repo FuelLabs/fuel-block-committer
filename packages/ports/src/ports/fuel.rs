@@ -8,7 +8,6 @@ pub use fuel_core_client::client::types::{
     primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32, PublicKey as FuelPublicKey},
     Consensus,
 };
-
 pub use futures::stream::BoxStream;
 
 use crate::types::CompressedFuelBlock;
