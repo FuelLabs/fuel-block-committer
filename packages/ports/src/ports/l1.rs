@@ -1,8 +1,8 @@
 use std::num::NonZeroUsize;
 
 use crate::types::{
-    BlockSubmissionTx, Fragment, InvalidL1Height, L1Height, L1Tx, NonEmpty, TransactionResponse,
-    U256,
+    BlockSubmissionTx, Fragment, InvalidL1Height, L1Height, L1Tx, NonEmpty, NonNegative,
+    TransactionResponse, U256,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -53,6 +53,6 @@ pub trait Api {
 }
 
 pub trait FragmentEncoder {
-    fn encode(&self, data: NonEmpty<u8>) -> Result<NonEmpty<Fragment>>;
+    fn encode(&self, data: NonEmpty<u8>, id: NonNegative<i32>) -> Result<NonEmpty<Fragment>>;
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64;
 }
