@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     ops::RangeInclusive,
     sync::{Arc, Weak},
+    time::Duration,
 };
 
 use delegate::delegate;
@@ -212,5 +213,11 @@ impl Storage for DbWithProcess {
                 noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
             ) -> ports::storage::Result<()>;
         }
+    }
+}
+
+impl services::state_pruner::port::Storage for DbWithProcess {
+    async fn prune_entries_older_than(&self, duration: Duration) -> services::Result<()> {
+        self.db.prune_entries_older_than(duration).await
     }
 }

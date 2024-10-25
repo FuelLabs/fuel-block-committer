@@ -4,6 +4,7 @@ mod block_importer;
 mod health_reporter;
 mod state_committer;
 mod state_listener;
+pub mod state_pruner;
 mod status_reporter;
 mod wallet_balance_tracker;
 

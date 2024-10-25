@@ -16,6 +16,7 @@ itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 num-bigint = { workspace = true }
 ports = { workspace = true, features = ["storage"] }
+services = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 sqlx = { workspace = true, features = [
@@ -48,5 +49,6 @@ test-helpers = [
   "tokio/sync",
   "dep:rand",
   "dep:delegate",
+  "services/test-helpers",
   "ports/test-helpers",
 ]

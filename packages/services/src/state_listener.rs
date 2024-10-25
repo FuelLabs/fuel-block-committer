@@ -117,7 +117,7 @@ where
                 continue;
             }
 
-            // st tx to finalized and all txs with the same nonce to failed
+            // set tx to finalized and all txs with the same nonce to failed
             let now = self.clock.now();
             noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Finalized(now)));
 
