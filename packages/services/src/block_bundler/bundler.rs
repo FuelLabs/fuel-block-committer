@@ -1,150 +1,16 @@
-use std::{
-    cmp::min, collections::VecDeque, fmt::Display, io::Write, num::NonZeroUsize,
-    ops::RangeInclusive, str::FromStr,
-};
+use std::{cmp::min, collections::VecDeque, fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
 
 use bytesize::ByteSize;
-use flate2::{write::GzEncoder, Compression};
+use fuel_block_committer_encoding::bundle::{self, BundleV1};
 use itertools::Itertools;
 use ports::{
     l1::FragmentEncoder,
     storage::SequentialFuelBlocks,
-    types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
+    types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
 };
 use rayon::prelude::*;
 
 use crate::Result;
-
-#[derive(Debug, Clone, Copy)]
-struct Compressor {
-    compression: Option<Compression>,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-pub enum CompressionLevel {
-    Disabled,
-    Min,
-    Level1,
-    Level2,
-    Level3,
-    Level4,
-    Level5,
-    Level6,
-    Level7,
-    Level8,
-    Level9,
-    Max,
-}
-
-impl<'a> serde::Deserialize<'a> for CompressionLevel {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        let as_string = String::deserialize(deserializer)?;
-
-        CompressionLevel::from_str(&as_string)
-            .map_err(|e| serde::de::Error::custom(format!("Invalid compression level: {e}")))
-    }
-}
-
-impl FromStr for CompressionLevel {
-    type Err = crate::Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "disabled" => Ok(Self::Disabled),
-            "min" => Ok(Self::Min),
-            "level1" => Ok(Self::Level1),
-            "level2" => Ok(Self::Level2),
-            "level3" => Ok(Self::Level3),
-            "level4" => Ok(Self::Level4),
-            "level5" => Ok(Self::Level5),
-            "level6" => Ok(Self::Level6),
-            "level7" => Ok(Self::Level7),
-            "level8" => Ok(Self::Level8),
-            "level9" => Ok(Self::Level9),
-            "max" => Ok(Self::Max),
-            _ => Err(crate::Error::Other(format!(
-                "Invalid compression level: {s}"
-            ))),
-        }
-    }
-}
-
-impl CompressionLevel {
-    pub fn levels() -> Vec<Self> {
-        vec![
-            Self::Disabled,
-            Self::Min,
-            Self::Level1,
-            Self::Level2,
-            Self::Level3,
-            Self::Level4,
-            Self::Level5,
-            Self::Level6,
-            Self::Level7,
-            Self::Level8,
-            Self::Level9,
-            Self::Max,
-        ]
-    }
-}
-
-impl Default for Compressor {
-    fn default() -> Self {
-        Self::new(CompressionLevel::Level6)
-    }
-}
-
-impl Compressor {
-    #[cfg(test)]
-    pub fn no_compression() -> Self {
-        Self::new(CompressionLevel::Disabled)
-    }
-
-    pub fn new(level: CompressionLevel) -> Self {
-        let level = match level {
-            CompressionLevel::Disabled => None,
-            CompressionLevel::Min => Some(0),
-            CompressionLevel::Level1 => Some(1),
-            CompressionLevel::Level2 => Some(2),
-            CompressionLevel::Level3 => Some(3),
-            CompressionLevel::Level4 => Some(4),
-            CompressionLevel::Level5 => Some(5),
-            CompressionLevel::Level6 => Some(6),
-            CompressionLevel::Level7 => Some(7),
-            CompressionLevel::Level8 => Some(8),
-            CompressionLevel::Level9 => Some(9),
-            CompressionLevel::Max => Some(10),
-        };
-
-        Self {
-            compression: level.map(Compression::new),
-        }
-    }
-
-    pub fn compress(&self, data: NonEmpty<u8>) -> Result<NonEmpty<u8>> {
-        let Some(level) = self.compression else {
-            return Ok(data);
-        };
-
-        let bytes = Vec::from(data);
-
-        let mut encoder = GzEncoder::new(Vec::new(), level);
-        encoder
-            .write_all(&bytes)
-            .map_err(|e| crate::Error::Other(e.to_string()))?;
-
-        encoder
-            .finish()
-            .map_err(|e| crate::Error::Other(e.to_string()))?
-            .into_iter()
-            .collect_nonempty()
-            .ok_or_else(|| crate::Error::Other("compression resulted in no data".to_string()))
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Metadata {
@@ -212,20 +78,20 @@ pub trait Bundle {
 #[trait_variant::make(Send)]
 pub trait BundlerFactory {
     type Bundler: Bundle + Send + Sync;
-    async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler;
+    async fn build(&self, blocks: SequentialFuelBlocks, id: NonNegative<i32>) -> Self::Bundler;
 }
 
 pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
-    compression_level: CompressionLevel,
+    bundle_encoder: bundle::Encoder,
     step_size: NonZeroUsize,
 }
 
 impl<L1> Factory<L1> {
-    pub fn new(gas_calc: L1, compression_level: CompressionLevel, step_size: NonZeroUsize) -> Self {
+    pub fn new(gas_calc: L1, bundle_encoder: bundle::Encoder, step_size: NonZeroUsize) -> Self {
         Self {
             gas_calc,
-            compression_level,
+            bundle_encoder,
             step_size,
         }
     }
@@ -237,12 +103,13 @@ where
 {
     type Bundler = Bundler<GasCalculator>;
 
-    async fn build(&self, blocks: SequentialFuelBlocks) -> Self::Bundler {
+    async fn build(&self, blocks: SequentialFuelBlocks, id: NonNegative<i32>) -> Self::Bundler {
         Bundler::new(
             self.gas_calc.clone(),
             blocks,
-            Compressor::new(self.compression_level),
+            self.bundle_encoder.clone(),
             self.step_size,
+            id,
         )
     }
 }
@@ -266,16 +133,18 @@ pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
     blocks: NonEmpty<CompressedFuelBlock>,
     best_proposal: Option<Proposal>,
-    compressor: Compressor,
+    bundle_encoder: bundle::Encoder,
     attempts: VecDeque<NonZeroUsize>,
+    bundle_id: NonNegative<i32>,
 }
 
 impl<T> Bundler<T> {
     fn new(
         cost_calculator: T,
         blocks: SequentialFuelBlocks,
-        compressor: Compressor,
+        bundle_encoder: bundle::Encoder,
         initial_step_size: NonZeroUsize,
+        bundle_id: NonNegative<i32>,
     ) -> Self {
         let max_blocks = blocks.len();
         let initial_step = initial_step_size;
@@ -286,8 +155,9 @@ impl<T> Bundler<T> {
             fragment_encoder: cost_calculator,
             blocks: blocks.into_inner(),
             best_proposal: None,
-            compressor,
+            bundle_encoder,
             attempts,
+            bundle_id,
         }
     }
 
@@ -334,7 +204,7 @@ impl<T> Bundler<T> {
     {
         let blocks_for_analyzing = self.blocks_bundles_for_analyzing(num_concurrent);
 
-        let compressor = self.compressor;
+        let bundle_encoder = self.bundle_encoder.clone();
         let fragment_encoder = self.fragment_encoder.clone();
 
         // Needs to be wrapped in a blocking task to avoid blocking the executor
@@ -343,7 +213,8 @@ impl<T> Bundler<T> {
                 .into_par_iter()
                 .map(|blocks| {
                     let fragment_encoder = fragment_encoder.clone();
-                    create_proposal(compressor, fragment_encoder, blocks)
+                    let bundle_encoder = bundle_encoder.clone();
+                    create_proposal(bundle_encoder, fragment_encoder, blocks)
                 })
                 .collect::<Result<Vec<_>>>()
         })
@@ -381,7 +252,7 @@ where
         let compressed_data_size = best_proposal.compressed_data.len_nonzero();
         let fragments = self
             .fragment_encoder
-            .encode(best_proposal.compressed_data)?;
+            .encode(best_proposal.compressed_data, self.bundle_id)?;
 
         let num_attempts = self
             .blocks
@@ -425,25 +296,31 @@ fn generate_attempts(
     .collect()
 }
 
-fn merge_block_data(blocks: NonEmpty<CompressedFuelBlock>) -> NonEmpty<u8> {
-    blocks
-        .into_iter()
-        .flat_map(|b| b.data)
-        .collect_nonempty()
-        .expect("non-empty")
-}
-
 fn create_proposal(
-    compressor: Compressor,
+    bundle_encoder: bundle::Encoder,
     fragment_encoder: impl FragmentEncoder,
     bundle_blocks: NonEmpty<CompressedFuelBlock>,
 ) -> Result<Proposal> {
     let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
 
-    let uncompressed_data = merge_block_data(bundle_blocks);
-    let uncompressed_data_size = uncompressed_data.len_nonzero();
+    let blocks: Vec<Vec<u8>> = bundle_blocks
+        .into_iter()
+        .map(|block| Vec::from(block.data))
+        .collect();
 
-    let compressed_data = compressor.compress(uncompressed_data)?;
+    let uncompressed_data_size = NonZeroUsize::try_from(
+        blocks.iter().map(|b| b.len()).sum::<usize>(),
+    )
+    .expect(
+        "at least one block should be present, so the sum of all block sizes should be non-zero",
+    );
+
+    let compressed_data = bundle_encoder
+        .encode(bundle::Bundle::V1(BundleV1 { blocks }))
+        .map_err(|e| crate::Error::Other(e.to_string()))?;
+
+    let compressed_data = NonEmpty::from_vec(compressed_data)
+        .ok_or_else(|| crate::Error::Other("bundle encoder returned zero bytes".to_string()))?;
 
     let gas_usage = fragment_encoder.gas_usage(compressed_data.len_nonzero());
 
@@ -459,33 +336,15 @@ fn create_proposal(
 mod tests {
     use std::num::NonZeroUsize;
 
-    use eth::Eip4844BlobEncoder;
-    use ports::{l1::FragmentEncoder, types::nonempty};
+    use bundle::CompressionLevel;
+    use eth::BlobEncoder;
+    use ports::types::nonempty;
 
     use super::*;
-    use crate::test_utils::mocks::fuel::{generate_block, generate_storage_block_sequence};
-
-    #[test]
-    fn can_disable_compression() {
-        // given
-        let compressor = Compressor::new(CompressionLevel::Disabled);
-        let data = nonempty!(1, 2, 3);
-
-        // when
-        let compressed = compressor.compress(data.clone()).unwrap();
-
-        // then
-        assert_eq!(data, compressed);
-    }
-
-    #[test]
-    fn all_compression_levels_work() {
-        let data = nonempty!(1, 2, 3);
-        for level in CompressionLevel::levels() {
-            let compressor = Compressor::new(level);
-            compressor.compress(data.clone()).unwrap();
-        }
-    }
+    use crate::test_utils::{
+        bundle_and_encode_into_blobs,
+        mocks::fuel::{generate_block, generate_storage_block_sequence},
+    };
 
     #[tokio::test]
     async fn finishing_will_advance_if_not_called_at_least_once() {
@@ -493,18 +352,18 @@ mod tests {
         let blocks = generate_storage_block_sequence(0..=10, 1000);
 
         let bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone(),
-            Compressor::no_compression(),
+            bundle::Encoder::new(CompressionLevel::Disabled),
             NonZeroUsize::new(1).unwrap(),
+            1u16.into(),
         );
 
         // when
         let bundle = bundler.finish().await.unwrap();
 
         // then
-        let merged = blocks.into_inner().flat_map(|b| b.data.clone());
-        let expected_fragments = Eip4844BlobEncoder.encode(merged).unwrap();
+        let expected_fragments = bundle_and_encode_into_blobs(blocks.into_inner(), 1);
         assert!(!bundle.metadata.known_to_be_optimal);
         assert_eq!(bundle.metadata.block_heights, 0..=10);
         assert_eq!(bundle.fragments, expected_fragments);
@@ -526,10 +385,11 @@ mod tests {
         .unwrap();
 
         let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone(),
-            Compressor::no_compression(),
+            bundle::Encoder::new(CompressionLevel::Disabled),
             NonZeroUsize::new(1).unwrap(),
+            1u16.into(),
         );
 
         bundler.advance(1.try_into().unwrap()).await?;
@@ -561,10 +421,11 @@ mod tests {
         let step_size = NonZeroUsize::new(5).unwrap(); // Step size larger than number of blocks
 
         let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone(),
-            Compressor::no_compression(),
+            bundle::Encoder::new(CompressionLevel::Disabled),
             step_size,
+            1u16.into(),
         );
 
         while bundler.advance(1.try_into().unwrap()).await? {}
@@ -590,10 +451,11 @@ mod tests {
         ];
 
         let mut bundler = Bundler::new(
-            Eip4844BlobEncoder,
+            BlobEncoder,
             blocks.clone().try_into().unwrap(),
-            Compressor::no_compression(),
+            bundle::Encoder::new(CompressionLevel::Disabled),
             NonZeroUsize::new(1).unwrap(), // Default step size
+            1u16.into(),
         );
         while bundler.advance(1.try_into().unwrap()).await? {}
 
@@ -607,8 +469,8 @@ mod tests {
     }
 
     fn enough_bytes_to_almost_fill_a_blob() -> usize {
-        let encoding_overhead = Eip4844BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
-        Eip4844BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
+        let encoding_overhead = BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
+        BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
     }
     #[test]
     fn generates_steps_as_expected() {

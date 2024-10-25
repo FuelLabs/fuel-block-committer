@@ -2647,8 +2647,8 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
- "c-kzg",
  "delegate",
+ "fuel-block-committer-encoding",
  "futures",
  "itertools 0.13.0",
  "metrics",
@@ -2844,6 +2844,7 @@ dependencies = [
  "config",
  "eth",
  "fuel",
+ "fuel-block-committer-encoding",
  "humantime",
  "metrics",
  "num_cpus",
@@ -2858,6 +2859,26 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "fuel-block-committer-encoding"
+version = "0.9.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "bitvec",
+ "c-kzg",
+ "flate2",
+ "fuel-block-committer-encoding",
+ "hex",
+ "itertools 0.13.0",
+ "postcard",
+ "proptest",
+ "rand",
+ "serde",
+ "static_assertions",
+ "test-case",
 ]
 
 [[package]]
@@ -5619,7 +5640,7 @@ dependencies = [
  "clock",
  "delegate",
  "eth",
- "flate2",
+ "fuel-block-committer-encoding",
  "fuel-crypto",
  "futures",
  "hex",

@@ -7,8 +7,8 @@ use std::{
 
 use clap::{command, Parser};
 use eth::Address;
+use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
-use services::CompressionLevel;
 use storage::DbConfig;
 use url::Url;
 

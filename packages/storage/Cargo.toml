@@ -11,10 +11,10 @@ rust-version = { workspace = true }
 
 [dependencies]
 delegate = { workspace = true, optional = true }
-metrics = { workspace = true }
 hex = { workspace = true }
-num-bigint = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
+metrics = { workspace = true }
+num-bigint = { workspace = true }
 ports = { workspace = true, features = ["storage"] }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -36,8 +36,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
-ports = { workspace = true, features = ["storage"] }
 hex = { workspace = true }
+ports = { workspace = true, features = ["storage"] }
 rand = { workspace = true, features = ["small_rng"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tokio = { workspace = true }

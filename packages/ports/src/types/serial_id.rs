@@ -18,6 +18,12 @@ pub struct NonNegative<NUM> {
     val: NUM,
 }
 
+impl<NUM: Copy> NonNegative<NUM> {
+    pub fn get(&self) -> NUM {
+        self.val
+    }
+}
+
 impl<NUM: Display> Display for NonNegative<NUM> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.val.fmt(f)
@@ -39,6 +45,14 @@ impl NonNegative<i32> {
 
     pub fn as_i32(&self) -> i32 {
         self.val
+    }
+}
+
+impl From<u16> for NonNegative<i32> {
+    fn from(value: u16) -> Self {
+        Self {
+            val: i32::from(value),
+        }
     }
 }
 
