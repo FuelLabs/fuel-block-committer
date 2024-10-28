@@ -101,13 +101,11 @@ async fn costs(
 ) -> impl Responder {
     let limit = query.limit.unwrap_or(100);
 
-    if limit == 0 || limit > 1000 {
-        return HttpResponse::BadRequest()
-            .body("Invalid 'limit' parameter. Must be between 1 and 1000.");
-    }
-
     match data.get_costs(query.from_height, limit).await {
         Ok(bundle_costs) => HttpResponse::Ok().json(bundle_costs),
+        Err(Error::Other(e)) => {
+            HttpResponse::from_error(InternalError::new(e, StatusCode::BAD_REQUEST))
+        }
         Err(e) => HttpResponse::from_error(map_to_internal_err(e)),
     }
 }
