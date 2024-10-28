@@ -204,13 +204,13 @@ mod tests {
                 nonempty!(
                     Fragment {
                         data: nonempty![0],
-                        unused_bytes: 1000,
-                        total_bytes: 100.try_into().unwrap()
+                        unused_bytes: 100,
+                        total_bytes: 1000.try_into().unwrap()
                     },
                     Fragment {
                         data: nonempty![1],
-                        unused_bytes: 1000,
-                        total_bytes: 100.try_into().unwrap()
+                        unused_bytes: 100,
+                        total_bytes: 1000.try_into().unwrap()
                     }
                 ),
             )
@@ -892,17 +892,20 @@ mod tests {
         range: RangeInclusive<u32>,
         total_fee: u128,
         da_block_height: u64,
-    ) {
+    ) -> NonEmpty<NonNegative<i32>> {
         let fragment_in_db = ensure_some_fragments_exists_in_the_db(storage, range).await;
 
         let state = TransactionState::Finalized(Utc::now());
-        let tx_hash = ensure_fragments_have_transaction(storage, fragment_in_db, state).await;
+        let tx_hash =
+            ensure_fragments_have_transaction(storage, fragment_in_db.clone(), state).await;
 
         let cost_per_tx = vec![(tx_hash, total_fee, da_block_height)];
         storage
             .update_costs(cost_per_tx)
             .await
             .expect("cost update shouldn't fail");
+
+        fragment_in_db
     }
 
     #[tokio::test]
@@ -924,6 +927,39 @@ mod tests {
             TransactionState::IncludedInBlock,
         )
         .await;
+        ensure_some_fragments_exists_in_the_db(&storage, 6..=10).await;
+
+        // when
+        let costs = storage.get_finalized_costs(0, 10).await.unwrap();
+
+        // then
+        assert_eq!(costs.len(), 1);
+
+        let bundle_cost = &costs[0];
+        assert_eq!(bundle_cost.start_height, *bundle_range.start() as u64);
+        assert_eq!(bundle_cost.end_height, *bundle_range.end() as u64);
+        assert_eq!(bundle_cost.cost, cost);
+        assert_eq!(bundle_cost.da_block_height, da_height);
+    }
+
+    #[tokio::test]
+    async fn costs_returned_only_for_finalized_with_replacement_txs() {
+        // given
+        let storage = start_db().await;
+        let cost = 1000u128;
+        let da_height = 5000u64;
+        let bundle_range = 1..=2;
+
+        let fragment_ids = ensure_finalized_fragments_exist_in_the_db(
+            &storage,
+            bundle_range.clone(),
+            cost,
+            da_height,
+        )
+        .await;
+        // simulate replaced txs
+        ensure_fragments_have_transaction(&storage, fragment_ids, TransactionState::SqueezedOut)
+            .await;
         ensure_some_fragments_exists_in_the_db(&storage, 6..=10).await;
 
         // when

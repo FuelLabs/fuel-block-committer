@@ -764,8 +764,8 @@ impl Postgres {
                 "#,
                 bundle_id,
                 u128_to_bigdecimal(update.cost_contribution),
-                update.size_contribution as i64,
-                update.latest_da_block_height as i64,
+                i64::try_from(update.size_contribution).unwrap(),
+                i64::try_from(update.latest_da_block_height).unwrap(),
                 is_finalized,
             )
             .execute(&self.connection_pool)
