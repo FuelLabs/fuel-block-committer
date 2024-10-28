@@ -269,7 +269,7 @@ impl CommitterProcess {
 
     pub async fn fetch_costs(&self, from_height: u32, limit: usize) -> anyhow::Result<BundleCost> {
         let response = reqwest::get(format!(
-            "http://localhost:{}/costs?from_height={}&limit={}",
+            "http://localhost:{}/v1/costs?from_height={}&limit={}",
             self.port, from_height, limit
         ))
         .await?
