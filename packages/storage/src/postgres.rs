@@ -811,6 +811,7 @@ impl Postgres {
         .into_iter()
         .map(BundleCost::try_from)
         .collect::<Result<Vec<_>>>()
+    }
 
     pub(crate) async fn _next_bundle_id(&self) -> Result<NonNegative<i32>> {
         let next_id = sqlx::query!("SELECT nextval(pg_get_serial_sequence('bundles', 'id'))")

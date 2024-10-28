@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use ports::types::Address;
+use ports::types::{Address, BundleCost};
 use url::Url;
 
 #[derive(Default)]
@@ -267,22 +267,16 @@ impl CommitterProcess {
             .parse()?)
     }
 
-    pub async fn fetch_costs(
-        &self,
-        from_height: u32,
-        limit: Option<usize>,
-    ) -> anyhow::Result<String> {
+    pub async fn fetch_costs(&self, from_height: u32, limit: usize) -> anyhow::Result<BundleCost> {
         let response = reqwest::get(format!(
             "http://localhost:{}/costs?from_height={}&limit={}",
-            self.port,
-            from_height,
-            limit.unwrap_or(100)
+            self.port, from_height, limit
         ))
         .await?
         .error_for_status()?
         .text()
         .await?;
 
-        Ok(response)
+        Ok(serde_json::from_str(&response)?)
     }
 }

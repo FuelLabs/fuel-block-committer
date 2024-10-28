@@ -199,8 +199,8 @@ mod tests {
         let next_id = storage.next_bundle_id().await.unwrap();
         storage
             .insert_bundle_and_fragments(
-                range,
                 next_id,
+                range,
                 nonempty!(
                     Fragment {
                         data: nonempty![0],
