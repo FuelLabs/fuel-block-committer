@@ -274,9 +274,9 @@ impl CommitterProcess {
         ))
         .await?
         .error_for_status()?
-        .text()
+        .json()
         .await?;
 
-        Ok(serde_json::from_str(&response)?)
+        Ok(response)
     }
 }
