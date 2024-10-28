@@ -732,20 +732,22 @@ impl Postgres {
         // update the bundle_cost table for each affected bundle
         for (bundle_id, update) in bundle_updates {
             // check if any fragment in the bundle is not associated with a finalized transaction
-            let is_finalized = sqlx::query!(
+            let is_finalized = sqlx::query_scalar!(
                 r#"
-                SELECT COUNT(*) = 0 AS "is_finalized"
+                SELECT COUNT(*) = 0 AS "is_finalized!"
                 FROM l1_fragments f
-                LEFT JOIN l1_transaction_fragments tf ON f.id = tf.fragment_id
-                LEFT JOIN l1_blob_transaction t ON tf.transaction_id = t.id
-                WHERE f.bundle_id = $1 AND (t.state IS DISTINCT FROM $2)
+                WHERE f.bundle_id = $1 AND NOT EXISTS (
+                    SELECT 1
+                    FROM l1_transaction_fragments tf
+                    JOIN l1_blob_transaction t ON tf.transaction_id = t.id
+                    WHERE tf.fragment_id = f.id AND t.state = $2
+                )
                 "#,
                 bundle_id,
                 i16::from(L1TxState::Finalized),
             )
             .fetch_one(&self.connection_pool)
-            .await?
-            .is_finalized;
+            .await?;
 
             sqlx::query!(
                 r#"
