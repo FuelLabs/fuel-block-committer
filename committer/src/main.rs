@@ -104,6 +104,7 @@ async fn main() -> Result<()> {
 
     launch_api_server(
         &config,
+        &internal_config,
         metrics_registry,
         storage.clone(),
         fuel_health_check,

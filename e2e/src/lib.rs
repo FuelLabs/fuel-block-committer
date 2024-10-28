@@ -100,7 +100,8 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
-        let _costs = stack.committer.fetch_costs(0, 10).await?;
+        let costs = stack.committer.fetch_costs(0, 10).await?;
+        assert!(costs.cost > 0);
 
         Ok(())
     }

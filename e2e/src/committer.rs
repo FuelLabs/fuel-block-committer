@@ -116,7 +116,7 @@ impl Committer {
             cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ARN", blob_wallet_key_arn);
         }
 
-        let sink = if true {
+        let sink = if self.show_logs {
             std::process::Stdio::inherit
         } else {
             std::process::Stdio::null
@@ -127,7 +127,7 @@ impl Committer {
 
         Ok(CommitterProcess {
             _child: child,
-            port: 8080,
+            port: unused_port,
         })
     }
 

@@ -12,13 +12,14 @@ use serde::Deserialize;
 use services::{CostReporter, HealthReporter, StatusReporter};
 
 use crate::{
-    config::Config,
+    config::{Config, Internal},
     errors::{Error, Result},
     Database,
 };
 
 pub async fn launch_api_server(
     config: &Config,
+    internal_config: &Internal,
     metrics_registry: Registry,
     storage: impl Storage + 'static + Clone,
     fuel_health_check: HealthChecker,
@@ -27,7 +28,10 @@ pub async fn launch_api_server(
     let metrics_registry = Arc::new(metrics_registry);
     let status_reporter = Arc::new(StatusReporter::new(storage.clone()));
     let health_reporter = Arc::new(HealthReporter::new(fuel_health_check, eth_health_check));
-    let cost_reporter = Arc::new(CostReporter::new(storage));
+    let cost_reporter = Arc::new(CostReporter::new(
+        storage,
+        internal_config.cost_request_limit,
+    ));
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(Arc::clone(&metrics_registry)))
@@ -90,7 +94,7 @@ struct CostQueryParams {
     limit: Option<usize>,
 }
 
-#[get("/costs")]
+#[get("/v1/costs")]
 async fn costs(
     data: web::Data<Arc<CostReporter<Database>>>,
     query: web::Query<CostQueryParams>,

@@ -409,9 +409,9 @@ impl From<L1TxState> for i16 {
         match value {
             L1TxState::Pending => 0,
             L1TxState::Finalized => 1,
-            L1TxState::SqueezedOut => 2,
+            L1TxState::Failed => 2,
             L1TxState::IncludedInBlock => 3,
-            L1TxState::Failed => 4,
+            L1TxState::SqueezedOut => 4,
         }
     }
 }
@@ -445,12 +445,40 @@ impl TryFrom<BundleCost> for ports::types::BundleCost {
     fn try_from(value: BundleCost) -> Result<Self, Self::Error> {
         let cost = bigdecimal_to_u128(value.cost)?;
 
+        let size = value.size.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `size` ({}). Reason: {e}",
+                value.size
+            ))
+        })?;
+
+        let da_block_height = value.da_block_height.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `da_block_height` ({}). Reason: {e}",
+                value.da_block_height
+            ))
+        })?;
+
+        let start_height = value.start_height.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `start_height` ({}). Reason: {e}",
+                value.start_height
+            ))
+        })?;
+
+        let end_height = value.end_height.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `end_height` ({}). Reason: {e}",
+                value.end_height
+            ))
+        })?;
+
         Ok(Self {
             cost,
-            size: value.size as u64,
-            da_block_height: value.da_block_height as u64,
-            start_height: value.start_height as u64,
-            end_height: value.end_height as u64,
+            size,
+            da_block_height,
+            start_height,
+            end_height,
         })
     }
 }

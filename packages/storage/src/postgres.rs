@@ -689,9 +689,7 @@ impl Postgres {
         &self,
         cost_per_tx: Vec<([u8; 32], u128, u64)>,
     ) -> Result<()> {
-        let mut tx = self.connection_pool.begin().await?;
-
-        // A map to accumulate cost and size contributions per bundle
+        // accumulate cost and size contributions per bundle
         let mut bundle_updates: HashMap<i32, BundleCostUpdate> = HashMap::new();
 
         for (hash, total_fee, da_block_height) in cost_per_tx {
@@ -712,23 +710,22 @@ impl Postgres {
                 "#,
                 hash.as_slice()
             )
-            .fetch_one(&mut *tx)
+            .fetch_one(&self.connection_pool)
             .await?;
 
             let bundle_id = row.bundle_id;
             let total_bytes: i64 = row.total_bytes.unwrap_or(0);
             let unused_bytes: i64 = row.unused_bytes.unwrap_or(0);
-            let size_contribution = (total_bytes - unused_bytes) as u64;
+            let size_contribution = total_bytes.saturating_sub(unused_bytes) as u64;
 
-            // Accumulate contributions in the bundle_updates map
             let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
                 cost_contribution: 0,
                 size_contribution: 0,
                 latest_da_block_height: 0,
             });
 
-            entry.cost_contribution += total_fee;
-            entry.size_contribution += size_contribution;
+            entry.cost_contribution = entry.cost_contribution.saturating_add(total_fee);
+            entry.size_contribution = entry.size_contribution.saturating_add(size_contribution);
             entry.latest_da_block_height = da_block_height; // Update with the latest da_block_height
         }
 
@@ -746,10 +743,11 @@ impl Postgres {
                 bundle_id,
                 i16::from(L1TxState::Finalized),
             )
-            .fetch_one(&mut *tx)
+            .fetch_one(&self.connection_pool)
             .await?
             .is_finalized;
 
+            dbg!(update.size_contribution);
             sqlx::query!(
                 r#"
                 INSERT INTO bundle_cost (
@@ -769,11 +767,9 @@ impl Postgres {
                 update.latest_da_block_height as i64,
                 is_finalized,
             )
-            .execute(&mut *tx)
+            .execute(&self.connection_pool)
             .await?;
         }
-
-        tx.commit().await?;
 
         Ok(())
     }
