@@ -747,7 +747,6 @@ impl Postgres {
             .await?
             .is_finalized;
 
-            dbg!(update.size_contribution);
             sqlx::query!(
                 r#"
                 INSERT INTO bundle_cost (

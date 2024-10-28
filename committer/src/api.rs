@@ -103,7 +103,7 @@ async fn costs(
 
     match data.get_costs(query.from_height, limit).await {
         Ok(bundle_costs) => HttpResponse::Ok().json(bundle_costs),
-        Err(Error::Other(e)) => {
+        Err(services::Error::Other(e)) => {
             HttpResponse::from_error(InternalError::new(e, StatusCode::BAD_REQUEST))
         }
         Err(e) => HttpResponse::from_error(map_to_internal_err(e)),
