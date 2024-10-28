@@ -116,7 +116,7 @@ impl Committer {
             cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ARN", blob_wallet_key_arn);
         }
 
-        let sink = if self.show_logs {
+        let sink = if true {
             std::process::Stdio::inherit
         } else {
             std::process::Stdio::null
@@ -127,7 +127,7 @@ impl Committer {
 
         Ok(CommitterProcess {
             _child: child,
-            port: unused_port,
+            port: 8080,
         })
     }
 
@@ -265,5 +265,24 @@ impl CommitterProcess {
             .last()
             .expect("metric format to be in the format 'NAME VAL'")
             .parse()?)
+    }
+
+    pub async fn fetch_costs(
+        &self,
+        from_height: u32,
+        limit: Option<usize>,
+    ) -> anyhow::Result<String> {
+        let response = reqwest::get(format!(
+            "http://localhost:{}/costs?from_height={}&limit={}",
+            self.port,
+            from_height,
+            limit.unwrap_or(100)
+        ))
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+
+        Ok(response)
     }
 }

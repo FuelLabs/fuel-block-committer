@@ -190,10 +190,11 @@ mod tests {
 
     async fn ensure_some_fragments_exists_in_the_db(
         storage: impl Storage,
+        range: RangeInclusive<u32>,
     ) -> NonEmpty<NonNegative<i32>> {
         storage
             .insert_bundle_and_fragments(
-                0..=0,
+                range,
                 nonempty!(
                     Fragment {
                         data: nonempty![0],
@@ -397,7 +398,7 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage, 0..=0).await;
         let tx = L1Tx {
             hash: rand::random::<[u8; 32]>(),
             ..Default::default()
@@ -719,7 +720,7 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage, 0..=0).await;
         let hash = rand::random::<[u8; 32]>();
         let tx = L1Tx {
             hash,
@@ -741,7 +742,7 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage, 0..=0).await;
         let (fragment_1, fragment_2) = (fragment_ids[0], fragment_ids[1]);
         let inserted_1 = L1Tx {
             hash: rand::random::<[u8; 32]>(),
@@ -778,7 +779,7 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage, 0..=0).await;
         let tx = L1Tx {
             hash: rand::random::<[u8; 32]>(),
             ..Default::default()
@@ -804,13 +805,119 @@ mod tests {
         storage.update_costs(cost_per_tx.clone()).await?;
 
         // then
-
-        // Fetch the bundle_cost record
         let bundle_cost = storage.get_finalized_costs(0, 10).await?;
 
         assert_eq!(bundle_cost.len(), 1);
         assert_eq!(bundle_cost[0].cost, total_fee);
         assert_eq!(bundle_cost[0].da_block_height, da_block_height);
+
+        Ok(())
+    }
+
+    async fn ensure_fragments_have_transaction(
+        storage: &impl Storage,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
+        state: TransactionState,
+    ) -> [u8; 32] {
+        let tx_hash = rand::random::<[u8; 32]>();
+        let tx = L1Tx {
+            hash: tx_hash,
+            nonce: rand::random(),
+            ..Default::default()
+        };
+        storage
+            .record_pending_tx(tx.clone(), fragment_ids)
+            .await
+            .unwrap();
+
+        let changes = vec![(tx.hash, tx.nonce, state)];
+        storage
+            .batch_update_tx_states(vec![], changes)
+            .await
+            .expect("tx state should update");
+
+        tx_hash
+    }
+
+    async fn ensure_finalized_fragments_exist_in_the_db(
+        storage: &impl Storage,
+        range: RangeInclusive<u32>,
+        total_fee: u128,
+        da_block_height: u64,
+    ) {
+        let fragment_in_db = ensure_some_fragments_exists_in_the_db(storage, range).await;
+
+        let state = TransactionState::Finalized(Utc::now());
+        let tx_hash = ensure_fragments_have_transaction(storage, fragment_in_db, state).await;
+
+        let cost_per_tx = vec![(tx_hash, total_fee, da_block_height)];
+        storage
+            .update_costs(cost_per_tx)
+            .await
+            .expect("cost update shouldn't fail");
+    }
+
+    #[tokio::test]
+    async fn costs_returned_only_for_finalized_bundles() {
+        // given
+        let storage = start_db().await;
+        let cost = 1000u128;
+        let da_height = 5000u64;
+        let bundle_range = 1..=2;
+
+        ensure_finalized_fragments_exist_in_the_db(&storage, bundle_range.clone(), cost, da_height)
+            .await;
+
+        // add submitted and unsubmitted fragments
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage, 3..=5).await;
+        ensure_fragments_have_transaction(
+            &storage,
+            fragment_ids,
+            TransactionState::IncludedInBlock,
+        )
+        .await;
+        ensure_some_fragments_exists_in_the_db(&storage, 6..=10).await;
+
+        // when
+        let costs = storage.get_finalized_costs(0, 10).await.unwrap();
+
+        // then
+        assert_eq!(costs.len(), 1);
+
+        let bundle_cost = &costs[0];
+        assert_eq!(bundle_cost.start_height, *bundle_range.start() as u64);
+        assert_eq!(bundle_cost.end_height, *bundle_range.end() as u64);
+        assert_eq!(bundle_cost.cost, cost);
+        assert_eq!(bundle_cost.da_block_height, da_height);
+    }
+
+    #[tokio::test]
+    async fn respects_from_block_height_and_limit_in_get_finalized_costs() -> Result<()> {
+        // given
+        let storage = start_db().await;
+
+        for i in 0..5 {
+            let start_height = i * 10 + 1;
+            let end_height = start_height + 9;
+            let block_range = start_height..=end_height;
+
+            ensure_finalized_fragments_exist_in_the_db(&storage, block_range, 1000u128, 5000u64)
+                .await;
+        }
+
+        // when
+        let from_block_height = 21;
+        let limit = 2;
+        let finalized_costs = storage
+            .get_finalized_costs(from_block_height, limit)
+            .await?;
+
+        // then
+        assert_eq!(finalized_costs.len(), 2);
+
+        for bc in &finalized_costs {
+            assert!(bc.start_height >= from_block_height as u64);
+        }
 
         Ok(())
     }

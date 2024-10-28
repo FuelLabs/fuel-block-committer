@@ -86,7 +86,7 @@ async fn metrics(registry: web::Data<Arc<Registry>>) -> impl Responder {
 
 #[derive(Deserialize)]
 struct CostQueryParams {
-    from_block_height: u32,
+    from_height: u32,
     limit: Option<usize>,
 }
 
@@ -102,9 +102,9 @@ async fn costs(
             .body("Invalid 'limit' parameter. Must be between 1 and 1000.");
     }
 
-    match data.get_costs(query.from_block_height, limit).await {
+    match data.get_costs(query.from_height, limit).await {
         Ok(bundle_costs) => HttpResponse::Ok().json(bundle_costs),
-        Err(_) => HttpResponse::InternalServerError().finish(),
+        Err(e) => HttpResponse::from_error(map_to_internal_err(e)),
     }
 }
 
