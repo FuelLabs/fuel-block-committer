@@ -811,10 +811,34 @@ impl Postgres {
         .into_iter()
         .map(BundleCost::try_from)
         .collect::<Result<Vec<_>>>()
+
+    pub(crate) async fn _next_bundle_id(&self) -> Result<NonNegative<i32>> {
+        let next_id = sqlx::query!("SELECT nextval(pg_get_serial_sequence('bundles', 'id'))")
+            .fetch_one(&self.connection_pool)
+            .await?
+            .nextval
+            .ok_or_else(|| {
+                crate::error::Error::Database(
+                    "next bundle id query returned NULL. This is a bug.".to_string(),
+                )
+            })?;
+
+        let id = i32::try_from(next_id).map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "bundle id received from db is bigger than expected: {e}"
+            ))
+        })?;
+
+        let non_negative = NonNegative::try_from(id).map_err(|e| {
+            crate::error::Error::Conversion(format!("invalid bundle id received from db: {e}"))
+        })?;
+
+        Ok(non_negative)
     }
 
     pub(crate) async fn _insert_bundle_and_fragments(
         &self,
+        bundle_id: NonNegative<i32>,
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
     ) -> Result<()> {
@@ -825,7 +849,8 @@ impl Postgres {
 
         // Insert a new bundle and retrieve its ID
         let bundle_id = sqlx::query!(
-            "INSERT INTO bundles(start_height, end_height) VALUES ($1, $2) RETURNING id",
+            "INSERT INTO bundles(id, start_height, end_height) VALUES ($1, $2, $3) RETURNING id",
+            bundle_id.get(),
             i64::from(start),
             i64::from(end)
         )

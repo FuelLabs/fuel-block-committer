@@ -67,7 +67,7 @@ where
 
                 match (tx.state, self.l1_adapter.is_squeezed_out(tx.hash).await?) {
                     (TransactionState::Pending, true) => {
-                        //not in the mempool anymore set it to failed
+                        // not in the mempool anymore set it to failed
                         selective_change.push((tx.hash, tx.nonce, TransactionState::Failed));
 
                         info!(

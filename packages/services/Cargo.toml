@@ -10,7 +10,8 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-flate2 = { workspace = true, features = ["default"] }
+bytesize = { workspace = true }
+fuel-block-committer-encoding = { workspace = true }
 fuel-crypto = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
@@ -18,13 +19,12 @@ itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 mockall = { workspace = true, optional = true }
 ports = { workspace = true, features = ["full"] }
+rayon = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
-bytesize = { workspace = true }
-rayon = { workspace = true }
 trait-variant = { workspace = true }
 
 [dev-dependencies]

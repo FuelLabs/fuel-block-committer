@@ -77,7 +77,6 @@ where
 mod tests {
     use futures::StreamExt;
     use itertools::Itertools;
-
     use mockall::{predicate::eq, Sequence};
     use ports::types::{nonempty, CollectNonEmpty};
 
