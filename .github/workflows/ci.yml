@@ -109,8 +109,10 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
-      - name: Run cargo hack to check for invalid feature flag combinations
+      - name: Setup cargo hack
         uses: taiki-e/install-action@cargo-hack
+
+      - name: Run cargo hack to check for invalid feature flag combinations
         working-directory: packages/encoding
         run: cargo hack --feature-powerset --no-dev-deps check
 
