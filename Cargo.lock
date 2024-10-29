@@ -1789,7 +1789,7 @@ checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
 
 [[package]]
 name = "clock"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "clock",
  "ports",
@@ -2466,7 +2466,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "alloy",
  "anyhow",
@@ -2641,7 +2641,7 @@ dependencies = [
 
 [[package]]
 name = "eth"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "alloy",
  "async-trait",
@@ -2809,7 +2809,7 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fuel"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "delegate",
  "fuel-core-client",
@@ -2835,7 +2835,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -2863,7 +2863,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer-encoding"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "alloy",
  "anyhow",
@@ -3821,23 +3821,23 @@ checksum = "206ca75c9c03ba3d4ace2460e57b189f39f43de612c2f85836e65c929701bb2d"
 
 [[package]]
 name = "impl-tools"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d82c305b1081f1a99fda262883c788e50ab57d36c00830bdd7e0a82894ad965c"
+checksum = "8a84bc8d2baf8da56e93b4247067d918e1a44829bbbe3e4b875aaf8d7d3c7bc9"
 dependencies = [
  "autocfg",
  "impl-tools-lib",
- "proc-macro-error",
+ "proc-macro-error2",
  "syn 2.0.79",
 ]
 
 [[package]]
 name = "impl-tools-lib"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85d3946d886eaab0702fa0c6585adcced581513223fa9df7ccfabbd9fa331a88"
+checksum = "a795a1e201125947a063b967c79de6ae152143ab522f481d4f493c44835ba37a"
 dependencies = [
- "proc-macro-error",
+ "proc-macro-error2",
  "proc-macro2",
  "quote",
  "syn 2.0.79",
@@ -4116,7 +4116,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "metrics"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "prometheus",
 ]
@@ -4594,7 +4594,7 @@ dependencies = [
 
 [[package]]
 name = "ports"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "alloy",
  "async-trait",
@@ -4702,29 +4702,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecf48c7ca261d60b74ab1a7b20da18bede46776b2e55535cb958eb595c5fa7b"
 dependencies = [
  "toml_edit",
-]
-
-[[package]]
-name = "proc-macro-error"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
-dependencies = [
- "proc-macro-error-attr",
- "proc-macro2",
- "quote",
- "version_check",
-]
-
-[[package]]
-name = "proc-macro-error-attr"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
-dependencies = [
- "proc-macro2",
- "quote",
- "version_check",
 ]
 
 [[package]]
@@ -5635,7 +5612,7 @@ dependencies = [
 
 [[package]]
 name = "services"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "bytesize",
  "clock",
@@ -6032,7 +6009,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "storage"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "delegate",
  "hex",
