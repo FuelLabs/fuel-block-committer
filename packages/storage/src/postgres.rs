@@ -46,7 +46,7 @@ impl Default for Metrics {
 
 #[derive(Clone)]
 pub struct Postgres {
-    connection_pool: sqlx::Pool<sqlx::Postgres>,
+    pub(crate) connection_pool: sqlx::Pool<sqlx::Postgres>,
     metrics: Metrics,
 }
 
@@ -1076,3 +1076,17 @@ mod tests {
         assert!(new_fragment_id > 0, "Failed to insert a valid fragment");
     }
 }
+
+// TODO: @hal3e delete this
+// l1_submissions - seems to be unused
+
+// deletion order
+// l1_blob_transaction
+// l1_fragments
+// l1_transaction_fragments
+// bundles
+// fuel_blocks
+
+// deletion order
+// l1_transaction
+// l1_fuel_block_submission

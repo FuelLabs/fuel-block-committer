@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH\n\n            -- Step 1: Identify old transactions\n            old_transactions AS (\n                SELECT id FROM l1_blob_transaction\n                WHERE created_at < $1\n            ),\n\n            -- Step 2: Delete from l1_transaction_fragments and collect fragment_ids\n            deleted_transaction_fragments AS (\n                DELETE FROM l1_transaction_fragments\n                WHERE transaction_id IN (SELECT id FROM old_transactions)\n                RETURNING fragment_id\n            ),\n\n            -- Step 3: Delete from l1_blob_transaction\n            deleted_blob_transactions AS (\n                DELETE FROM l1_blob_transaction\n                WHERE id IN (SELECT id FROM old_transactions)\n                RETURNING id\n            ),\n\n            -- Step 4: Delete unreferenced fragments and collect bundle IDs\n            deleted_fragments AS (\n                DELETE FROM l1_fragments\n                WHERE id NOT IN (SELECT DISTINCT fragment_id FROM l1_transaction_fragments)\n                RETURNING bundle_id\n            ),\n\n            -- Step 5: Delete unreferenced bundles and collect start and end heights\n            deleted_bundles AS (\n                DELETE FROM bundles\n                WHERE id NOT IN (SELECT DISTINCT bundle_id FROM l1_fragments)\n                RETURNING start_height, end_height\n            ),\n\n            -- Step 6: Delete corresponding fuel_blocks entries\n            deleted_fuel_blocks AS (\n                DELETE FROM fuel_blocks\n                WHERE EXISTS (\n                    SELECT 1 FROM deleted_bundles\n                    WHERE fuel_blocks.height BETWEEN deleted_bundles.start_height AND deleted_bundles.end_height\n                )\n                RETURNING height\n            )\n\n            SELECT\n                (SELECT COUNT(*) FROM deleted_blob_transactions) AS deleted_blob_transactions,\n                (SELECT COUNT(*) FROM deleted_transaction_fragments) AS deleted_transaction_fragments,\n                (SELECT COUNT(*) FROM deleted_fragments) AS deleted_fragments,\n                (SELECT COUNT(*) FROM deleted_bundles) AS deleted_bundles,\n                (SELECT COUNT(*) FROM deleted_fuel_blocks) AS deleted_fuel_blocks;\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deleted_blob_transactions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deleted_transaction_fragments",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "deleted_fragments",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "deleted_bundles",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "deleted_fuel_blocks",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2269fd91bc4175536763a97072dba53c913b1c4d71912e04b51c1d49391168a2"
+}

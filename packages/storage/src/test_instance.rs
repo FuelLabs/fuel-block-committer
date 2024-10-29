@@ -2,7 +2,6 @@ use std::{
     borrow::Cow,
     ops::RangeInclusive,
     sync::{Arc, Weak},
-    time::Duration,
 };
 
 use delegate::delegate;
@@ -216,8 +215,15 @@ impl Storage for DbWithProcess {
     }
 }
 
-impl services::state_pruner::port::Storage for DbWithProcess {
-    async fn prune_entries_older_than(&self, _duration: Duration) -> services::Result<u64> {
-        Ok(42)
+use services::state_pruner;
+
+impl state_pruner::port::Storage for DbWithProcess {
+    delegate! {
+        to self.db {
+            async fn prune_entries_older_than(
+                &self,
+                date: state_pruner::port::DateTime<state_pruner::port::Utc>,
+            ) -> services::Result<state_pruner::port::Pruned>;
+        }
     }
 }
