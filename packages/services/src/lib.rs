@@ -111,6 +111,7 @@ pub(crate) mod test_utils {
 
         BlobEncoder.encode(encoded_bundle, id.into()).unwrap()
     }
+
     pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
         let size = size.into();
         if size == 0 {

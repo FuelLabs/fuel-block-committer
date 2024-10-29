@@ -12,7 +12,6 @@ rust-version = { workspace = true }
 [dependencies]
 bytesize = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
-fuel-crypto = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
@@ -23,7 +22,6 @@ rayon = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 tracing = { workspace = true }
 trait-variant = { workspace = true }
 
@@ -40,6 +38,7 @@ services = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
+test-helpers = { workspace = true }
 
 [features]
 test-helpers = ["dep:mockall"]

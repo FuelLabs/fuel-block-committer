@@ -11,6 +11,7 @@ members = [
   "packages/ports",
   "packages/services",
   "packages/storage",
+  "packages/test-helpers",
 ]
 
 [workspace.package]
@@ -31,6 +32,7 @@ ports = { path = "./packages/ports", default-features = false }
 storage = { path = "./packages/storage", default-features = false }
 services = { path = "./packages/services", default-features = false }
 clock = { path = "./packages/clock", default-features = false }
+test-helpers = { path = "./packages/test-helpers/", default-features = false }
 fuel-block-committer-encoding = { path = "./packages/encoding", default-features = false }
 actix-web = { version = "4", default-features = false }
 bitvec = { version = "1.0", default-features = false }

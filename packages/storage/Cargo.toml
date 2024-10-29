@@ -49,6 +49,5 @@ test-helpers = [
   "tokio/sync",
   "dep:rand",
   "dep:delegate",
-  "services/test-helpers",
   "ports/test-helpers",
 ]

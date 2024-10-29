@@ -25,11 +25,9 @@ aws-config = { workspace = true, features = ["default"] }
 aws-sdk-kms = { workspace = true, features = ["default"] }
 delegate = { workspace = true }
 fuel-block-committer-encoding = { workspace = true, features = ["kzg"] }
-futures = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
-serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
 tracing = { workspace = true }
