@@ -96,6 +96,26 @@ jobs:
       - name: Unit/integration tests
         run:  cargo test --workspace --exclude e2e
 
+  additional-check-for-published-crates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Setup cargo hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Run cargo hack to check for invalid feature flag combinations
+        working-directory: packages/encoding
+        run: cargo hack --feature-powerset --no-dev-deps check
+
   e2e-release-build:
     runs-on: ubuntu-latest
     steps:
@@ -315,6 +335,7 @@ jobs:
   publish:
     needs:
       - cargo-verifications
+      - additional-check-for-published-crates
       - publish-crates-check
     # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
