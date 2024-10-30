@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+pub struct TransactionCostUpdate {
+    pub tx_hash: [u8; 32],
+    pub total_fee: u128,
+    pub da_block_height: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BundleCost {
     // total cost of the bundle

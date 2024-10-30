@@ -7,7 +7,7 @@ use ports::{
     storage::SequentialFuelBlocks,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        NonEmpty, NonNegative, TransactionState, TryCollectNonEmpty, Utc,
+        NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, TryCollectNonEmpty, Utc,
     },
 };
 use sqlx::{
@@ -687,12 +687,17 @@ impl Postgres {
 
     pub(crate) async fn _update_costs(
         &self,
-        cost_per_tx: Vec<([u8; 32], u128, u64)>,
+        cost_per_tx: Vec<TransactionCostUpdate>,
     ) -> Result<()> {
         // accumulate cost and size contributions per bundle
         let mut bundle_updates: HashMap<i32, BundleCostUpdate> = HashMap::new();
 
-        for (hash, total_fee, da_block_height) in cost_per_tx {
+        for TransactionCostUpdate {
+            tx_hash,
+            total_fee,
+            da_block_height,
+        } in cost_per_tx
+        {
             let row = sqlx::query!(
                 r#"
                 SELECT
@@ -708,7 +713,7 @@ impl Postgres {
                 GROUP BY
                     f.bundle_id
                 "#,
-                hash.as_slice()
+                tx_hash.as_slice()
             )
             .fetch_one(&self.connection_pool)
             .await?;

@@ -13,7 +13,7 @@ use ports::{
     storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        L1Tx, NonEmpty, NonNegative, TransactionState, Utc,
+        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
     },
 };
 pub use postgres::{DbConfig, Postgres};
@@ -144,7 +144,7 @@ impl Storage for Postgres {
             .await?)
     }
 
-    async fn update_costs(&self, cost_per_tx: Vec<([u8; 32], u128, u64)>) -> Result<()> {
+    async fn update_costs(&self, cost_per_tx: Vec<TransactionCostUpdate>) -> Result<()> {
         Ok(self._update_costs(cost_per_tx).await?)
     }
 

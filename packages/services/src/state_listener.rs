@@ -7,7 +7,7 @@ use metrics::{
 use ports::{
     clock::Clock,
     storage::Storage,
-    types::{L1Tx, TransactionState},
+    types::{L1Tx, TransactionCostUpdate, TransactionState},
 };
 use tracing::info;
 
@@ -122,7 +122,11 @@ where
             // st tx to finalized and all txs with the same nonce to failed
             let now = self.clock.now();
             noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Finalized(now)));
-            cost_per_tx.push((tx.hash, tx_response.total_fee(), tx_response.block_number()));
+            cost_per_tx.push(TransactionCostUpdate {
+                tx_hash: tx.hash,
+                total_fee: tx_response.total_fee(),
+                da_block_height: tx_response.block_number(),
+            });
 
             self.metrics.last_finalization_time.set(now.timestamp());
 
