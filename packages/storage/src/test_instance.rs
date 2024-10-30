@@ -193,6 +193,7 @@ impl Storage for DbWithProcess {
                 &self,
                 tx: L1Tx,
                 fragment_ids: NonEmpty<NonNegative<i32>>,
+                created_at: DateTime<Utc>,
             ) -> ports::storage::Result<()>;
             async fn get_non_finalized_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
             async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
@@ -224,6 +225,9 @@ impl state_pruner::port::Storage for DbWithProcess {
                 &self,
                 date: state_pruner::port::DateTime<state_pruner::port::Utc>,
             ) -> services::Result<state_pruner::port::Pruned>;
+            async fn table_sizes(
+                &self,
+            ) -> services::Result<state_pruner::port::TableSizes>;
         }
     }
 }

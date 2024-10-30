@@ -111,8 +111,11 @@ impl Storage for Postgres {
         &self,
         tx: L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
+        created_at: DateTime<Utc>,
     ) -> Result<()> {
-        Ok(self._record_pending_tx(tx, fragment_ids).await?)
+        Ok(self
+            ._record_pending_tx(tx, fragment_ids, created_at)
+            .await?)
     }
 
     async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
@@ -148,8 +151,10 @@ impl Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
+    use clock::TestClock;
     use itertools::Itertools;
     use ports::{
+        clock::Clock,
         storage::{Error, Storage},
         types::{nonempty, CollectNonEmpty},
     };
@@ -401,7 +406,10 @@ mod tests {
         let hash = tx.hash;
         let nonce = tx.nonce;
 
-        storage.record_pending_tx(tx, fragment_ids).await.unwrap();
+        storage
+            .record_pending_tx(tx, fragment_ids, TestClock::default().now())
+            .await
+            .unwrap();
 
         let finalization_time = Utc::now();
 
@@ -762,7 +770,9 @@ mod tests {
             hash,
             ..Default::default()
         };
-        storage.record_pending_tx(tx, fragment_ids).await?;
+        storage
+            .record_pending_tx(tx, fragment_ids, TestClock::default().now())
+            .await?;
 
         // when
         let fragments = storage.fragments_submitted_by_tx(hash).await?;
@@ -792,11 +802,13 @@ mod tests {
             blob_fee: 100,
             ..Default::default()
         };
+
+        let now = TestClock::default().now();
         storage
-            .record_pending_tx(inserted_1, nonempty![fragment_1])
+            .record_pending_tx(inserted_1, nonempty![fragment_1], now)
             .await?;
         storage
-            .record_pending_tx(inserted_2.clone(), nonempty![fragment_2])
+            .record_pending_tx(inserted_2.clone(), nonempty![fragment_2], now)
             .await?;
 
         // when

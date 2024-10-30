@@ -10,7 +10,7 @@ use mocks::l1::TxStatus;
 use ports::{
     l1::FragmentEncoder,
     storage::Storage,
-    types::{CollectNonEmpty, CompressedFuelBlock, DateTime, Fragment, NonEmpty, Utc},
+    types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
 };
 use rand::RngCore;
 use storage::{DbWithProcess, PostgresProcess};
@@ -350,9 +350,32 @@ pub mod mocks {
 
 pub struct Setup {
     db: DbWithProcess,
+    test_clock: TestClock,
 }
 
 impl Setup {
+    pub async fn init() -> Self {
+        let db = PostgresProcess::shared()
+            .await
+            .unwrap()
+            .create_random_db()
+            .await
+            .unwrap();
+
+        Self {
+            db,
+            test_clock: TestClock::default(),
+        }
+    }
+
+    pub fn db(&self) -> DbWithProcess {
+        self.db.clone()
+    }
+
+    pub fn test_clock(&self) -> TestClock {
+        self.test_clock.clone()
+    }
+
     pub async fn send_fragments(&self, eth_tx: [u8; 32]) {
         StateCommitter::new(
             mocks::l1::expects_state_submissions(vec![(None, eth_tx)]),
@@ -365,32 +388,15 @@ impl Setup {
                 gas_bump_timeout: Duration::from_secs(300),
                 tx_max_fee: 1_000_000_000,
             },
-            TestClock::default(),
+            self.test_clock.clone(),
         )
         .run()
         .await
         .unwrap();
     }
 
-    pub async fn init() -> Self {
-        let db = PostgresProcess::shared()
-            .await
-            .unwrap()
-            .create_random_db()
-            .await
-            .unwrap();
-        Self { db }
-    }
-
-    pub fn db(&self) -> DbWithProcess {
-        self.db.clone()
-    }
-
-    pub async fn commit_single_block_bundle(&self, finalization_time: DateTime<Utc>) {
+    pub async fn commit_single_block_bundle(&self) {
         self.insert_fragments(0, 6).await;
-
-        let clock = TestClock::default();
-        clock.set_time(finalization_time);
 
         let tx = [1; 32];
         let l1_mock = mocks::l1::expects_state_submissions(vec![(None, tx)]);
@@ -406,7 +412,7 @@ impl Setup {
                 gas_bump_timeout: Duration::from_secs(300),
                 tx_max_fee: 1_000_000_000,
             },
-            TestClock::default(),
+            self.test_clock.clone(),
         );
         committer.run().await.unwrap();
 
@@ -416,7 +422,7 @@ impl Setup {
             l1_mock,
             self.db(),
             0,
-            clock.clone(),
+            self.test_clock.clone(),
             IntGauge::new("test", "test").unwrap(),
         )
         .run()
@@ -448,7 +454,7 @@ impl Setup {
         let mut bundler = BlockBundler::new(
             fuel_api,
             self.db(),
-            TestClock::default(),
+            self.test_clock.clone(),
             factory,
             BlockBundlerConfig {
                 optimization_time_limit: Duration::ZERO,

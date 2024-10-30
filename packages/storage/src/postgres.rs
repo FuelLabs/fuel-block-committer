@@ -502,18 +502,20 @@ impl Postgres {
         &self,
         submission_tx: ports::types::L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
+        created_at: DateTime<Utc>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
         let row = tables::L1Tx::from(submission_tx);
         let tx_id = sqlx::query!(
-            "INSERT INTO l1_blob_transaction (hash, state, nonce, max_fee, priority_fee, blob_fee) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            "INSERT INTO l1_blob_transaction (hash, state, nonce, max_fee, priority_fee, blob_fee, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
             row.hash,
             i16::from(L1TxState::Pending),
             row.nonce,
             row.max_fee,
             row.priority_fee,
             row.blob_fee,
+            created_at
         )
         .fetch_one(&mut *tx)
         .await?

@@ -115,7 +115,7 @@ where
 
                 let tx_hash = submitted_tx.hash;
                 self.storage
-                    .record_pending_tx(submitted_tx, fragment_ids)
+                    .record_pending_tx(submitted_tx, fragment_ids, self.clock.now())
                     .await?;
 
                 tracing::info!("Submitted fragments {ids} with tx {}", hex::encode(tx_hash));

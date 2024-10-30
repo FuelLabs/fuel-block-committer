@@ -39,6 +39,7 @@ tokio = { workspace = true, optional = true }
 [dev-dependencies]
 hex = { workspace = true }
 ports = { workspace = true, features = ["storage"] }
+clock = { workspace = true, features = ["test-helpers"] }
 rand = { workspace = true, features = ["small_rng"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tokio = { workspace = true }
