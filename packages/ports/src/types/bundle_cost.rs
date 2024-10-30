@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone)]
 pub struct TransactionCostUpdate {
     pub tx_hash: [u8; 32],
     pub total_fee: u128,

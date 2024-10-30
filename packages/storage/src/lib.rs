@@ -845,19 +845,21 @@ mod tests {
             .await
             .unwrap();
 
-        let total_fee = 1000u128;
-        let da_block_height = 5000u64;
-        let cost_per_tx = vec![(hash, total_fee, da_block_height)];
+        let cost_per_tx = TransactionCostUpdate {
+            tx_hash: hash,
+            total_fee: 1000u128,
+            da_block_height: 5000u64,
+        };
 
         // when
-        storage.update_costs(cost_per_tx.clone()).await?;
+        storage.update_costs(vec![cost_per_tx.clone()]).await?;
 
         // then
         let bundle_cost = storage.get_finalized_costs(0, 10).await?;
 
         assert_eq!(bundle_cost.len(), 1);
-        assert_eq!(bundle_cost[0].cost, total_fee);
-        assert_eq!(bundle_cost[0].da_block_height, da_block_height);
+        assert_eq!(bundle_cost[0].cost, cost_per_tx.total_fee);
+        assert_eq!(bundle_cost[0].da_block_height, cost_per_tx.da_block_height);
 
         Ok(())
     }
@@ -899,9 +901,13 @@ mod tests {
         let tx_hash =
             ensure_fragments_have_transaction(storage, fragment_in_db.clone(), state).await;
 
-        let cost_per_tx = vec![(tx_hash, total_fee, da_block_height)];
+        let cost_per_tx = TransactionCostUpdate {
+            tx_hash,
+            total_fee,
+            da_block_height,
+        };
         storage
-            .update_costs(cost_per_tx)
+            .update_costs(vec![cost_per_tx])
             .await
             .expect("cost update shouldn't fail");
 
