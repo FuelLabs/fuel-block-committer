@@ -102,7 +102,6 @@ where
             if current_block_number.saturating_sub(tx_response.block_number())
                 < self.num_blocks_to_finalize
             {
-                dbg!("should not enter IncludedInBlock");
                 // tx included in block but is not yet finalized
                 if tx.state == TransactionState::Pending {
                     // set tx to included and all txs with the same nonce to failed
@@ -125,8 +124,6 @@ where
             self.metrics.last_finalization_time.set(now.timestamp());
 
             info!("blob tx {} finalized", hex::encode(tx.hash));
-
-            dbg!("blob tx {} finalized", hex::encode(tx.hash));
 
             self.metrics
                 .last_eth_block_w_blob

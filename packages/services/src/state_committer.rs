@@ -140,7 +140,6 @@ where
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
         let latest_height = self.fuel_api.latest_height().await?;
-        dbg!(latest_height);
         let starting_height = latest_height.saturating_sub(self.config.lookback_window);
 
         // although we shouldn't know at this layer how many fragments the L1 can accept, we ignore
@@ -175,7 +174,6 @@ where
 
     async fn submit_fragments_if_ready(&self) -> Result<()> {
         if let Some(fragments) = self.next_fragments_to_submit().await? {
-            dbg!(&fragments.iter().map(|f| (f.id, f.bundle_id)).collect_vec());
             if self
                 .should_submit_fragments(fragments.len_nonzero())
                 .await?
@@ -239,10 +237,8 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         if self.storage.has_nonfinalized_txs().await? {
-            dbg!("shouldnt enter");
             self.resubmit_fragments_if_stalled().await?
         } else {
-            dbg!("enter");
             self.submit_fragments_if_ready().await?
         };
 

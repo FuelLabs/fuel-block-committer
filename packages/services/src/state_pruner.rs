@@ -41,8 +41,6 @@ pub mod service {
                 .prune_entries_older_than(self.clock.now() - self.retention)
                 .await?;
 
-            dbg!(&pruned);
-
             let table_sizes = self.storage.table_sizes().await?;
 
             self.metrics.observe_pruned(&pruned);
