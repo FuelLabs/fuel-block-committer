@@ -1789,7 +1789,7 @@ checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
 
 [[package]]
 name = "clock"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "clock",
  "ports",
@@ -2466,7 +2466,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "alloy",
  "anyhow",
@@ -2641,7 +2641,7 @@ dependencies = [
 
 [[package]]
 name = "eth"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "alloy",
  "async-trait",
@@ -2809,7 +2809,7 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fuel"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "delegate",
  "fuel-core-client",
@@ -2835,7 +2835,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -2863,7 +2863,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer-encoding"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "alloy",
  "anyhow",
@@ -4116,7 +4116,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "metrics"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "prometheus",
 ]
@@ -4594,7 +4594,7 @@ dependencies = [
 
 [[package]]
 name = "ports"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "alloy",
  "async-trait",
@@ -5612,7 +5612,7 @@ dependencies = [
 
 [[package]]
 name = "services"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bytesize",
  "clock",
@@ -6009,7 +6009,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "storage"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "delegate",
  "hex",
