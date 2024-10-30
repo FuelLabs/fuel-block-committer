@@ -11,6 +11,12 @@ impl Clock for SystemClock {
     }
 }
 
+impl services::state_pruner::port::Clock for SystemClock {
+    fn now(&self) -> services::state_pruner::port::DateTime<services::state_pruner::port::Utc> {
+        Utc::now()
+    }
+}
+
 #[cfg(feature = "test-helpers")]
 mod test_helpers {
     use std::{
@@ -53,6 +59,16 @@ mod test_helpers {
     impl Clock for TestClock {
         fn now(&self) -> ports::types::DateTime<ports::types::Utc> {
             DateTime::<Utc>::from_timestamp_millis(
+                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .expect("DateTime<Utc> to be in range")
+        }
+    }
+
+    impl services::state_pruner::port::Clock for TestClock {
+        fn now(&self) -> services::state_pruner::port::DateTime<services::state_pruner::port::Utc> {
+            services::state_pruner::port::DateTime::<services::state_pruner::port::Utc>::
+            from_timestamp_millis(
                 self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
             )
             .expect("DateTime<Utc> to be in range")

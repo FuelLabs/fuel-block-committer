@@ -115,13 +115,13 @@ pub mod mocks {
         }
 
         pub fn expects_state_submissions(
-            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, [u8; 32])>,
+            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, [u8; 32], u32)>,
         ) -> ports::l1::MockApi {
             let mut sequence = Sequence::new();
 
             let mut l1_mock = ports::l1::MockApi::new();
 
-            for (fragment, tx_id) in expectations {
+            for (fragment, tx_id, nonce) in expectations {
                 l1_mock
                     .expect_submit_state_fragments()
                     .withf(move |data, _previous_tx| {
@@ -137,6 +137,7 @@ pub mod mocks {
                             Ok((
                                 ports::types::L1Tx {
                                     hash: tx_id,
+                                    nonce,
                                     ..Default::default()
                                 },
                                 FragmentsSubmitted {
@@ -376,9 +377,9 @@ impl Setup {
         self.test_clock.clone()
     }
 
-    pub async fn send_fragments(&self, eth_tx: [u8; 32]) {
+    pub async fn send_fragments(&self, eth_tx: [u8; 32], eth_nonce: u32) {
         StateCommitter::new(
-            mocks::l1::expects_state_submissions(vec![(None, eth_tx)]),
+            mocks::l1::expects_state_submissions(vec![(None, eth_tx, eth_nonce)]),
             mocks::fuel::latest_height_is(0),
             self.db(),
             services::StateCommitterConfig {
@@ -396,11 +397,14 @@ impl Setup {
     }
 
     pub async fn commit_single_block_bundle(&self) {
-        self.insert_fragments(0, 6).await;
+        self.commit_block_bundle([1; 32], 0, 0).await
+    }
 
-        let tx = [1; 32];
-        let l1_mock = mocks::l1::expects_state_submissions(vec![(None, tx)]);
-        let fuel_mock = mocks::fuel::latest_height_is(0);
+    pub async fn commit_block_bundle(&self, eth_tx: [u8; 32], eth_nonce: u32, height: u32) {
+        self.insert_fragments(height, 6).await;
+
+        let l1_mock = mocks::l1::expects_state_submissions(vec![(None, eth_tx, eth_nonce)]);
+        let fuel_mock = mocks::fuel::latest_height_is(height);
         let mut committer = StateCommitter::new(
             l1_mock,
             fuel_mock,
@@ -416,7 +420,7 @@ impl Setup {
         );
         committer.run().await.unwrap();
 
-        let l1_mock = mocks::l1::txs_finished(0, 0, [(tx, TxStatus::Success)]);
+        let l1_mock = mocks::l1::txs_finished(0, 0, [(eth_tx, TxStatus::Success)]);
 
         StateListener::new(
             l1_mock,
@@ -447,6 +451,7 @@ impl Setup {
 
         let mut fuel_api = ports::fuel::MockApi::new();
         let latest_height = fuel_blocks.last().height;
+        assert_eq!(height, latest_height);
         fuel_api
             .expect_latest_height()
             .returning(move || Box::pin(async move { Ok(latest_height) }));
@@ -469,7 +474,7 @@ impl Setup {
 
         let fragments = self
             .db
-            .oldest_nonfinalized_fragments(0, amount)
+            .oldest_nonfinalized_fragments(height, amount)
             .await
             .unwrap();
         assert_eq!(fragments.len(), amount);

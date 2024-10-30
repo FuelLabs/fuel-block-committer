@@ -10,47 +10,41 @@ impl state_pruner::port::Storage for Postgres {
             r#"
             WITH
 
-            -- Step 1: Identify old transactions
-            old_transactions AS (
-                SELECT id FROM l1_blob_transaction
+            -- Step 1: Delete from l1_blob_transaction
+            deleted_blob_transactions AS (
+                DELETE FROM l1_blob_transaction
                 WHERE created_at < $1
+                RETURNING id
             ),
 
             -- Step 2: Delete from l1_transaction_fragments and collect fragment_ids
             deleted_transaction_fragments AS (
                 DELETE FROM l1_transaction_fragments
-                WHERE transaction_id IN (SELECT id FROM old_transactions)
+                WHERE transaction_id IN (SELECT id FROM deleted_blob_transactions)
                 RETURNING fragment_id
             ),
 
-            -- Step 3: Delete from l1_blob_transaction
-            deleted_blob_transactions AS (
-                DELETE FROM l1_blob_transaction
-                WHERE id IN (SELECT id FROM old_transactions)
-                RETURNING id
-            ),
-
-            -- Step 4: Delete unreferenced fragments and collect bundle IDs
+            -- Step 3: Delete unreferenced fragments and collect bundle IDs
             deleted_fragments AS (
                 DELETE FROM l1_fragments
                 WHERE id IN (SELECT fragment_id FROM deleted_transaction_fragments)
                 RETURNING id
             ),
 
-            -- Step 5: Build updated_fragments that represent the state of l1_fragments after deletions
+            -- Step 4: Build updated_fragments that represent the state of l1_fragments after deletions
             updated_fragments AS (
-                SELECT * FROM l1_fragments
+                SELECT bundle_id FROM l1_fragments
                 WHERE id NOT IN (SELECT id FROM deleted_fragments)
             ),
 
-            -- Step 6: Delete unreferenced bundles and collect start and end heights
+            -- Step 5: Delete unreferenced bundles and collect start and end heights
             deleted_bundles AS (
                 DELETE FROM bundles
                 WHERE id NOT IN (SELECT bundle_id FROM updated_fragments)
                 RETURNING start_height, end_height
             ),
 
-            -- Step 7: Delete corresponding fuel_blocks entries
+            -- Step 6: Delete corresponding fuel_blocks entries
             deleted_fuel_blocks AS (
                 DELETE FROM fuel_blocks
                 WHERE EXISTS (

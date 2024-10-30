@@ -3,40 +3,42 @@ pub mod service {
         prometheus::{core::Collector, IntGauge},
         RegistersMetrics,
     };
-    use ports::types::Utc; //TODO: do not use from ports
 
     use crate::{Result, Runner};
     use std::time::Duration;
 
     use super::create_int_guage;
 
-    pub struct StatePruner<Db> {
+    pub struct StatePruner<Db, Clock> {
         storage: Db,
+        clock: Clock,
         retention: Duration,
         metrics: Metrics,
     }
 
-    impl<Db> StatePruner<Db>
+    impl<Db, Clock> StatePruner<Db, Clock>
     where
         Db: crate::state_pruner::port::Storage,
     {
-        pub fn new(storage: Db, retention: Duration) -> Self {
+        pub fn new(storage: Db, clock: Clock, retention: Duration) -> Self {
             Self {
                 storage,
+                clock,
                 retention,
                 metrics: Metrics::default(),
             }
         }
     }
 
-    impl<Db> StatePruner<Db>
+    impl<Db, Clock> StatePruner<Db, Clock>
     where
         Db: crate::state_pruner::port::Storage,
+        Clock: crate::state_pruner::port::Clock,
     {
         pub async fn prune(&self) -> Result<()> {
             let pruned = self
                 .storage
-                .prune_entries_older_than(Utc::now() - self.retention)
+                .prune_entries_older_than(self.clock.now() - self.retention)
                 .await?;
 
             dbg!(&pruned);
@@ -59,9 +61,10 @@ pub mod service {
         }
     }
 
-    impl<Db> Runner for StatePruner<Db>
+    impl<Db, Clock> Runner for StatePruner<Db, Clock>
     where
-        Db: crate::state_pruner::port::Storage + Clone + Send + Sync,
+        Db: crate::state_pruner::port::Storage + Send + Sync,
+        Clock: crate::state_pruner::port::Clock + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {
             self.prune().await
@@ -134,7 +137,7 @@ pub mod service {
         }
     }
 
-    impl<Db> RegistersMetrics for StatePruner<Db> {
+    impl<Db, Clock> RegistersMetrics for StatePruner<Db, Clock> {
         fn metrics(&self) -> Vec<Box<dyn Collector>> {
             vec![
                 Box::new(self.metrics.pruned.blob_transactions.clone()),
@@ -254,6 +257,10 @@ pub mod port {
     pub trait Storage: Send + Sync {
         async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<Pruned>;
         async fn table_sizes(&self) -> Result<TableSizes>;
+    }
+
+    pub trait Clock {
+        fn now(&self) -> DateTime<Utc>;
     }
 }
 

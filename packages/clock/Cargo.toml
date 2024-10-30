@@ -11,6 +11,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 ports = { workspace = true, features = ["clock"] }
+services = { workspace = true }
 
 [dev-dependencies]
 clock = { workspace = true, features = ["test-helpers"] }
