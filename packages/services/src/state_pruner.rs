@@ -47,12 +47,8 @@ pub mod service {
             self.metrics.observe_table_sizes(&table_sizes);
 
             // TODO: @hal3e
+            // - add tests for contract tx and submissions
             // - refactor ports to every service
-            // - extend Postrgess to have Clock port and use this time when writing to the database
-            // - extend Storage trait to include the prune method
-            // - update Postgress to use new method
-            // - call method here
-            //
             // - configure timeout to run this service
 
             Ok(())
@@ -224,7 +220,7 @@ pub mod service {
 }
 
 pub mod port {
-    pub use ports::types::{DateTime, Utc}; //TODO: do not use from ports
+    pub use ports::types::{DateTime, Utc}; //TODO: @hal3e do not use from ports
 
     use crate::Result;
 
