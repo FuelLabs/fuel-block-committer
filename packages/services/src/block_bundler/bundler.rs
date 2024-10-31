@@ -139,7 +139,7 @@ pub struct Bundler<FragmentEncoder> {
 }
 
 impl<T> Bundler<T> {
-    fn new(
+    pub fn new(
         cost_calculator: T,
         blocks: SequentialFuelBlocks,
         bundle_encoder: bundle::Encoder,
@@ -336,142 +336,8 @@ fn create_proposal(
 mod tests {
     use std::num::NonZeroUsize;
 
-    use bundle::CompressionLevel;
-    use eth::BlobEncoder;
-    use ports::types::nonempty;
-
     use super::*;
-    use crate::test_utils::{
-        bundle_and_encode_into_blobs,
-        mocks::fuel::{generate_block, generate_storage_block_sequence},
-    };
 
-    #[tokio::test]
-    async fn finishing_will_advance_if_not_called_at_least_once() {
-        // given
-        let blocks = generate_storage_block_sequence(0..=10, 1000);
-
-        let bundler = Bundler::new(
-            BlobEncoder,
-            blocks.clone(),
-            bundle::Encoder::new(CompressionLevel::Disabled),
-            NonZeroUsize::new(1).unwrap(),
-            1u16.into(),
-        );
-
-        // when
-        let bundle = bundler.finish().await.unwrap();
-
-        // then
-        let expected_fragments = bundle_and_encode_into_blobs(blocks.into_inner(), 1);
-        assert!(!bundle.metadata.known_to_be_optimal);
-        assert_eq!(bundle.metadata.block_heights, 0..=10);
-        assert_eq!(bundle.fragments, expected_fragments);
-    }
-
-    #[tokio::test]
-    async fn will_provide_a_suboptimal_bundle_if_not_advanced_enough() -> Result<()> {
-        // given
-        let stops_at_blob_boundary = generate_block(0, enough_bytes_to_almost_fill_a_blob());
-
-        let requires_new_blob_but_doesnt_utilize_it =
-            generate_block(1, enough_bytes_to_almost_fill_a_blob() / 3);
-
-        let blocks: SequentialFuelBlocks = nonempty![
-            stops_at_blob_boundary,
-            requires_new_blob_but_doesnt_utilize_it
-        ]
-        .try_into()
-        .unwrap();
-
-        let mut bundler = Bundler::new(
-            BlobEncoder,
-            blocks.clone(),
-            bundle::Encoder::new(CompressionLevel::Disabled),
-            NonZeroUsize::new(1).unwrap(),
-            1u16.into(),
-        );
-
-        bundler.advance(1.try_into().unwrap()).await?;
-
-        let non_optimal_bundle = bundler.clone().finish().await?;
-        bundler.advance(1.try_into().unwrap()).await?;
-
-        // when
-        let optimal_bundle = bundler.finish().await?;
-
-        // then
-        // Non-optimal bundle should include both blocks
-        assert_eq!(non_optimal_bundle.metadata.block_heights, 0..=1);
-        assert!(!non_optimal_bundle.metadata.known_to_be_optimal);
-
-        // Optimal bundle should include only the first block
-        assert_eq!(optimal_bundle.metadata.block_heights, 0..=0);
-        assert!(optimal_bundle.metadata.known_to_be_optimal);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn tolerates_step_too_large() -> Result<()> {
-        // given
-
-        let blocks = generate_storage_block_sequence(0..=2, 300);
-
-        let step_size = NonZeroUsize::new(5).unwrap(); // Step size larger than number of blocks
-
-        let mut bundler = Bundler::new(
-            BlobEncoder,
-            blocks.clone(),
-            bundle::Encoder::new(CompressionLevel::Disabled),
-            step_size,
-            1u16.into(),
-        );
-
-        while bundler.advance(1.try_into().unwrap()).await? {}
-
-        // when
-        let bundle = bundler.finish().await?;
-
-        // then
-        assert!(bundle.metadata.known_to_be_optimal);
-        assert_eq!(bundle.metadata.block_heights, 0..=2);
-        assert_eq!(bundle.metadata.optimization_attempts, 3); // 3 then 1 then 2
-
-        Ok(())
-    }
-
-    // when the smaller bundle doesn't utilize the whole blob, for example
-    #[tokio::test]
-    async fn bigger_bundle_will_have_same_storage_gas_usage() -> Result<()> {
-        // given
-        let blocks = nonempty![
-            generate_block(0, 100),
-            generate_block(1, enough_bytes_to_almost_fill_a_blob())
-        ];
-
-        let mut bundler = Bundler::new(
-            BlobEncoder,
-            blocks.clone().try_into().unwrap(),
-            bundle::Encoder::new(CompressionLevel::Disabled),
-            NonZeroUsize::new(1).unwrap(), // Default step size
-            1u16.into(),
-        );
-        while bundler.advance(1.try_into().unwrap()).await? {}
-
-        // when
-        let bundle = bundler.finish().await?;
-
-        // then
-        assert!(bundle.metadata.known_to_be_optimal);
-        assert_eq!(bundle.metadata.block_heights, 0..=1);
-        Ok(())
-    }
-
-    fn enough_bytes_to_almost_fill_a_blob() -> usize {
-        let encoding_overhead = BlobEncoder::FRAGMENT_SIZE as f64 * 0.04;
-        BlobEncoder::FRAGMENT_SIZE - encoding_overhead as usize
-    }
     #[test]
     fn generates_steps_as_expected() {
         // given

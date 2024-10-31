@@ -108,7 +108,7 @@ async fn will_fetch_and_submit_missed_block() {
     let latest_block = given_a_block(5, &secret_key);
     let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
 
-    let l1 = expects_contract_submission(missed_block, [0; 32]);
+    let l1 = expects_contract_submission(missed_block, [3; 32]);
     setup.add_submissions(vec![0, 2]).await;
 
     let mut block_committer = BlockCommitter::new(
@@ -167,7 +167,7 @@ async fn propagates_block_if_epoch_reached() {
     let fuel_adapter = given_fetcher(vec![block.clone()]);
 
     setup.add_submissions(vec![0, 2]).await;
-    let l1 = expects_contract_submission(block, [0; 32]);
+    let l1 = expects_contract_submission(block, [1; 32]);
     let mut block_committer = BlockCommitter::new(
         l1,
         setup.db(),
