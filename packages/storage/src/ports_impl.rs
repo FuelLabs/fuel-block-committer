@@ -58,6 +58,26 @@ impl state_pruner::port::Storage for Postgres {
                     WHERE fuel_blocks.height BETWEEN deleted_bundles.start_height AND deleted_bundles.end_height
                 )
                 RETURNING height
+            ),
+
+            -- Delete from l1_transaction
+            deleted_transactions AS (
+                DELETE FROM l1_transaction
+                WHERE created_at < $1
+                RETURNING id
+            ),
+
+            -- Build updated_contract transaction that represent the state after deletions
+            updated_transactions AS (
+                SELECT submission_id FROM l1_transaction
+                WHERE id NOT IN (SELECT id FROM deleted_transactions)
+            ),
+
+            -- Delete from l1_fuel_block_submission
+            deleted_submissions AS (
+                DELETE FROM l1_fuel_block_submission
+                WHERE id NOT IN (SELECT submission_id FROM updated_transactions)
+                RETURNING id
             )
 
             SELECT
@@ -65,7 +85,9 @@ impl state_pruner::port::Storage for Postgres {
                 (SELECT COUNT(*) FROM deleted_transaction_fragments) AS deleted_transaction_fragments,
                 (SELECT COUNT(*) FROM deleted_fragments) AS deleted_fragments,
                 (SELECT COUNT(*) FROM deleted_bundles) AS deleted_bundles,
-                (SELECT COUNT(*) FROM deleted_fuel_blocks) AS deleted_fuel_blocks;
+                (SELECT COUNT(*) FROM deleted_fuel_blocks) AS deleted_fuel_blocks,
+                (SELECT COUNT(*) FROM deleted_transactions) AS deleted_contract_transactions,
+                (SELECT COUNT(*) FROM deleted_submissions) AS deleted_contract_submissions;
             "#,
            date
         )
@@ -79,8 +101,9 @@ impl state_pruner::port::Storage for Postgres {
                 as u32,
             bundles: response.deleted_bundles.unwrap_or_default() as u32,
             blocks: response.deleted_fuel_blocks.unwrap_or_default() as u32,
-            contract_transactions: 0,
-            contract_submisions: 0,
+            contract_transactions: response.deleted_contract_transactions.unwrap_or_default()
+                as u32,
+            contract_submisions: response.deleted_contract_submissions.unwrap_or_default() as u32,
         })
     }
 

@@ -6305,6 +6305,7 @@ dependencies = [
  "delegate",
  "eth",
  "fuel-block-committer-encoding",
+ "fuel-crypto",
  "futures",
  "itertools 0.13.0",
  "metrics",
@@ -6313,6 +6314,7 @@ dependencies = [
  "rand",
  "services",
  "storage",
+ "tai64",
 ]
 
 [[package]]

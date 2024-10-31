@@ -5,14 +5,17 @@ use std::{ops::RangeInclusive, time::Duration};
 use clock::TestClock;
 use eth::BlobEncoder;
 use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
+use fuel_crypto::{Message, SecretKey, Signature};
 use metrics::prometheus::IntGauge;
+use mockall::predicate::eq;
 use mocks::l1::TxStatus;
 use ports::{
+    fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
     l1::FragmentEncoder,
     storage::Storage,
-    types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
+    types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
 };
-use rand::RngCore;
+use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
 use storage::{DbWithProcess, PostgresProcess};
 
 use services::Runner;
@@ -112,6 +115,50 @@ pub mod mocks {
         pub enum TxStatus {
             Success,
             Failure,
+        }
+
+        pub fn expects_contract_submission(block: ports::fuel::FuelBlock) -> FullL1Mock {
+            let mut l1 = FullL1Mock::new();
+
+            let submission_tx = BlockSubmissionTx {
+                hash: [1u8; 32],
+                ..Default::default()
+            };
+            l1.contract
+                .expect_submit()
+                .withf(move |hash, height| *hash == *block.id && *height == block.header.height)
+                .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }))
+                .once();
+
+            l1.api
+                .expect_get_block_number()
+                .return_once(move || Box::pin(async { Ok(0u32.into()) }));
+
+            l1
+        }
+
+        pub fn expects_transaction_response(
+            block_number: u32,
+            tx_hash: [u8; 32],
+            response: Option<TransactionResponse>,
+        ) -> FullL1Mock {
+            let mut l1 = FullL1Mock::new();
+
+            l1.api
+                .expect_get_block_number()
+                .returning(move || Box::pin(async move { Ok(block_number.into()) }));
+
+            l1.api
+                .expect_get_transaction_response()
+                .with(eq(tx_hash))
+                .returning(move |_| {
+                    let response = response.clone();
+                    Box::pin(async move { Ok(response) })
+                });
+
+            l1.contract.expect_submit().never();
+
+            l1
         }
 
         pub fn expects_state_submissions(
@@ -270,6 +317,7 @@ pub mod mocks {
 
         use futures::{stream, StreamExt};
         use itertools::Itertools;
+        use mockall::predicate::eq;
         use ports::{
             storage::SequentialFuelBlocks,
             types::{CollectNonEmpty, CompressedFuelBlock, NonEmpty},
@@ -345,6 +393,32 @@ pub mod mocks {
                 .expect_latest_height()
                 .returning(move || Box::pin(async move { Ok(height) }));
             fuel_mock
+        }
+
+        pub fn given_fetcher(
+            available_blocks: Vec<ports::fuel::FuelBlock>,
+        ) -> ports::fuel::MockApi {
+            let mut fetcher = ports::fuel::MockApi::new();
+            for block in available_blocks.clone() {
+                fetcher
+                    .expect_block_at_height()
+                    .with(eq(block.header.height))
+                    .returning(move |_| {
+                        let block = block.clone();
+                        Box::pin(async move { Ok(Some(block)) })
+                    });
+            }
+            if let Some(block) = available_blocks
+                .into_iter()
+                .max_by_key(|el| el.header.height)
+            {
+                fetcher.expect_latest_block().returning(move || {
+                    let block = block.clone();
+                    Box::pin(async { Ok(block) })
+                });
+            }
+
+            fetcher
         }
     }
 }
@@ -510,6 +584,29 @@ impl Setup {
             }
         }
     }
+
+    pub fn given_incomplete_submission(block_height: u32) -> BlockSubmission {
+        let mut submission: BlockSubmission = rand::thread_rng().gen();
+        submission.block_height = block_height;
+        submission.completed = false;
+
+        submission
+    }
+
+    // TODO: we should use the block committer here to insert the submissions
+    pub async fn add_submissions(&self, pending_submissions: Vec<u32>) {
+        for height in pending_submissions {
+            let submission_tx = ports::types::BlockSubmissionTx {
+                hash: [height as u8; 32],
+                nonce: height,
+                ..Default::default()
+            };
+            self.db
+                .record_block_submission(submission_tx, Self::given_incomplete_submission(height))
+                .await
+                .unwrap();
+        }
+    }
 }
 
 pub enum Blocks {
@@ -517,4 +614,79 @@ pub enum Blocks {
         range: RangeInclusive<u32>,
         data_size: usize,
     },
+}
+
+// TODO: decide if we need to move them somewhere
+pub fn given_fetcher(available_blocks: Vec<FuelBlock>) -> ports::fuel::MockApi {
+    let mut fetcher = ports::fuel::MockApi::new();
+    for block in available_blocks.clone() {
+        fetcher
+            .expect_block_at_height()
+            .with(eq(block.header.height))
+            .returning(move |_| {
+                let block = block.clone();
+                Box::pin(async move { Ok(Some(block)) })
+            });
+    }
+    if let Some(block) = available_blocks
+        .into_iter()
+        .max_by_key(|el| el.header.height)
+    {
+        fetcher.expect_latest_block().returning(move || {
+            let block = block.clone();
+            Box::pin(async { Ok(block) })
+        });
+    }
+
+    fetcher
+}
+
+fn given_header(height: u32) -> FuelHeader {
+    let application_hash = "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
+        .parse()
+        .unwrap();
+
+    FuelHeader {
+        id: Default::default(),
+        da_height: Default::default(),
+        consensus_parameters_version: Default::default(),
+        state_transition_bytecode_version: Default::default(),
+        transactions_count: Default::default(),
+        message_receipt_count: Default::default(),
+        transactions_root: Default::default(),
+        message_outbox_root: Default::default(),
+        event_inbox_root: Default::default(),
+        height,
+        prev_root: Default::default(),
+        time: tai64::Tai64(0),
+        application_hash,
+    }
+}
+
+pub fn given_secret_key() -> SecretKey {
+    let mut rng = StdRng::seed_from_u64(42);
+
+    SecretKey::random(&mut rng)
+}
+
+pub fn given_a_block(height: u32, secret_key: &SecretKey) -> FuelBlock {
+    let header = given_header(height);
+
+    let mut hasher = fuel_crypto::Hasher::default();
+    hasher.input(header.prev_root.as_ref());
+    hasher.input(header.height.to_be_bytes());
+    hasher.input(header.time.0.to_be_bytes());
+    hasher.input(header.application_hash.as_ref());
+
+    let id = FuelBlockId::from(hasher.digest());
+    let id_message = Message::from_bytes(*id);
+    let signature = Signature::sign(secret_key, &id_message);
+
+    FuelBlock {
+        id,
+        header,
+        consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
+        transactions: vec![],
+        block_producer: Some(secret_key.public_key()),
+    }
 }
