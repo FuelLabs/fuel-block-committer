@@ -26,7 +26,7 @@ pub struct Config {
     pub lookback_window: u32,
 }
 
-#[cfg(test)]
+#[cfg(feature = "test-helpers")]
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -266,26 +266,19 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use bundler::Metadata;
-    use clock::TestClock;
-    use eth::BlobEncoder;
-    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
-    use itertools::Itertools;
-    use ports::{
-        storage::SequentialFuelBlocks,
-        types::{nonempty, CollectNonEmpty, Fragment, NonEmpty, NonNegative},
-    };
+#[cfg(feature = "test-helpers")]
+mod test_helpers {
+    use std::num::NonZeroUsize;
+
+    use ports::{storage::SequentialFuelBlocks, types::NonNegative};
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,
     };
 
-    use super::*;
-    use crate::test_utils::{self, bundle_and_encode_into_blobs, mocks, Blocks};
+    use super::bundler::{Bundle, BundleProposal, BundlerFactory};
 
-    struct ControllableBundler {
+    pub struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,
         notify_advanced: UnboundedSender<()>,
         proposal: Option<BundleProposal>,
@@ -310,20 +303,20 @@ mod tests {
     }
 
     impl Bundle for ControllableBundler {
-        async fn advance(&mut self, _: NonZeroUsize) -> Result<bool> {
+        async fn advance(&mut self, _: NonZeroUsize) -> crate::Result<bool> {
             self.can_advance.recv().await.unwrap();
             self.notify_advanced.send(()).unwrap();
             Ok(true)
         }
 
-        async fn finish(self) -> Result<BundleProposal> {
+        async fn finish(self) -> crate::Result<BundleProposal> {
             Ok(self.proposal.expect(
                 "proposal to be set inside controllable bundler if it ever was meant to finish",
             ))
         }
     }
 
-    struct ControllableBundlerFactory {
+    pub struct ControllableBundlerFactory {
         bundler: Mutex<Option<ControllableBundler>>,
     }
 
@@ -350,6 +343,29 @@ mod tests {
             self.bundler.lock().await.take().unwrap()
         }
     }
+}
+
+#[cfg(feature = "test-helpers")]
+pub use test_helpers::ControllableBundlerFactory;
+
+#[cfg(test)]
+mod tests {
+    use bundler::Metadata;
+    use clock::TestClock;
+    use eth::BlobEncoder;
+    use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
+    use itertools::Itertools;
+    use ports::{
+        storage::SequentialFuelBlocks,
+        types::{nonempty, CollectNonEmpty, Fragment, NonEmpty, NonNegative},
+    };
+    use tokio::sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        Mutex,
+    };
+
+    use super::*;
+    use crate::test_utils::{self, bundle_and_encode_into_blobs, mocks, Blocks};
 
     fn default_bundler_factory() -> bundler::Factory<BlobEncoder> {
         bundler::Factory::new(

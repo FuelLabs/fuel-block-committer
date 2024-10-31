@@ -4,7 +4,7 @@ use ports::{
 };
 use services::{BlockCommitter, Runner};
 use test_helpers::{
-    given_a_block, given_fetcher, given_secret_key,
+    mocks::fuel::{given_a_block, given_fetcher, given_secret_key},
     mocks::l1::{expects_contract_submission, expects_transaction_response, FullL1Mock},
 };
 

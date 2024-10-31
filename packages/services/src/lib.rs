@@ -11,6 +11,11 @@ mod wallet_balance_tracker;
 pub use block_bundler::{
     bundler::Factory as BundlerFactory, BlockBundler, Config as BlockBundlerConfig,
 };
+#[cfg(feature = "test-helpers")]
+pub use block_bundler::{
+    bundler::{BundleProposal, Metadata},
+    ControllableBundlerFactory,
+};
 pub use block_committer::BlockCommitter;
 pub use block_importer::BlockImporter;
 pub use health_reporter::HealthReporter;
