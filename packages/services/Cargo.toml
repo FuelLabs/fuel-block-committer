@@ -12,6 +12,7 @@ rust-version = { workspace = true }
 [dependencies]
 bytesize = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
+fuel-crypto = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }

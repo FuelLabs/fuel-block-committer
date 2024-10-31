@@ -317,7 +317,7 @@ fn create_proposal(
 
     let compressed_data = bundle_encoder
         .encode(bundle::Bundle::V1(BundleV1 { blocks }))
-        .unwrap();
+        .map_err(|e| crate::Error::Other(e.to_string()))?;
 
     let compressed_data = NonEmpty::from_vec(compressed_data)
         .ok_or_else(|| crate::Error::Other("bundle encoder returned zero bytes".to_string()))?;
