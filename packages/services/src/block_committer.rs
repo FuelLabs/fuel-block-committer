@@ -64,7 +64,9 @@ where
             .submit(*fuel_block.id, fuel_block.header.height)
             .await?;
         tx.submission_id = submission.id;
-        self.storage.record_block_submission(tx, submission).await?;
+        self.storage
+            .record_block_submission(tx, submission, self.clock.now())
+            .await?;
 
         info!("submitted {fuel_block:?}!");
 

@@ -172,7 +172,12 @@ impl Storage for DbWithProcess {
     delegate! {
         to self.db {
             async fn next_bundle_id(&self) -> ports::storage::Result<NonNegative<i32>>;
-            async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> ports::storage::Result<NonNegative<i32>>;
+            async fn record_block_submission(
+                &self,
+                submission_tx: BlockSubmissionTx,
+                submission: BlockSubmission,
+                created_at: DateTime<Utc>,
+            ) -> ports::storage::Result<NonNegative<i32>>;
             async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> ports::storage::Result<Vec<BlockSubmissionTx>>;
             async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<BlockSubmission>;
             async fn submission_w_latest_block(&self) -> ports::storage::Result<Option<BlockSubmission>>;

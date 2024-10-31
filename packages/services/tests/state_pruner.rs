@@ -8,13 +8,15 @@ async fn not_pruning_until_retention_exceeded() -> services::Result<()> {
     let setup = test_helpers::Setup::init().await;
     let test_clock = setup.test_clock();
 
-    setup.commit_block_bundle([0; 32], 0, 0).await;
+    setup.submit_contract_transaction(10, [1; 32]).await;
+    setup.commit_block_bundle([1; 32], 0, 0).await;
     test_clock.advance_time(Duration::from_secs(1));
 
-    setup.commit_block_bundle([1; 32], 1, 1).await;
+    setup.commit_block_bundle([2; 32], 1, 1).await;
     test_clock.advance_time(Duration::from_secs(1));
 
-    setup.commit_block_bundle([2; 32], 2, 2).await;
+    setup.commit_block_bundle([3; 32], 2, 2).await;
+    setup.submit_contract_transaction(20, [4; 32]).await;
 
     let table_sizes = setup.db().table_sizes().await?;
     assert_eq!(table_sizes.blob_transactions, 3);
@@ -22,6 +24,8 @@ async fn not_pruning_until_retention_exceeded() -> services::Result<()> {
     assert_eq!(table_sizes.transaction_fragments, 18);
     assert_eq!(table_sizes.bundles, 3);
     assert_eq!(table_sizes.blocks, 3);
+    assert_eq!(table_sizes.contract_transactions, 2);
+    assert_eq!(table_sizes.contract_submisions, 2);
 
     let mut pruner = state_pruner::service::StatePruner::new(
         setup.db(),
@@ -39,6 +43,8 @@ async fn not_pruning_until_retention_exceeded() -> services::Result<()> {
     assert_eq!(table_sizes.transaction_fragments, 18);
     assert_eq!(table_sizes.bundles, 3);
     assert_eq!(table_sizes.blocks, 3);
+    assert_eq!(table_sizes.contract_transactions, 2);
+    assert_eq!(table_sizes.contract_submisions, 2);
 
     Ok(())
 }
@@ -49,13 +55,15 @@ async fn prune_old_transactions() -> services::Result<()> {
     let setup = test_helpers::Setup::init().await;
     let test_clock = setup.test_clock();
 
-    setup.commit_block_bundle([0; 32], 0, 0).await;
+    setup.submit_contract_transaction(10, [0; 32]).await;
+    setup.commit_block_bundle([1; 32], 0, 0).await;
     test_clock.advance_time(Duration::from_secs(10));
 
-    setup.commit_block_bundle([1; 32], 1, 1).await;
+    setup.commit_block_bundle([2; 32], 1, 1).await;
     test_clock.advance_time(Duration::from_secs(10));
 
-    setup.commit_block_bundle([2; 32], 2, 2).await;
+    setup.commit_block_bundle([3; 32], 2, 2).await;
+    setup.submit_contract_transaction(20, [4; 32]).await;
 
     let table_sizes = setup.db().table_sizes().await?;
     assert_eq!(table_sizes.blob_transactions, 3);
@@ -63,6 +71,8 @@ async fn prune_old_transactions() -> services::Result<()> {
     assert_eq!(table_sizes.transaction_fragments, 18);
     assert_eq!(table_sizes.bundles, 3);
     assert_eq!(table_sizes.blocks, 3);
+    assert_eq!(table_sizes.contract_transactions, 2);
+    assert_eq!(table_sizes.contract_submisions, 2);
 
     let mut pruner = state_pruner::service::StatePruner::new(
         setup.db(),
@@ -80,6 +90,8 @@ async fn prune_old_transactions() -> services::Result<()> {
     assert_eq!(table_sizes.transaction_fragments, 6);
     assert_eq!(table_sizes.bundles, 1);
     assert_eq!(table_sizes.blocks, 1);
+    assert_eq!(table_sizes.contract_transactions, 1);
+    assert_eq!(table_sizes.contract_submisions, 1);
 
     Ok(())
 }

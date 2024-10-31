@@ -145,6 +145,7 @@ pub trait Storage: Send + Sync {
         &self,
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
+        created_at: DateTime<Utc>,
     ) -> Result<NonNegative<i32>>;
     async fn get_pending_block_submission_txs(
         &self,
@@ -204,7 +205,12 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
     delegate! {
         to (**self) {
                 async fn next_bundle_id(&self) -> Result<NonNegative<i32>>;
-                async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> Result<NonNegative<i32>>;
+                async fn record_block_submission(
+                    &self,
+                    submission_tx: BlockSubmissionTx,
+                    submission: BlockSubmission,
+                    created_at: DateTime<Utc>,
+                ) -> Result<NonNegative<i32>>;
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
@@ -256,7 +262,12 @@ impl<T: Storage + Send + Sync> Storage for &T {
     delegate! {
         to (**self) {
                 async fn next_bundle_id(&self) -> Result<NonNegative<i32>>;
-                async fn record_block_submission(&self, submission_tx: BlockSubmissionTx, submission: BlockSubmission) -> Result<NonNegative<i32>>;
+                async fn record_block_submission(
+                    &self,
+                    submission_tx: BlockSubmissionTx,
+                    submission: BlockSubmission,
+                    created_at: DateTime<Utc>,
+                ) -> Result<NonNegative<i32>>;
                 async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> Result<Vec<BlockSubmissionTx>>;
                 async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> Result<BlockSubmission>;
                 async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;

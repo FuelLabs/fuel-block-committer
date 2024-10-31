@@ -142,6 +142,7 @@ impl Postgres {
         &self,
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
+        created_at: DateTime<Utc>,
     ) -> crate::error::Result<NonNegative<i32>> {
         let mut transaction = self.connection_pool.begin().await?;
 
@@ -161,13 +162,14 @@ impl Postgres {
 
         let row = tables::L1FuelBlockSubmissionTx::from(submission_tx);
         sqlx::query!(
-            "INSERT INTO l1_transaction (hash, nonce, max_fee, priority_fee, submission_id, state) VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO l1_transaction (hash, nonce, max_fee, priority_fee, submission_id, state, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
             row.hash,
             row.nonce,
             row.max_fee,
             row.priority_fee,
             submission_id,
             i16::from(L1TxState::Pending),
+            created_at,
         )
         .execute(&mut *transaction)
         .await?;

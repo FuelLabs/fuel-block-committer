@@ -27,9 +27,10 @@ impl Storage for Postgres {
         &self,
         submission_tx: BlockSubmissionTx,
         submission: BlockSubmission,
+        created_at: DateTime<Utc>,
     ) -> Result<NonNegative<i32>> {
         Ok(self
-            ._record_block_submission(submission_tx, submission)
+            ._record_block_submission(submission_tx, submission, created_at)
             .await?)
     }
 
@@ -229,14 +230,18 @@ mod tests {
         let latest_submission = given_incomplete_submission(latest_height);
         let submission_tx = given_pending_tx(0);
         let submission_id = storage
-            .record_block_submission(submission_tx, latest_submission.clone())
+            .record_block_submission(
+                submission_tx,
+                latest_submission.clone(),
+                TestClock::default().now(),
+            )
             .await
             .unwrap();
 
         let older_submission = given_incomplete_submission(latest_height - 1);
         let submission_tx = given_pending_tx(1);
         storage
-            .record_block_submission(submission_tx, older_submission)
+            .record_block_submission(submission_tx, older_submission, TestClock::default().now())
             .await
             .unwrap();
 
@@ -262,7 +267,11 @@ mod tests {
         let submission_tx = given_pending_tx(0);
 
         let submission_id = db
-            .record_block_submission(submission_tx.clone(), latest_submission.clone())
+            .record_block_submission(
+                submission_tx.clone(),
+                latest_submission.clone(),
+                TestClock::default().now(),
+            )
             .await
             .unwrap();
 
@@ -294,7 +303,7 @@ mod tests {
         let submission_tx = given_pending_tx(0);
 
         let submission_id = storage
-            .record_block_submission(submission_tx, submission)
+            .record_block_submission(submission_tx, submission, TestClock::default().now())
             .await
             .unwrap();
 

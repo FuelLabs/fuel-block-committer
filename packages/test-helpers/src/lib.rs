@@ -10,6 +10,7 @@ use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use mocks::l1::TxStatus;
 use ports::{
+    clock::Clock,
     fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
     l1::FragmentEncoder,
     storage::Storage,
@@ -18,10 +19,10 @@ use ports::{
 use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
 use storage::{DbWithProcess, PostgresProcess};
 
-use services::Runner;
 use services::{
     BlockBundler, BlockBundlerConfig, BlockImporter, BundlerFactory, StateCommitter, StateListener,
 };
+use services::{BlockCommitter, Runner};
 
 pub fn bundle_and_encode_into_blobs(
     blocks: NonEmpty<CompressedFuelBlock>,
@@ -117,11 +118,14 @@ pub mod mocks {
             Failure,
         }
 
-        pub fn expects_contract_submission(block: ports::fuel::FuelBlock) -> FullL1Mock {
+        pub fn expects_contract_submission(
+            block: ports::fuel::FuelBlock,
+            eth_tx: [u8; 32],
+        ) -> FullL1Mock {
             let mut l1 = FullL1Mock::new();
 
             let submission_tx = BlockSubmissionTx {
-                hash: [1u8; 32],
+                hash: eth_tx,
                 ..Default::default()
             };
             l1.contract
@@ -451,6 +455,24 @@ impl Setup {
         self.test_clock.clone()
     }
 
+    pub async fn submit_contract_transaction(&self, height: u32, eth_tx: [u8; 32]) {
+        let secret_key = given_secret_key();
+        let latest_block = given_a_block(height, &secret_key);
+        let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
+
+        let l1 = mocks::l1::expects_contract_submission(latest_block, eth_tx);
+        let mut block_committer = BlockCommitter::new(
+            l1,
+            self.db(),
+            fuel_adapter,
+            self.test_clock(),
+            10.try_into().unwrap(),
+            1,
+        );
+
+        block_committer.run().await.unwrap();
+    }
+
     pub async fn send_fragments(&self, eth_tx: [u8; 32], eth_nonce: u32) {
         StateCommitter::new(
             mocks::l1::expects_state_submissions(vec![(None, eth_tx, eth_nonce)]),
@@ -602,7 +624,11 @@ impl Setup {
                 ..Default::default()
             };
             self.db
-                .record_block_submission(submission_tx, Self::given_incomplete_submission(height))
+                .record_block_submission(
+                    submission_tx,
+                    Self::given_incomplete_submission(height),
+                    self.test_clock.now(),
+                )
                 .await
                 .unwrap();
         }

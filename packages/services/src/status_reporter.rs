@@ -49,7 +49,11 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use ports::types::{BlockSubmission, BlockSubmissionTx};
+    use clock::TestClock;
+    use ports::{
+        clock::Clock,
+        types::{BlockSubmission, BlockSubmissionTx},
+    };
     use rand::Rng;
     use storage::PostgresProcess;
 
@@ -70,9 +74,13 @@ mod tests {
                         completed: is_completed,
                         ..rng.gen()
                     };
-                    db.record_block_submission(BlockSubmissionTx::default(), latest_submission)
-                        .await
-                        .unwrap();
+                    db.record_block_submission(
+                        BlockSubmissionTx::default(),
+                        latest_submission,
+                        TestClock::default().now(),
+                    )
+                    .await
+                    .unwrap();
                 }
 
                 let status_reporter = StatusReporter::new(db);
