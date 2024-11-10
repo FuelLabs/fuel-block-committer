@@ -144,10 +144,8 @@ where
             .collect();
 
         self.storage
-            .batch_update_tx_states(selective_change, noncewide_changes)
+            .update_tx_states_and_costs(selective_change, noncewide_changes, cost_per_tx)
             .await?;
-
-        self.storage.update_costs(cost_per_tx).await?;
 
         Ok(())
     }

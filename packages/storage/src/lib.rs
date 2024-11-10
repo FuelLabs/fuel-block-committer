@@ -134,18 +134,15 @@ impl Storage for Postgres {
         Ok(self._has_nonfinalized_txs().await?)
     }
 
-    async fn batch_update_tx_states(
+    async fn update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+        cost_per_tx: Vec<TransactionCostUpdate>,
     ) -> Result<()> {
         Ok(self
-            ._batch_update_tx_states(selective_changes, noncewide_changes)
+            ._update_tx_states_and_costs(selective_changes, noncewide_changes, cost_per_tx)
             .await?)
-    }
-
-    async fn update_costs(&self, cost_per_tx: Vec<TransactionCostUpdate>) -> Result<()> {
-        Ok(self._update_costs(cost_per_tx).await?)
     }
 
     async fn get_finalized_costs(
@@ -420,7 +417,7 @@ mod tests {
         // when
         let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
         storage
-            .batch_update_tx_states(vec![], changes)
+            .update_tx_states_and_costs(vec![], changes, vec![])
             .await
             .unwrap();
 
@@ -839,20 +836,17 @@ mod tests {
 
         let finalization_time = Utc::now();
 
+        // when
         let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
-        storage
-            .batch_update_tx_states(vec![], changes)
-            .await
-            .unwrap();
-
         let cost_per_tx = TransactionCostUpdate {
             tx_hash: hash,
             total_fee: 1000u128,
             da_block_height: 5000u64,
         };
-
-        // when
-        storage.update_costs(vec![cost_per_tx.clone()]).await?;
+        storage
+            .update_tx_states_and_costs(vec![], changes, vec![cost_per_tx.clone()])
+            .await
+            .unwrap();
 
         // then
         let bundle_cost = storage.get_finalized_costs(0, 10).await?;
@@ -882,7 +876,7 @@ mod tests {
 
         let changes = vec![(tx.hash, tx.nonce, state)];
         storage
-            .batch_update_tx_states(vec![], changes)
+            .update_tx_states_and_costs(vec![], changes, vec![])
             .await
             .expect("tx state should update");
 
@@ -907,7 +901,7 @@ mod tests {
             da_block_height,
         };
         storage
-            .update_costs(vec![cost_per_tx])
+            .update_tx_states_and_costs(vec![], vec![], vec![cost_per_tx])
             .await
             .expect("cost update shouldn't fail");
 

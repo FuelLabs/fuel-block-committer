@@ -206,12 +206,12 @@ impl Storage for DbWithProcess {
             ) -> ports::storage::Result<Vec<BundleFragment>>;
             async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> ports::storage::Result<Vec<BundleFragment>>;
             async fn last_time_a_fragment_was_finalized(&self) -> ports::storage::Result<Option<DateTime<Utc>>>;
-            async fn batch_update_tx_states(
+            async fn update_tx_states_and_costs(
                 &self,
                 selective_changes: Vec<([u8; 32], TransactionState)>,
                 noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+                cost_per_tx: Vec<TransactionCostUpdate>,
             ) -> ports::storage::Result<()>;
-            async fn update_costs(&self, cost_per_tx: Vec<TransactionCostUpdate>) -> ports::storage::Result<()>;
             async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> ports::storage::Result<Vec<BundleCost>>;
         }
     }
