@@ -14,12 +14,14 @@ members = [
 ]
 
 [workspace.package]
-version = "0.10.1"
+version = "0.10.3"
 authors = ["Fuel Labs <contact@fuel.sh>"]
 edition = "2021"
 homepage = "https://fuel.network/"
 license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-block-committer"
+# be careful when bumping the rust version. If `fuel-core` isn't on the version
+# you plan to bump to, make sure the encoding crate keeps using a rust version <= fuel-core
 rust-version = "1.79"
 publish = false
 
