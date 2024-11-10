@@ -1008,92 +1008,104 @@ mod tests {
     use std::{env, fs, path::Path};
 
     use sqlx::{Executor, PgPool, Row};
-    // use tokio::time::Instant;
+    use tokio::time::Instant;
 
-    // use crate::test_instance;
+    use crate::test_instance;
 
-    // use super::*;
+    use super::*;
 
-    // use ports::{
-    //     storage::Storage,
-    //     types::{Fragment, L1Tx, TransactionState},
-    // };
-    // use rand::Rng;
-    // use std::num::NonZeroU64;
+    use ports::{
+        storage::Storage,
+        types::{CollectNonEmpty, Fragment, L1Tx, TransactionState},
+    };
+    use rand::Rng;
 
-    // async fn generate_large_dataset(
-    //     storage: &Postgres,
-    //     num_bundles: usize,
-    //     fragments_per_bundle: usize,
-    //     txs_per_fragment: usize,
-    // ) -> Result<()> {
-    //     let mut rng = rand::thread_rng();
-    //     let mut current_height = 0;
+    async fn generate_large_dataset(
+        storage: &Postgres,
+        num_bundles: usize,
+        fragments_per_bundle: usize,
+        txs_per_fragment: usize,
+    ) -> Result<()> {
+        let mut rng = rand::thread_rng();
+        let mut current_height = 0;
 
-    //     for _ in 0..num_bundles {
-    //         let bundle_id = storage._next_bundle_id().await?.get();
+        for _ in 0..num_bundles {
+            let _bundle_id = storage._next_bundle_id().await?.get();
 
-    //         // Create a range of block heights for the bundle
-    //         let start_height = current_height;
-    //         let end_height = current_height + rng.gen_range(1..5000);
-    //         current_height = end_height + 1;
+            // Create a range of block heights for the bundle
+            let start_height = current_height;
+            let end_height = current_height + rng.gen_range(1..5000);
+            current_height = end_height + 1;
 
-    //         // Create fragments for the bundle
-    //         let fragments = (0..fragments_per_bundle)
-    //             .map(|_| Fragment {
-    //                 data: NonEmpty::from_vec(vec![rng.gen()]).unwrap(),
-    //                 unused_bytes: rng.gen_range(0..1000),
-    //                 total_bytes: NonZeroU64::new(rng.gen_range(1000..5000)).unwrap(),
-    //             })
-    //             .collect::<Vec<_>>();
+            // Create fragments for the bundle
+            let fragments = (0..fragments_per_bundle)
+                .map(|_| Fragment {
+                    data: NonEmpty::from_vec(vec![rng.gen()]).unwrap(),
+                    unused_bytes: rng.gen_range(0..1000),
+                    total_bytes: rng.gen_range(1000..5000).try_into().unwrap(),
+                })
+                .collect::<Vec<_>>();
 
-    //         let fragments = NonEmpty::from_vec(fragments).unwrap();
+            let fragments = NonEmpty::from_vec(fragments).unwrap();
 
-    //         // Insert the bundle and fragments
-    //         storage
-    //             .insert_bundle_and_fragments(start_height..=end_height, fragments.clone())
-    //             .await?;
+            // Insert the bundle and fragments
+            let next_id = storage.next_bundle_id().await.unwrap();
+            storage
+                .insert_bundle_and_fragments(next_id, start_height..=end_height, fragments.clone())
+                .await
+                .unwrap();
 
-    //         // For each fragment, create multiple transactions
-    //         for fragment in fragments {
-    //             let fragment_ids = NonEmpty::from_vec(vec![fragment.id]).unwrap();
-    //             for _ in 0..txs_per_fragment {
-    //                 let tx_hash = rng.gen::<[u8; 32]>();
-    //                 let tx = L1Tx {
-    //                     hash: tx_hash,
-    //                     nonce: rng.gen(),
-    //                     ..Default::default()
-    //                 };
+            let fragment_ids = storage
+                .oldest_nonfinalized_fragments(0, 2)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|f| f.id)
+                .collect_nonempty()
+                .unwrap();
 
-    //                 storage
-    //                     .record_pending_tx(tx.clone(), fragment_ids.clone())
-    //                     .await?;
+            // For each fragment, create multiple transactions
+            for _id in fragment_ids.iter() {
+                for _ in 0..txs_per_fragment {
+                    let tx_hash = rng.gen::<[u8; 32]>();
+                    let tx = L1Tx {
+                        hash: tx_hash,
+                        nonce: rng.gen(),
+                        ..Default::default()
+                    };
 
-    //                 // Optionally, update transaction state to simulate finalized transactions
-    //                 let finalization_time = Utc::now();
-    //                 let changes = vec![(
-    //                     tx.hash,
-    //                     tx.nonce,
-    //                     TransactionState::Finalized(finalization_time),
-    //                 )];
-    //                 storage.batch_update_tx_states(vec![], changes).await?;
+                    storage
+                        .record_pending_tx(tx.clone(), fragment_ids.clone())
+                        .await
+                        .unwrap();
 
-    //                 // Update costs
-    //                 let total_fee = rng.gen_range(1_000_000u128..10_000_000u128);
-    //                 let da_block_height = rng.gen_range(1_000_000u64..10_000_000u64);
-    //                 let cost_updates = vec![TransactionCostUpdate {
-    //                     tx_hash,
-    //                     total_fee,
-    //                     da_block_height,
-    //                 }];
+                    // Optionally, update transaction state to simulate finalized transactions
+                    let finalization_time = Utc::now();
+                    let changes = vec![(
+                        tx.hash,
+                        tx.nonce,
+                        TransactionState::Finalized(finalization_time),
+                    )];
 
-    //                 storage._update_costs(cost_updates).await?;
-    //             }
-    //         }
-    //     }
+                    // Cost updates
+                    let total_fee = rng.gen_range(1_000_000u128..10_000_000u128);
+                    let da_block_height = rng.gen_range(1_000_000u64..10_000_000u64);
+                    let cost_updates = vec![TransactionCostUpdate {
+                        tx_hash,
+                        total_fee,
+                        da_block_height,
+                    }];
 
-    //     Ok(())
-    // }
+                    storage
+                        .update_tx_states_and_costs(vec![], changes, cost_updates)
+                        .await
+                        .unwrap();
+                }
+            }
+        }
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_second_migration_applies_successfully() {
@@ -1354,45 +1366,49 @@ mod tests {
         assert!(new_fragment_id > 0, "Failed to insert a valid fragment");
     }
 
-    // #[tokio::test]
-    // async fn stress_test_update_costs() -> Result<()> {
-    //     let storage = test_instance::PostgresProcess::shared()
-    //         .await
-    //         .expect("Failed to initialize PostgresProcess")
-    //         .create_noschema_random_db()
-    //         .await
-    //         .expect("Failed to create random test database")
-    //         .db;
+    #[tokio::test]
+    async fn stress_test_update_costs() -> Result<()> {
+        let storage = test_instance::PostgresProcess::shared()
+            .await
+            .expect("Failed to initialize PostgresProcess")
+            .create_noschema_random_db()
+            .await
+            .expect("Failed to create random test database")
+            .db;
 
-    //     // Parameters
-    //     let num_bundles = 1000;
-    //     let fragments_per_bundle = 20;
-    //     let txs_per_fragment = 10;
+        // Parameters
+        let num_bundles = 1000;
+        let fragments_per_bundle = 20;
+        let txs_per_fragment = 10;
 
-    //     // Generate data
-    //     generate_large_dataset(
-    //         &storage,
-    //         num_bundles,
-    //         fragments_per_bundle,
-    //         txs_per_fragment,
-    //     )
-    //     .await?;
+        // Generate data
+        generate_large_dataset(
+            &storage,
+            num_bundles,
+            fragments_per_bundle,
+            txs_per_fragment,
+        )
+        .await?;
 
-    //     // Prepare cost_updates
-    //     let mut cost_updates = Vec::new();
-    //     // Collect all TransactionCostUpdate instances generated during data creation
-    //     // You might need to modify generate_large_dataset to return these
+        // Prepare cost_updates
+        let cost_updates = Vec::new();
+        // Collect all TransactionCostUpdate instances generated during data creation
+        // You might need to modify generate_large_dataset to return these
 
-    //     // Measure execution time
-    //     let start_time = Instant::now();
-    //     storage._update_costs(cost_updates).await?;
-    //     let duration = start_time.elapsed();
+        // Measure execution time
+        let start_time = Instant::now();
 
-    //     println!("_update_costs executed in {:?}", duration);
+        let mut tx = storage.connection_pool.begin().await?;
+        storage.update_costs(&mut *tx, &cost_updates).await?;
+        tx.commit().await?;
 
-    //     // Assert acceptable performance
-    //     assert!(duration.as_secs() < 60); // Example threshold
+        let duration = start_time.elapsed();
 
-    //     Ok(())
-    // }
+        println!("_update_costs executed in {:?}", duration);
+
+        // Assert acceptable performance
+        assert!(duration.as_secs() < 60); // Example threshold
+
+        Ok(())
+    }
 }
