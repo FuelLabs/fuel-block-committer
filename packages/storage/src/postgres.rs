@@ -1286,13 +1286,17 @@ mod tests {
         let storage = test_instance::PostgresProcess::shared()
             .await
             .expect("Failed to initialize PostgresProcess")
-            .create_noschema_random_db()
+            .create_random_db()
             .await
-            .expect("Failed to create random test database")
-            .db;
+            .expect("Failed to create random test database");
 
         let fragments_per_bundle = 1_000_000;
-        let txs_per_fragment = 1000;
+        let txs_per_fragment = 100;
+
+        // insert the bundle and fragments
+        let bundle_id = storage.next_bundle_id().await.unwrap();
+        let end_height = rng.gen_range(1..5000);
+        let range = 0..=end_height;
 
         // create fragments for the bundle
         let fragments = (0..fragments_per_bundle)
@@ -1304,10 +1308,6 @@ mod tests {
             .collect::<Vec<_>>();
         let fragments = NonEmpty::from_vec(fragments).unwrap();
 
-        // insert the bundle and fragments
-        let bundle_id = storage.next_bundle_id().await.unwrap();
-        let end_height = rng.gen_range(1..5000);
-        let range = 0..=end_height;
         storage
             .insert_bundle_and_fragments(bundle_id, range, fragments.clone())
             .await
@@ -1359,7 +1359,7 @@ mod tests {
         let start_time = Instant::now();
 
         storage
-            ._update_tx_states_and_costs(tx_changes, vec![], cost_updates)
+            .update_tx_states_and_costs(tx_changes, vec![], cost_updates)
             .await
             .unwrap();
 
