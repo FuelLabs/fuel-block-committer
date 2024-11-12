@@ -9,7 +9,6 @@ use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use ports::{
     clock::Clock,
-    l1::FragmentEncoder,
     storage::Storage,
     types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
 };
@@ -21,26 +20,6 @@ use services::{
 };
 use services::{BlockCommitter, Runner};
 
-pub fn bundle_and_encode_into_blobs(
-    blocks: NonEmpty<CompressedFuelBlock>,
-    id: u16,
-) -> NonEmpty<Fragment> {
-    let blocks = blocks
-        .into_iter()
-        .map(|b| Vec::from(b.data))
-        .collect::<Vec<_>>();
-
-    let bundle = bundle::Bundle::V1(bundle::BundleV1 { blocks });
-
-    let encoded_bundle = NonEmpty::from_vec(
-        bundle::Encoder::new(CompressionLevel::Disabled)
-            .encode(bundle)
-            .unwrap(),
-    )
-    .unwrap();
-
-    BlobEncoder.encode(encoded_bundle, id.into()).unwrap()
-}
 pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
     let size = size.into();
     if size == 0 {

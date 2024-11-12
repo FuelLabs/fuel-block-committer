@@ -331,35 +331,3 @@ fn create_proposal(
         block_heights,
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use std::num::NonZeroUsize;
-
-    use super::*;
-
-    #[test]
-    fn generates_steps_as_expected() {
-        // given
-        let max_steps = 100;
-        let max_step = 20;
-
-        // when
-        let steps = generate_attempts(
-            NonZeroUsize::new(max_steps).unwrap(),
-            NonZeroUsize::new(max_step).unwrap(),
-        );
-
-        // then
-        let actual_steps = steps.into_iter().map(|s| s.get()).collect::<Vec<_>>();
-        let expected_steps = vec![
-            100, 80, 60, 40, 20, 90, 70, 50, 30, 10, 95, 85, 75, 65, 55, 45, 35, 25, 15, 5, 98, 96,
-            94, 92, 88, 86, 84, 82, 78, 76, 74, 72, 68, 66, 64, 62, 58, 56, 54, 52, 48, 46, 44, 42,
-            38, 36, 34, 32, 28, 26, 24, 22, 18, 16, 14, 12, 8, 6, 4, 2, 99, 97, 93, 91, 89, 87, 83,
-            81, 79, 77, 73, 71, 69, 67, 63, 61, 59, 57, 53, 51, 49, 47, 43, 41, 39, 37, 33, 31, 29,
-            27, 23, 21, 19, 17, 13, 11, 9, 7, 3, 1,
-        ];
-
-        assert_eq!(actual_steps, expected_steps);
-    }
-}

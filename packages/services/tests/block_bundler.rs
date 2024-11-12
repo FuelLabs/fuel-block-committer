@@ -6,21 +6,42 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use itertools::Itertools;
 use metrics::RegistersMetrics;
 use ports::{
+    l1::FragmentEncoder,
     storage::{SequentialFuelBlocks, Storage},
-    types::{nonempty, CollectNonEmpty, Fragment, NonEmpty},
+    types::{nonempty, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
 };
 use services::{
     BlockBundler, BlockBundlerConfig, Bundle, BundleProposal, Bundler, BundlerFactory,
     ControllableBundlerFactory, Metadata, Result, Runner,
 };
 use test_helpers::{
-    bundle_and_encode_into_blobs,
     mocks::{
         self,
         fuel::{generate_block, generate_storage_block_sequence},
     },
     Blocks,
 };
+
+pub fn bundle_and_encode_into_blobs(
+    blocks: NonEmpty<CompressedFuelBlock>,
+    id: u16,
+) -> NonEmpty<Fragment> {
+    let blocks = blocks
+        .into_iter()
+        .map(|b| Vec::from(b.data))
+        .collect::<Vec<_>>();
+
+    let bundle = bundle::Bundle::V1(bundle::BundleV1 { blocks });
+
+    let encoded_bundle = NonEmpty::from_vec(
+        bundle::Encoder::new(CompressionLevel::Disabled)
+            .encode(bundle)
+            .unwrap(),
+    )
+    .unwrap();
+
+    BlobEncoder.encode(encoded_bundle, id.into()).unwrap()
+}
 
 #[tokio::test]
 async fn bundler_finishing_will_advance_if_not_called_at_least_once() {

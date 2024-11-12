@@ -152,6 +152,8 @@ impl Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use clock::TestClock;
     use itertools::Itertools;
     use ports::{
@@ -812,10 +814,14 @@ mod tests {
             ..Default::default()
         };
 
-        let now = TestClock::default().now();
+        let test_clock = TestClock::default();
+        let now = test_clock.now();
         storage
             .record_pending_tx(inserted_1, nonempty![fragment_1], now)
             .await?;
+
+        test_clock.advance_time(Duration::from_millis(1));
+        let now = test_clock.now();
         storage
             .record_pending_tx(inserted_2.clone(), nonempty![fragment_2], now)
             .await?;
