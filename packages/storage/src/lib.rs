@@ -10,14 +10,14 @@ pub use test_instance::*;
 
 mod error;
 mod postgres;
-use ports::{
-    storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
+pub use postgres::{DbConfig, Postgres};
+use services::{
+    ports::storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
         NonEmpty, NonNegative, TransactionState, Utc,
     },
 };
-pub use postgres::{DbConfig, Postgres};
 
 impl Storage for Postgres {
     async fn next_bundle_id(&self) -> Result<NonNegative<i32>> {
@@ -127,7 +127,7 @@ impl Storage for Postgres {
         Ok(self._get_pending_txs().await?)
     }
 
-    async fn get_latest_pending_txs(&self) -> Result<Option<ports::types::L1Tx>> {
+    async fn get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
         Ok(self._get_latest_pending_txs().await?)
     }
 
@@ -156,12 +156,14 @@ mod tests {
 
     use clock::TestClock;
     use itertools::Itertools;
-    use ports::{
-        clock::Clock,
-        storage::{Error, Storage},
+    use rand::{thread_rng, Rng};
+    use services::{
+        ports::{
+            clock::Clock,
+            storage::{Error, Storage},
+        },
         types::{nonempty, CollectNonEmpty},
     };
-    use rand::{thread_rng, Rng};
 
     use super::*;
 

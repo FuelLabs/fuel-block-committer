@@ -38,26 +38,26 @@ impl From<JoinError> for Error {
     }
 }
 
-impl From<ports::storage::Error> for Error {
-    fn from(error: ports::storage::Error) -> Self {
+impl From<services::ports::storage::Error> for Error {
+    fn from(error: services::ports::storage::Error) -> Self {
         Self::Storage(error.to_string())
     }
 }
 
-impl From<ports::l1::Error> for Error {
-    fn from(error: ports::l1::Error) -> Self {
+impl From<services::ports::l1::Error> for Error {
+    fn from(error: services::ports::l1::Error) -> Self {
         match error {
-            ports::l1::Error::Network(e) => Self::Network(e),
-            ports::l1::Error::Other(e) => Self::Other(e),
+            services::ports::l1::Error::Network(e) => Self::Network(e),
+            services::ports::l1::Error::Other(e) => Self::Other(e),
         }
     }
 }
 
-impl From<ports::fuel::Error> for Error {
-    fn from(error: ports::fuel::Error) -> Self {
+impl From<services::ports::fuel::Error> for Error {
+    fn from(error: services::ports::fuel::Error) -> Self {
         match error {
-            ports::fuel::Error::Network(e) => Self::Network(e),
-            ports::fuel::Error::Other(e) => Self::Other(e),
+            services::ports::fuel::Error::Network(e) => Self::Network(e),
+            services::ports::fuel::Error::Other(e) => Self::Other(e),
         }
     }
 }

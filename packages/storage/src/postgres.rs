@@ -2,8 +2,8 @@ use std::ops::RangeInclusive;
 
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
-use ports::{
-    storage::SequentialFuelBlocks,
+use services::{
+    ports::storage::SequentialFuelBlocks,
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, NonEmpty,
         NonNegative, TransactionState, TryCollectNonEmpty, Utc,
@@ -78,7 +78,7 @@ pub struct DbConfig {
 }
 
 impl Postgres {
-    pub async fn connect(opt: &DbConfig) -> ports::storage::Result<Self> {
+    pub async fn connect(opt: &DbConfig) -> services::ports::storage::Result<Self> {
         let ssl_mode = if opt.use_ssl {
             sqlx::postgres::PgSslMode::Require
         } else {
@@ -125,7 +125,7 @@ impl Postgres {
         self.connection_pool.close().await;
     }
 
-    pub async fn migrate(&self) -> ports::storage::Result<()> {
+    pub async fn migrate(&self) -> services::ports::storage::Result<()> {
         sqlx::migrate!()
             .run(&self.connection_pool)
             .await
@@ -260,7 +260,7 @@ impl Postgres {
         &self,
         starting_height: u32,
         limit: usize,
-    ) -> Result<Vec<ports::storage::BundleFragment>> {
+    ) -> Result<Vec<services::ports::storage::BundleFragment>> {
         let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
@@ -312,7 +312,7 @@ impl Postgres {
     pub(crate) async fn _fragments_submitted_by_tx(
         &self,
         tx_hash: [u8; 32],
-    ) -> Result<Vec<ports::storage::BundleFragment>> {
+    ) -> Result<Vec<services::ports::storage::BundleFragment>> {
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
@@ -502,7 +502,7 @@ impl Postgres {
 
     pub(crate) async fn _record_pending_tx(
         &self,
-        submission_tx: ports::types::L1Tx,
+        submission_tx: services::types::L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> Result<()> {
@@ -558,7 +558,7 @@ impl Postgres {
         .has_nonfinalized_transactions.unwrap_or(false))
     }
 
-    pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
+    pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<services::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,
             "SELECT * FROM l1_blob_transaction WHERE state = $1 or state = $2",
@@ -572,7 +572,7 @@ impl Postgres {
         .collect::<Result<Vec<_>>>()
     }
 
-    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<ports::types::L1Tx>> {
+    pub(crate) async fn _get_pending_txs(&self) -> Result<Vec<services::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,
             "SELECT * FROM l1_blob_transaction WHERE state = $1",
@@ -585,7 +585,7 @@ impl Postgres {
         .collect::<Result<Vec<_>>>()
     }
 
-    pub(crate) async fn _get_latest_pending_txs(&self) -> Result<Option<ports::types::L1Tx>> {
+    pub(crate) async fn _get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
         sqlx::query_as!(
             tables::L1Tx,
             "SELECT * FROM l1_blob_transaction WHERE state = $1 ORDER BY created_at DESC LIMIT 1",

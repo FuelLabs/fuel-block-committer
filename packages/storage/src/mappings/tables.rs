@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use num_bigint::BigInt;
-use ports::types::{
+use services::types::{
     BlockSubmissionTx, CompressedFuelBlock, DateTime, NonEmpty, NonNegative, TransactionState, Utc,
 };
 use sqlx::types::BigDecimal;
@@ -20,7 +20,7 @@ pub struct L1FuelBlockSubmission {
     pub completed: bool,
 }
 
-impl TryFrom<L1FuelBlockSubmission> for ports::types::BlockSubmission {
+impl TryFrom<L1FuelBlockSubmission> for services::types::BlockSubmission {
     type Error = crate::error::Error;
 
     fn try_from(value: L1FuelBlockSubmission) -> Result<Self, Self::Error> {
@@ -53,8 +53,8 @@ impl TryFrom<L1FuelBlockSubmission> for ports::types::BlockSubmission {
     }
 }
 
-impl From<ports::types::BlockSubmission> for L1FuelBlockSubmission {
-    fn from(value: ports::types::BlockSubmission) -> Self {
+impl From<services::types::BlockSubmission> for L1FuelBlockSubmission {
+    fn from(value: services::types::BlockSubmission) -> Self {
         Self {
             id: value.id.unwrap_or_default().as_i32(),
             fuel_block_hash: value.block_hash.to_vec(),
@@ -195,7 +195,7 @@ pub struct BundleFragment {
     pub total_bytes: i64,
 }
 
-impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
+impl TryFrom<BundleFragment> for services::ports::storage::BundleFragment {
     type Error = crate::error::Error;
 
     fn try_from(value: BundleFragment) -> Result<Self, Self::Error> {
@@ -255,7 +255,7 @@ impl TryFrom<BundleFragment> for ports::storage::BundleFragment {
             ))
         })?;
 
-        let fragment = ports::types::Fragment {
+        let fragment = services::types::Fragment {
             data,
             unused_bytes,
             total_bytes,
@@ -339,8 +339,8 @@ impl L1Tx {
     }
 }
 
-impl From<ports::types::L1Tx> for L1Tx {
-    fn from(value: ports::types::L1Tx) -> Self {
+impl From<services::types::L1Tx> for L1Tx {
+    fn from(value: services::types::L1Tx) -> Self {
         let max_fee = u128_to_bigdecimal(value.max_fee);
         let priority_fee = u128_to_bigdecimal(value.priority_fee);
         let blob_fee = u128_to_bigdecimal(value.blob_fee);
@@ -366,7 +366,7 @@ impl From<ports::types::L1Tx> for L1Tx {
     }
 }
 
-impl TryFrom<L1Tx> for ports::types::L1Tx {
+impl TryFrom<L1Tx> for services::types::L1Tx {
     type Error = crate::error::Error;
 
     fn try_from(value: L1Tx) -> Result<Self, Self::Error> {

@@ -1,14 +1,13 @@
 use std::num::NonZeroU32;
 
-use ports::{
-    fuel::FuelBlock,
-    storage::Storage,
+use crate::{
+    ports::{fuel::FuelBlock, storage::Storage},
     types::{BlockSubmission, NonNegative, TransactionState},
+    Error, Result,
 };
 use tracing::info;
 
 use super::Runner;
-use crate::{Error, Result};
 
 pub struct BlockCommitter<L1, Db, Fuel, Clock> {
     l1_adapter: L1,
@@ -51,10 +50,10 @@ impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock> {
 
 impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock>
 where
-    L1: ports::l1::Contract + ports::l1::Api,
+    L1: crate::ports::l1::Contract + crate::ports::l1::Api,
     Db: Storage,
-    Fuel: ports::fuel::Api,
-    Clock: ports::clock::Clock,
+    Fuel: crate::ports::fuel::Api,
+    Clock: crate::ports::clock::Clock,
 {
     async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
         let submission = BlockSubmission::new(*fuel_block.id, fuel_block.header.height);
@@ -163,10 +162,10 @@ where
 
 impl<L1, Db, Fuel, Clock> Runner for BlockCommitter<L1, Db, Fuel, Clock>
 where
-    L1: ports::l1::Contract + ports::l1::Api,
+    L1: crate::ports::l1::Contract + crate::ports::l1::Api,
     Db: Storage,
-    Fuel: ports::fuel::Api,
-    Clock: ports::clock::Clock + Send + Sync,
+    Fuel: crate::ports::fuel::Api,
+    Clock: crate::ports::clock::Clock + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         let latest_submission = self.storage.submission_w_latest_block().await?;

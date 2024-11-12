@@ -8,7 +8,7 @@ pub enum Error {
     Conversion(String),
 }
 
-impl From<Error> for ports::storage::Error {
+impl From<Error> for services::ports::storage::Error {
     fn from(value: Error) -> Self {
         match value {
             Error::Database(e) => Self::Database(e),

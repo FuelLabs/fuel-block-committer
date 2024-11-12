@@ -8,7 +8,6 @@ members = [
   "packages/eth",
   "packages/fuel",
   "packages/metrics",
-  "packages/ports",
   "packages/services",
   "packages/storage",
   "packages/test-helpers",
@@ -30,7 +29,6 @@ publish = false
 eth = { path = "./packages/eth", default-features = false }
 fuel = { path = "./packages/fuel", default-features = false }
 metrics = { path = "./packages/metrics", default-features = false }
-ports = { path = "./packages/ports", default-features = false }
 storage = { path = "./packages/storage", default-features = false }
 services = { path = "./packages/services", default-features = false }
 clock = { path = "./packages/clock", default-features = false }

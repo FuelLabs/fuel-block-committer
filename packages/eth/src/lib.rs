@@ -7,8 +7,8 @@ use alloy::{
 };
 use delegate::delegate;
 use itertools::{izip, Itertools};
-use ports::{
-    l1::{Api, Contract, FragmentsSubmitted, Result},
+use services::{
+    ports::l1::{Api, Contract, FragmentsSubmitted, Result},
     types::{
         BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, NonNegative, TransactionResponse,
     },
@@ -72,7 +72,7 @@ impl BlobEncoder {
     }
 }
 
-impl ports::l1::FragmentEncoder for BlobEncoder {
+impl services::ports::l1::FragmentEncoder for BlobEncoder {
     fn encode(&self, data: NonEmpty<u8>, id: NonNegative<i32>) -> Result<NonEmpty<Fragment>> {
         let data = Vec::from(data);
         let encoder = blob::Encoder::default();
@@ -140,7 +140,7 @@ impl Api for WebsocketClient {
             async fn submit_state_fragments(
                 &self,
                 fragments: NonEmpty<Fragment>,
-                previous_tx: Option<ports::types::L1Tx>,
+                previous_tx: Option<services::types::L1Tx>,
             ) -> Result<(L1Tx, FragmentsSubmitted)>;
             async fn balance(&self, address: Address) -> Result<U256>;
             async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
@@ -160,7 +160,7 @@ impl Api for WebsocketClient {
 mod test {
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
     use fuel_block_committer_encoding::blob;
-    use ports::l1::FragmentEncoder;
+    use services::ports::l1::FragmentEncoder;
 
     use crate::BlobEncoder;
 

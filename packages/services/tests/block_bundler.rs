@@ -5,9 +5,11 @@ use eth::BlobEncoder;
 use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use itertools::Itertools;
 use metrics::RegistersMetrics;
-use ports::{
-    l1::FragmentEncoder,
-    storage::{SequentialFuelBlocks, Storage},
+use services::{
+    ports::{
+        l1::FragmentEncoder,
+        storage::{SequentialFuelBlocks, Storage},
+    },
     types::{nonempty, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
 };
 use services::{

@@ -4,7 +4,7 @@ use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
 use delegate::delegate;
-use ports::types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
+use services::types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
 
 use crate::{
     error::{Error, Result},
@@ -25,9 +25,12 @@ pub trait EthApi {
     async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
     async fn submit_state_fragments(
         &self,
-        fragments: NonEmpty<ports::types::Fragment>,
-        previous_tx: Option<ports::types::L1Tx>,
-    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)>;
+        fragments: NonEmpty<services::types::Fragment>,
+        previous_tx: Option<services::types::L1Tx>,
+    ) -> Result<(
+        services::types::L1Tx,
+        services::ports::l1::FragmentsSubmitted,
+    )>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -132,8 +135,11 @@ where
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-        previous: Option<ports::types::L1Tx>,
-    ) -> Result<(ports::types::L1Tx, ports::l1::FragmentsSubmitted)> {
+        previous: Option<services::types::L1Tx>,
+    ) -> Result<(
+        services::types::L1Tx,
+        services::ports::l1::FragmentsSubmitted,
+    )> {
         let response = self
             .adapter
             .submit_state_fragments(fragments, previous)

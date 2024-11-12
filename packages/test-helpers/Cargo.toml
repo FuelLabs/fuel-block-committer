@@ -19,7 +19,6 @@ futures = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 mockall = { workspace = true }
-ports = { workspace = true, features = ["full", "test-helpers"] }
 rand = { workspace = true, features = ["small_rng"] }
 services = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }

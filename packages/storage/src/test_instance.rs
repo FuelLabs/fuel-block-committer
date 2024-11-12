@@ -5,8 +5,8 @@ use std::{
 };
 
 use delegate::delegate;
-use ports::{
-    storage::{BundleFragment, SequentialFuelBlocks, Storage},
+use services::{
+    ports::storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
         NonEmpty, NonNegative, TransactionState, Utc,
@@ -65,7 +65,7 @@ pub struct PostgresProcess {
 }
 
 impl PostgresProcess {
-    pub async fn shared() -> ports::storage::Result<Arc<Self>> {
+    pub async fn shared() -> services::ports::storage::Result<Arc<Self>> {
         // If at some point no tests are running, the shared instance will be dropped. If
         // requested again, it will be recreated.
         // This is a workaround for the lack of a global setup/teardown for tests.
@@ -85,7 +85,7 @@ impl PostgresProcess {
         Ok(process)
     }
 
-    pub async fn start() -> ports::storage::Result<Self> {
+    pub async fn start() -> services::ports::storage::Result<Self> {
         let username = "username".to_string();
         let password = "password".to_string();
         let initial_db = "test".to_string();
@@ -97,7 +97,7 @@ impl PostgresProcess {
         }
         .start()
         .await
-        .map_err(|e| ports::storage::Error::Database(format!("{e}")))?;
+        .map_err(|e| services::ports::storage::Error::Database(format!("{e}")))?;
 
         Ok(Self {
             username,
@@ -107,7 +107,9 @@ impl PostgresProcess {
         })
     }
 
-    pub async fn create_random_db(self: &Arc<Self>) -> ports::storage::Result<DbWithProcess> {
+    pub async fn create_random_db(
+        self: &Arc<Self>,
+    ) -> services::ports::storage::Result<DbWithProcess> {
         let db = self.create_noschema_random_db().await?;
 
         db.db.migrate().await?;
@@ -117,12 +119,12 @@ impl PostgresProcess {
 
     pub async fn create_noschema_random_db(
         self: &Arc<Self>,
-    ) -> ports::storage::Result<DbWithProcess> {
+    ) -> services::ports::storage::Result<DbWithProcess> {
         let port = self
             .container
             .get_host_port_ipv4(5432)
             .await
-            .map_err(|e| ports::storage::Error::Database(format!("{e}")))?;
+            .map_err(|e| services::ports::storage::Error::Database(format!("{e}")))?;
 
         let mut config = DbConfig {
             host: "localhost".to_string(),
@@ -171,52 +173,52 @@ impl DbWithProcess {
 impl Storage for DbWithProcess {
     delegate! {
         to self.db {
-            async fn next_bundle_id(&self) -> ports::storage::Result<NonNegative<i32>>;
+            async fn next_bundle_id(&self) -> services::ports::storage::Result<NonNegative<i32>>;
             async fn record_block_submission(
                 &self,
                 submission_tx: BlockSubmissionTx,
                 submission: BlockSubmission,
                 created_at: DateTime<Utc>,
-            ) -> ports::storage::Result<NonNegative<i32>>;
-            async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> ports::storage::Result<Vec<BlockSubmissionTx>>;
-            async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> ports::storage::Result<BlockSubmission>;
-            async fn submission_w_latest_block(&self) -> ports::storage::Result<Option<BlockSubmission>>;
-            async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> ports::storage::Result<()>;
-            async fn missing_blocks(&self, starting_height: u32, current_height: u32) -> ports::storage::Result<Vec<RangeInclusive<u32>>>;
+            ) -> services::ports::storage::Result<NonNegative<i32>>;
+            async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> services::ports::storage::Result<Vec<BlockSubmissionTx>>;
+            async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> services::ports::storage::Result<BlockSubmission>;
+            async fn submission_w_latest_block(&self) -> services::ports::storage::Result<Option<BlockSubmission>>;
+            async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::ports::storage::Result<()>;
+            async fn missing_blocks(&self, starting_height: u32, current_height: u32) -> services::ports::storage::Result<Vec<RangeInclusive<u32>>>;
             async fn lowest_sequence_of_unbundled_blocks(
                 &self,
                 starting_height: u32,
                 limit: usize,
-            ) -> ports::storage::Result<Option<SequentialFuelBlocks>>;
+            ) -> services::ports::storage::Result<Option<SequentialFuelBlocks>>;
             async fn insert_bundle_and_fragments(
                 &self,
                 bundle_id: NonNegative<i32>,
                 block_range: RangeInclusive<u32>,
                 fragments: NonEmpty<Fragment>,
-            ) -> ports::storage::Result<()>;
+            ) -> services::ports::storage::Result<()>;
             async fn record_pending_tx(
                 &self,
                 tx: L1Tx,
                 fragment_ids: NonEmpty<NonNegative<i32>>,
                 created_at: DateTime<Utc>,
-            ) -> ports::storage::Result<()>;
-            async fn get_non_finalized_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
-            async fn get_pending_txs(&self) -> ports::storage::Result<Vec<L1Tx>>;
-            async fn get_latest_pending_txs(&self) -> ports::storage::Result<Option<L1Tx>>;
-            async fn has_pending_txs(&self) -> ports::storage::Result<bool>;
-            async fn has_nonfinalized_txs(&self) -> ports::storage::Result<bool>;
+            ) -> services::ports::storage::Result<()>;
+            async fn get_non_finalized_txs(&self) -> services::ports::storage::Result<Vec<L1Tx>>;
+            async fn get_pending_txs(&self) -> services::ports::storage::Result<Vec<L1Tx>>;
+            async fn get_latest_pending_txs(&self) -> services::ports::storage::Result<Option<L1Tx>>;
+            async fn has_pending_txs(&self) -> services::ports::storage::Result<bool>;
+            async fn has_nonfinalized_txs(&self) -> services::ports::storage::Result<bool>;
             async fn oldest_nonfinalized_fragments(
                 &self,
                 starting_height: u32,
                 limit: usize,
-            ) -> ports::storage::Result<Vec<BundleFragment>>;
-            async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> ports::storage::Result<Vec<BundleFragment>>;
-            async fn last_time_a_fragment_was_finalized(&self) -> ports::storage::Result<Option<DateTime<Utc>>>;
+            ) -> services::ports::storage::Result<Vec<BundleFragment>>;
+            async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> services::ports::storage::Result<Vec<BundleFragment>>;
+            async fn last_time_a_fragment_was_finalized(&self) -> services::ports::storage::Result<Option<DateTime<Utc>>>;
             async fn batch_update_tx_states(
                 &self,
                 selective_changes: Vec<([u8; 32], TransactionState)>,
                 noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
-            ) -> ports::storage::Result<()>;
+            ) -> services::ports::storage::Result<()>;
         }
     }
 }

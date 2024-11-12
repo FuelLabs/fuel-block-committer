@@ -1,6 +1,8 @@
 use metrics::prometheus::IntGauge;
-use ports::{clock::Clock, storage::Storage};
-use services::{Result, Runner, StateListener};
+use services::{
+    ports::{clock::Clock, storage::Storage},
+    Result, Runner, StateListener,
+};
 use test_helpers::mocks::{self, l1::TxStatus};
 
 #[tokio::test]

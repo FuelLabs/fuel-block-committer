@@ -10,17 +10,23 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+alloy = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
 bytesize = { workspace = true }
+delegate = { workspace = true, optional = true }
 fuel-block-committer-encoding = { workspace = true }
+fuel-core-client = { workspace = true, optional = true }
 fuel-crypto = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 mockall = { workspace = true, optional = true }
-ports = { workspace = true, features = ["full"] }
+nonempty = { workspace = true }
+rand = { workspace = true, optional = true }
 rayon = { workspace = true }
 serde = { workspace = true }
+sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -32,14 +38,27 @@ delegate = { workspace = true }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
-ports = { workspace = true, features = ["full", "test-helpers"] }
+services = { workspace = true, features = ["full", "test-helpers"] }
 pretty_assertions = { workspace = true, features = ["std"] }
-rand = { workspace = true, features = ["small_rng"] }
-services = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 test-helpers = { workspace = true }
+rand = { workspace = true, features = ["small_rng", "std", "std_rng"] }
 
 [features]
-test-helpers = ["dep:mockall"]
+default = ["full"]
+test-helpers = ["dep:mockall", "dep:rand"]
+l1 = [
+  "dep:async-trait",
+  "dep:alloy",
+]
+fuel = [
+  "dep:fuel-core-client",
+]
+storage = [
+  "dep:delegate",
+]
+clock = []
+full = ["l1", "fuel", "storage", "clock"]
+

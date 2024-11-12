@@ -1,8 +1,8 @@
 use futures::StreamExt;
 use itertools::Itertools;
 use mockall::{predicate::eq, Sequence};
-use ports::{
-    storage::Storage,
+use services::{
+    ports::storage::Storage,
     types::{nonempty, CollectNonEmpty},
 };
 use services::{BlockImporter, Result, Runner};
@@ -198,7 +198,7 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
             .await;
     }
 
-    let mut fuel_mock = ports::fuel::MockApi::new();
+    let mut fuel_mock = services::ports::fuel::MockApi::new();
 
     let mut sequence = Sequence::new();
 

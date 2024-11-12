@@ -2,20 +2,18 @@ use std::{num::NonZeroUsize, time::Duration};
 
 pub mod bundler;
 
+use crate::{
+    ports::{clock::Clock, storage::Storage},
+    types::{DateTime, Utc},
+    Error, Result, Runner,
+};
 use bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
 use metrics::{
     custom_exponential_buckets,
     prometheus::{histogram_opts, linear_buckets, Histogram, IntGauge},
     RegistersMetrics,
 };
-use ports::{
-    clock::Clock,
-    storage::Storage,
-    types::{DateTime, Utc},
-};
 use tracing::info;
-
-use crate::{Error, Result, Runner};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -145,7 +143,7 @@ where
 
 impl<F, Db, C, BF> BlockBundler<F, Db, C, BF>
 where
-    F: ports::fuel::Api,
+    F: crate::ports::fuel::Api,
     Db: Storage,
     C: Clock,
     BF: BundlerFactory,
@@ -254,7 +252,7 @@ where
 
 impl<F, Db, C, BF> Runner for BlockBundler<F, Db, C, BF>
 where
-    F: ports::fuel::Api + Send + Sync,
+    F: crate::ports::fuel::Api + Send + Sync,
     Db: Storage + Clone + Send + Sync,
     C: Clock + Send + Sync,
     BF: BundlerFactory + Send + Sync,
@@ -270,7 +268,7 @@ where
 mod test_helpers {
     use std::num::NonZeroUsize;
 
-    use ports::{storage::SequentialFuelBlocks, types::NonNegative};
+    use crate::{ports::storage::SequentialFuelBlocks, types::NonNegative};
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,

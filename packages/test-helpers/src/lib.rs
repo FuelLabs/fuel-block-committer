@@ -7,12 +7,11 @@ use eth::BlobEncoder;
 use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
-use ports::{
-    clock::Clock,
-    storage::Storage,
+use rand::{Rng, RngCore};
+use services::{
+    ports::{clock::Clock, storage::Storage},
     types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
 };
-use rand::{Rng, RngCore};
 use storage::{DbWithProcess, PostgresProcess};
 
 use services::{
@@ -38,14 +37,14 @@ pub mod mocks {
 
         use delegate::delegate;
         use mockall::{predicate::eq, Sequence};
-        use ports::{
-            l1::FragmentsSubmitted,
+        use services::{
+            ports::l1::FragmentsSubmitted,
             types::{BlockSubmissionTx, Fragment, L1Height, NonEmpty, TransactionResponse, U256},
         };
 
         pub struct FullL1Mock {
-            pub api: ports::l1::MockApi,
-            pub contract: ports::l1::MockContract,
+            pub api: services::ports::l1::MockApi,
+            pub contract: services::ports::l1::MockContract,
         }
 
         impl Default for FullL1Mock {
@@ -57,33 +56,33 @@ pub mod mocks {
         impl FullL1Mock {
             pub fn new() -> Self {
                 Self {
-                    api: ports::l1::MockApi::new(),
-                    contract: ports::l1::MockContract::new(),
+                    api: services::ports::l1::MockApi::new(),
+                    contract: services::ports::l1::MockContract::new(),
                 }
             }
         }
 
-        impl ports::l1::Contract for FullL1Mock {
+        impl services::ports::l1::Contract for FullL1Mock {
             delegate! {
                 to self.contract {
-                    async fn submit(&self, hash: [u8;32], height: u32) -> ports::l1::Result<BlockSubmissionTx>;
+                    async fn submit(&self, hash: [u8;32], height: u32) -> services::ports::l1::Result<BlockSubmissionTx>;
                     fn commit_interval(&self) -> std::num::NonZeroU32;
                 }
             }
         }
 
-        impl ports::l1::Api for FullL1Mock {
+        impl services::ports::l1::Api for FullL1Mock {
             delegate! {
                 to self.api {
                     async fn submit_state_fragments(
                         &self,
                         fragments: NonEmpty<Fragment>,
-                        previous_tx: Option<ports::types::L1Tx>,
-                    ) -> ports::l1::Result<(ports::types::L1Tx, FragmentsSubmitted)>;
-                    async fn get_block_number(&self) -> ports::l1::Result<L1Height>;
-                    async fn balance(&self, address: ports::types::Address) -> ports::l1::Result<U256>;
-                    async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> ports::l1::Result<Option<TransactionResponse>>;
-                    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> ports::l1::Result<bool>;
+                        previous_tx: Option<services::types::L1Tx>,
+                    ) -> services::ports::l1::Result<(services::types::L1Tx, FragmentsSubmitted)>;
+                    async fn get_block_number(&self) -> services::ports::l1::Result<L1Height>;
+                    async fn balance(&self, address: services::types::Address) -> services::ports::l1::Result<U256>;
+                    async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> services::ports::l1::Result<Option<TransactionResponse>>;
+                    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::ports::l1::Result<bool>;
                 }
             }
         }
@@ -95,7 +94,7 @@ pub mod mocks {
         }
 
         pub fn expects_contract_submission(
-            block: ports::fuel::FuelBlock,
+            block: services::ports::fuel::FuelBlock,
             eth_tx: [u8; 32],
         ) -> FullL1Mock {
             let mut l1 = FullL1Mock::new();
@@ -143,10 +142,10 @@ pub mod mocks {
 
         pub fn expects_state_submissions(
             expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, [u8; 32], u32)>,
-        ) -> ports::l1::MockApi {
+        ) -> services::ports::l1::MockApi {
             let mut sequence = Sequence::new();
 
-            let mut l1_mock = ports::l1::MockApi::new();
+            let mut l1_mock = services::ports::l1::MockApi::new();
 
             for (fragment, tx_id, nonce) in expectations {
                 l1_mock
@@ -162,7 +161,7 @@ pub mod mocks {
                     .return_once(move |fragments, _previous_tx| {
                         Box::pin(async move {
                             Ok((
-                                ports::types::L1Tx {
+                                services::types::L1Tx {
                                     hash: tx_id,
                                     nonce,
                                     ..Default::default()
@@ -183,8 +182,8 @@ pub mod mocks {
             heights: &[u32],
             tx_height: u32,
             statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
-        ) -> ports::l1::MockApi {
-            let mut l1_mock = ports::l1::MockApi::new();
+        ) -> services::ports::l1::MockApi {
+            let mut l1_mock = services::ports::l1::MockApi::new();
 
             for height in heights {
                 let l1_height = L1Height::from(*height);
@@ -218,8 +217,8 @@ pub mod mocks {
             current_height: u32,
             tx_height: u32,
             statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
-        ) -> ports::l1::MockApi {
-            let mut l1_mock = ports::l1::MockApi::new();
+        ) -> services::ports::l1::MockApi {
+            let mut l1_mock = services::ports::l1::MockApi::new();
 
             let height = L1Height::from(current_height);
             l1_mock
@@ -249,8 +248,8 @@ pub mod mocks {
             heights: &[u32],
             tx_height: u32,
             first_status: ([u8; 32], TxStatus),
-        ) -> ports::l1::MockApi {
-            let mut l1_mock = ports::l1::MockApi::new();
+        ) -> services::ports::l1::MockApi {
+            let mut l1_mock = services::ports::l1::MockApi::new();
 
             for height in heights {
                 let l1_height = L1Height::from(*height);
@@ -299,11 +298,11 @@ pub mod mocks {
         use futures::{stream, StreamExt};
         use itertools::Itertools;
         use mockall::predicate::eq;
-        use ports::{
-            storage::SequentialFuelBlocks,
+        use rand::{rngs::StdRng, RngCore, SeedableRng};
+        use services::{
+            ports::storage::SequentialFuelBlocks,
             types::{CollectNonEmpty, CompressedFuelBlock, NonEmpty},
         };
-        use rand::{rngs::StdRng, RngCore, SeedableRng};
 
         pub fn generate_block(height: u32, data_size: usize) -> CompressedFuelBlock {
             let mut small_rng = rand::rngs::SmallRng::from_seed([0; 32]);
@@ -330,8 +329,8 @@ pub mod mocks {
         pub fn these_blocks_exist(
             blocks: impl IntoIterator<Item = CompressedFuelBlock>,
             enforce_tight_range: bool,
-        ) -> ports::fuel::MockApi {
-            let mut fuel_mock = ports::fuel::MockApi::default();
+        ) -> services::ports::fuel::MockApi {
+            let mut fuel_mock = services::ports::fuel::MockApi::default();
 
             let blocks = blocks
                 .into_iter()
@@ -355,7 +354,7 @@ pub mod mocks {
                             panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
-                        let blocks_vec: Vec<ports::fuel::Result<_>> = blocks
+                        let blocks_vec: Vec<services::ports::fuel::Result<_>> = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.height))
                             .cloned()
@@ -368,8 +367,8 @@ pub mod mocks {
             fuel_mock
         }
 
-        pub fn latest_height_is(height: u32) -> ports::fuel::MockApi {
-            let mut fuel_mock = ports::fuel::MockApi::default();
+        pub fn latest_height_is(height: u32) -> services::ports::fuel::MockApi {
+            let mut fuel_mock = services::ports::fuel::MockApi::default();
             fuel_mock
                 .expect_latest_height()
                 .returning(move || Box::pin(async move { Ok(height) }));
@@ -377,9 +376,9 @@ pub mod mocks {
         }
 
         pub fn given_fetcher(
-            available_blocks: Vec<ports::fuel::FuelBlock>,
-        ) -> ports::fuel::MockApi {
-            let mut fetcher = ports::fuel::MockApi::new();
+            available_blocks: Vec<services::ports::fuel::FuelBlock>,
+        ) -> services::ports::fuel::MockApi {
+            let mut fetcher = services::ports::fuel::MockApi::new();
             for block in available_blocks.clone() {
                 fetcher
                     .expect_block_at_height()
@@ -402,13 +401,13 @@ pub mod mocks {
             fetcher
         }
 
-        fn given_header(height: u32) -> ports::fuel::FuelHeader {
+        fn given_header(height: u32) -> services::ports::fuel::FuelHeader {
             let application_hash =
                 "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
                     .parse()
                     .unwrap();
 
-            ports::fuel::FuelHeader {
+            services::ports::fuel::FuelHeader {
                 id: Default::default(),
                 da_height: Default::default(),
                 consensus_parameters_version: Default::default(),
@@ -431,7 +430,10 @@ pub mod mocks {
             SecretKey::random(&mut rng)
         }
 
-        pub fn given_a_block(height: u32, secret_key: &SecretKey) -> ports::fuel::FuelBlock {
+        pub fn given_a_block(
+            height: u32,
+            secret_key: &SecretKey,
+        ) -> services::ports::fuel::FuelBlock {
             let header = given_header(height);
 
             let mut hasher = fuel_crypto::Hasher::default();
@@ -440,15 +442,15 @@ pub mod mocks {
             hasher.input(header.time.0.to_be_bytes());
             hasher.input(header.application_hash.as_ref());
 
-            let id = ports::fuel::FuelBlockId::from(hasher.digest());
+            let id = services::ports::fuel::FuelBlockId::from(hasher.digest());
             let id_message = Message::from_bytes(*id);
             let signature = Signature::sign(secret_key, &id_message);
 
-            ports::fuel::FuelBlock {
+            services::ports::fuel::FuelBlock {
                 id,
                 header,
-                consensus: ports::fuel::FuelConsensus::PoAConsensus(
-                    ports::fuel::FuelPoAConsensus { signature },
+                consensus: services::ports::fuel::FuelConsensus::PoAConsensus(
+                    services::ports::fuel::FuelPoAConsensus { signature },
                 ),
                 transactions: vec![],
                 block_producer: Some(secret_key.public_key()),
@@ -575,7 +577,7 @@ impl Setup {
             1.try_into().unwrap(),
         );
 
-        let mut fuel_api = ports::fuel::MockApi::new();
+        let mut fuel_api = services::ports::fuel::MockApi::new();
         let latest_height = fuel_blocks.last().height;
         assert_eq!(height, latest_height);
         fuel_api
@@ -620,7 +622,7 @@ impl Setup {
         &self,
         blocks: Blocks,
     ) -> (
-        BlockImporter<DbWithProcess, ports::fuel::MockApi>,
+        BlockImporter<DbWithProcess, services::ports::fuel::MockApi>,
         NonEmpty<CompressedFuelBlock>,
     ) {
         match blocks {
@@ -648,7 +650,7 @@ impl Setup {
     // TODO: we should use the block committer here to insert the submissions
     pub async fn add_submissions(&self, pending_submissions: Vec<u32>) {
         for height in pending_submissions {
-            let submission_tx = ports::types::BlockSubmissionTx {
+            let submission_tx = services::types::BlockSubmissionTx {
                 hash: [height as u8; 32],
                 nonce: height,
                 ..Default::default()

@@ -10,8 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-ports = { workspace = true, features = ["clock"] }
-services = { workspace = true }
+services = { workspace = true, features = ["clock"] }
 
 [dev-dependencies]
 clock = { workspace = true, features = ["test-helpers"] }

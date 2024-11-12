@@ -2,8 +2,8 @@ use std::{num::NonZeroU32, time::Duration};
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::{primitives::Address, signers::Signer};
-use ports::{
-    l1::{FragmentsSubmitted, Result},
+use services::{
+    ports::l1::{FragmentsSubmitted, Result},
     types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse, U256},
 };
 use url::Url;
@@ -44,7 +44,7 @@ impl WebsocketClient {
         unhealthy_after_n_errors: usize,
         aws_client: AwsClient,
         tx_config: TxConfig,
-    ) -> ports::l1::Result<Self> {
+    ) -> services::ports::l1::Result<Self> {
         let blob_signer = if let Some(key_arn) = keys.blob_pool_key_arn {
             Some(aws_client.make_signer(key_arn).await?)
         } else {
@@ -108,8 +108,8 @@ impl WebsocketClient {
     pub(crate) async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-        previous_tx: Option<ports::types::L1Tx>,
-    ) -> ports::l1::Result<(L1Tx, FragmentsSubmitted)> {
+        previous_tx: Option<services::types::L1Tx>,
+    ) -> services::ports::l1::Result<(L1Tx, FragmentsSubmitted)> {
         Ok(self
             .inner
             .submit_state_fragments(fragments, previous_tx)

@@ -1,5 +1,4 @@
-use ports::types::NonEmpty;
-use services::{Result, Runner, StateCommitter, StateCommitterConfig};
+use services::{types::NonEmpty, Result, Runner, StateCommitter, StateCommitterConfig};
 use std::time::Duration;
 
 #[tokio::test]

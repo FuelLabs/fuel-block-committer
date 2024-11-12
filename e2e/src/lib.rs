@@ -14,7 +14,7 @@ mod tests {
     use std::time::Duration;
 
     use anyhow::Result;
-    use ports::storage::Storage;
+    use services::ports::storage::Storage;
     use tokio::time::sleep_until;
 
     use crate::whole_stack::{FuelNodeType, WholeStack};

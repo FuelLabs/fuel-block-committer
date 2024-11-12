@@ -1,16 +1,14 @@
 use std::{cmp::min, collections::VecDeque, fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
 
+use crate::{
+    ports::{l1::FragmentEncoder, storage::SequentialFuelBlocks},
+    types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
+    Result,
+};
 use bytesize::ByteSize;
 use fuel_block_committer_encoding::bundle::{self, BundleV1};
 use itertools::Itertools;
-use ports::{
-    l1::FragmentEncoder,
-    storage::SequentialFuelBlocks,
-    types::{CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
-};
 use rayon::prelude::*;
-
-use crate::Result;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Metadata {
@@ -99,7 +97,7 @@ impl<L1> Factory<L1> {
 
 impl<GasCalculator> BundlerFactory for Factory<GasCalculator>
 where
-    GasCalculator: ports::l1::FragmentEncoder + Clone + Send + Sync + 'static,
+    GasCalculator: crate::ports::l1::FragmentEncoder + Clone + Send + Sync + 'static,
 {
     type Bundler = Bundler<GasCalculator>;
 
@@ -200,7 +198,7 @@ impl<T> Bundler<T> {
 
     async fn analyze(&mut self, num_concurrent: std::num::NonZero<usize>) -> Result<Vec<Proposal>>
     where
-        T: ports::l1::FragmentEncoder + Send + Sync + Clone + 'static,
+        T: crate::ports::l1::FragmentEncoder + Send + Sync + Clone + 'static,
     {
         let blocks_for_analyzing = self.blocks_bundles_for_analyzing(num_concurrent);
 
@@ -225,7 +223,7 @@ impl<T> Bundler<T> {
 
 impl<T> Bundle for Bundler<T>
 where
-    T: ports::l1::FragmentEncoder + Send + Sync + Clone + 'static,
+    T: crate::ports::l1::FragmentEncoder + Send + Sync + Clone + 'static,
 {
     async fn advance(&mut self, optimization_runs: NonZeroUsize) -> Result<bool> {
         if self.attempts.is_empty() {

@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
+use crate::{
+    types::{Address, U256},
+    Result,
+};
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
-use ports::types::{Address, U256};
 
 use super::Runner;
-use crate::Result;
 
 struct Balance {
     gauge: IntGauge,
@@ -21,7 +23,7 @@ pub struct WalletBalanceTracker<Api> {
 
 impl<Api> WalletBalanceTracker<Api>
 where
-    Api: ports::l1::Api,
+    Api: crate::ports::l1::Api,
 {
     pub fn new(api: Api) -> Self {
         Self {
@@ -30,7 +32,7 @@ where
         }
     }
 
-    pub fn track_address(&mut self, name: &str, address: ::ports::types::Address) {
+    pub fn track_address(&mut self, name: &str, address: crate::types::Address) {
         self.tracking.insert(
             name.to_owned(),
             Balance {
@@ -66,7 +68,7 @@ impl<Api> RegistersMetrics for WalletBalanceTracker<Api> {
 
 impl<Api> Runner for WalletBalanceTracker<Api>
 where
-    Api: Send + Sync + ports::l1::Api,
+    Api: Send + Sync + crate::ports::l1::Api,
 {
     async fn run(&mut self) -> Result<()> {
         self.update_balance().await
@@ -78,9 +80,9 @@ mod tests {
 
     use std::str::FromStr;
 
+    use crate::{ports::l1, types::Address};
     use metrics::prometheus::{proto::Metric, Registry};
     use mockall::predicate::eq;
-    use ports::{l1, types::Address};
 
     use super::*;
 

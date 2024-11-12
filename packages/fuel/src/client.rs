@@ -12,7 +12,7 @@ use futures::{stream, Stream, StreamExt};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use ports::types::{CompressedFuelBlock, NonEmpty};
+use services::types::{CompressedFuelBlock, NonEmpty};
 use url::Url;
 
 use crate::{metrics::Metrics, Error, Result};

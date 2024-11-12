@@ -8,6 +8,28 @@ pub mod state_pruner;
 pub mod status_reporter;
 mod wallet_balance_tracker;
 
+pub mod ports {
+    #[cfg(feature = "l1")]
+    pub mod l1;
+
+    #[cfg(feature = "fuel")]
+    pub mod fuel;
+
+    #[cfg(feature = "storage")]
+    pub mod storage;
+
+    #[cfg(feature = "clock")]
+    pub mod clock;
+}
+
+#[cfg(any(
+    feature = "l1",
+    feature = "fuel",
+    feature = "storage",
+    feature = "clock"
+))]
+pub mod types;
+
 pub use block_bundler::{
     bundler::Factory as BundlerFactory, BlockBundler, Config as BlockBundlerConfig,
 };

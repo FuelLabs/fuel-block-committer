@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, time::Duration};
+use std::time::Duration;
 
 use clock::SystemClock;
 use eth::{AwsConfig, BlobEncoder, KmsKeys};
@@ -7,8 +7,10 @@ use metrics::{
     prometheus::{IntGauge, Registry},
     HealthChecker, RegistersMetrics,
 };
-use ports::storage::Storage;
-use services::{BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletBalanceTracker};
+use services::{
+    ports::{l1::Contract, storage::Storage},
+    BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletBalanceTracker,
+};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -42,13 +44,13 @@ pub fn wallet_balance_tracker(
 }
 
 pub fn block_committer(
-    commit_interval: NonZeroU32,
     l1: L1,
     storage: Database,
     fuel: FuelApi,
     config: &config::Config,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
+    let commit_interval = l1.commit_interval();
     let block_committer = BlockCommitter::new(
         l1,
         storage,

@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use clock::TestClock;
-use ports::{
-    clock::Clock,
-    storage::Storage,
-    types::{BlockSubmission, BlockSubmissionTx},
-};
 use rand::Rng;
 use services::status_reporter::{Status, StatusReport, StatusReporter};
+use services::{
+    ports::{clock::Clock, storage::Storage},
+    types::{BlockSubmission, BlockSubmissionTx},
+};
 use storage::PostgresProcess;
 
 #[tokio::test]

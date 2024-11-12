@@ -1,5 +1,5 @@
-use ports::{
-    clock::Clock,
+use services::{
+    ports::clock::Clock,
     types::{DateTime, Utc},
 };
 
@@ -24,8 +24,8 @@ mod test_helpers {
         time::Duration,
     };
 
-    use ports::{
-        clock::Clock,
+    use services::{
+        ports::clock::Clock,
         types::{DateTime, Utc},
     };
 
@@ -57,7 +57,7 @@ mod test_helpers {
     }
 
     impl Clock for TestClock {
-        fn now(&self) -> ports::types::DateTime<ports::types::Utc> {
+        fn now(&self) -> services::types::DateTime<services::types::Utc> {
             DateTime::<Utc>::from_timestamp_millis(
                 self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
             )
@@ -83,7 +83,7 @@ pub use test_helpers::TestClock;
 mod tests {
     use std::time::Duration;
 
-    use ports::clock::Clock;
+    use services::ports::clock::Clock;
 
     use crate::TestClock;
 

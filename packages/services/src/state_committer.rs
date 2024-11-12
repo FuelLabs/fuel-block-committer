@@ -1,14 +1,15 @@
 use std::{num::NonZeroUsize, time::Duration};
 
-use itertools::Itertools;
-use ports::{
-    clock::Clock,
-    storage::{BundleFragment, Storage},
+use crate::{
+    ports::{
+        clock::Clock,
+        storage::{BundleFragment, Storage},
+    },
     types::{CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
+    Result, Runner,
 };
+use itertools::Itertools;
 use tracing::info;
-
-use crate::{Result, Runner};
 
 // src/config.rs
 #[derive(Debug, Clone)]
@@ -64,8 +65,8 @@ where
 
 impl<L1, F, Db, C> StateCommitter<L1, F, Db, C>
 where
-    L1: ports::l1::Api,
-    F: ports::fuel::Api,
+    L1: crate::ports::l1::Api,
+    F: crate::ports::fuel::Api,
     Db: Storage,
     C: Clock,
 {
@@ -230,8 +231,8 @@ where
 
 impl<L1, F, Db, C> Runner for StateCommitter<L1, F, Db, C>
 where
-    F: ports::fuel::Api + Send + Sync,
-    L1: ports::l1::Api + Send + Sync,
+    F: crate::ports::fuel::Api + Send + Sync,
+    L1: crate::ports::l1::Api + Send + Sync,
     Db: Storage + Clone + Send + Sync,
     C: Clock + Send + Sync,
 {

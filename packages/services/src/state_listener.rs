@@ -1,13 +1,12 @@
 use std::collections::HashSet;
 
+use crate::{
+    ports::{clock::Clock, storage::Storage},
+    types::{L1Tx, TransactionState},
+};
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
-};
-use ports::{
-    clock::Clock,
-    storage::Storage,
-    types::{L1Tx, TransactionState},
 };
 use tracing::info;
 
@@ -41,7 +40,7 @@ impl<L1, Db, C> StateListener<L1, Db, C> {
 
 impl<L1, Db, C> StateListener<L1, Db, C>
 where
-    L1: ports::l1::Api,
+    L1: crate::ports::l1::Api,
     Db: Storage,
     C: Clock,
 {
@@ -146,7 +145,7 @@ where
 
 impl<L1, Db, C> Runner for StateListener<L1, Db, C>
 where
-    L1: ports::l1::Api + Send + Sync,
+    L1: crate::ports::l1::Api + Send + Sync,
     Db: Storage,
     C: Clock + Send + Sync,
 {

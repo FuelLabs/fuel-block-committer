@@ -220,7 +220,7 @@ pub mod service {
 }
 
 pub mod port {
-    pub use ports::types::{DateTime, Utc}; //TODO: @hal3e do not use from ports
+    pub use crate::types::{DateTime, Utc}; //TODO: @hal3e do not use from ports
 
     use crate::Result;
 

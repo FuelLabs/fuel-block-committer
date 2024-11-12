@@ -15,8 +15,7 @@ hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 num-bigint = { workspace = true }
-ports = { workspace = true, features = ["storage"] }
-services = { workspace = true }
+services = { workspace = true, features = ["storage"] }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 sqlx = { workspace = true, features = [
@@ -38,7 +37,6 @@ tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 hex = { workspace = true }
-ports = { workspace = true, features = ["storage"] }
 clock = { workspace = true, features = ["test-helpers"] }
 rand = { workspace = true, features = ["small_rng"] }
 storage = { workspace = true, features = ["test-helpers"] }
@@ -50,5 +48,4 @@ test-helpers = [
   "tokio/sync",
   "dep:rand",
   "dep:delegate",
-  "ports/test-helpers",
 ]

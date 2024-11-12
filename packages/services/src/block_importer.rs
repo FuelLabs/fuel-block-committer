@@ -1,11 +1,10 @@
-use futures::TryStreamExt;
-use ports::{
-    storage::Storage,
+use crate::{
+    ports::storage::Storage,
     types::{nonempty, CompressedFuelBlock, NonEmpty},
+    Result, Runner,
 };
+use futures::TryStreamExt;
 use tracing::info;
-
-use crate::{Result, Runner};
 
 /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
 /// into local storage. It fetches blocks from the Fuel API
@@ -30,7 +29,7 @@ impl<Db, FuelApi> BlockImporter<Db, FuelApi> {
 impl<Db, FuelApi> BlockImporter<Db, FuelApi>
 where
     Db: Storage,
-    FuelApi: ports::fuel::Api,
+    FuelApi: crate::ports::fuel::Api,
 {
     async fn import_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
         let starting_height = blocks.first().height;
@@ -47,7 +46,7 @@ where
 impl<Db, FuelApi> Runner for BlockImporter<Db, FuelApi>
 where
     Db: Storage + Send + Sync,
-    FuelApi: ports::fuel::Api + Send + Sync,
+    FuelApi: crate::ports::fuel::Api + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         let chain_height = self.fuel_api.latest_height().await?;

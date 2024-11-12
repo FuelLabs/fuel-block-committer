@@ -28,7 +28,7 @@ fuel-block-committer-encoding = { workspace = true, features = ["kzg"] }
 futures = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
-ports = { workspace = true, features = ["l1"] }
+services = { workspace = true, features = ["l1"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
@@ -42,7 +42,7 @@ alloy = { workspace = true, features = [
   "json-rpc",
 ] }
 mockall = { workspace = true }
-ports = { workspace = true, features = ["l1", "test-helpers"] }
+services = { workspace = true, features = ["l1", "test-helpers"] }
 pretty_assertions = { workspace = true, features = ["default"] }
 proptest = { workspace = true, features = ["default"] }
 rand = { workspace = true, features = ["small_rng"] }

@@ -1798,7 +1798,6 @@ name = "clock"
 version = "0.10.2"
 dependencies = [
  "clock",
- "ports",
  "services",
  "tokio",
 ]
@@ -2487,12 +2486,12 @@ dependencies = [
  "hex",
  "itertools 0.13.0",
  "portpicker",
- "ports",
  "rand",
  "reqwest 0.12.9",
  "secp256k1",
  "serde",
  "serde_json",
+ "services",
  "storage",
  "tempfile",
  "testcontainers",
@@ -2659,11 +2658,11 @@ dependencies = [
  "itertools 0.13.0",
  "metrics",
  "mockall",
- "ports",
  "pretty_assertions",
  "proptest",
  "rand",
  "serde",
+ "services",
  "test-case",
  "thiserror",
  "tokio",
@@ -2822,7 +2821,7 @@ dependencies = [
  "fuel-core-types",
  "futures",
  "metrics",
- "ports",
+ "services",
  "tokio",
  "url",
 ]
@@ -2854,7 +2853,6 @@ dependencies = [
  "humantime",
  "metrics",
  "num_cpus",
- "ports",
  "serde",
  "serde_json",
  "services",
@@ -4599,24 +4597,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ports"
-version = "0.10.2"
-dependencies = [
- "alloy",
- "async-trait",
- "delegate",
- "fuel-core-client",
- "futures",
- "itertools 0.13.0",
- "mockall",
- "nonempty",
- "rand",
- "sqlx",
- "thiserror",
- "trait-variant",
-]
-
-[[package]]
 name = "postcard"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5620,23 +5600,27 @@ dependencies = [
 name = "services"
 version = "0.10.2"
 dependencies = [
+ "alloy",
+ "async-trait",
  "bytesize",
  "clock",
  "delegate",
  "eth",
  "fuel-block-committer-encoding",
+ "fuel-core-client",
  "fuel-crypto",
  "futures",
  "hex",
  "itertools 0.13.0",
  "metrics",
  "mockall",
- "ports",
+ "nonempty",
  "pretty_assertions",
  "rand",
  "rayon",
  "serde",
  "services",
+ "sqlx",
  "storage",
  "tai64",
  "test-helpers",
@@ -6023,7 +6007,6 @@ dependencies = [
  "itertools 0.13.0",
  "metrics",
  "num-bigint",
- "ports",
  "rand",
  "serde",
  "services",
@@ -6310,7 +6293,6 @@ dependencies = [
  "itertools 0.13.0",
  "metrics",
  "mockall",
- "ports",
  "rand",
  "services",
  "storage",
