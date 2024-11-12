@@ -34,12 +34,11 @@ impl DeployedContract {
         let chain_state_contract = WebsocketClient::connect(
             url,
             address,
-            eth::KmsKeys {
-                main_key_arn: key.id,
-                blob_pool_key_arn: None,
+            eth::L1Keys {
+                main: key.id,
+                blob: None,
             },
             5,
-            aws_client,
             eth::TxConfig {
                 tx_max_fee,
                 send_tx_request_timeout,

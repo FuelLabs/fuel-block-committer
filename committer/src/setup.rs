@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eth::{AwsConfig, BlobEncoder, KmsKeys};
+use eth::{AwsConfig, BlobEncoder, L1Keys};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     prometheus::{IntGauge, Registry},
@@ -190,19 +190,14 @@ pub async fn l1_adapter(
     internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let aws_config = AwsConfig::from_env().await;
-
-    let aws_client = AwsClient::new(aws_config);
-
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        KmsKeys {
-            main_key_arn: config.eth.main_key_arn.clone(),
-            blob_pool_key_arn: config.eth.blob_pool_key_arn.clone(),
+        L1Keys {
+            main: config.eth.l1_keys.main.clone(),
+            blob: config.eth.l1_keys.blob.clone(),
         },
         internal_config.eth_errors_before_unhealthy,
-        aws_client,
         eth::TxConfig {
             tx_max_fee: config.app.tx_max_fee as u128,
             send_tx_request_timeout: config.app.send_tx_request_timeout,

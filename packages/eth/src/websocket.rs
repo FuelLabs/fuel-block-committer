@@ -1,18 +1,24 @@
-use std::{num::NonZeroU32, time::Duration};
+use std::{num::NonZeroU32, str::FromStr, time::Duration};
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
-use alloy::{primitives::Address, signers::Signer};
+use alloy::{
+    consensus::SignableTransaction,
+    network::TxSigner,
+    primitives::{Address, ChainId, B256},
+    signers::{k256::SecretKey, local::PrivateKeySigner, Signature, Signer},
+};
 use ports::{
     l1::{FragmentsSubmitted, Result},
     types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse, U256},
 };
+use serde::Deserialize;
 use url::Url;
 
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::AwsClient;
+use crate::{AwsClient, AwsConfig};
 
 mod connection;
 mod health_tracking_middleware;
@@ -24,10 +30,18 @@ pub struct WebsocketClient {
     contract_caller_address: Address,
 }
 
-#[derive(Debug, Clone)]
-pub struct KmsKeys {
-    pub main_key_arn: String,
-    pub blob_pool_key_arn: Option<String>,
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub enum L1Key {
+    Kms(String),
+    Private(String),
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct L1Keys {
+    /// The eth key authorized by the L1 bridging contracts to post block commitments.
+    pub main: L1Key,
+    /// The eth key for posting L2 state to L1.
+    pub blob: Option<L1Key>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,31 +50,76 @@ pub struct TxConfig {
     pub send_tx_request_timeout: Duration,
 }
 
+pub struct OurSigner {
+    signer: Box<dyn Signer + 'static + Send + Sync>,
+}
+
+#[async_trait::async_trait]
+impl Signer<Signature> for OurSigner {
+    /// Signs the given hash.
+    async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
+        self.signer.sign_hash(hash).await
+    }
+
+    fn address(&self) -> Address {
+        self.signer.address()
+    }
+
+    fn chain_id(&self) -> Option<ChainId> {
+        self.signer.chain_id()
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<ChainId>) {
+        self.signer.set_chain_id(chain_id)
+    }
+}
+
+// #[async_trait::async_trait]
+// impl TxSigner<Signature> for OurSigner {}
+
+impl OurSigner {
+    pub async fn for_key(key: L1Key) -> Self {
+        match key {
+            L1Key::Kms(key) => {
+                let config = AwsConfig::from_env().await;
+                let client = AwsClient::new(config);
+
+                let signer = client.make_signer(key).await.unwrap();
+
+                Self {
+                    signer: Box::new(signer),
+                }
+            }
+            L1Key::Private(key) => {
+                let signer = PrivateKeySigner::from_str(&key).unwrap();
+                Self {
+                    signer: Box::new(signer),
+                }
+            }
+        }
+    }
+}
+
+pub struct OurSigners {
+    pub main: OurSigner,
+    pub blob: Option<OurSigner>,
+}
+
 impl WebsocketClient {
     pub async fn connect(
         url: Url,
         contract_address: Address,
-        keys: KmsKeys,
+        signers: OurSigners,
         unhealthy_after_n_errors: usize,
-        aws_client: AwsClient,
         tx_config: TxConfig,
     ) -> ports::l1::Result<Self> {
-        let blob_signer = if let Some(key_arn) = keys.blob_pool_key_arn {
-            Some(aws_client.make_signer(key_arn).await?)
-        } else {
-            None
-        };
-
-        let main_signer = aws_client.make_signer(keys.main_key_arn).await?;
-
-        let blob_poster_address = blob_signer.as_ref().map(|signer| signer.address());
-        let contract_caller_address = main_signer.address();
+        let blob_poster_address = signers.blob.as_ref().map(|signer| signer.address());
+        let contract_caller_address = signers.main.address();
 
         let provider = WsConnection::connect(
             url,
             contract_address,
-            main_signer,
-            blob_signer,
+            signers,
             tx_config.tx_max_fee,
             tx_config.send_tx_request_timeout,
         )
