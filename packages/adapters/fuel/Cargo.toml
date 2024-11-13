@@ -15,7 +15,7 @@ fuel-core-client = { workspace = true, features = ["subscriptions"] }
 fuel-core-types = { workspace = true, optional = true }
 futures = { workspace = true }
 metrics = { workspace = true }
-services = { workspace = true, features = ["fuel"] }
+services = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
