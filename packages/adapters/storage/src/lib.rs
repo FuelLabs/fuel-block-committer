@@ -8,15 +8,16 @@ use std::ops::RangeInclusive;
 #[cfg(feature = "test-helpers")]
 pub use test_instance::*;
 
-mod error;
+pub(crate) mod error;
 mod postgres;
 pub use postgres::{DbConfig, Postgres};
 use services::{
-    ports::storage::{BundleFragment, Result, SequentialFuelBlocks, Storage},
+    ports::storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
         NonEmpty, NonNegative, TransactionState, Utc,
     },
+    Result,
 };
 
 impl Storage for Postgres {
@@ -158,10 +159,7 @@ mod tests {
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
     use services::{
-        ports::{
-            clock::Clock,
-            storage::{Error, Storage},
-        },
+        ports::{clock::Clock, storage::Storage},
         types::{nonempty, CollectNonEmpty},
     };
 
@@ -352,7 +350,7 @@ mod tests {
             .await;
 
         // then
-        let Err(Error::Database(msg)) = result else {
+        let Err(services::Error::Storage(msg)) = result else {
             panic!("should be storage error");
         };
 

@@ -10,14 +10,13 @@ mod metrics;
 pub use client::*;
 use delegate::delegate;
 
-type Error = services::ports::fuel::Error;
-type Result<T> = services::ports::fuel::Result<T>;
+use services::Result;
 
 impl services::ports::fuel::Api for client::HttpClient {
     delegate! {
         to self {
-            async fn block_at_height(&self, height: u32) -> services::ports::fuel::Result<Option<FuelBlock>>;
-            async fn latest_block(&self) -> services::ports::fuel::Result<FuelBlock>;
+            async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
+            async fn latest_block(&self) -> Result<FuelBlock>;
         }
     }
 

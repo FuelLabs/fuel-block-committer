@@ -65,7 +65,7 @@ pub mod mocks {
         impl services::ports::l1::Contract for FullL1Mock {
             delegate! {
                 to self.contract {
-                    async fn submit(&self, hash: [u8;32], height: u32) -> services::ports::l1::Result<BlockSubmissionTx>;
+                    async fn submit(&self, hash: [u8;32], height: u32) -> services::Result<BlockSubmissionTx>;
                     fn commit_interval(&self) -> std::num::NonZeroU32;
                 }
             }
@@ -78,11 +78,11 @@ pub mod mocks {
                         &self,
                         fragments: NonEmpty<Fragment>,
                         previous_tx: Option<services::types::L1Tx>,
-                    ) -> services::ports::l1::Result<(services::types::L1Tx, FragmentsSubmitted)>;
-                    async fn get_block_number(&self) -> services::ports::l1::Result<L1Height>;
-                    async fn balance(&self, address: services::types::Address) -> services::ports::l1::Result<U256>;
-                    async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> services::ports::l1::Result<Option<TransactionResponse>>;
-                    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::ports::l1::Result<bool>;
+                    ) -> services::Result<(services::types::L1Tx, FragmentsSubmitted)>;
+                    async fn get_block_number(&self) -> services::Result<L1Height>;
+                    async fn balance(&self, address: services::types::Address) -> services::Result<U256>;
+                    async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> services::Result<Option<TransactionResponse>>;
+                    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::Result<bool>;
                 }
             }
         }
@@ -354,7 +354,7 @@ pub mod mocks {
                             panic!("range of requested blocks {range:?} is not as tight as expected: {expected_range:?}");
                         }
 
-                        let blocks_vec: Vec<services::ports::fuel::Result<_>> = blocks
+                        let blocks_vec: Vec<services::Result<_>> = blocks
                             .iter()
                             .filter(move |b| range.contains(&b.height))
                             .cloned()

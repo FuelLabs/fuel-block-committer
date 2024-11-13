@@ -10,17 +10,7 @@ pub use fuel_core_client::client::types::{
 };
 pub use futures::stream::BoxStream;
 
-use crate::types::CompressedFuelBlock;
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("{0}")]
-    Network(String),
-    #[error("{0}")]
-    Other(String),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+use crate::{types::CompressedFuelBlock, Result};
 
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]

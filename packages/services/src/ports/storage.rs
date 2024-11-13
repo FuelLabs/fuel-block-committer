@@ -16,14 +16,6 @@ use crate::types::{
     NonEmpty, NonNegative, TransactionState,
 };
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("db response: {0}")]
-    Database(String),
-    #[error("data conversion app<->db failed: {0}")]
-    Conversion(String),
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleFragment {
     pub id: NonNegative<i32>,
@@ -32,7 +24,7 @@ pub struct BundleFragment {
     pub fragment: Fragment,
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+use crate::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequentialFuelBlocks {

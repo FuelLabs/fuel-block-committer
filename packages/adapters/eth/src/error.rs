@@ -47,7 +47,7 @@ impl From<AwsSignerError> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl From<Error> for services::ports::l1::Error {
+impl From<Error> for services::Error {
     fn from(err: Error) -> Self {
         match err {
             Error::Network(err) => Self::Network(err),

@@ -1,25 +1,12 @@
 use std::num::NonZeroUsize;
 
-use crate::types::{
-    BlockSubmissionTx, Fragment, InvalidL1Height, L1Height, L1Tx, NonEmpty, NonNegative,
-    TransactionResponse, U256,
+use crate::{
+    types::{
+        BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, NonNegative, TransactionResponse,
+        U256,
+    },
+    Result,
 };
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("network error: {0}")]
-    Network(String),
-    #[error("{0}")]
-    Other(String),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<InvalidL1Height> for Error {
-    fn from(err: InvalidL1Height) -> Self {
-        Self::Other(err.to_string())
-    }
-}
 
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]

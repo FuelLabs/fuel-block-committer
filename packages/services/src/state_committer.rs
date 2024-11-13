@@ -129,7 +129,8 @@ where
                     .join(", ");
 
                 tracing::error!("Failed to submit fragments {ids}: {e}");
-                Err(e.into())
+
+                Err(e)
             }
         }
     }
@@ -187,9 +188,8 @@ where
 
     fn elapsed_since_tx_submitted(&self, tx: &L1Tx) -> Result<Duration> {
         let created_at = tx.created_at.expect("tx to have timestamp");
-        let elapsed = self.clock.elapsed(created_at);
 
-        Ok(elapsed?)
+        self.clock.elapsed(created_at)
     }
 
     async fn fragments_submitted_by_tx(

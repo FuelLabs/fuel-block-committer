@@ -43,6 +43,7 @@ pub use block_importer::BlockImporter;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 pub use state_listener::StateListener;
+use types::InvalidL1Height;
 pub use wallet_balance_tracker::WalletBalanceTracker;
 
 #[derive(thiserror::Error, Debug)]
@@ -57,27 +58,9 @@ pub enum Error {
     BlockValidation(String),
 }
 
-impl From<ports::l1::Error> for Error {
-    fn from(error: ports::l1::Error) -> Self {
-        match error {
-            ports::l1::Error::Network(e) => Self::Network(e),
-            _ => Self::Other(error.to_string()),
-        }
-    }
-}
-
-impl From<ports::fuel::Error> for Error {
-    fn from(error: ports::fuel::Error) -> Self {
-        match error {
-            ports::fuel::Error::Network(e) => Self::Network(e),
-            ports::fuel::Error::Other(e) => Self::Other(e.to_string()),
-        }
-    }
-}
-
-impl From<ports::storage::Error> for Error {
-    fn from(error: ports::storage::Error) -> Self {
-        Self::Storage(error.to_string())
+impl From<InvalidL1Height> for Error {
+    fn from(err: InvalidL1Height) -> Self {
+        Self::Other(err.to_string())
     }
 }
 

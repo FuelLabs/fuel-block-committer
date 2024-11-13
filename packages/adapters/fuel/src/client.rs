@@ -15,7 +15,8 @@ use metrics::{
 use services::types::{CompressedFuelBlock, NonEmpty};
 use url::Url;
 
-use crate::{metrics::Metrics, Error, Result};
+use crate::metrics::Metrics;
+use services::{Error, Result};
 
 #[derive(Clone)]
 pub struct HttpClient {

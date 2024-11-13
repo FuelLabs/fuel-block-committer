@@ -8,10 +8,11 @@ use alloy::{
 use delegate::delegate;
 use itertools::{izip, Itertools};
 use services::{
-    ports::l1::{Api, Contract, FragmentsSubmitted, Result},
+    ports::l1::{Api, Contract, FragmentsSubmitted},
     types::{
         BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, NonNegative, TransactionResponse,
     },
+    Result,
 };
 
 mod aws;

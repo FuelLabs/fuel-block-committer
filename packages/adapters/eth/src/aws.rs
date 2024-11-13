@@ -3,6 +3,7 @@ use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region,
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{config::BehaviorVersion, Client};
+use services::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct AwsConfig {
@@ -68,11 +69,9 @@ impl AwsClient {
         &self.client
     }
 
-    pub async fn make_signer(&self, key_arn: String) -> services::ports::l1::Result<AwsSigner> {
+    pub async fn make_signer(&self, key_arn: String) -> Result<AwsSigner> {
         AwsSigner::new(self.client.clone(), key_arn, None)
             .await
-            .map_err(|err| {
-                services::ports::l1::Error::Other(format!("Error making aws signer: {err:?}"))
-            })
+            .map_err(|err| Error::Other(format!("Error making aws signer: {err:?}")))
     }
 }

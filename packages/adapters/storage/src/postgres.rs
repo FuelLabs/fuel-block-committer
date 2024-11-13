@@ -78,7 +78,7 @@ pub struct DbConfig {
 }
 
 impl Postgres {
-    pub async fn connect(opt: &DbConfig) -> services::ports::storage::Result<Self> {
+    pub async fn connect(opt: &DbConfig) -> services::Result<Self> {
         let ssl_mode = if opt.use_ssl {
             sqlx::postgres::PgSslMode::Require
         } else {
@@ -125,7 +125,7 @@ impl Postgres {
         self.connection_pool.close().await;
     }
 
-    pub async fn migrate(&self) -> services::ports::storage::Result<()> {
+    pub async fn migrate(&self) -> services::Result<()> {
         sqlx::migrate!()
             .run(&self.connection_pool)
             .await
