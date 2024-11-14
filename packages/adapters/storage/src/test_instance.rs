@@ -234,3 +234,20 @@ impl state_pruner::port::Storage for DbWithProcess {
         }
     }
 }
+
+impl services::state_listener::port::Storage for DbWithProcess {
+    async fn get_non_finalized_txs(&self) -> services::Result<Vec<L1Tx>> {
+        Ok(self.db._get_non_finalized_txs().await?)
+    }
+
+    async fn batch_update_tx_states(
+        &self,
+        selective_changes: Vec<([u8; 32], TransactionState)>,
+        noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+    ) -> services::Result<()> {
+        Ok(self
+            .db
+            ._batch_update_tx_states(selective_changes, noncewide_changes)
+            .await?)
+    }
+}

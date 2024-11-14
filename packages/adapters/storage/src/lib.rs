@@ -24,6 +24,7 @@ impl Storage for Postgres {
     async fn next_bundle_id(&self) -> Result<NonNegative<i32>> {
         Ok(self._next_bundle_id().await?)
     }
+
     async fn record_block_submission(
         &self,
         submission_tx: BlockSubmissionTx,
@@ -138,6 +139,22 @@ impl Storage for Postgres {
 
     async fn has_nonfinalized_txs(&self) -> Result<bool> {
         Ok(self._has_nonfinalized_txs().await?)
+    }
+
+    async fn batch_update_tx_states(
+        &self,
+        selective_changes: Vec<([u8; 32], TransactionState)>,
+        noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+    ) -> Result<()> {
+        Ok(self
+            ._batch_update_tx_states(selective_changes, noncewide_changes)
+            .await?)
+    }
+}
+
+impl services::state_listener::port::Storage for Postgres {
+    async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
+        Ok(self._get_non_finalized_txs().await?)
     }
 
     async fn batch_update_tx_states(

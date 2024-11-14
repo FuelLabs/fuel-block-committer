@@ -16,10 +16,7 @@ pub mod service {
         metrics: Metrics,
     }
 
-    impl<Db, Clock> StatePruner<Db, Clock>
-    where
-        Db: crate::state_pruner::port::Storage,
-    {
+    impl<Db, Clock> StatePruner<Db, Clock> {
         pub fn new(storage: Db, clock: Clock, retention: Duration) -> Self {
             Self {
                 storage,
@@ -47,7 +44,6 @@ pub mod service {
             self.metrics.observe_table_sizes(&table_sizes);
 
             // TODO: @hal3e
-            // - add tests for contract tx and submissions
             // - refactor ports to every service
             // - configure timeout to run this service
 
@@ -220,7 +216,7 @@ pub mod service {
 }
 
 pub mod port {
-    pub use crate::types::{DateTime, Utc}; //TODO: @hal3e do not use from ports
+    pub use crate::types::{DateTime, Utc};
 
     use crate::Result;
 

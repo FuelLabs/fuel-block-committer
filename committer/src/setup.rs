@@ -9,6 +9,7 @@ use metrics::{
 };
 use services::{
     ports::{l1::Contract, storage::Storage},
+    state_listener::service::StateListener,
     BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
@@ -169,7 +170,7 @@ pub fn state_listener(
     config: &config::Config,
     last_finalization: IntGauge,
 ) -> tokio::task::JoinHandle<()> {
-    let state_listener = services::StateListener::new(
+    let state_listener = StateListener::new(
         l1,
         storage,
         config.app.num_blocks_to_finalize_tx,

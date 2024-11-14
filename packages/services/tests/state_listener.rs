@@ -1,7 +1,8 @@
 use metrics::prometheus::IntGauge;
 use services::{
     ports::{clock::Clock, storage::Storage},
-    Result, Runner, StateListener,
+    state_listener::service::StateListener,
+    Result, Runner,
 };
 use test_helpers::mocks::{self, l1::TxStatus};
 

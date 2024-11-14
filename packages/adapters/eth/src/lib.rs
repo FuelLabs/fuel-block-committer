@@ -157,6 +157,22 @@ impl Api for WebsocketClient {
     }
 }
 
+impl services::state_listener::port::l1::Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
+            async fn is_squeezed_out(&self, tx_hash: [u8; 32],) -> Result<bool>;
+        }
+    }
+
+    async fn get_block_number(&self) -> Result<L1Height> {
+        let block_num = self._get_block_number().await?;
+        let height = L1Height::try_from(block_num)?;
+
+        Ok(height)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;

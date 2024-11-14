@@ -15,7 +15,8 @@ use services::{
 use storage::{DbWithProcess, PostgresProcess};
 
 use services::{
-    BlockBundler, BlockBundlerConfig, BlockImporter, BundlerFactory, StateCommitter, StateListener,
+    state_listener::service::StateListener, BlockBundler, BlockBundlerConfig, BlockImporter,
+    BundlerFactory, StateCommitter,
 };
 use services::{BlockCommitter, Runner};
 
@@ -44,6 +45,7 @@ pub mod mocks {
 
         pub struct FullL1Mock {
             pub api: services::ports::l1::MockApi,
+            pub state_listener_l1_api: services::state_listener::port::l1::MockApi,
             pub contract: services::ports::l1::MockContract,
         }
 
@@ -57,6 +59,7 @@ pub mod mocks {
             pub fn new() -> Self {
                 Self {
                     api: services::ports::l1::MockApi::new(),
+                    state_listener_l1_api: services::state_listener::port::l1::MockApi::new(),
                     contract: services::ports::l1::MockContract::new(),
                 }
             }
@@ -182,8 +185,8 @@ pub mod mocks {
             heights: &[u32],
             tx_height: u32,
             statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
-        ) -> services::ports::l1::MockApi {
-            let mut l1_mock = services::ports::l1::MockApi::new();
+        ) -> services::state_listener::port::l1::MockApi {
+            let mut l1_mock = services::state_listener::port::l1::MockApi::new();
 
             for height in heights {
                 let l1_height = L1Height::from(*height);
@@ -217,8 +220,8 @@ pub mod mocks {
             current_height: u32,
             tx_height: u32,
             statuses: impl IntoIterator<Item = ([u8; 32], TxStatus)>,
-        ) -> services::ports::l1::MockApi {
-            let mut l1_mock = services::ports::l1::MockApi::new();
+        ) -> services::state_listener::port::l1::MockApi {
+            let mut l1_mock = services::state_listener::port::l1::MockApi::new();
 
             let height = L1Height::from(current_height);
             l1_mock
@@ -248,8 +251,8 @@ pub mod mocks {
             heights: &[u32],
             tx_height: u32,
             first_status: ([u8; 32], TxStatus),
-        ) -> services::ports::l1::MockApi {
-            let mut l1_mock = services::ports::l1::MockApi::new();
+        ) -> services::state_listener::port::l1::MockApi {
+            let mut l1_mock = services::state_listener::port::l1::MockApi::new();
 
             for height in heights {
                 let l1_height = L1Height::from(*height);
