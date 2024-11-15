@@ -372,12 +372,12 @@ impl WsConnection {
         tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> Result<Self> {
-        let address = signers.main.address();
+        let address = TxSigner::address(&signers.main);
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), signers.main).await?;
 
-        let (blob_provider, blob_signer_address) = if let Some(signer) = blob_signer {
-            let blob_signer_address = signer.address();
+        let (blob_provider, blob_signer_address) = if let Some(signer) = signers.blob {
+            let blob_signer_address = TxSigner::address(&signer);
             let blob_provider = Self::provider_with_signer(ws, signer).await?;
             (Some(blob_provider), Some(blob_signer_address))
         } else {

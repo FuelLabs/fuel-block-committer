@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::{command, Parser};
-use eth::{Address, L1Keys};
+use eth::{Address, L1Key, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use storage::DbConfig;
@@ -21,12 +21,15 @@ pub struct Config {
 
 impl Config {
     pub fn validate(&self) -> crate::errors::Result<()> {
-        if let Some(blob_pool_wallet_key) = &self.eth.blob_pool_key {
-            if blob_pool_wallet_key == &self.eth.main_key {
-                return Err(crate::errors::Error::Other(
-                    "Wallet key and blob pool wallet key must be different".to_string(),
-                ));
-            }
+        let keys = &self.eth.l1_keys;
+        if keys
+            .blob
+            .as_ref()
+            .is_some_and(|blob_key| blob_key == &keys.main)
+        {
+            return Err(crate::errors::Error::Other(
+                "Wallet key and blob pool wallet key must be different".to_string(),
+            ));
         }
 
         if self.app.bundle.fragments_to_accumulate.get() > 6 {

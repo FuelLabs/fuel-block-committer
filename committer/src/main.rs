@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
 
     // If the blob pool wallet key is set, we need to start
     // the state committer and state importer
-    if config.eth.blob_pool_key.is_some() {
+    if config.eth.l1_keys.blob.is_some() {
         let block_bundler = setup::block_bundler(
             fuel_adapter.clone(),
             storage.clone(),

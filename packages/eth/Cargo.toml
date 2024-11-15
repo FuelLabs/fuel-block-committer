@@ -17,6 +17,7 @@ alloy = { workspace = true, features = [
   "kzg",
   "contract",
   "signer-aws",
+  "signer-local",
   "rpc-types",
   "reqwest-rustls-tls",
 ] }

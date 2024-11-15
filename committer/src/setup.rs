@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eth::{AwsConfig, BlobEncoder, L1Keys};
+use eth::{AwsConfig, BlobEncoder, L1Keys, OurSigners};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     prometheus::{IntGauge, Registry},
@@ -193,10 +193,7 @@ pub async fn l1_adapter(
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        L1Keys {
-            main: config.eth.l1_keys.main.clone(),
-            blob: config.eth.l1_keys.blob.clone(),
-        },
+        OurSigners::for_keys(config.eth.l1_keys.clone()).await,
         internal_config.eth_errors_before_unhealthy,
         eth::TxConfig {
             tx_max_fee: config.app.tx_max_fee as u128,
