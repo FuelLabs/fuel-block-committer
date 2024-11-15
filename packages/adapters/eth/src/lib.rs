@@ -173,6 +173,14 @@ impl services::state_listener::port::l1::Api for WebsocketClient {
     }
 }
 
+impl services::wallet_balance_tracker::port::l1::Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn balance(&self, address: Address) -> Result<U256>;
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;

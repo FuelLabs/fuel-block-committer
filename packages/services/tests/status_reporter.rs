@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use clock::TestClock;
 use rand::Rng;
-use services::status_reporter::{Status, StatusReport, StatusReporter};
+use services::status_reporter::service::{Status, StatusReport, StatusReporter};
 use services::{
     ports::{clock::Clock, storage::Storage},
     types::{BlockSubmission, BlockSubmissionTx},

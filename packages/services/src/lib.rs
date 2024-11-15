@@ -6,7 +6,7 @@ mod state_committer;
 pub mod state_listener;
 pub mod state_pruner;
 pub mod status_reporter;
-mod wallet_balance_tracker;
+pub mod wallet_balance_tracker;
 
 pub mod ports {
     #[cfg(feature = "l1")]
@@ -43,7 +43,6 @@ pub use block_importer::BlockImporter;
 pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
-pub use wallet_balance_tracker::WalletBalanceTracker;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

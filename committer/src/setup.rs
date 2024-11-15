@@ -10,7 +10,8 @@ use metrics::{
 use services::{
     ports::{l1::Contract, storage::Storage},
     state_listener::service::StateListener,
-    BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletBalanceTracker,
+    wallet_balance_tracker::service::WalletBalanceTracker,
+    BlockBundler, BlockBundlerConfig, BlockCommitter, Runner,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;

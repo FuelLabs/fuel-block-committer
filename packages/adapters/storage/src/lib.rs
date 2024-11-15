@@ -168,6 +168,12 @@ impl services::state_listener::port::Storage for Postgres {
     }
 }
 
+impl services::status_reporter::port::Storage for Postgres {
+    async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
+        Ok(self._submission_w_latest_block().await?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;

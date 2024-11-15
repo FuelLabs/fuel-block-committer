@@ -1,77 +1,96 @@
-use std::collections::HashMap;
+pub mod service {
+    use std::collections::HashMap;
 
-use crate::{
-    types::{Address, U256},
-    Result,
-};
-use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
-    RegistersMetrics,
-};
+    use crate::{
+        types::{Address, U256},
+        Result,
+    };
+    use metrics::{
+        prometheus::{core::Collector, IntGauge, Opts},
+        RegistersMetrics,
+    };
 
-use super::Runner;
+    use crate::Runner;
 
-struct Balance {
-    gauge: IntGauge,
-    address: Address,
-}
+    struct Balance {
+        gauge: IntGauge,
+        address: Address,
+    }
 
-pub struct WalletBalanceTracker<Api> {
-    api: Api,
-    tracking: HashMap<String, Balance>,
-}
+    pub struct WalletBalanceTracker<Api> {
+        api: Api,
+        tracking: HashMap<String, Balance>,
+    }
 
-impl<Api> WalletBalanceTracker<Api>
-where
-    Api: crate::ports::l1::Api,
-{
-    pub fn new(api: Api) -> Self {
-        Self {
-            api,
-            tracking: Default::default(),
+    impl<Api> WalletBalanceTracker<Api>
+    where
+        Api: crate::wallet_balance_tracker::port::l1::Api,
+    {
+        pub fn new(api: Api) -> Self {
+            Self {
+                api,
+                tracking: Default::default(),
+            }
+        }
+
+        pub fn track_address(&mut self, name: &str, address: crate::types::Address) {
+            self.tracking.insert(
+                name.to_owned(),
+                Balance {
+                    gauge: IntGauge::with_opts(
+                        Opts::new("wallet_balance", "Wallet balance [gwei].")
+                            .const_label("usage", name),
+                    )
+                    .expect("wallet balance metric to be correctly configured"),
+                    address,
+                },
+            );
+        }
+
+        pub async fn update_balance(&self) -> Result<()> {
+            for balance_tracker in self.tracking.values() {
+                let balance = self.api.balance(balance_tracker.address).await?;
+                let balance_gwei = balance / U256::from(1_000_000_000);
+                balance_tracker.gauge.set(balance_gwei.to::<i64>());
+            }
+
+            Ok(())
         }
     }
 
-    pub fn track_address(&mut self, name: &str, address: crate::types::Address) {
-        self.tracking.insert(
-            name.to_owned(),
-            Balance {
-                gauge: IntGauge::with_opts(
-                    Opts::new("wallet_balance", "Wallet balance [gwei].")
-                        .const_label("usage", name),
-                )
-                .expect("wallet balance metric to be correctly configured"),
-                address,
-            },
-        );
-    }
-
-    pub async fn update_balance(&self) -> Result<()> {
-        for balance_tracker in self.tracking.values() {
-            let balance = self.api.balance(balance_tracker.address).await?;
-            let balance_gwei = balance / U256::from(1_000_000_000);
-            balance_tracker.gauge.set(balance_gwei.to::<i64>());
+    impl<Api> RegistersMetrics for WalletBalanceTracker<Api> {
+        fn metrics(&self) -> Vec<Box<dyn Collector>> {
+            self.tracking
+                .values()
+                .map(|balance_tracker| {
+                    Box::new(balance_tracker.gauge.clone()) as Box<dyn Collector>
+                })
+                .collect()
         }
+    }
 
-        Ok(())
+    impl<Api> Runner for WalletBalanceTracker<Api>
+    where
+        Api: Send + Sync + crate::wallet_balance_tracker::port::l1::Api,
+    {
+        async fn run(&mut self) -> Result<()> {
+            self.update_balance().await
+        }
     }
 }
 
-impl<Api> RegistersMetrics for WalletBalanceTracker<Api> {
-    fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        self.tracking
-            .values()
-            .map(|balance_tracker| Box::new(balance_tracker.gauge.clone()) as Box<dyn Collector>)
-            .collect()
-    }
-}
+pub mod port {
+    pub mod l1 {
+        use alloy::primitives::U256;
 
-impl<Api> Runner for WalletBalanceTracker<Api>
-where
-    Api: Send + Sync + crate::ports::l1::Api,
-{
-    async fn run(&mut self) -> Result<()> {
-        self.update_balance().await
+        use crate::Result;
+
+        #[allow(async_fn_in_trait)]
+        #[trait_variant::make(Send)]
+        #[cfg_attr(feature = "test-helpers", mockall::automock)]
+        pub trait Api {
+            async fn balance(&self, address: crate::types::Address) -> Result<U256>;
+        }
     }
 }
 
@@ -80,9 +99,14 @@ mod tests {
 
     use std::str::FromStr;
 
-    use crate::{ports::l1, types::Address};
-    use metrics::prometheus::{proto::Metric, Registry};
+    use crate::types::Address;
+    use alloy::primitives::U256;
+    use metrics::{
+        prometheus::{proto::Metric, Registry},
+        RegistersMetrics,
+    };
     use mockall::predicate::eq;
+    use service::WalletBalanceTracker;
 
     use super::*;
 
@@ -136,8 +160,8 @@ mod tests {
 
     fn has_balances(
         expectations: impl IntoIterator<Item = (Address, &'static str)>,
-    ) -> l1::MockApi {
-        let mut eth_adapter = l1::MockApi::new();
+    ) -> crate::wallet_balance_tracker::port::l1::MockApi {
+        let mut eth_adapter = crate::wallet_balance_tracker::port::l1::MockApi::new();
         for (address, balance) in expectations {
             let balance = U256::from_str(balance).unwrap();
 
