@@ -34,6 +34,14 @@ impl Contract for WebsocketClient {
     }
 }
 
+impl services::block_committer::port::l1::Contract for WebsocketClient {
+    delegate! {
+        to self {
+            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct BlobEncoder;
 
@@ -178,6 +186,21 @@ impl services::wallet_balance_tracker::port::l1::Api for WebsocketClient {
         to (*self) {
             async fn balance(&self, address: Address) -> Result<U256>;
         }
+    }
+}
+
+impl services::block_committer::port::l1::Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
+        }
+    }
+
+    async fn get_block_number(&self) -> Result<L1Height> {
+        let block_num = self._get_block_number().await?;
+        let height = L1Height::try_from(block_num)?;
+
+        Ok(height)
     }
 }
 

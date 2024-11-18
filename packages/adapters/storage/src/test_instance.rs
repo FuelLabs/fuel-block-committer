@@ -6,7 +6,7 @@ use std::{
 
 use delegate::delegate;
 use services::{
-    block_bundler, block_importer,
+    block_bundler, block_committer, block_importer,
     ports::storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
@@ -294,5 +294,44 @@ impl block_bundler::port::Storage for DbWithProcess {
     }
     async fn next_bundle_id(&self) -> services::Result<NonNegative<i32>> {
         self.db._next_bundle_id().await.map_err(Into::into)
+    }
+}
+
+impl block_committer::port::Storage for DbWithProcess {
+    async fn record_block_submission(
+        &self,
+        submission_tx: BlockSubmissionTx,
+        submission: BlockSubmission,
+        created_at: DateTime<Utc>,
+    ) -> services::Result<NonNegative<i32>> {
+        self.db
+            ._record_block_submission(submission_tx, submission, created_at)
+            .await
+            .map_err(Into::into)
+    }
+    async fn get_pending_block_submission_txs(
+        &self,
+        submission_id: NonNegative<i32>,
+    ) -> services::Result<Vec<BlockSubmissionTx>> {
+        self.db
+            ._get_pending_block_submission_txs(submission_id)
+            .await
+            .map_err(Into::into)
+    }
+    async fn update_block_submission_tx(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> services::Result<BlockSubmission> {
+        self.db
+            ._update_block_submission_tx(hash, state)
+            .await
+            .map_err(Into::into)
+    }
+    async fn submission_w_latest_block(&self) -> services::Result<Option<BlockSubmission>> {
+        self.db
+            ._submission_w_latest_block()
+            .await
+            .map_err(Into::into)
     }
 }

@@ -1,5 +1,5 @@
 pub mod block_bundler;
-mod block_committer;
+pub mod block_committer;
 pub mod block_importer;
 pub mod health_reporter;
 mod state_committer;
@@ -39,7 +39,6 @@ pub use block_bundler::{
     bundler::{Bundle, BundleProposal, Bundler, Metadata},
     test_helpers::ControllableBundlerFactory,
 };
-pub use block_committer::BlockCommitter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
 

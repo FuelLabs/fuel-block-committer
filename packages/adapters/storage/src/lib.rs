@@ -170,7 +170,7 @@ impl services::state_listener::port::Storage for Postgres {
 
 impl services::status_reporter::port::Storage for Postgres {
     async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
-        Ok(self._submission_w_latest_block().await?)
+        self._submission_w_latest_block().await.map_err(Into::into)
     }
 }
 
@@ -212,6 +212,39 @@ impl services::block_bundler::port::Storage for Postgres {
     }
     async fn next_bundle_id(&self) -> Result<NonNegative<i32>> {
         self._next_bundle_id().await.map_err(Into::into)
+    }
+}
+
+impl services::block_committer::port::Storage for Postgres {
+    async fn record_block_submission(
+        &self,
+        submission_tx: BlockSubmissionTx,
+        submission: BlockSubmission,
+        created_at: DateTime<Utc>,
+    ) -> Result<NonNegative<i32>> {
+        self._record_block_submission(submission_tx, submission, created_at)
+            .await
+            .map_err(Into::into)
+    }
+    async fn get_pending_block_submission_txs(
+        &self,
+        submission_id: NonNegative<i32>,
+    ) -> Result<Vec<BlockSubmissionTx>> {
+        self._get_pending_block_submission_txs(submission_id)
+            .await
+            .map_err(Into::into)
+    }
+    async fn update_block_submission_tx(
+        &self,
+        hash: [u8; 32],
+        state: TransactionState,
+    ) -> Result<BlockSubmission> {
+        self._update_block_submission_tx(hash, state)
+            .await
+            .map_err(Into::into)
+    }
+    async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
+        self._submission_w_latest_block().await.map_err(Into::into)
     }
 }
 

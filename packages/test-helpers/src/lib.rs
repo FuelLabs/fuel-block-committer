@@ -14,11 +14,11 @@ use services::{
 };
 use storage::{DbWithProcess, PostgresProcess};
 
+use services::{block_committer::service::BlockCommitter, Runner};
 use services::{
     block_importer::service::BlockImporter, state_listener::service::StateListener, BlockBundler,
     BlockBundlerConfig, BundlerFactory, StateCommitter,
 };
-use services::{BlockCommitter, Runner};
 
 pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
     let size = size.into();
@@ -46,7 +46,9 @@ pub mod mocks {
         pub struct FullL1Mock {
             pub api: services::ports::l1::MockApi,
             pub state_listener_l1_api: services::state_listener::port::l1::MockApi,
+            pub block_committer_l1_api: services::block_committer::port::l1::MockApi,
             pub contract: services::ports::l1::MockContract,
+            pub block_committer_contract: services::block_committer::port::l1::MockContract,
         }
 
         impl Default for FullL1Mock {
@@ -60,7 +62,43 @@ pub mod mocks {
                 Self {
                     api: services::ports::l1::MockApi::new(),
                     state_listener_l1_api: services::state_listener::port::l1::MockApi::new(),
+                    block_committer_l1_api: services::block_committer::port::l1::MockApi::new(),
+                    block_committer_contract:
+                        services::block_committer::port::l1::MockContract::new(),
                     contract: services::ports::l1::MockContract::new(),
+                }
+            }
+        }
+
+        impl services::block_committer::port::l1::Contract for FullL1Mock {
+            delegate! {
+                to self.block_committer_contract {
+                    async fn submit(&self, hash: [u8;32], height: u32) -> services::Result<BlockSubmissionTx>;
+                }
+            }
+        }
+
+        impl services::block_committer::port::l1::Api for FullL1Mock {
+            delegate! {
+                to self.block_committer_l1_api {
+                    async fn get_block_number(&self) -> services::Result<L1Height>;
+                    async fn get_transaction_response(
+                        &self,
+                        tx_hash: [u8; 32],
+                    ) -> services::Result<Option<TransactionResponse>>;
+                }
+            }
+        }
+
+        impl services::state_listener::port::l1::Api for FullL1Mock {
+            delegate! {
+                to self.state_listener_l1_api {
+                    async fn get_block_number(&self) -> services::Result<L1Height>;
+                    async fn get_transaction_response(
+                        &self,
+                        tx_hash: [u8; 32],
+                    ) -> services::Result<Option<TransactionResponse>>;
+                    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::Result<bool>;
                 }
             }
         }
@@ -392,8 +430,8 @@ pub mod mocks {
 
         pub fn given_fetcher(
             available_blocks: Vec<services::ports::fuel::FuelBlock>,
-        ) -> services::ports::fuel::MockApi {
-            let mut fetcher = services::ports::fuel::MockApi::new();
+        ) -> services::block_committer::port::fuel::MockApi {
+            let mut fetcher = services::block_committer::port::fuel::MockApi::new();
             for block in available_blocks.clone() {
                 fetcher
                     .expect_block_at_height()

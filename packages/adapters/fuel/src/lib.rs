@@ -51,6 +51,15 @@ impl services::block_bundler::port::fuel::Api for client::HttpClient {
     }
 }
 
+impl services::block_committer::port::fuel::Api for client::HttpClient {
+    delegate! {
+        to self {
+            async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
+            async fn latest_block(&self) -> Result<FuelBlock>;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ::metrics::{

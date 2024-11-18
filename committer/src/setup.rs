@@ -8,10 +8,11 @@ use metrics::{
     HealthChecker, RegistersMetrics,
 };
 use services::{
+    block_committer::service::BlockCommitter,
     ports::{l1::Contract, storage::Storage},
     state_listener::service::StateListener,
     wallet_balance_tracker::service::WalletBalanceTracker,
-    BlockBundler, BlockBundlerConfig, BlockCommitter, Runner,
+    BlockBundler, BlockBundlerConfig, Runner,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
