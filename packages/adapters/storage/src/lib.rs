@@ -190,6 +190,31 @@ impl services::block_importer::port::Storage for Postgres {
     }
 }
 
+impl services::block_bundler::port::Storage for Postgres {
+    async fn lowest_sequence_of_unbundled_blocks(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Option<SequentialFuelBlocks>> {
+        self._lowest_unbundled_blocks(starting_height, limit)
+            .await
+            .map_err(Into::into)
+    }
+    async fn insert_bundle_and_fragments(
+        &self,
+        bundle_id: NonNegative<i32>,
+        block_range: RangeInclusive<u32>,
+        fragments: NonEmpty<Fragment>,
+    ) -> Result<()> {
+        self._insert_bundle_and_fragments(bundle_id, block_range, fragments)
+            .await
+            .map_err(Into::into)
+    }
+    async fn next_bundle_id(&self) -> Result<NonNegative<i32>> {
+        self._next_bundle_id().await.map_err(Into::into)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;

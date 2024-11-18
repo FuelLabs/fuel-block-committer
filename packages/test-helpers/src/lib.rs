@@ -375,6 +375,18 @@ pub mod mocks {
             fuel_mock
                 .expect_latest_height()
                 .returning(move || Box::pin(async move { Ok(height) }));
+
+            fuel_mock
+        }
+
+        pub fn block_bundler_latest_height_is(
+            height: u32,
+        ) -> services::block_bundler::port::fuel::MockApi {
+            let mut fuel_mock = services::block_bundler::port::fuel::MockApi::default();
+            fuel_mock
+                .expect_latest_height()
+                .returning(move || Box::pin(async move { Ok(height) }));
+
             fuel_mock
         }
 
@@ -580,7 +592,7 @@ impl Setup {
             1.try_into().unwrap(),
         );
 
-        let mut fuel_api = services::ports::fuel::MockApi::new();
+        let mut fuel_api = services::block_bundler::port::fuel::MockApi::new();
         let latest_height = fuel_blocks.last().height;
         assert_eq!(height, latest_height);
         fuel_api

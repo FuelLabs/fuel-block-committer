@@ -193,7 +193,7 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
 
     let num_blocks_to_accumulate = 2.try_into().unwrap();
 
-    let mock_fuel_api = test_helpers::mocks::fuel::latest_height_is(0);
+    let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(0);
 
     let mut block_bundler = BlockBundler::new(
         mock_fuel_api,
@@ -236,7 +236,7 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
     let clock = TestClock::default();
 
     let latest_height = blocks.last().height;
-    let mock_fuel_api = test_helpers::mocks::fuel::latest_height_is(latest_height);
+    let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(latest_height);
 
     let expected_fragments = bundle_and_encode_into_blobs(blocks.clone(), 1);
 
@@ -294,7 +294,7 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_ti
         .await;
 
     let mut block_bundler = BlockBundler::new(
-        mocks::fuel::latest_height_is(fuel_blocks.last().height),
+        mocks::fuel::block_bundler_latest_height_is(fuel_blocks.last().height),
         setup.db(),
         clock.clone(),
         default_bundler_factory(),
@@ -354,7 +354,7 @@ async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
     let fragments = bundle_and_encode_into_blobs(first_two_blocks, 1);
 
     let mut block_bundler = BlockBundler::new(
-        test_helpers::mocks::fuel::latest_height_is(2),
+        test_helpers::mocks::fuel::block_bundler_latest_height_is(2),
         setup.db(),
         TestClock::default(),
         default_bundler_factory(),
@@ -399,7 +399,7 @@ async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
     let fragments_2 = bundle_and_encode_into_blobs(nonempty![blocks[1].clone()], 2);
 
     let mut bundler = BlockBundler::new(
-        test_helpers::mocks::fuel::latest_height_is(1),
+        test_helpers::mocks::fuel::block_bundler_latest_height_is(1),
         setup.db(),
         TestClock::default(),
         default_bundler_factory(),
@@ -467,7 +467,7 @@ async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
     let optimization_timeout = Duration::from_secs(1);
 
     let mut block_bundler = BlockBundler::new(
-        test_helpers::mocks::fuel::latest_height_is(0),
+        test_helpers::mocks::fuel::block_bundler_latest_height_is(0),
         setup.db(),
         test_clock.clone(),
         bundler_factory,
@@ -519,7 +519,7 @@ async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()
     let optimization_timeout = Duration::from_secs(1);
 
     let mut block_bundler = BlockBundler::new(
-        test_helpers::mocks::fuel::latest_height_is(0),
+        test_helpers::mocks::fuel::block_bundler_latest_height_is(0),
         setup.db(),
         test_clock.clone(),
         bundler_factory,
@@ -588,7 +588,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
         bundle_and_encode_into_blobs(NonEmpty::from_vec(blocks_to_bundle).unwrap(), 1);
 
     let mut block_bundler = BlockBundler::new(
-        test_helpers::mocks::fuel::latest_height_is(latest_height),
+        test_helpers::mocks::fuel::block_bundler_latest_height_is(latest_height),
         setup.db(),
         TestClock::default(),
         default_bundler_factory(),
@@ -654,7 +654,7 @@ async fn metrics_are_updated() -> Result<()> {
         .await;
 
     let latest_height = blocks.last().height;
-    let mock_fuel_api = test_helpers::mocks::fuel::latest_height_is(latest_height);
+    let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(latest_height);
 
     let registry = metrics::prometheus::Registry::new();
 

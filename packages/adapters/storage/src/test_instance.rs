@@ -6,7 +6,7 @@ use std::{
 
 use delegate::delegate;
 use services::{
-    block_importer,
+    block_bundler, block_importer,
     ports::storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
@@ -267,5 +267,32 @@ impl block_importer::port::Storage for DbWithProcess {
 
     async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::Result<()> {
         self.db._insert_blocks(blocks).await.map_err(Into::into)
+    }
+}
+
+impl block_bundler::port::Storage for DbWithProcess {
+    async fn lowest_sequence_of_unbundled_blocks(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> services::Result<Option<SequentialFuelBlocks>> {
+        self.db
+            ._lowest_unbundled_blocks(starting_height, limit)
+            .await
+            .map_err(Into::into)
+    }
+    async fn insert_bundle_and_fragments(
+        &self,
+        bundle_id: NonNegative<i32>,
+        block_range: RangeInclusive<u32>,
+        fragments: NonEmpty<Fragment>,
+    ) -> services::Result<()> {
+        self.db
+            ._insert_bundle_and_fragments(bundle_id, block_range, fragments)
+            .await
+            .map_err(Into::into)
+    }
+    async fn next_bundle_id(&self) -> services::Result<NonNegative<i32>> {
+        self.db._next_bundle_id().await.map_err(Into::into)
     }
 }
