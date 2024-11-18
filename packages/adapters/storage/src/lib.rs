@@ -174,6 +174,22 @@ impl services::status_reporter::port::Storage for Postgres {
     }
 }
 
+impl services::block_importer::port::Storage for Postgres {
+    async fn missing_blocks(
+        &self,
+        starting_height: u32,
+        current_height: u32,
+    ) -> Result<Vec<RangeInclusive<u32>>> {
+        self._missing_blocks(starting_height, current_height)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
+        Ok(self._insert_blocks(blocks).await?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;

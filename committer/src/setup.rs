@@ -144,8 +144,11 @@ pub fn block_importer(
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let block_importer =
-        services::BlockImporter::new(storage, fuel, config.app.bundle.block_height_lookback);
+    let block_importer = services::block_importer::service::BlockImporter::new(
+        storage,
+        fuel,
+        config.app.bundle.block_height_lookback,
+    );
 
     schedule_polling(
         config.app.block_check_interval,

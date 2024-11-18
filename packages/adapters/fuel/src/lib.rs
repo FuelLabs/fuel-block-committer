@@ -32,6 +32,19 @@ impl services::ports::fuel::Api for client::HttpClient {
     }
 }
 
+impl services::block_importer::port::fuel::Api for client::HttpClient {
+    async fn latest_height(&self) -> Result<u32> {
+        self.latest_block().await.map(|b| b.header.height)
+    }
+
+    fn compressed_blocks_in_height_range(
+        &self,
+        range: RangeInclusive<u32>,
+    ) -> BoxStream<'_, Result<services::types::CompressedFuelBlock>> {
+        self._compressed_blocks_in_height_range(range).boxed()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ::metrics::{

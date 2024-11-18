@@ -6,6 +6,7 @@ use std::{
 
 use delegate::delegate;
 use services::{
+    block_importer,
     ports::storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
@@ -237,7 +238,7 @@ impl state_pruner::port::Storage for DbWithProcess {
 
 impl services::state_listener::port::Storage for DbWithProcess {
     async fn get_non_finalized_txs(&self) -> services::Result<Vec<L1Tx>> {
-        Ok(self.db._get_non_finalized_txs().await?)
+        self.db._get_non_finalized_txs().await.map_err(Into::into)
     }
 
     async fn batch_update_tx_states(
@@ -245,9 +246,26 @@ impl services::state_listener::port::Storage for DbWithProcess {
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
     ) -> services::Result<()> {
-        Ok(self
-            .db
+        self.db
             ._batch_update_tx_states(selective_changes, noncewide_changes)
-            .await?)
+            .await
+            .map_err(Into::into)
+    }
+}
+
+impl block_importer::port::Storage for DbWithProcess {
+    async fn missing_blocks(
+        &self,
+        starting_height: u32,
+        current_height: u32,
+    ) -> services::Result<Vec<RangeInclusive<u32>>> {
+        self.db
+            ._missing_blocks(starting_height, current_height)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::Result<()> {
+        self.db._insert_blocks(blocks).await.map_err(Into::into)
     }
 }

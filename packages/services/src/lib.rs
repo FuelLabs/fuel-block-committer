@@ -1,7 +1,7 @@
 mod block_bundler;
 mod block_committer;
-mod block_importer;
-mod health_reporter;
+pub mod block_importer;
+pub mod health_reporter;
 mod state_committer;
 pub mod state_listener;
 pub mod state_pruner;
@@ -39,8 +39,6 @@ pub use block_bundler::{
     ControllableBundlerFactory,
 };
 pub use block_committer::BlockCommitter;
-pub use block_importer::BlockImporter;
-pub use health_reporter::HealthReporter;
 pub use state_committer::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
 

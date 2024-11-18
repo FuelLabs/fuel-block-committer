@@ -1,11 +1,11 @@
 use futures::StreamExt;
 use itertools::Itertools;
 use mockall::{predicate::eq, Sequence};
+use services::{block_importer::service::BlockImporter, Result, Runner};
 use services::{
     ports::storage::Storage,
     types::{nonempty, CollectNonEmpty},
 };
-use services::{BlockImporter, Result, Runner};
 use test_helpers::Blocks;
 
 #[tokio::test]
@@ -198,7 +198,7 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
             .await;
     }
 
-    let mut fuel_mock = services::ports::fuel::MockApi::new();
+    let mut fuel_mock = services::block_importer::port::fuel::MockApi::new();
 
     let mut sequence = Sequence::new();
 

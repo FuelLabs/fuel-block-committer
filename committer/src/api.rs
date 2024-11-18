@@ -7,7 +7,10 @@ use ::metrics::{
 use actix_web::{
     error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
 };
-use services::{ports::storage::Storage, status_reporter::service::StatusReporter, HealthReporter};
+use services::{
+    health_reporter::service::HealthReporter, ports::storage::Storage,
+    status_reporter::service::StatusReporter,
+};
 
 use crate::{
     config::Config,

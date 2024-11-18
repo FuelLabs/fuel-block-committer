@@ -15,8 +15,8 @@ use services::{
 use storage::{DbWithProcess, PostgresProcess};
 
 use services::{
-    state_listener::service::StateListener, BlockBundler, BlockBundlerConfig, BlockImporter,
-    BundlerFactory, StateCommitter,
+    block_importer::service::BlockImporter, state_listener::service::StateListener, BlockBundler,
+    BlockBundlerConfig, BundlerFactory, StateCommitter,
 };
 use services::{BlockCommitter, Runner};
 
@@ -332,8 +332,8 @@ pub mod mocks {
         pub fn these_blocks_exist(
             blocks: impl IntoIterator<Item = CompressedFuelBlock>,
             enforce_tight_range: bool,
-        ) -> services::ports::fuel::MockApi {
-            let mut fuel_mock = services::ports::fuel::MockApi::default();
+        ) -> services::block_importer::port::fuel::MockApi {
+            let mut fuel_mock = services::block_importer::port::fuel::MockApi::default();
 
             let blocks = blocks
                 .into_iter()
@@ -625,7 +625,7 @@ impl Setup {
         &self,
         blocks: Blocks,
     ) -> (
-        BlockImporter<DbWithProcess, services::ports::fuel::MockApi>,
+        BlockImporter<DbWithProcess, services::block_importer::port::fuel::MockApi>,
         NonEmpty<CompressedFuelBlock>,
     ) {
         match blocks {
