@@ -30,7 +30,7 @@ pub struct WebsocketClient {
     contract_caller_address: Address,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, serde::Serialize)]
 pub enum L1Key {
     Kms(String),
     Private(String),
@@ -97,9 +97,6 @@ impl Signer<Signature> for OurSigner {
     }
 }
 
-// #[async_trait::async_trait]
-// impl TxSigner<Signature> for OurSigner {}
-
 impl OurSigner {
     pub async fn make_aws_signer(client: &AwsClient, key: String) -> Self {
         let signer = client.make_signer(key).await.unwrap();
@@ -133,7 +130,7 @@ impl OurSigners {
         let blob_signer = if let Some(blob_key) = keys.blob {
             let signer = match blob_key {
                 L1Key::Kms(key) => {
-                    OurSigner::make_aws_signer(&aws_client.as_ref().expect("is set"), key).await
+                    OurSigner::make_aws_signer(aws_client.as_ref().expect("is set"), key).await
                 }
                 L1Key::Private(key) => OurSigner::make_private_key_signer(&key),
             };

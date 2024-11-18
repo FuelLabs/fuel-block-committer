@@ -31,6 +31,8 @@ itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 ports = { workspace = true, features = ["l1"] }
 serde = { workspace = true }
+# TODO: segfault remove this later
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
 tracing = { workspace = true }

@@ -1,6 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
+use eth::L1Key;
 use ports::types::Address;
 use url::Url;
 
@@ -43,11 +44,16 @@ impl Committer {
         let db_port = get_field!(db_port);
         let db_name = get_field!(db_name);
 
+        let main_key =
+            serde_json::to_string(&L1Key::Kms(get_field!(main_key_arn))).expect("is valid");
+        let blob_key = self
+            .blob_key_arn
+            .map(|k| serde_json::to_string(&L1Key::Kms(k)).expect("is valid"));
         cmd.env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
-            .env("COMMITTER__ETH__MAIN_KEY_ARN", get_field!(main_key_arn))
+            .env("COMMITTER__ETH__L1_KEYS__MAIN", main_key)
             .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
             .env(
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
@@ -112,8 +118,8 @@ impl Committer {
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
-        if let Some(blob_wallet_key_arn) = self.blob_key_arn {
-            cmd.env("COMMITTER__ETH__BLOB_POOL_KEY_ARN", blob_wallet_key_arn);
+        if let Some(key) = blob_key {
+            cmd.env("COMMITTER__ETH__L1_KEYS__BLOB", key);
         }
 
         let sink = if self.show_logs {
