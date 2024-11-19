@@ -28,6 +28,7 @@ tracing = { workspace = true }
 trait-variant = { workspace = true }
 
 [dev-dependencies]
+test-case = { workspace = true }
 clock = { workspace = true, features = ["test-helpers"] }
 delegate = { workspace = true }
 eth = { workspace = true, features = ["test-helpers"] }
