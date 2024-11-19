@@ -337,6 +337,7 @@ jobs:
       - cargo-verifications
       - additional-check-for-published-crates
       - publish-crates-check
+      - e2e-tests
     # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
     runs-on: buildjet-4vcpu-ubuntu-2204
