@@ -144,7 +144,7 @@ pub mod mocks {
                 hash: eth_tx,
                 ..Default::default()
             };
-            l1.contract
+            l1.block_committer_contract
                 .expect_submit()
                 .withf(move |hash, height| *hash == *block.id && *height == block.header.height)
                 .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }))
@@ -164,11 +164,11 @@ pub mod mocks {
         ) -> FullL1Mock {
             let mut l1 = FullL1Mock::new();
 
-            l1.api
+            l1.block_committer_l1_api
                 .expect_get_block_number()
                 .returning(move || Box::pin(async move { Ok(block_number.into()) }));
 
-            l1.api
+            l1.block_committer_l1_api
                 .expect_get_transaction_response()
                 .with(eq(tx_hash))
                 .returning(move |_| {
@@ -176,17 +176,17 @@ pub mod mocks {
                     Box::pin(async move { Ok(response) })
                 });
 
-            l1.contract.expect_submit().never();
+            l1.block_committer_contract.expect_submit().never();
 
             l1
         }
 
         pub fn expects_state_submissions(
             expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, [u8; 32], u32)>,
-        ) -> services::ports::l1::MockApi {
+        ) -> services::state_committer::port::l1::MockApi {
             let mut sequence = Sequence::new();
 
-            let mut l1_mock = services::ports::l1::MockApi::new();
+            let mut l1_mock = services::state_committer::port::l1::MockApi::new();
 
             for (fragment, tx_id, nonce) in expectations {
                 l1_mock
@@ -408,8 +408,8 @@ pub mod mocks {
             fuel_mock
         }
 
-        pub fn latest_height_is(height: u32) -> services::ports::fuel::MockApi {
-            let mut fuel_mock = services::ports::fuel::MockApi::default();
+        pub fn latest_height_is(height: u32) -> services::state_committer::port::fuel::MockApi {
+            let mut fuel_mock = services::state_committer::port::fuel::MockApi::default();
             fuel_mock
                 .expect_latest_height()
                 .returning(move || Box::pin(async move { Ok(height) }));

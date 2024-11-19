@@ -227,7 +227,7 @@ impl state_pruner::port::Storage for DbWithProcess {
         to self.db {
             async fn prune_entries_older_than(
                 &self,
-                date: state_pruner::port::DateTime<state_pruner::port::Utc>,
+                date: DateTime<Utc>,
             ) -> services::Result<state_pruner::port::Pruned>;
             async fn table_sizes(
                 &self,
@@ -333,5 +333,50 @@ impl block_committer::port::Storage for DbWithProcess {
             ._submission_w_latest_block()
             .await
             .map_err(Into::into)
+    }
+}
+
+impl services::state_committer::port::Storage for DbWithProcess {
+    async fn has_nonfinalized_txs(&self) -> services::Result<bool> {
+        self.db._has_nonfinalized_txs().await.map_err(Into::into)
+    }
+    async fn last_time_a_fragment_was_finalized(&self) -> services::Result<Option<DateTime<Utc>>> {
+        self.db
+            ._last_time_a_fragment_was_finalized()
+            .await
+            .map_err(Into::into)
+    }
+    async fn record_pending_tx(
+        &self,
+        tx: L1Tx,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
+        created_at: DateTime<Utc>,
+    ) -> services::Result<()> {
+        self.db
+            ._record_pending_tx(tx, fragment_ids, created_at)
+            .await
+            .map_err(Into::into)
+    }
+    async fn oldest_nonfinalized_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> services::Result<Vec<BundleFragment>> {
+        self.db
+            ._oldest_nonfinalized_fragments(starting_height, limit)
+            .await
+            .map_err(Into::into)
+    }
+    async fn fragments_submitted_by_tx(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> services::Result<Vec<BundleFragment>> {
+        self.db
+            ._fragments_submitted_by_tx(tx_hash)
+            .await
+            .map_err(Into::into)
+    }
+    async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::L1Tx>> {
+        self.db._get_latest_pending_txs().await.map_err(Into::into)
     }
 }

@@ -248,6 +248,44 @@ impl services::block_committer::port::Storage for Postgres {
     }
 }
 
+impl services::state_committer::port::Storage for Postgres {
+    async fn has_nonfinalized_txs(&self) -> Result<bool> {
+        self._has_nonfinalized_txs().await.map_err(Into::into)
+    }
+    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
+        self._last_time_a_fragment_was_finalized()
+            .await
+            .map_err(Into::into)
+    }
+    async fn record_pending_tx(
+        &self,
+        tx: L1Tx,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
+        created_at: DateTime<Utc>,
+    ) -> Result<()> {
+        self._record_pending_tx(tx, fragment_ids, created_at)
+            .await
+            .map_err(Into::into)
+    }
+    async fn oldest_nonfinalized_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleFragment>> {
+        self._oldest_nonfinalized_fragments(starting_height, limit)
+            .await
+            .map_err(Into::into)
+    }
+    async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>> {
+        self._fragments_submitted_by_tx(tx_hash)
+            .await
+            .map_err(Into::into)
+    }
+    async fn get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
+        self._get_latest_pending_txs().await.map_err(Into::into)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;

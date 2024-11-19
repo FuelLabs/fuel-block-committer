@@ -1,10 +1,14 @@
 use crate::Postgres;
-use services::{state_pruner, Result};
+use services::{
+    state_pruner,
+    types::{DateTime, Utc},
+    Result,
+};
 
 impl state_pruner::port::Storage for Postgres {
     async fn prune_entries_older_than(
         &self,
-        date: state_pruner::port::DateTime<state_pruner::port::Utc>,
+        date: DateTime<Utc>,
     ) -> Result<state_pruner::port::Pruned> {
         let response = sqlx::query!(
             r#"

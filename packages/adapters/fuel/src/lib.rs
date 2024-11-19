@@ -60,6 +60,12 @@ impl services::block_committer::port::fuel::Api for client::HttpClient {
     }
 }
 
+impl services::state_committer::port::fuel::Api for client::HttpClient {
+    async fn latest_height(&self) -> Result<u32> {
+        self.latest_block().await.map(|b| b.header.height)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ::metrics::{

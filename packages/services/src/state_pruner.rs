@@ -216,9 +216,10 @@ pub mod service {
 }
 
 pub mod port {
-    pub use crate::types::{DateTime, Utc};
-
-    use crate::Result;
+    use crate::{
+        types::{DateTime, Utc},
+        Result,
+    };
 
     #[derive(Debug, Clone)]
     pub struct Pruned {

@@ -204,6 +204,18 @@ impl services::block_committer::port::l1::Api for WebsocketClient {
     }
 }
 
+impl services::state_committer::port::l1::Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn submit_state_fragments(
+                &self,
+                fragments: NonEmpty<Fragment>,
+                previous_tx: Option<services::types::L1Tx>,
+            ) -> Result<(L1Tx, FragmentsSubmitted)>;
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
