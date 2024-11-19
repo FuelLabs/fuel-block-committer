@@ -81,7 +81,7 @@ pub(crate) mod test_utils {
     use ports::{
         l1::FragmentEncoder,
         storage::Storage,
-        types::{CollectNonEmpty, CompressedFuelBlock, DateTime, Fragment, NonEmpty, Utc},
+        types::{CollectNonEmpty, CompressedFuelBlock, DateTime, Fragment, L1Tx, NonEmpty, Utc},
     };
     use rand::RngCore;
     use storage::{DbWithProcess, PostgresProcess};
@@ -189,13 +189,13 @@ pub(crate) mod test_utils {
             }
 
             pub fn expects_state_submissions(
-                expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, [u8; 32])>,
+                expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, ports::types::L1Tx)>,
             ) -> ports::l1::MockApi {
                 let mut sequence = Sequence::new();
 
                 let mut l1_mock = ports::l1::MockApi::new();
 
-                for (fragment, tx_id) in expectations {
+                for (fragment, tx) in expectations {
                     l1_mock
                         .expect_submit_state_fragments()
                         .withf(move |data, _previous_tx| {
@@ -209,10 +209,7 @@ pub(crate) mod test_utils {
                         .return_once(move |fragments, _previous_tx| {
                             Box::pin(async move {
                                 Ok((
-                                    ports::types::L1Tx {
-                                        hash: tx_id,
-                                        ..Default::default()
-                                    },
+                                    tx,
                                     FragmentsSubmitted {
                                         num_fragments: min(fragments.len(), 6).try_into().unwrap(),
                                     },
@@ -435,7 +432,13 @@ pub(crate) mod test_utils {
     impl Setup {
         pub async fn send_fragments(&self, eth_tx: [u8; 32]) {
             StateCommitter::new(
-                mocks::l1::expects_state_submissions(vec![(None, eth_tx)]),
+                mocks::l1::expects_state_submissions(vec![(
+                    None,
+                    L1Tx {
+                        hash: eth_tx,
+                        ..Default::default()
+                    },
+                )]),
                 mocks::fuel::latest_height_is(0),
                 self.db(),
                 crate::StateCommitterConfig::default(),
@@ -466,8 +469,14 @@ pub(crate) mod test_utils {
             let clock = TestClock::default();
             clock.set_time(finalization_time);
 
-            let tx = [1; 32];
-            let l1_mock = mocks::l1::expects_state_submissions(vec![(None, tx)]);
+            let tx_hash = [1; 32];
+            let l1_mock = mocks::l1::expects_state_submissions(vec![(
+                None,
+                L1Tx {
+                    hash: tx_hash,
+                    ..Default::default()
+                },
+            )]);
             let fuel_mock = mocks::fuel::latest_height_is(0);
             let mut committer = StateCommitter::new(
                 l1_mock,
@@ -478,7 +487,7 @@ pub(crate) mod test_utils {
             );
             committer.run().await.unwrap();
 
-            let l1_mock = mocks::l1::txs_finished(0, 0, [(tx, TxStatus::Success)]);
+            let l1_mock = mocks::l1::txs_finished(0, 0, [(tx_hash, TxStatus::Success)]);
 
             StateListener::new(
                 l1_mock,
