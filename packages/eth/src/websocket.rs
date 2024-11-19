@@ -126,11 +126,13 @@ impl Signer {
         })
     }
 
-    pub fn make_private_key_signer(key: &str) -> Self {
-        let signer = PrivateKeySigner::from_str(key).unwrap();
-        Signer {
+    pub fn make_private_key_signer(key: &str) -> Result<Self> {
+        let signer = PrivateKeySigner::from_str(key)
+            .map_err(|_| ports::l1::Error::Other("Invalid private key".to_string()))?;
+
+        Ok(Signer {
             signer: Box::new(signer),
-        }
+        })
     }
 }
 
@@ -152,7 +154,7 @@ impl Signers {
                 L1Key::Kms(key) => {
                     Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?
                 }
-                L1Key::Private(key) => Signer::make_private_key_signer(&key),
+                L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
             };
             Some(signer)
         } else {
@@ -162,13 +164,13 @@ impl Signers {
         let l1_key = keys.main;
         let main_signer = match l1_key {
             L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await?,
-            L1Key::Private(key) => Signer::make_private_key_signer(&key),
+            L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
         };
 
-        Self {
+        Ok(Self {
             main: main_signer,
             blob: blob_signer,
-        }
+        })
     }
 }
 
