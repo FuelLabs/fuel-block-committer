@@ -44,11 +44,8 @@ impl Committer {
         let db_port = get_field!(db_port);
         let db_name = get_field!(db_name);
 
-        let main_key =
-            serde_json::to_string(&L1Key::Kms(get_field!(main_key_arn))).expect("is valid");
-        let blob_key = self
-            .blob_key_arn
-            .map(|k| serde_json::to_string(&L1Key::Kms(k)).expect("is valid"));
+        let main_key = format!("Kms({})", get_field!(main_key_arn));
+        let blob_key = self.blob_key_arn.map(|k| format!("Kms({k})"));
         cmd.env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ID", "test")

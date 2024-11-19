@@ -2658,7 +2658,6 @@ dependencies = [
  "proptest",
  "rand",
  "serde",
- "serde_json",
  "test-case",
  "thiserror",
  "tokio",
