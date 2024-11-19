@@ -1,7 +1,6 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use eth::L1Key;
 use ports::types::Address;
 use url::Url;
 

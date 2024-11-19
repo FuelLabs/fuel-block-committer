@@ -15,7 +15,6 @@ use alloy::{
     providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
     pubsub::PubSubFrontend,
     rpc::types::{TransactionReceipt, TransactionRequest},
-    signers::{aws::AwsSigner, Signature, Signer},
     sol,
 };
 use itertools::Itertools;
@@ -412,7 +411,7 @@ impl WsConnection {
 
     async fn provider_with_signer<S>(ws: WsConnect, signer: S) -> Result<WsProvider>
     where
-        S: TxSigner<Signature> + Send + Sync + 'static,
+        S: TxSigner<alloy::signers::Signature> + Send + Sync + 'static,
     {
         let wallet = EthereumWallet::from(signer);
         ProviderBuilder::new()

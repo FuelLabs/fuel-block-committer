@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eth::{AwsConfig, BlobEncoder, L1Keys, Signers};
+use eth::{BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     prometheus::{IntGauge, Registry},
@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{config, errors::Result, AwsClient, Database, FuelApi, L1};
+use crate::{config, errors::Result, Database, FuelApi, L1};
 
 pub fn wallet_balance_tracker(
     internal_config: &config::Internal,

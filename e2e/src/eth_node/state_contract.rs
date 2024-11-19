@@ -7,7 +7,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
 };
-use eth::{AwsClient, AwsConfig, L1Key, Signer, Signers, WebsocketClient};
+use eth::{AwsClient, AwsConfig, Signer, Signers, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
 use ports::{fuel::FuelBlock, types::Address};
 use serde::Deserialize;

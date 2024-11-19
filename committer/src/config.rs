@@ -6,10 +6,9 @@ use std::{
 };
 
 use clap::{command, Parser};
-use eth::{Address, L1Key, L1Keys};
+use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
-use serde::Serialize;
 use storage::DbConfig;
 use url::Url;
 
