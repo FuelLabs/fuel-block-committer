@@ -15,7 +15,7 @@ hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 num-bigint = { workspace = true }
-services = { workspace = true, features = ["storage"] }
+services = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 sqlx = { workspace = true, features = [

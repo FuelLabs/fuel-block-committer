@@ -7,8 +7,8 @@ use std::{
 use delegate::delegate;
 use services::{
     block_bundler, block_committer, block_importer,
-    ports::storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
+        storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
         NonEmpty, NonNegative, TransactionState, Utc,
     },
@@ -167,71 +167,16 @@ impl DbWithProcess {
     }
 }
 
-impl Storage for DbWithProcess {
-    delegate! {
-        to self.db {
-            async fn next_bundle_id(&self) -> services::Result<NonNegative<i32>>;
-            async fn record_block_submission(
-                &self,
-                submission_tx: BlockSubmissionTx,
-                submission: BlockSubmission,
-                created_at: DateTime<Utc>,
-            ) -> services::Result<NonNegative<i32>>;
-            async fn get_pending_block_submission_txs(&self, submission_id: NonNegative<i32>) -> services::Result<Vec<BlockSubmissionTx>>;
-            async fn update_block_submission_tx(&self, hash: [u8; 32], state: TransactionState) -> services::Result<BlockSubmission>;
-            async fn submission_w_latest_block(&self) -> services::Result<Option<BlockSubmission>>;
-            async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::Result<()>;
-            async fn missing_blocks(&self, starting_height: u32, current_height: u32) -> services::Result<Vec<RangeInclusive<u32>>>;
-            async fn lowest_sequence_of_unbundled_blocks(
-                &self,
-                starting_height: u32,
-                limit: usize,
-            ) -> services::Result<Option<SequentialFuelBlocks>>;
-            async fn insert_bundle_and_fragments(
-                &self,
-                bundle_id: NonNegative<i32>,
-                block_range: RangeInclusive<u32>,
-                fragments: NonEmpty<Fragment>,
-            ) -> services::Result<()>;
-            async fn record_pending_tx(
-                &self,
-                tx: L1Tx,
-                fragment_ids: NonEmpty<NonNegative<i32>>,
-                created_at: DateTime<Utc>,
-            ) -> services::Result<()>;
-            async fn get_non_finalized_txs(&self) -> services::Result<Vec<L1Tx>>;
-            async fn get_pending_txs(&self) -> services::Result<Vec<L1Tx>>;
-            async fn get_latest_pending_txs(&self) -> services::Result<Option<L1Tx>>;
-            async fn has_pending_txs(&self) -> services::Result<bool>;
-            async fn has_nonfinalized_txs(&self) -> services::Result<bool>;
-            async fn oldest_nonfinalized_fragments(
-                &self,
-                starting_height: u32,
-                limit: usize,
-            ) -> services::Result<Vec<BundleFragment>>;
-            async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> services::Result<Vec<BundleFragment>>;
-            async fn last_time_a_fragment_was_finalized(&self) -> services::Result<Option<DateTime<Utc>>>;
-            async fn batch_update_tx_states(
-                &self,
-                selective_changes: Vec<([u8; 32], TransactionState)>,
-                noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
-            ) -> services::Result<()>;
-        }
-    }
-}
-
-use services::state_pruner;
-
-impl state_pruner::port::Storage for DbWithProcess {
+impl services::state_pruner::port::Storage for DbWithProcess {
     delegate! {
         to self.db {
             async fn prune_entries_older_than(
                 &self,
                 date: DateTime<Utc>,
-            ) -> services::Result<state_pruner::port::Pruned>;
+            ) -> services::Result<services::state_pruner::port::Pruned>;
             async fn table_sizes(
                 &self,
-            ) -> services::Result<state_pruner::port::TableSizes>;
+            ) -> services::Result<services::state_pruner::port::TableSizes>;
         }
     }
 }
@@ -250,6 +195,10 @@ impl services::state_listener::port::Storage for DbWithProcess {
             ._batch_update_tx_states(selective_changes, noncewide_changes)
             .await
             .map_err(Into::into)
+    }
+
+    async fn has_pending_txs(&self) -> services::Result<bool> {
+        self.db._has_pending_txs().await.map_err(Into::into)
     }
 }
 
@@ -378,5 +327,14 @@ impl services::state_committer::port::Storage for DbWithProcess {
     }
     async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::L1Tx>> {
         self.db._get_latest_pending_txs().await.map_err(Into::into)
+    }
+}
+
+impl services::status_reporter::port::Storage for DbWithProcess {
+    async fn submission_w_latest_block(&self) -> services::Result<Option<BlockSubmission>> {
+        self.db
+            ._submission_w_latest_block()
+            .await
+            .map_err(Into::into)
     }
 }

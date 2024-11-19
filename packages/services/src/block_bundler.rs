@@ -273,8 +273,7 @@ pub mod port {
     use nonempty::NonEmpty;
 
     use crate::{
-        ports::storage::SequentialFuelBlocks,
-        types::{DateTime, Fragment, NonNegative, Utc},
+        types::{storage::SequentialFuelBlocks, DateTime, Fragment, NonNegative, Utc},
         Result,
     };
 
@@ -284,6 +283,26 @@ pub mod port {
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
         pub trait Api: Send + Sync {
             async fn latest_height(&self) -> crate::Result<u32>;
+        }
+    }
+
+    pub mod l1 {
+        use std::num::NonZeroUsize;
+
+        use nonempty::NonEmpty;
+
+        use crate::{
+            types::{Fragment, NonNegative},
+            Result,
+        };
+
+        pub trait FragmentEncoder {
+            fn encode(
+                &self,
+                data: NonEmpty<u8>,
+                id: NonNegative<i32>,
+            ) -> Result<NonEmpty<Fragment>>;
+            fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64;
         }
     }
 
@@ -313,7 +332,7 @@ pub mod port {
 pub mod test_helpers {
     use std::num::NonZeroUsize;
 
-    use crate::{ports::storage::SequentialFuelBlocks, types::NonNegative};
+    use crate::types::{storage::SequentialFuelBlocks, NonNegative};
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,

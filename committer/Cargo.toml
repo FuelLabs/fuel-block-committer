@@ -22,7 +22,7 @@ metrics = { workspace = true }
 num_cpus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-services = { workspace = true, features = ["full"] }
+services = { workspace = true }
 storage = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
@@ -33,5 +33,5 @@ url = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
-services = { workspace = true, features = ["full", "test-helpers"] }
+services = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }

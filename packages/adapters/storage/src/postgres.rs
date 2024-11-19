@@ -2,12 +2,9 @@ use std::ops::RangeInclusive;
 
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
-use services::{
-    ports::storage::SequentialFuelBlocks,
-    types::{
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, NonEmpty,
-        NonNegative, TransactionState, TryCollectNonEmpty, Utc,
-    },
+use services::types::{
+    storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, CompressedFuelBlock,
+    DateTime, Fragment, NonEmpty, NonNegative, TransactionState, TryCollectNonEmpty, Utc,
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -260,7 +257,7 @@ impl Postgres {
         &self,
         starting_height: u32,
         limit: usize,
-    ) -> Result<Vec<services::ports::storage::BundleFragment>> {
+    ) -> Result<Vec<services::types::storage::BundleFragment>> {
         let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
@@ -312,7 +309,7 @@ impl Postgres {
     pub(crate) async fn _fragments_submitted_by_tx(
         &self,
         tx_hash: [u8; 32],
-    ) -> Result<Vec<services::ports::storage::BundleFragment>> {
+    ) -> Result<Vec<services::types::storage::BundleFragment>> {
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"

@@ -234,6 +234,7 @@ pub mod port {
             selective_changes: Vec<([u8; 32], TransactionState)>,
             noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
         ) -> Result<()>;
+        async fn has_pending_txs(&self) -> Result<bool>;
     }
 
     pub trait Clock {

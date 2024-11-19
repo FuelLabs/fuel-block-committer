@@ -1,15 +1,6 @@
-use services::{
-    ports::clock::Clock,
-    types::{DateTime, Utc},
-};
+use services::types::{DateTime, Utc};
 
 pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
 
 impl services::state_pruner::port::Clock for SystemClock {
     fn now(&self) -> DateTime<Utc> {
@@ -48,10 +39,7 @@ mod test_helpers {
         time::Duration,
     };
 
-    use services::{
-        ports::clock::Clock,
-        types::{DateTime, Utc},
-    };
+    use services::types::{DateTime, Utc};
 
     #[derive(Default, Clone)]
     pub struct TestClock {
@@ -63,6 +51,13 @@ mod test_helpers {
             Self {
                 epoch_millis: Arc::new(AtomicI64::new(time.timestamp_millis())),
             }
+        }
+
+        pub fn now(&self) -> DateTime<Utc> {
+            DateTime::<Utc>::from_timestamp_millis(
+                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .expect("DateTime<Utc> to be in range")
         }
 
         pub fn advance_time(&self, adv: Duration) {
@@ -80,57 +75,33 @@ mod test_helpers {
         }
     }
 
-    impl Clock for TestClock {
-        fn now(&self) -> DateTime<Utc> {
-            DateTime::<Utc>::from_timestamp_millis(
-                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
-            )
-            .expect("DateTime<Utc> to be in range")
-        }
-    }
-
     impl services::state_pruner::port::Clock for TestClock {
         fn now(&self) -> DateTime<Utc> {
-            DateTime::<Utc>::from_timestamp_millis(
-                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
-            )
-            .expect("DateTime<Utc> to be in range")
+            self.now()
         }
     }
 
     impl services::state_listener::port::Clock for TestClock {
         fn now(&self) -> DateTime<Utc> {
-            DateTime::<Utc>::from_timestamp_millis(
-                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
-            )
-            .expect("DateTime<Utc> to be in range")
+            self.now()
         }
     }
 
     impl services::block_bundler::port::Clock for TestClock {
         fn now(&self) -> DateTime<Utc> {
-            DateTime::<Utc>::from_timestamp_millis(
-                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
-            )
-            .expect("DateTime<Utc> to be in range")
+            self.now()
         }
     }
 
     impl services::block_committer::port::Clock for TestClock {
         fn now(&self) -> DateTime<Utc> {
-            DateTime::<Utc>::from_timestamp_millis(
-                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
-            )
-            .expect("DateTime<Utc> to be in range")
+            self.now()
         }
     }
 
     impl services::state_committer::port::Clock for TestClock {
         fn now(&self) -> DateTime<Utc> {
-            DateTime::<Utc>::from_timestamp_millis(
-                self.epoch_millis.load(std::sync::atomic::Ordering::Relaxed),
-            )
-            .expect("DateTime<Utc> to be in range")
+            self.now()
         }
     }
 }
@@ -141,8 +112,6 @@ pub use test_helpers::TestClock;
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-
-    use services::ports::clock::Clock;
 
     use crate::TestClock;
 

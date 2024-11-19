@@ -10,12 +10,12 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-alloy = { workspace = true, optional = true }
-async-trait = { workspace = true, optional = true }
+alloy = { workspace = true }
+async-trait = { workspace = true }
 bytesize = { workspace = true }
-delegate = { workspace = true, optional = true }
+delegate = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
-fuel-core-client = { workspace = true, optional = true }
+fuel-core-client = { workspace = true }
 fuel-crypto = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
@@ -38,7 +38,7 @@ delegate = { workspace = true }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
-services = { workspace = true, features = ["full", "test-helpers"] }
+services = { workspace = true, features = ["test-helpers"] }
 pretty_assertions = { workspace = true, features = ["std"] }
 storage = { workspace = true, features = ["test-helpers"] }
 tai64 = { workspace = true }
@@ -47,18 +47,4 @@ test-helpers = { workspace = true }
 rand = { workspace = true, features = ["small_rng", "std", "std_rng"] }
 
 [features]
-default = ["full"]
 test-helpers = ["dep:mockall", "dep:rand"]
-l1 = [
-  "dep:async-trait",
-  "dep:alloy",
-]
-fuel = [
-  "dep:fuel-core-client",
-]
-storage = [
-  "dep:delegate",
-]
-clock = []
-full = ["l1", "fuel", "storage", "clock"]
-

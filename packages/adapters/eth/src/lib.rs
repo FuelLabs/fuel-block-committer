@@ -8,9 +8,9 @@ use alloy::{
 use delegate::delegate;
 use itertools::{izip, Itertools};
 use services::{
-    ports::l1::{Api, Contract, FragmentsSubmitted},
     types::{
-        BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, NonNegative, TransactionResponse,
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty, NonNegative,
+        TransactionResponse,
     },
     Result,
 };
@@ -24,23 +24,6 @@ pub use alloy::primitives::Address;
 pub use aws::*;
 use fuel_block_committer_encoding::blob::{self, generate_sidecar};
 pub use websocket::{KmsKeys, TxConfig, WebsocketClient};
-
-impl Contract for WebsocketClient {
-    delegate! {
-        to self {
-            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
-            fn commit_interval(&self) -> NonZeroU32;
-        }
-    }
-}
-
-impl services::block_committer::port::l1::Contract for WebsocketClient {
-    delegate! {
-        to self {
-            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
-        }
-    }
-}
 
 #[derive(Debug, Copy, Clone)]
 pub struct BlobEncoder;
@@ -81,7 +64,7 @@ impl BlobEncoder {
     }
 }
 
-impl services::ports::l1::FragmentEncoder for BlobEncoder {
+impl services::block_bundler::port::l1::FragmentEncoder for BlobEncoder {
     fn encode(&self, data: NonEmpty<u8>, id: NonNegative<i32>) -> Result<NonEmpty<Fragment>> {
         let data = Vec::from(data);
         let encoder = blob::Encoder::default();
@@ -143,25 +126,12 @@ impl services::ports::l1::FragmentEncoder for BlobEncoder {
     }
 }
 
-impl Api for WebsocketClient {
+impl services::block_committer::port::l1::Contract for WebsocketClient {
     delegate! {
-        to (*self) {
-            async fn submit_state_fragments(
-                &self,
-                fragments: NonEmpty<Fragment>,
-                previous_tx: Option<services::types::L1Tx>,
-            ) -> Result<(L1Tx, FragmentsSubmitted)>;
-            async fn balance(&self, address: Address) -> Result<U256>;
-            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
-            async fn is_squeezed_out(&self, tx_hash: [u8; 32],) -> Result<bool>;
+        to self {
+            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
+            fn commit_interval(&self) -> NonZeroU32;
         }
-    }
-
-    async fn get_block_number(&self) -> Result<L1Height> {
-        let block_num = self._get_block_number().await?;
-        let height = L1Height::try_from(block_num)?;
-
-        Ok(height)
     }
 }
 
@@ -220,7 +190,7 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
 mod test {
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
     use fuel_block_committer_encoding::blob;
-    use services::ports::l1::FragmentEncoder;
+    use services::block_bundler::port::l1::FragmentEncoder;
 
     use crate::BlobEncoder;
 

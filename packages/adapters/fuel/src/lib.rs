@@ -2,8 +2,8 @@
 
 use std::ops::RangeInclusive;
 
-use futures::StreamExt;
-use services::ports::fuel::{BoxStream, FuelBlock};
+use futures::{stream::BoxStream, StreamExt};
+use services::types::fuel::FuelBlock;
 mod client;
 mod metrics;
 
@@ -11,26 +11,6 @@ pub use client::*;
 use delegate::delegate;
 
 use services::Result;
-
-impl services::ports::fuel::Api for client::HttpClient {
-    delegate! {
-        to self {
-            async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
-            async fn latest_block(&self) -> Result<FuelBlock>;
-        }
-    }
-
-    async fn latest_height(&self) -> Result<u32> {
-        self.latest_block().await.map(|b| b.header.height)
-    }
-
-    fn compressed_blocks_in_height_range(
-        &self,
-        range: RangeInclusive<u32>,
-    ) -> BoxStream<'_, Result<services::types::CompressedFuelBlock>> {
-        self._compressed_blocks_in_height_range(range).boxed()
-    }
-}
 
 impl services::block_importer::port::fuel::Api for client::HttpClient {
     async fn latest_height(&self) -> Result<u32> {

@@ -6,13 +6,11 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use itertools::Itertools;
 use metrics::RegistersMetrics;
 use services::{
-    ports::{
-        l1::FragmentEncoder,
-        storage::{SequentialFuelBlocks, Storage},
+    block_bundler::port::l1::FragmentEncoder,
+    types::{
+        nonempty, storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, Fragment,
+        NonEmpty,
     },
-    types::{nonempty, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
-};
-use services::{
     BlockBundler, BlockBundlerConfig, Bundle, BundleProposal, Bundler, BundlerFactory,
     ControllableBundlerFactory, Metadata, Result, Runner,
 };
@@ -182,6 +180,8 @@ fn default_bundler_factory() -> BundlerFactory<BlobEncoder> {
 
 #[tokio::test]
 async fn does_nothing_if_not_enough_blocks() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
     setup
@@ -223,6 +223,9 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
 #[tokio::test]
 async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_creation() -> Result<()>
 {
+    use services::block_bundler::port::Storage as BundlerStorage;
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 
@@ -281,6 +284,8 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
 
 #[tokio::test]
 async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_time() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 
@@ -340,6 +345,8 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_ti
 
 #[tokio::test]
 async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 
@@ -384,6 +391,8 @@ async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
 
 #[tokio::test]
 async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 
@@ -552,6 +561,9 @@ async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()
 
 #[tokio::test]
 async fn skips_blocks_outside_lookback_window() -> Result<()> {
+    use services::block_bundler::port::Storage as BundlerStorage;
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 

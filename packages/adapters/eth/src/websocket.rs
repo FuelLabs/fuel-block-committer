@@ -3,8 +3,9 @@ use std::{num::NonZeroU32, time::Duration};
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::{primitives::Address, signers::Signer};
 use services::{
-    ports::l1::FragmentsSubmitted,
-    types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse, U256},
+    types::{
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
+    },
     Result,
 };
 use url::Url;

@@ -1,10 +1,11 @@
 use futures::StreamExt;
 use itertools::Itertools;
 use mockall::{predicate::eq, Sequence};
-use services::{block_importer::service::BlockImporter, Result, Runner};
 use services::{
-    ports::storage::Storage,
+    block_bundler::port::Storage,
+    block_importer::service::BlockImporter,
     types::{nonempty, CollectNonEmpty},
+    Result, Runner,
 };
 use test_helpers::Blocks;
 

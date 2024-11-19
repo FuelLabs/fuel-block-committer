@@ -1,6 +1,5 @@
 pub mod service {
     use crate::{
-        ports::storage::Storage,
         types::{nonempty, CompressedFuelBlock, NonEmpty},
         Result, Runner,
     };
@@ -29,7 +28,7 @@ pub mod service {
 
     impl<Db, FuelApi> BlockImporter<Db, FuelApi>
     where
-        Db: Storage,
+        Db: crate::block_importer::port::Storage,
         FuelApi: crate::block_importer::port::fuel::Api,
     {
         async fn import_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
@@ -46,7 +45,7 @@ pub mod service {
 
     impl<Db, FuelApi> Runner for BlockImporter<Db, FuelApi>
     where
-        Db: Storage + Send + Sync,
+        Db: crate::block_importer::port::Storage + Send + Sync,
         FuelApi: crate::block_importer::port::fuel::Api + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {

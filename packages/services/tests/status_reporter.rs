@@ -3,14 +3,13 @@ use std::sync::Arc;
 use clock::TestClock;
 use rand::Rng;
 use services::status_reporter::service::{Status, StatusReport, StatusReporter};
-use services::{
-    ports::{clock::Clock, storage::Storage},
-    types::{BlockSubmission, BlockSubmissionTx},
-};
+use services::types::{BlockSubmission, BlockSubmissionTx};
 use storage::PostgresProcess;
 
 #[tokio::test]
 async fn status_depends_on_last_submission() {
+    use services::block_committer::port::Storage;
+
     let process = PostgresProcess::shared().await.unwrap();
     let test = |submission_status, expected_app_status| {
         let process = Arc::clone(&process);

@@ -10,7 +10,7 @@ use alloy::{
 use eth::{AwsClient, AwsConfig, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
 use serde::Deserialize;
-use services::{ports::fuel::FuelBlock, types::Address};
+use services::{types::fuel::FuelBlock, types::Address};
 use tokio::process::Command;
 use url::Url;
 

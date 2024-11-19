@@ -195,7 +195,7 @@ pub struct BundleFragment {
     pub total_bytes: i64,
 }
 
-impl TryFrom<BundleFragment> for services::ports::storage::BundleFragment {
+impl TryFrom<BundleFragment> for services::types::storage::BundleFragment {
     type Error = crate::error::Error;
 
     fn try_from(value: BundleFragment) -> Result<Self, Self::Error> {

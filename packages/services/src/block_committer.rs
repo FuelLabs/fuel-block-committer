@@ -2,8 +2,7 @@ pub mod service {
     use std::num::NonZeroU32;
 
     use crate::{
-        ports::fuel::FuelBlock,
-        types::{BlockSubmission, NonNegative, TransactionState},
+        types::{fuel::FuelBlock, BlockSubmission, NonNegative, TransactionState},
         Error, Result,
     };
     use tracing::info;
@@ -213,6 +212,8 @@ pub mod port {
     };
 
     pub mod l1 {
+        use std::num::NonZeroU32;
+
         use crate::{
             types::{BlockSubmissionTx, L1Height, TransactionResponse},
             Result,
@@ -223,6 +224,7 @@ pub mod port {
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
         pub trait Contract: Send + Sync {
             async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
+            fn commit_interval(&self) -> NonZeroU32;
         }
 
         #[allow(async_fn_in_trait)]

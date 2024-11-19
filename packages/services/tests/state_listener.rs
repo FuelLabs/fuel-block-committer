@@ -1,13 +1,14 @@
 use metrics::prometheus::IntGauge;
 use services::{
-    ports::{clock::Clock, storage::Storage},
-    state_listener::service::StateListener,
+    state_listener::{port::Storage, service::StateListener},
     Result, Runner,
 };
 use test_helpers::mocks::{self, l1::TxStatus};
 
 #[tokio::test]
 async fn state_listener_will_update_tx_state_if_finalized() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
     let test_clock = setup.test_clock();
@@ -56,6 +57,8 @@ async fn state_listener_will_update_tx_state_if_finalized() -> Result<()> {
 
 #[tokio::test]
 async fn state_listener_will_update_tx_from_pending_to_included() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 
@@ -101,6 +104,8 @@ async fn state_listener_will_update_tx_from_pending_to_included() -> Result<()> 
 
 #[tokio::test]
 async fn state_listener_from_pending_to_included_to_finalized_tx() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
     let test_clock = setup.test_clock();
@@ -169,6 +174,8 @@ async fn state_listener_from_pending_to_included_to_finalized_tx() -> Result<()>
 
 #[tokio::test]
 async fn state_listener_from_pending_to_included_to_pending() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 
@@ -230,6 +237,8 @@ async fn state_listener_from_pending_to_included_to_pending() -> Result<()> {
 
 #[tokio::test]
 async fn state_listener_will_update_tx_state_if_failed() -> Result<()> {
+    use services::state_committer::port::Storage;
+
     // given
     let setup = test_helpers::Setup::init().await;
 

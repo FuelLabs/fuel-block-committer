@@ -12,145 +12,13 @@ pub(crate) mod error;
 mod postgres;
 pub use postgres::{DbConfig, Postgres};
 use services::{
-    ports::storage::{BundleFragment, SequentialFuelBlocks, Storage},
     types::{
+        storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
         NonEmpty, NonNegative, TransactionState, Utc,
     },
     Result,
 };
-
-impl Storage for Postgres {
-    async fn next_bundle_id(&self) -> Result<NonNegative<i32>> {
-        Ok(self._next_bundle_id().await?)
-    }
-
-    async fn record_block_submission(
-        &self,
-        submission_tx: BlockSubmissionTx,
-        submission: BlockSubmission,
-        created_at: DateTime<Utc>,
-    ) -> Result<NonNegative<i32>> {
-        Ok(self
-            ._record_block_submission(submission_tx, submission, created_at)
-            .await?)
-    }
-
-    async fn get_pending_block_submission_txs(
-        &self,
-        submission_id: NonNegative<i32>,
-    ) -> Result<Vec<BlockSubmissionTx>> {
-        Ok(self
-            ._get_pending_block_submission_txs(submission_id)
-            .await?)
-    }
-
-    async fn update_block_submission_tx(
-        &self,
-        hash: [u8; 32],
-        state: TransactionState,
-    ) -> Result<BlockSubmission> {
-        Ok(self._update_block_submission_tx(hash, state).await?)
-    }
-
-    async fn oldest_nonfinalized_fragments(
-        &self,
-        starting_height: u32,
-        limit: usize,
-    ) -> Result<Vec<BundleFragment>> {
-        Ok(self
-            ._oldest_nonfinalized_fragments(starting_height, limit)
-            .await?)
-    }
-
-    async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>> {
-        Ok(self._fragments_submitted_by_tx(tx_hash).await?)
-    }
-
-    async fn missing_blocks(
-        &self,
-        starting_height: u32,
-        current_height: u32,
-    ) -> Result<Vec<RangeInclusive<u32>>> {
-        self._missing_blocks(starting_height, current_height)
-            .await
-            .map_err(Into::into)
-    }
-
-    async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
-        Ok(self._insert_blocks(blocks).await?)
-    }
-
-    async fn insert_bundle_and_fragments(
-        &self,
-        bundle_id: NonNegative<i32>,
-        block_range: RangeInclusive<u32>,
-        fragments: NonEmpty<Fragment>,
-    ) -> Result<()> {
-        Ok(self
-            ._insert_bundle_and_fragments(bundle_id, block_range, fragments)
-            .await?)
-    }
-
-    async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
-        Ok(self._last_time_a_fragment_was_finalized().await?)
-    }
-
-    async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>> {
-        Ok(self._submission_w_latest_block().await?)
-    }
-
-    async fn lowest_sequence_of_unbundled_blocks(
-        &self,
-        starting_height: u32,
-        limit: usize,
-    ) -> Result<Option<SequentialFuelBlocks>> {
-        Ok(self
-            ._lowest_unbundled_blocks(starting_height, limit)
-            .await?)
-    }
-
-    async fn record_pending_tx(
-        &self,
-        tx: L1Tx,
-        fragment_ids: NonEmpty<NonNegative<i32>>,
-        created_at: DateTime<Utc>,
-    ) -> Result<()> {
-        Ok(self
-            ._record_pending_tx(tx, fragment_ids, created_at)
-            .await?)
-    }
-
-    async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
-        Ok(self._get_non_finalized_txs().await?)
-    }
-
-    async fn get_pending_txs(&self) -> Result<Vec<L1Tx>> {
-        Ok(self._get_pending_txs().await?)
-    }
-
-    async fn get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
-        Ok(self._get_latest_pending_txs().await?)
-    }
-
-    async fn has_pending_txs(&self) -> Result<bool> {
-        Ok(self._has_pending_txs().await?)
-    }
-
-    async fn has_nonfinalized_txs(&self) -> Result<bool> {
-        Ok(self._has_nonfinalized_txs().await?)
-    }
-
-    async fn batch_update_tx_states(
-        &self,
-        selective_changes: Vec<([u8; 32], TransactionState)>,
-        noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
-    ) -> Result<()> {
-        Ok(self
-            ._batch_update_tx_states(selective_changes, noncewide_changes)
-            .await?)
-    }
-}
 
 impl services::state_listener::port::Storage for Postgres {
     async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
@@ -165,6 +33,10 @@ impl services::state_listener::port::Storage for Postgres {
         Ok(self
             ._batch_update_tx_states(selective_changes, noncewide_changes)
             .await?)
+    }
+
+    async fn has_pending_txs(&self) -> Result<bool> {
+        self._has_pending_txs().await.map_err(Into::into)
     }
 }
 
@@ -293,10 +165,7 @@ mod tests {
     use clock::TestClock;
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
-    use services::{
-        ports::{clock::Clock, storage::Storage},
-        types::{nonempty, CollectNonEmpty},
-    };
+    use services::types::{nonempty, CollectNonEmpty};
 
     use super::*;
 
@@ -325,7 +194,7 @@ mod tests {
     }
 
     async fn ensure_some_fragments_exists_in_the_db(
-        storage: impl Storage,
+        storage: impl services::block_bundler::port::Storage + services::state_committer::port::Storage,
     ) -> NonEmpty<NonNegative<i32>> {
         let next_id = storage.next_bundle_id().await.unwrap();
         storage
@@ -360,6 +229,8 @@ mod tests {
 
     #[tokio::test]
     async fn can_record_and_find_latest_block() {
+        use services::block_committer::port::Storage;
+
         // given
         let storage = start_db().await;
         let latest_height = random_non_zero_height();
@@ -395,6 +266,8 @@ mod tests {
 
     #[tokio::test]
     async fn can_record_and_find_pending_tx() {
+        use services::block_committer::port::Storage;
+
         // given
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
@@ -432,6 +305,8 @@ mod tests {
 
     #[tokio::test]
     async fn can_update_completion_status() {
+        use services::block_committer::port::Storage;
+
         // given
         let storage = start_db().await;
 
@@ -473,6 +348,8 @@ mod tests {
 
     #[tokio::test]
     async fn updating_a_missing_submission_tx_causes_an_error() {
+        use services::block_committer::port::Storage;
+
         // given
         let process = PostgresProcess::shared().await.unwrap();
         let db = process.create_random_db().await.unwrap();
@@ -498,6 +375,10 @@ mod tests {
 
     #[tokio::test]
     async fn can_insert_bundle_and_fragments() {
+        use services::{
+            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
+        };
+
         // given
         let storage = start_db().await;
 
@@ -541,10 +422,13 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_last_time_a_fragment_was_finalized() {
+        use services::state_committer::port::Storage;
+        use services::state_listener::port::Storage as ListenerStorage;
+
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone()).await;
         let tx = L1Tx {
             hash: rand::random::<[u8; 32]>(),
             ..Default::default()
@@ -580,7 +464,7 @@ mod tests {
     }
 
     async fn insert_sequence_of_unbundled_blocks(
-        storage: impl Storage,
+        storage: impl services::block_importer::port::Storage,
         range: RangeInclusive<u32>,
     ) {
         let blocks = range
@@ -596,11 +480,13 @@ mod tests {
     }
 
     async fn insert_sequence_of_bundled_blocks(
-        storage: impl Storage,
+        storage: impl services::block_bundler::port::Storage
+            + services::block_importer::port::Storage
+            + Clone,
         range: RangeInclusive<u32>,
         num_fragments: usize,
     ) {
-        insert_sequence_of_unbundled_blocks(&storage, range.clone()).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), range.clone()).await;
 
         let fragments = std::iter::repeat(Fragment {
             data: nonempty![0],
@@ -619,7 +505,7 @@ mod tests {
     }
 
     async fn lowest_unbundled_sequence(
-        storage: impl Storage,
+        storage: impl services::block_bundler::port::Storage,
         starting_height: u32,
         limit: usize,
     ) -> RangeInclusive<u32> {
@@ -637,10 +523,10 @@ mod tests {
         let storage = start_db().await;
 
         // Insert blocks 1 to 10
-        insert_sequence_of_unbundled_blocks(&storage, 1..=10).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 1..=10).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
 
         // then
         assert_eq!(height_range, 1..=10);
@@ -651,11 +537,11 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        insert_sequence_of_unbundled_blocks(&storage, 0..=2).await;
-        insert_sequence_of_unbundled_blocks(&storage, 4..=6).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 0..=2).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 4..=6).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
 
         // then
         assert_eq!(height_range, 0..=2);
@@ -666,10 +552,10 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        insert_sequence_of_unbundled_blocks(&storage, 0..=10).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 0..=10).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(&storage, 2, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 2, usize::MAX).await;
 
         // then
         assert_eq!(height_range, 2..=10);
@@ -680,10 +566,10 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        insert_sequence_of_unbundled_blocks(&storage, 0..=10).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 0..=10).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(&storage, 0, 2).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, 2).await;
 
         // then
         assert_eq!(height_range, 0..=1);
@@ -703,11 +589,11 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        insert_sequence_of_bundled_blocks(&storage, 0..=2, 1).await;
-        insert_sequence_of_unbundled_blocks(&storage, 3..=4).await;
+        insert_sequence_of_bundled_blocks(storage.clone(), 0..=2, 1).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 3..=4).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
 
         // then
         assert_eq!(height_range, 3..=4);
@@ -719,12 +605,12 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        insert_sequence_of_unbundled_blocks(&storage, 0..=2).await;
-        insert_sequence_of_bundled_blocks(&storage, 7..=10, 1).await;
-        insert_sequence_of_unbundled_blocks(&storage, 11..=15).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 0..=2).await;
+        insert_sequence_of_bundled_blocks(storage.clone(), 7..=10, 1).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 11..=15).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(&storage, 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
 
         // then
         assert_eq!(height_range, 0..=2);
@@ -736,12 +622,20 @@ mod tests {
         let storage = start_db().await;
 
         // u16::MAX because of implementation details
-        insert_sequence_of_bundled_blocks(&storage, 0..=u16::MAX as u32 * 2, u16::MAX as usize * 2)
-            .await;
+        insert_sequence_of_bundled_blocks(
+            storage.clone(),
+            0..=u16::MAX as u32 * 2,
+            u16::MAX as usize * 2,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn excludes_fragments_from_bundles_ending_before_starting_height() {
+        use services::{
+            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
+        };
+
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -791,6 +685,10 @@ mod tests {
 
     #[tokio::test]
     async fn includes_fragments_from_bundles_ending_at_starting_height() {
+        use services::{
+            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
+        };
+
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -824,6 +722,10 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_next_bundle_id() {
+        use services::{
+            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
+        };
+
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -857,6 +759,8 @@ mod tests {
 
     #[tokio::test]
     async fn empty_db_reports_missing_heights() -> Result<()> {
+        use services::block_importer::port::Storage;
+
         // given
         let current_height = 10;
         let storage = start_db().await;
@@ -872,11 +776,13 @@ mod tests {
 
     #[tokio::test]
     async fn missing_blocks_no_holes() -> Result<()> {
+        use services::block_importer::port::Storage;
+
         // given
         let current_height = 10;
         let storage = start_db().await;
 
-        insert_sequence_of_unbundled_blocks(&storage, 0..=5).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 0..=5).await;
 
         // when
         let missing_blocks = storage.missing_blocks(0, current_height).await?;
@@ -889,12 +795,14 @@ mod tests {
 
     #[tokio::test]
     async fn reports_holes_in_blocks() -> Result<()> {
+        use services::block_importer::port::Storage;
+
         // given
         let current_height = 15;
         let storage = start_db().await;
 
-        insert_sequence_of_unbundled_blocks(&storage, 3..=5).await;
-        insert_sequence_of_unbundled_blocks(&storage, 8..=10).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 3..=5).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 8..=10).await;
 
         // when
         let missing_blocks = storage.missing_blocks(0, current_height).await?;
@@ -907,10 +815,12 @@ mod tests {
 
     #[tokio::test]
     async fn can_retrieve_fragments_submitted_by_tx() -> Result<()> {
+        use services::state_committer::port::Storage;
+
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone()).await;
         let hash = rand::random::<[u8; 32]>();
         let tx = L1Tx {
             hash,
@@ -931,10 +841,12 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_latest_pending_txs() -> Result<()> {
+        use services::state_committer::port::Storage;
+
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(&storage).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone()).await;
         let (fragment_1, fragment_2) = (fragment_ids[0], fragment_ids[1]);
         let inserted_1 = L1Tx {
             hash: rand::random::<[u8; 32]>(),

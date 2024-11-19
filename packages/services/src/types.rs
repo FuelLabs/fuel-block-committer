@@ -1,6 +1,4 @@
-#[cfg(feature = "l1")]
 pub use alloy::primitives::{Address, U256};
-#[cfg(any(feature = "l1", feature = "storage"))]
 pub use futures::Stream;
 
 mod non_empty;
@@ -8,18 +6,29 @@ pub use non_empty::*;
 
 mod block_submission;
 mod fragment;
-#[cfg(feature = "l1")]
 mod fuel_block_committed_on_l1;
 mod l1_height;
 mod serial_id;
 mod state_submission;
 mod transactions;
 
+pub mod storage;
+
 pub use block_submission::*;
 pub use fragment::*;
-#[cfg(feature = "l1")]
 pub use fuel_block_committed_on_l1::*;
 pub use l1_height::*;
 pub use serial_id::*;
 pub use state_submission::*;
 pub use transactions::*;
+
+pub mod fuel {
+    pub use fuel_core_client::client::types::{
+        block::{
+            Block as FuelBlock, Consensus as FuelConsensus, Genesis, Genesis as FuelGenesis,
+            Header as FuelHeader, PoAConsensus as FuelPoAConsensus,
+        },
+        primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32, PublicKey as FuelPublicKey},
+        Consensus,
+    };
+}

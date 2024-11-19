@@ -23,9 +23,8 @@ use metrics::{
     prometheus::{self, histogram_opts},
     RegistersMetrics,
 };
-use services::{
-    ports::l1::FragmentsSubmitted,
-    types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse},
+use services::types::{
+    BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse,
 };
 use tracing::info;
 use url::Url;
@@ -251,7 +250,7 @@ impl EthApi for WsConnection {
         &self,
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<L1Tx>,
-    ) -> Result<(L1Tx, services::ports::l1::FragmentsSubmitted)> {
+    ) -> Result<(L1Tx, services::types::FragmentsSubmitted)> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
@@ -455,7 +454,7 @@ impl WsConnection {
 mod tests {
 
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
-    use services::{ports::l1::FragmentEncoder, types::nonempty};
+    use services::{block_bundler::port::l1::FragmentEncoder, types::nonempty};
 
     use super::*;
 

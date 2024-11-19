@@ -8,10 +8,7 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::{
-    ports::{clock::Clock, storage::Storage},
-    types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty},
-};
+use services::types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty};
 use storage::{DbWithProcess, PostgresProcess};
 
 use services::{block_committer::service::BlockCommitter, Runner};
@@ -34,20 +31,18 @@ pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
 pub mod mocks {
     pub mod l1 {
 
-        use std::cmp::min;
+        use std::{cmp::min, num::NonZeroU32};
 
         use delegate::delegate;
         use mockall::{predicate::eq, Sequence};
-        use services::{
-            ports::l1::FragmentsSubmitted,
-            types::{BlockSubmissionTx, Fragment, L1Height, NonEmpty, TransactionResponse, U256},
+        use services::types::{
+            BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, NonEmpty,
+            TransactionResponse,
         };
 
         pub struct FullL1Mock {
-            pub api: services::ports::l1::MockApi,
             pub state_listener_l1_api: services::state_listener::port::l1::MockApi,
             pub block_committer_l1_api: services::block_committer::port::l1::MockApi,
-            pub contract: services::ports::l1::MockContract,
             pub block_committer_contract: services::block_committer::port::l1::MockContract,
         }
 
@@ -60,12 +55,10 @@ pub mod mocks {
         impl FullL1Mock {
             pub fn new() -> Self {
                 Self {
-                    api: services::ports::l1::MockApi::new(),
                     state_listener_l1_api: services::state_listener::port::l1::MockApi::new(),
                     block_committer_l1_api: services::block_committer::port::l1::MockApi::new(),
                     block_committer_contract:
                         services::block_committer::port::l1::MockContract::new(),
-                    contract: services::ports::l1::MockContract::new(),
                 }
             }
         }
@@ -74,6 +67,7 @@ pub mod mocks {
             delegate! {
                 to self.block_committer_contract {
                     async fn submit(&self, hash: [u8;32], height: u32) -> services::Result<BlockSubmissionTx>;
+                    fn commit_interval(&self) -> NonZeroU32;
                 }
             }
         }
@@ -103,31 +97,6 @@ pub mod mocks {
             }
         }
 
-        impl services::ports::l1::Contract for FullL1Mock {
-            delegate! {
-                to self.contract {
-                    async fn submit(&self, hash: [u8;32], height: u32) -> services::Result<BlockSubmissionTx>;
-                    fn commit_interval(&self) -> std::num::NonZeroU32;
-                }
-            }
-        }
-
-        impl services::ports::l1::Api for FullL1Mock {
-            delegate! {
-                to self.api {
-                    async fn submit_state_fragments(
-                        &self,
-                        fragments: NonEmpty<Fragment>,
-                        previous_tx: Option<services::types::L1Tx>,
-                    ) -> services::Result<(services::types::L1Tx, FragmentsSubmitted)>;
-                    async fn get_block_number(&self) -> services::Result<L1Height>;
-                    async fn balance(&self, address: services::types::Address) -> services::Result<U256>;
-                    async fn get_transaction_response(&self, tx_hash: [u8; 32]) -> services::Result<Option<TransactionResponse>>;
-                    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::Result<bool>;
-                }
-            }
-        }
-
         #[derive(Clone, Copy)]
         pub enum TxStatus {
             Success,
@@ -135,7 +104,7 @@ pub mod mocks {
         }
 
         pub fn expects_contract_submission(
-            block: services::ports::fuel::FuelBlock,
+            block: services::types::fuel::FuelBlock,
             eth_tx: [u8; 32],
         ) -> FullL1Mock {
             let mut l1 = FullL1Mock::new();
@@ -150,7 +119,7 @@ pub mod mocks {
                 .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }))
                 .once();
 
-            l1.api
+            l1.block_committer_l1_api
                 .expect_get_block_number()
                 .return_once(move || Box::pin(async { Ok(0u32.into()) }));
 
@@ -340,9 +309,8 @@ pub mod mocks {
         use itertools::Itertools;
         use mockall::predicate::eq;
         use rand::{rngs::StdRng, RngCore, SeedableRng};
-        use services::{
-            ports::storage::SequentialFuelBlocks,
-            types::{CollectNonEmpty, CompressedFuelBlock, NonEmpty},
+        use services::types::{
+            storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, NonEmpty,
         };
 
         pub fn generate_block(height: u32, data_size: usize) -> CompressedFuelBlock {
@@ -429,7 +397,7 @@ pub mod mocks {
         }
 
         pub fn given_fetcher(
-            available_blocks: Vec<services::ports::fuel::FuelBlock>,
+            available_blocks: Vec<services::types::fuel::FuelBlock>,
         ) -> services::block_committer::port::fuel::MockApi {
             let mut fetcher = services::block_committer::port::fuel::MockApi::new();
             for block in available_blocks.clone() {
@@ -454,13 +422,13 @@ pub mod mocks {
             fetcher
         }
 
-        fn given_header(height: u32) -> services::ports::fuel::FuelHeader {
+        fn given_header(height: u32) -> services::types::fuel::FuelHeader {
             let application_hash =
                 "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
                     .parse()
                     .unwrap();
 
-            services::ports::fuel::FuelHeader {
+            services::types::fuel::FuelHeader {
                 id: Default::default(),
                 da_height: Default::default(),
                 consensus_parameters_version: Default::default(),
@@ -486,7 +454,7 @@ pub mod mocks {
         pub fn given_a_block(
             height: u32,
             secret_key: &SecretKey,
-        ) -> services::ports::fuel::FuelBlock {
+        ) -> services::types::fuel::FuelBlock {
             let header = given_header(height);
 
             let mut hasher = fuel_crypto::Hasher::default();
@@ -495,15 +463,15 @@ pub mod mocks {
             hasher.input(header.time.0.to_be_bytes());
             hasher.input(header.application_hash.as_ref());
 
-            let id = services::ports::fuel::FuelBlockId::from(hasher.digest());
+            let id = services::types::fuel::FuelBlockId::from(hasher.digest());
             let id_message = Message::from_bytes(*id);
             let signature = Signature::sign(secret_key, &id_message);
 
-            services::ports::fuel::FuelBlock {
+            services::types::fuel::FuelBlock {
                 id,
                 header,
-                consensus: services::ports::fuel::FuelConsensus::PoAConsensus(
-                    services::ports::fuel::FuelPoAConsensus { signature },
+                consensus: services::types::fuel::FuelConsensus::PoAConsensus(
+                    services::types::fuel::FuelPoAConsensus { signature },
                 ),
                 transactions: vec![],
                 block_producer: Some(secret_key.public_key()),
@@ -616,6 +584,8 @@ impl Setup {
     }
 
     pub async fn insert_fragments(&self, height: u32, amount: usize) -> Vec<Fragment> {
+        use services::state_committer::port::Storage;
+
         let max_per_blob = (BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
         let fuel_blocks = self
             .import_blocks(Blocks::WithHeights {
@@ -702,6 +672,8 @@ impl Setup {
 
     // TODO: we should use the block committer here to insert the submissions
     pub async fn add_submissions(&self, pending_submissions: Vec<u32>) {
+        use services::block_committer::port::Storage;
+
         for height in pending_submissions {
             let submission_tx = services::types::BlockSubmissionTx {
                 hash: [height as u8; 32],

@@ -8,8 +8,7 @@ use actix_web::{
     error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
 };
 use services::{
-    health_reporter::service::HealthReporter, ports::storage::Storage,
-    status_reporter::service::StatusReporter,
+    health_reporter::service::HealthReporter, status_reporter::service::StatusReporter,
 };
 
 use crate::{
@@ -21,7 +20,7 @@ use crate::{
 pub async fn launch_api_server(
     config: &Config,
     metrics_registry: Registry,
-    storage: impl Storage + 'static,
+    storage: impl services::status_reporter::port::Storage + 'static,
     fuel_health_check: HealthChecker,
     eth_health_check: HealthChecker,
 ) -> Result<()> {

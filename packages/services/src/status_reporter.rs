@@ -1,5 +1,4 @@
 pub mod service {
-    use crate::ports::storage::Storage;
     use serde::Serialize;
 
     use crate::Result;
@@ -27,7 +26,7 @@ pub mod service {
     }
     impl<Db> StatusReporter<Db>
     where
-        Db: Storage,
+        Db: crate::status_reporter::port::Storage,
     {
         pub async fn current_status(&self) -> Result<StatusReport> {
             let last_submission_completed = self

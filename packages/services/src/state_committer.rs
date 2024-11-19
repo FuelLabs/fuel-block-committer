@@ -2,8 +2,7 @@ pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
     use crate::{
-        ports::storage::BundleFragment,
-        types::{CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
+        types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
         Result, Runner,
     };
     use itertools::Itertools;
@@ -256,8 +255,7 @@ pub mod port {
     use nonempty::NonEmpty;
 
     use crate::{
-        ports::storage::BundleFragment,
-        types::{DateTime, L1Tx, NonNegative, Utc},
+        types::{storage::BundleFragment, DateTime, L1Tx, NonNegative, Utc},
         Error, Result,
     };
 
@@ -265,8 +263,7 @@ pub mod port {
         use nonempty::NonEmpty;
 
         use crate::{
-            ports::l1::FragmentsSubmitted,
-            types::{BlockSubmissionTx, Fragment, L1Tx},
+            types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
             Result,
         };
 

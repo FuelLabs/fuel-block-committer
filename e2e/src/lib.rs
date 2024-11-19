@@ -14,7 +14,6 @@ mod tests {
     use std::time::Duration;
 
     use anyhow::Result;
-    use services::ports::storage::Storage;
     use tokio::time::sleep_until;
 
     use crate::whole_stack::{FuelNodeType, WholeStack};
@@ -76,6 +75,12 @@ mod tests {
 
         // then
         let state_submitting_finished = || async {
+            use services::{
+                block_bundler::port::Storage, block_importer::port::Storage as ImporterStorage,
+                state_committer::port::Storage as CommitterStorage,
+                state_listener::port::Storage as ListenerStorage,
+            };
+
             let finished = stack
                 .db
                 .lowest_sequence_of_unbundled_blocks(0, 1)

@@ -1,6 +1,11 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 use crate::types::NonEmpty;
+
+#[derive(Debug, Clone, Copy)]
+pub struct FragmentsSubmitted {
+    pub num_fragments: NonZeroUsize,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fragment {

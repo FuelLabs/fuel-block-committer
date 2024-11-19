@@ -8,8 +8,8 @@ use metrics::{
     HealthChecker, RegistersMetrics,
 };
 use services::{
-    block_committer::service::BlockCommitter,
-    ports::{l1::Contract, storage::Storage},
+    block_committer::{port::l1::Contract, service::BlockCommitter},
+    state_committer::port::Storage,
     state_listener::service::StateListener,
     wallet_balance_tracker::service::WalletBalanceTracker,
     BlockBundler, BlockBundlerConfig, Runner,

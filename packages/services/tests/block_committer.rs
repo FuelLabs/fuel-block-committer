@@ -1,7 +1,7 @@
-use services::{block_committer::service::BlockCommitter, Runner};
+use services::types::{TransactionResponse, TransactionState, Utc};
 use services::{
-    ports::storage::Storage,
-    types::{TransactionResponse, TransactionState, Utc},
+    block_committer::{port::Storage, service::BlockCommitter},
+    Runner,
 };
 use test_helpers::{
     mocks::fuel::{given_a_block, given_fetcher, given_secret_key},
@@ -25,7 +25,7 @@ async fn will_do_nothing_if_latest_block_is_completed_and_not_stale() {
         .unwrap();
 
     let mut l1 = FullL1Mock::new();
-    l1.contract.expect_submit().never();
+    l1.block_committer_contract.expect_submit().never();
 
     let mut block_committer = BlockCommitter::new(
         l1,
