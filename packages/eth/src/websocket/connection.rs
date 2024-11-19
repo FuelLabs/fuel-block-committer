@@ -30,7 +30,7 @@ use ports::{
 use tracing::info;
 use url::Url;
 
-use super::{health_tracking_middleware::EthApi, OurSigners};
+use super::{health_tracking_middleware::EthApi, Signers};
 use crate::{
     error::{Error, Result},
     BlobEncoder,
@@ -368,7 +368,7 @@ impl WsConnection {
     pub async fn connect(
         url: Url,
         contract_address: Address,
-        signers: OurSigners,
+        signers: Signers,
         tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> Result<Self> {

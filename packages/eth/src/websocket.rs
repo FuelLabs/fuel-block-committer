@@ -4,8 +4,8 @@ use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::{
     consensus::SignableTransaction,
     network::TxSigner,
-    primitives::{Address, ChainId, Sign, B256},
-    signers::{k256::SecretKey, local::PrivateKeySigner, Signature, Signer},
+    primitives::{Address, ChainId, B256},
+    signers::{local::PrivateKeySigner, Signature},
 };
 use ports::{
     l1::{FragmentsSubmitted, Result},
@@ -75,15 +75,15 @@ pub struct TxConfig {
     pub send_tx_request_timeout: Duration,
 }
 
-trait OurTrait: Signer + TxSigner<Signature> {}
-impl<T: Signer + TxSigner<Signature>> OurTrait for T {}
+trait OurTrait: alloy::signers::Signer + TxSigner<Signature> {}
+impl<T: alloy::signers::Signer + TxSigner<Signature>> OurTrait for T {}
 
-pub struct OurSigner {
+pub struct Signer {
     signer: Box<dyn OurTrait + 'static + Send + Sync>,
 }
 
 #[async_trait::async_trait]
-impl TxSigner<Signature> for OurSigner {
+impl TxSigner<Signature> for Signer {
     fn address(&self) -> Address {
         TxSigner::<Signature>::address(&self.signer)
     }
@@ -97,14 +97,14 @@ impl TxSigner<Signature> for OurSigner {
 }
 
 #[async_trait::async_trait]
-impl Signer<Signature> for OurSigner {
+impl alloy::signers::Signer<Signature> for Signer {
     /// Signs the given hash.
     async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
         self.signer.sign_hash(hash).await
     }
 
     fn address(&self) -> Address {
-        Signer::<Signature>::address(&self.signer)
+        alloy::signers::Signer::<Signature>::address(&self.signer)
     }
 
     fn chain_id(&self) -> Option<ChainId> {
@@ -116,28 +116,28 @@ impl Signer<Signature> for OurSigner {
     }
 }
 
-impl OurSigner {
+impl Signer {
     pub async fn make_aws_signer(client: &AwsClient, key: String) -> Self {
         let signer = client.make_signer(key).await.unwrap();
 
-        OurSigner {
+        Signer {
             signer: Box::new(signer),
         }
     }
 
     pub fn make_private_key_signer(key: &str) -> Self {
-        let signer = PrivateKeySigner::from_str(&key).unwrap();
-        OurSigner {
+        let signer = PrivateKeySigner::from_str(key).unwrap();
+        Signer {
             signer: Box::new(signer),
         }
     }
 }
 
-pub struct OurSigners {
-    pub main: OurSigner,
-    pub blob: Option<OurSigner>,
+pub struct Signers {
+    pub main: Signer,
+    pub blob: Option<Signer>,
 }
-impl OurSigners {
+impl Signers {
     pub async fn for_keys(keys: L1Keys) -> Self {
         let aws_client = if keys.uses_aws() {
             let config = AwsConfig::from_env().await;
@@ -149,9 +149,9 @@ impl OurSigners {
         let blob_signer = if let Some(blob_key) = keys.blob {
             let signer = match blob_key {
                 L1Key::Kms(key) => {
-                    OurSigner::make_aws_signer(aws_client.as_ref().expect("is set"), key).await
+                    Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await
                 }
-                L1Key::Private(key) => OurSigner::make_private_key_signer(&key),
+                L1Key::Private(key) => Signer::make_private_key_signer(&key),
             };
             Some(signer)
         } else {
@@ -160,8 +160,8 @@ impl OurSigners {
 
         let l1_key = keys.main;
         let main_signer = match l1_key {
-            L1Key::Kms(key) => OurSigner::make_aws_signer(&aws_client.expect("is set"), key).await,
-            L1Key::Private(key) => OurSigner::make_private_key_signer(&key),
+            L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await,
+            L1Key::Private(key) => Signer::make_private_key_signer(&key),
         };
 
         Self {
@@ -175,7 +175,7 @@ impl WebsocketClient {
     pub async fn connect(
         url: Url,
         contract_address: Address,
-        signers: OurSigners,
+        signers: Signers,
         unhealthy_after_n_errors: usize,
         tx_config: TxConfig,
     ) -> ports::l1::Result<Self> {

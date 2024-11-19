@@ -7,7 +7,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
 };
-use eth::{AwsClient, AwsConfig, L1Key, OurSigner, OurSigners, WebsocketClient};
+use eth::{AwsClient, AwsConfig, L1Key, Signer, Signers, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
 use ports::{fuel::FuelBlock, types::Address};
 use serde::Deserialize;
@@ -34,8 +34,8 @@ impl DeployedContract {
         let chain_state_contract = WebsocketClient::connect(
             url,
             address,
-            OurSigners {
-                main: OurSigner::make_aws_signer(&aws_client, key.id).await,
+            Signers {
+                main: Signer::make_aws_signer(&aws_client, key.id).await,
                 blob: None,
             },
             5,

@@ -22,7 +22,7 @@ mod websocket;
 pub use alloy::primitives::Address;
 pub use aws::*;
 use fuel_block_committer_encoding::blob::{self, generate_sidecar};
-pub use websocket::{L1Key, L1Keys, OurSigner, OurSigners, TxConfig, WebsocketClient};
+pub use websocket::{L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient};
 
 impl Contract for WebsocketClient {
     delegate! {
