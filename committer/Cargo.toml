@@ -13,7 +13,7 @@ rust-version = { workspace = true }
 actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["default", "derive"] }
 clock = { workspace = true }
-config = { workspace = true, features = ["json", "async"] }
+config = { workspace = true, features = ["async"] }
 eth = { workspace = true }
 fuel = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
