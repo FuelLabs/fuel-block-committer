@@ -75,11 +75,13 @@ pub struct TxConfig {
     pub send_tx_request_timeout: Duration,
 }
 
-trait OurTrait: alloy::signers::Signer + TxSigner<Signature> {}
-impl<T: alloy::signers::Signer + TxSigner<Signature>> OurTrait for T {}
+// This trait is needed because you cannot write `dyn TraitA + TraitB` except when TraitB is an
+// auto-trait.
+trait CompositeSigner: alloy::signers::Signer + TxSigner<Signature> {}
+impl<T: alloy::signers::Signer + TxSigner<Signature>> CompositeSigner for T {}
 
 pub struct Signer {
-    signer: Box<dyn OurTrait + 'static + Send + Sync>,
+    signer: Box<dyn CompositeSigner + 'static + Send + Sync>,
 }
 
 #[async_trait::async_trait]
@@ -98,7 +100,6 @@ impl TxSigner<Signature> for Signer {
 
 #[async_trait::async_trait]
 impl alloy::signers::Signer<Signature> for Signer {
-    /// Signs the given hash.
     async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
         self.signer.sign_hash(hash).await
     }
@@ -117,12 +118,12 @@ impl alloy::signers::Signer<Signature> for Signer {
 }
 
 impl Signer {
-    pub async fn make_aws_signer(client: &AwsClient, key: String) -> Self {
-        let signer = client.make_signer(key).await.unwrap();
+    pub async fn make_aws_signer(client: &AwsClient, key: String) -> Result<Self> {
+        let signer = client.make_signer(key).await?;
 
-        Signer {
+        Ok(Signer {
             signer: Box::new(signer),
-        }
+        })
     }
 
     pub fn make_private_key_signer(key: &str) -> Self {
@@ -138,7 +139,7 @@ pub struct Signers {
     pub blob: Option<Signer>,
 }
 impl Signers {
-    pub async fn for_keys(keys: L1Keys) -> Self {
+    pub async fn for_keys(keys: L1Keys) -> Result<Self> {
         let aws_client = if keys.uses_aws() {
             let config = AwsConfig::from_env().await;
             Some(AwsClient::new(config))
@@ -149,7 +150,7 @@ impl Signers {
         let blob_signer = if let Some(blob_key) = keys.blob {
             let signer = match blob_key {
                 L1Key::Kms(key) => {
-                    Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await
+                    Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?
                 }
                 L1Key::Private(key) => Signer::make_private_key_signer(&key),
             };
@@ -160,7 +161,7 @@ impl Signers {
 
         let l1_key = keys.main;
         let main_signer = match l1_key {
-            L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await,
+            L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await?,
             L1Key::Private(key) => Signer::make_private_key_signer(&key),
         };
 

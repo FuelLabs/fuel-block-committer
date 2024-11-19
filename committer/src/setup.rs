@@ -193,7 +193,7 @@ pub async fn l1_adapter(
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        Signers::for_keys(config.eth.l1_keys.clone()).await,
+        Signers::for_keys(config.eth.l1_keys.clone()).await?,
         internal_config.eth_errors_before_unhealthy,
         eth::TxConfig {
             tx_max_fee: config.app.tx_max_fee as u128,

@@ -35,7 +35,7 @@ impl DeployedContract {
             url,
             address,
             Signers {
-                main: Signer::make_aws_signer(&aws_client, key.id).await,
+                main: Signer::make_aws_signer(&aws_client, key.id).await?,
                 blob: None,
             },
             5,
