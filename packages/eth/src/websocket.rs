@@ -275,3 +275,34 @@ impl RegistersMetrics for WebsocketClient {
         self.inner.metrics()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+
+    use super::L1Key;
+
+    #[test]
+    fn can_deserialize_private_key() {
+        // given
+        let val = r#""Private(0x1234)""#;
+
+        // when
+        let key: L1Key = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, L1Key::Private("0x1234".to_owned()));
+    }
+
+    #[test]
+    fn can_deserialize_kms_key() {
+        // given
+        let val = r#""Kms(0x1234)""#;
+
+        // when
+        let key: L1Key = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, L1Key::Kms("0x1234".to_owned()));
+    }
+}
