@@ -11,6 +11,7 @@ use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
     state_committer::port::Storage,
     state_listener::service::StateListener,
+    state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
     BlockBundler, BlockBundlerConfig, Runner,
 };
@@ -188,6 +189,24 @@ pub fn state_listener(
     schedule_polling(
         config.app.block_check_interval,
         state_listener,
+        "State Listener",
+        cancel_token,
+    )
+}
+
+pub fn state_pruner(
+    storage: Database,
+    cancel_token: CancellationToken,
+    registry: &Registry,
+    config: &config::Config,
+) -> tokio::task::JoinHandle<()> {
+    let state_pruner = StatePruner::new(storage, SystemClock, config.app.state_pruner_retention);
+
+    state_pruner.register_metrics(registry);
+
+    schedule_polling(
+        config.app.state_pruner_run_interval,
+        state_pruner,
         "State Listener",
         cancel_token,
     )
