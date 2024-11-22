@@ -1,5 +1,4 @@
 mod mappings;
-mod ports_impl;
 #[cfg(feature = "test-helpers")]
 mod test_instance;
 
@@ -155,6 +154,21 @@ impl services::state_committer::port::Storage for Postgres {
     }
     async fn get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
         self._get_latest_pending_txs().await.map_err(Into::into)
+    }
+}
+
+impl services::state_pruner::port::Storage for Postgres {
+    async fn prune_entries_older_than(
+        &self,
+        date: DateTime<Utc>,
+    ) -> Result<services::state_pruner::port::Pruned> {
+        self._prune_entries_older_than(date)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn table_sizes(&self) -> Result<services::state_pruner::port::TableSizes> {
+        self._table_sizes().await.map_err(Into::into)
     }
 }
 

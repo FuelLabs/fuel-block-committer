@@ -24,6 +24,8 @@ pub struct Committer {
     bundle_fragments_to_accumulate: Option<String>,
     bundle_fragment_accumulation_timeout: Option<String>,
     new_bundle_check_interval: Option<String>,
+    state_pruner_retention: Option<String>,
+    state_pruner_run_interval: Option<String>,
 }
 
 impl Committer {
@@ -109,6 +111,14 @@ impl Committer {
                 "COMMITTER__APP__BUNDLE__NEW_BUNDLE_CHECK_INTERVAL",
                 get_field!(new_bundle_check_interval),
             )
+            .env(
+                "COMMITTER__APP__STATE_PRUNER_RETENTION",
+                get_field!(state_pruner_retention),
+            )
+            .env(
+                "COMMITTER__APP__STATE_PRUNER_RUN_INTERVAL",
+                get_field!(state_pruner_run_interval),
+            )
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
@@ -168,6 +178,16 @@ impl Committer {
 
     pub fn with_new_bundle_check_interval(mut self, timeout: String) -> Self {
         self.new_bundle_check_interval = Some(timeout);
+        self
+    }
+
+    pub fn with_state_pruner_retention(mut self, timeout: String) -> Self {
+        self.state_pruner_retention = Some(timeout);
+        self
+    }
+
+    pub fn with_state_pruner_run_interval(mut self, timeout: String) -> Self {
+        self.state_pruner_run_interval = Some(timeout);
         self
     }
 

@@ -43,9 +43,8 @@ pub mod service {
             self.metrics.observe_pruned(&pruned);
             self.metrics.observe_table_sizes(&table_sizes);
 
-            // TODO: @hal3e
-            // - refactor ports to every service
-            // - configure timeout to run this service
+            tracing::info!("Pruned: {pruned:?}");
+            tracing::info!("Table sizes: {table_sizes:?}");
 
             Ok(())
         }
@@ -232,7 +231,7 @@ pub mod port {
         pub contract_submisions: u32,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd)]
     pub struct TableSizes {
         pub blob_transactions: u32,
         pub fragments: u32,
