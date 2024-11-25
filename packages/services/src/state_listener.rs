@@ -456,7 +456,9 @@ mod tests {
         mock.expect_get_transaction_response()
             .once()
             .with(eq(tx_hash))
-            .return_once(|_| Box::pin(async { Ok(Some(TransactionResponse::new(1, true))) }));
+            .return_once(|_| {
+                Box::pin(async { Ok(Some(TransactionResponse::new(1, true, 100, 10))) })
+            });
         mock.expect_get_block_number()
             .returning(|| Box::pin(async { Ok(L1Height::from(1u32)) }));
 
@@ -666,7 +668,14 @@ mod tests {
             .with(eq(replacement_tx_hash))
             .once()
             .return_once(move |_| {
-                Box::pin(async move { Ok(Some(TransactionResponse::new(current_height, true))) })
+                Box::pin(async move {
+                    Ok(Some(TransactionResponse::new(
+                        current_height,
+                        true,
+                        100,
+                        10,
+                    )))
+                })
             });
 
         let mut listener = StateListener::new(
@@ -757,6 +766,8 @@ mod tests {
                     Ok(Some(TransactionResponse::new(
                         current_height - blocks_to_finalize,
                         replacement_tx_succeeded,
+                        100,
+                        10,
                     )))
                 })
             });
