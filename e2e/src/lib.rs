@@ -123,12 +123,14 @@ mod tests {
             contract_submissions: 2,
         };
         let table_sizes = stack.db.table_sizes().await?;
+        dbg!(&table_sizes);
         assert!(table_sizes >= expected_table_sizes_before_pruning);
 
         // Sleep to make sure the pruner service had time to run
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
         let table_sizes = stack.db.table_sizes().await?;
+        dbg!(&table_sizes);
         assert!(table_sizes < expected_table_sizes_before_pruning);
 
         Ok(())
