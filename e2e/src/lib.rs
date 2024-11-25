@@ -115,9 +115,9 @@ mod tests {
 
         let expected_table_sizes_before_pruning = services::state_pruner::port::TableSizes {
             blob_transactions: 2,
-            fragments: 3,
-            transaction_fragments: 3,
-            bundles: 3,
+            fragments: 2,
+            transaction_fragments: 2,
+            bundles: 2,
             blocks: 1300,
             contract_transactions: 2,
             contract_submissions: 2,
