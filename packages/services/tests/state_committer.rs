@@ -1,4 +1,7 @@
-use services::{types::NonEmpty, Result, Runner, StateCommitter, StateCommitterConfig};
+use services::{
+    types::{L1Tx, NonEmpty},
+    Result, Runner, StateCommitter, StateCommitterConfig,
+};
 use std::time::Duration;
 
 #[tokio::test]
@@ -11,8 +14,11 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
     let tx_hash = [0; 32];
     let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        tx_hash,
-        0,
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
     )]);
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
@@ -48,8 +54,11 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
     let tx_hash = [1; 32];
     let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        tx_hash,
-        0,
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
     )]);
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
@@ -122,8 +131,11 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
     let tx_hash = [3; 32];
     let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments).unwrap()),
-        tx_hash,
-        0,
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
     )]);
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
@@ -162,8 +174,11 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
     let tx_hash = [4; 32];
     let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments_to_submit).unwrap()),
-        tx_hash,
-        0,
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
     )]);
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(1);
@@ -202,8 +217,11 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
     let tx_hash = [5; 32];
     let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        tx_hash,
-        0,
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
     )]);
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
@@ -244,13 +262,19 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
     let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            tx_hash_1,
-            0,
+            L1Tx {
+                hash: tx_hash_1,
+                nonce: 0,
+                ..Default::default()
+            },
         ),
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            tx_hash_2,
-            1,
+            L1Tx {
+                hash: tx_hash_2,
+                nonce: 1,
+                ..Default::default()
+            },
         ),
     ]);
 

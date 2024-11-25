@@ -8,7 +8,9 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty};
+use services::types::{
+    BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty,
+};
 use storage::{DbWithProcess, PostgresProcess};
 
 use services::{block_committer::service::BlockCommitter, Runner};
@@ -36,7 +38,7 @@ pub mod mocks {
         use delegate::delegate;
         use mockall::{predicate::eq, Sequence};
         use services::types::{
-            BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, NonEmpty,
+            BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
             TransactionResponse,
         };
 
@@ -151,13 +153,13 @@ pub mod mocks {
         }
 
         pub fn expects_state_submissions(
-            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, [u8; 32], u32)>,
+            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, L1Tx)>,
         ) -> services::state_committer::port::l1::MockApi {
             let mut sequence = Sequence::new();
 
             let mut l1_mock = services::state_committer::port::l1::MockApi::new();
 
-            for (fragment, tx_id, nonce) in expectations {
+            for (fragment, tx) in expectations {
                 l1_mock
                     .expect_submit_state_fragments()
                     .withf(move |data, _previous_tx| {
@@ -171,11 +173,7 @@ pub mod mocks {
                     .return_once(move |fragments, _previous_tx| {
                         Box::pin(async move {
                             Ok((
-                                services::types::L1Tx {
-                                    hash: tx_id,
-                                    nonce,
-                                    ..Default::default()
-                                },
+                                tx,
                                 FragmentsSubmitted {
                                     num_fragments: min(fragments.len(), 6).try_into().unwrap(),
                                 },
@@ -528,7 +526,14 @@ impl Setup {
 
     pub async fn send_fragments(&self, eth_tx: [u8; 32], eth_nonce: u32) {
         StateCommitter::new(
-            mocks::l1::expects_state_submissions(vec![(None, eth_tx, eth_nonce)]),
+            mocks::l1::expects_state_submissions(vec![(
+                None,
+                L1Tx {
+                    hash: eth_tx,
+                    nonce: eth_nonce,
+                    ..Default::default()
+                },
+            )]),
             mocks::fuel::latest_height_is(0),
             self.db(),
             services::StateCommitterConfig {
@@ -552,7 +557,14 @@ impl Setup {
     pub async fn commit_block_bundle(&self, eth_tx: [u8; 32], eth_nonce: u32, height: u32) {
         self.insert_fragments(height, 6).await;
 
-        let l1_mock = mocks::l1::expects_state_submissions(vec![(None, eth_tx, eth_nonce)]);
+        let l1_mock = mocks::l1::expects_state_submissions(vec![(
+            None,
+            L1Tx {
+                hash: eth_tx,
+                nonce: eth_nonce,
+                ..Default::default()
+            },
+        )]);
         let fuel_mock = mocks::fuel::latest_height_is(height);
         let mut committer = StateCommitter::new(
             l1_mock,

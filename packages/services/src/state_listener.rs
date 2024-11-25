@@ -43,10 +43,7 @@ pub mod service {
         Db: crate::state_listener::port::Storage,
         Clock: crate::state_listener::port::Clock,
     {
-        async fn check_non_finalized_txs(
-            &mut self,
-            non_finalized_txs: Vec<L1Tx>,
-        ) -> crate::Result<()> {
+        async fn check_non_finalized_txs(&self, non_finalized_txs: Vec<L1Tx>) -> crate::Result<()> {
             let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
             // we need to accumulate all the changes and then update the db atomically
@@ -66,7 +63,7 @@ pub mod service {
                     // not included in block - check what happened to the tx
 
                     match (tx.state, self.l1_adapter.is_squeezed_out(tx.hash).await?) {
-                        (TransactionState::Pending, true) => {
+                        (TransactionState::Pending | TransactionState::IncludedInBlock, true) => {
                             // not in the mempool anymore set it to failed
                             selective_change.push((tx.hash, tx.nonce, TransactionState::Failed));
 
