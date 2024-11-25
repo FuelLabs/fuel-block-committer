@@ -7,7 +7,7 @@ pub mod service {
     use crate::{Result, Runner};
     use std::time::Duration;
 
-    use super::create_int_guage;
+    use super::create_int_gauge;
 
     pub struct StatePruner<Db, Clock> {
         storage: Db,
@@ -68,7 +68,7 @@ pub mod service {
         bundles: IntGauge,
         blocks: IntGauge,
         contract_transactions: IntGauge,
-        contract_submisions: IntGauge,
+        contract_submissions: IntGauge,
     }
 
     #[derive(Clone)]
@@ -79,7 +79,7 @@ pub mod service {
         bundles: IntGauge,
         blocks: IntGauge,
         contract_transactions: IntGauge,
-        contract_submisions: IntGauge,
+        contract_submissions: IntGauge,
     }
 
     #[derive(Clone)]
@@ -103,8 +103,8 @@ pub mod service {
                 .contract_transactions
                 .set(pruned.contract_transactions.into());
             self.pruned
-                .contract_submisions
-                .set(pruned.contract_submisions.into());
+                .contract_submissions
+                .set(pruned.contract_submissions.into());
         }
 
         fn observe_table_sizes(&self, sizes: &crate::state_pruner::port::TableSizes) {
@@ -121,8 +121,8 @@ pub mod service {
                 .contract_transactions
                 .set(sizes.contract_transactions.into());
             self.sizes
-                .contract_submisions
-                .set(sizes.contract_submisions.into());
+                .contract_submissions
+                .set(sizes.contract_submissions.into());
         }
     }
 
@@ -135,37 +135,37 @@ pub mod service {
                 Box::new(self.metrics.pruned.bundles.clone()),
                 Box::new(self.metrics.pruned.blocks.clone()),
                 Box::new(self.metrics.pruned.contract_transactions.clone()),
-                Box::new(self.metrics.pruned.contract_submisions.clone()),
+                Box::new(self.metrics.pruned.contract_submissions.clone()),
                 Box::new(self.metrics.sizes.blob_transactions.clone()),
                 Box::new(self.metrics.sizes.fragments.clone()),
                 Box::new(self.metrics.sizes.transaction_fragments.clone()),
                 Box::new(self.metrics.sizes.bundles.clone()),
                 Box::new(self.metrics.sizes.blocks.clone()),
                 Box::new(self.metrics.sizes.contract_transactions.clone()),
-                Box::new(self.metrics.sizes.contract_submisions.clone()),
+                Box::new(self.metrics.sizes.contract_submissions.clone()),
             ]
         }
     }
 
     impl Default for Metrics {
         fn default() -> Self {
-            let blob_transactions = create_int_guage(
+            let blob_transactions = create_int_gauge(
                 "pruned_blob_transactions",
                 "Number of pruned blob transactions.",
             );
-            let fragments = create_int_guage("pruned_fragments", "Number of pruned fragments.");
-            let transaction_fragments = create_int_guage(
+            let fragments = create_int_gauge("pruned_fragments", "Number of pruned fragments.");
+            let transaction_fragments = create_int_gauge(
                 "pruned_transaction_fragments",
                 "Number of pruned transaction fragments.",
             );
-            let bundles = create_int_guage("pruned_bundles", "Number of pruned bundles.");
-            let blocks = create_int_guage("pruned_blocks", "Number of pruned blocks.");
-            let contract_transactions = create_int_guage(
+            let bundles = create_int_gauge("pruned_bundles", "Number of pruned bundles.");
+            let blocks = create_int_gauge("pruned_blocks", "Number of pruned blocks.");
+            let contract_transactions = create_int_gauge(
                 "pruned_contract_transactions",
                 "Number of pruned contract transactions.",
             );
-            let contract_submisions = create_int_guage(
-                "pruned_contract_submisions",
+            let contract_submissions = create_int_gauge(
+                "pruned_contract_submissions",
                 "Number of pruned contract submissions.",
             );
 
@@ -176,26 +176,26 @@ pub mod service {
                 bundles,
                 blocks,
                 contract_transactions,
-                contract_submisions,
+                contract_submissions,
             };
 
             let blob_transactions =
-                create_int_guage("tsize_blob_transactions", "Blob transactions table size.");
+                create_int_gauge("tsize_blob_transactions", "Blob transactions table size.");
             let fragments =
-                create_int_guage("tsize_pruned_fragments", "Pruned fragments table size.");
+                create_int_gauge("tsize_pruned_fragments", "Pruned fragments table size.");
 
-            let transaction_fragments = create_int_guage(
+            let transaction_fragments = create_int_gauge(
                 "tsize_transaction_fragments",
                 "Transaction fragments table size.",
             );
-            let bundles = create_int_guage("tsize_bundles", "Bundles table size.");
-            let blocks = create_int_guage("tsize_blocks", "Blocks table size.");
-            let contract_transactions = create_int_guage(
+            let bundles = create_int_gauge("tsize_bundles", "Bundles table size.");
+            let blocks = create_int_gauge("tsize_blocks", "Blocks table size.");
+            let contract_transactions = create_int_gauge(
                 "tsize_contract_transactions",
                 "Contract transactions table size.",
             );
-            let contract_submisions = create_int_guage(
-                "tsize_contract_submisions",
+            let contract_submissions = create_int_gauge(
+                "tsize_contract_submissions",
                 "Contract submissions table size.",
             );
 
@@ -206,7 +206,7 @@ pub mod service {
                 bundles,
                 blocks,
                 contract_transactions,
-                contract_submisions,
+                contract_submissions,
             };
 
             Self { pruned, sizes }
@@ -228,7 +228,7 @@ pub mod port {
         pub bundles: u32,
         pub blocks: u32,
         pub contract_transactions: u32,
-        pub contract_submisions: u32,
+        pub contract_submissions: u32,
     }
 
     #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -239,7 +239,7 @@ pub mod port {
         pub bundles: u32,
         pub blocks: u32,
         pub contract_transactions: u32,
-        pub contract_submisions: u32,
+        pub contract_submissions: u32,
     }
 
     #[allow(async_fn_in_trait)]
@@ -254,7 +254,7 @@ pub mod port {
     }
 }
 
-fn create_int_guage(name: &str, help: &str) -> metrics::prometheus::IntGauge {
+fn create_int_gauge(name: &str, help: &str) -> metrics::prometheus::IntGauge {
     metrics::prometheus::IntGauge::with_opts(metrics::prometheus::Opts::new(name, help))
         .expect("is correct")
 }

@@ -120,7 +120,7 @@ mod tests {
             bundles: 3,
             blocks: 1300,
             contract_transactions: 2,
-            contract_submisions: 2,
+            contract_submissions: 2,
         };
         let table_sizes = stack.db.table_sizes().await?;
         assert!(table_sizes >= expected_table_sizes_before_pruning);

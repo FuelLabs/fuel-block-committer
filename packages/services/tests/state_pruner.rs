@@ -25,7 +25,7 @@ async fn not_pruning_until_retention_exceeded() -> services::Result<()> {
     assert_eq!(table_sizes.bundles, 3);
     assert_eq!(table_sizes.blocks, 3);
     assert_eq!(table_sizes.contract_transactions, 2);
-    assert_eq!(table_sizes.contract_submisions, 2);
+    assert_eq!(table_sizes.contract_submissions, 2);
 
     let mut pruner = state_pruner::service::StatePruner::new(
         setup.db(),
@@ -44,7 +44,7 @@ async fn not_pruning_until_retention_exceeded() -> services::Result<()> {
     assert_eq!(table_sizes.bundles, 3);
     assert_eq!(table_sizes.blocks, 3);
     assert_eq!(table_sizes.contract_transactions, 2);
-    assert_eq!(table_sizes.contract_submisions, 2);
+    assert_eq!(table_sizes.contract_submissions, 2);
 
     Ok(())
 }
@@ -72,7 +72,7 @@ async fn prune_old_transactions() -> services::Result<()> {
     assert_eq!(table_sizes.bundles, 3);
     assert_eq!(table_sizes.blocks, 3);
     assert_eq!(table_sizes.contract_transactions, 2);
-    assert_eq!(table_sizes.contract_submisions, 2);
+    assert_eq!(table_sizes.contract_submissions, 2);
 
     let mut pruner = state_pruner::service::StatePruner::new(
         setup.db(),
@@ -91,7 +91,7 @@ async fn prune_old_transactions() -> services::Result<()> {
     assert_eq!(table_sizes.bundles, 1);
     assert_eq!(table_sizes.blocks, 1);
     assert_eq!(table_sizes.contract_transactions, 1);
-    assert_eq!(table_sizes.contract_submisions, 1);
+    assert_eq!(table_sizes.contract_submissions, 1);
 
     Ok(())
 }
