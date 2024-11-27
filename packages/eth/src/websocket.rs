@@ -149,20 +149,15 @@ impl Signers {
             None
         };
 
-        let blob_signer = if let Some(blob_key) = keys.blob {
-            let signer = match blob_key {
-                L1Key::Kms(key) => {
-                    Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?
-                }
-                L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
-            };
-            Some(signer)
-        } else {
-            None
+        let blob_signer = match keys.blob {
+            Some(L1Key::Kms(key)) => {
+                Some(Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?)
+            }
+            Some(L1Key::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
+            None => None,
         };
 
-        let l1_key = keys.main;
-        let main_signer = match l1_key {
+        let main_signer = match keys.main {
             L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await?,
             L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
         };
