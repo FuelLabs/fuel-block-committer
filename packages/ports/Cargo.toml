@@ -19,6 +19,7 @@ itertools = { workspace = true, features = ["use_std"], optional = true }
 mockall = { workspace = true, optional = true }
 nonempty = { workspace = true }
 rand = { workspace = true, optional = true }
+serde = { workspace = true }
 sqlx = { workspace = true, features = ["chrono"] }
 thiserror = { workspace = true, optional = true }
 trait-variant = { workspace = true, optional = true }
