@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use ports::types::Address;
+use ports::types::{Address, BundleCost};
 use url::Url;
 
 #[derive(Default)]
@@ -265,5 +265,22 @@ impl CommitterProcess {
             .last()
             .expect("metric format to be in the format 'NAME VAL'")
             .parse()?)
+    }
+
+    pub async fn fetch_costs(
+        &self,
+        from_height: u32,
+        limit: usize,
+    ) -> anyhow::Result<Vec<BundleCost>> {
+        let response = reqwest::get(format!(
+            "http://localhost:{}/v1/costs?from_height={}&limit={}",
+            self.port, from_height, limit
+        ))
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+        Ok(response)
     }
 }

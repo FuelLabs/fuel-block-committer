@@ -7,7 +7,7 @@ use metrics::{
 use ports::{
     clock::Clock,
     storage::Storage,
-    types::{L1Tx, TransactionState},
+    types::{L1Tx, TransactionCostUpdate, TransactionState},
 };
 use tracing::info;
 
@@ -53,6 +53,8 @@ where
         let mut skip_nonces = HashSet::new();
         let mut selective_change = vec![];
         let mut noncewide_changes = vec![];
+
+        let mut cost_per_tx = vec![];
 
         for tx in non_finalized_txs {
             if skip_nonces.contains(&tx.nonce) {
@@ -120,6 +122,11 @@ where
             // st tx to finalized and all txs with the same nonce to failed
             let now = self.clock.now();
             noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Finalized(now)));
+            cost_per_tx.push(TransactionCostUpdate {
+                tx_hash: tx.hash,
+                total_fee: tx_response.total_fee(),
+                da_block_height: tx_response.block_number(),
+            });
 
             self.metrics.last_finalization_time.set(now.timestamp());
 
@@ -137,7 +144,7 @@ where
             .collect();
 
         self.storage
-            .batch_update_tx_states(selective_change, noncewide_changes)
+            .update_tx_states_and_costs(selective_change, noncewide_changes, cost_per_tx)
             .await?;
 
         Ok(())
@@ -449,7 +456,9 @@ mod tests {
         mock.expect_get_transaction_response()
             .once()
             .with(eq(tx_hash))
-            .return_once(|_| Box::pin(async { Ok(Some(TransactionResponse::new(1, true))) }));
+            .return_once(|_| {
+                Box::pin(async { Ok(Some(TransactionResponse::new(1, true, 100, 10))) })
+            });
         mock.expect_get_block_number()
             .returning(|| Box::pin(async { Ok(L1Height::from(1u32)) }));
 
@@ -659,7 +668,14 @@ mod tests {
             .with(eq(replacement_tx_hash))
             .once()
             .return_once(move |_| {
-                Box::pin(async move { Ok(Some(TransactionResponse::new(current_height, true))) })
+                Box::pin(async move {
+                    Ok(Some(TransactionResponse::new(
+                        current_height,
+                        true,
+                        100,
+                        10,
+                    )))
+                })
             });
 
         let mut listener = StateListener::new(
@@ -750,6 +766,8 @@ mod tests {
                     Ok(Some(TransactionResponse::new(
                         current_height - blocks_to_finalize,
                         replacement_tx_succeeded,
+                        100,
+                        10,
                     )))
                 })
             });

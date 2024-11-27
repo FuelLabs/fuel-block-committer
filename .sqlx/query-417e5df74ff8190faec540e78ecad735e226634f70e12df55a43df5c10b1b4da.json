@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    f.bundle_id,\n                    SUM(f.total_bytes)::BIGINT AS total_bytes,\n                    SUM(f.unused_bytes)::BIGINT AS unused_bytes\n                FROM\n                    l1_blob_transaction t\n                    JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id\n                    JOIN l1_fragments f ON tf.fragment_id = f.id\n                WHERE\n                    t.hash = $1\n                GROUP BY\n                    f.bundle_id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bundle_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "total_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "unused_bytes",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "417e5df74ff8190faec540e78ecad735e226634f70e12df55a43df5c10b1b4da"
+}

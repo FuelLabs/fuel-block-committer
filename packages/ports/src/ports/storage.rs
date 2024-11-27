@@ -12,8 +12,8 @@ use itertools::Itertools;
 pub use sqlx::types::chrono::{DateTime, Utc};
 
 use crate::types::{
-    BlockSubmission, BlockSubmissionTx, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx,
-    NonEmpty, NonNegative, TransactionState,
+    BlockSubmission, BlockSubmissionTx, BundleCost, CollectNonEmpty, CompressedFuelBlock, Fragment,
+    L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -192,11 +192,17 @@ pub trait Storage: Send + Sync {
     ) -> Result<Vec<BundleFragment>>;
     async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
-    async fn batch_update_tx_states(
+    async fn update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+        cost_per_tx: Vec<TransactionCostUpdate>,
     ) -> Result<()>;
+    async fn get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>>;
 }
 
 impl<T: Storage + Send + Sync> Storage for Arc<T> {
@@ -241,11 +247,13 @@ impl<T: Storage + Send + Sync> Storage for Arc<T> {
                 ) -> Result<Vec<BundleFragment>>;
                 async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
-                async fn batch_update_tx_states(
+                async fn update_tx_states_and_costs(
                     &self,
                     selective_changes: Vec<([u8; 32], TransactionState)>,
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+                    cost_per_tx: Vec<TransactionCostUpdate>,
                 ) -> Result<()>;
+                async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> Result<Vec<BundleCost>>;
         }
     }
 }
@@ -292,11 +300,13 @@ impl<T: Storage + Send + Sync> Storage for &T {
                 ) -> Result<Vec<BundleFragment>>;
                 async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
                 async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
-                async fn batch_update_tx_states(
+                async fn update_tx_states_and_costs(
                     &self,
                     selective_changes: Vec<([u8; 32], TransactionState)>,
                     noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+                    cost_per_tx: Vec<TransactionCostUpdate>,
                 ) -> Result<()>;
+                async fn get_finalized_costs(&self, from_block_height: u32, limit: usize) -> Result<Vec<BundleCost>>;
         }
     }
 }
