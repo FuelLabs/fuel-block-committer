@@ -1,14 +1,16 @@
-use std::ops::RangeInclusive;
+use std::{collections::HashMap, ops::RangeInclusive};
 
+use crate::postgres::tables::u128_to_bigdecimal;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use services::types::{
-    storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, CompressedFuelBlock,
-    DateTime, Fragment, NonEmpty, NonNegative, TransactionState, TryCollectNonEmpty, Utc,
+    storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
+    CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+    TransactionState, TryCollectNonEmpty, Utc,
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
-    QueryBuilder,
+    PgConnection, QueryBuilder,
 };
 
 use super::error::{Error, Result};
@@ -55,6 +57,14 @@ impl RegistersMetrics for Postgres {
         ]
     }
 }
+
+struct BundleCostUpdate {
+    cost_contribution: u128,
+    size_contribution: u64,
+    latest_da_block_height: u64,
+}
+
+type BundleCostUpdates = HashMap<i32, BundleCostUpdate>;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct DbConfig {
@@ -604,66 +614,251 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _batch_update_tx_states(
+    pub(crate) async fn _update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+        cost_per_tx: Vec<TransactionCostUpdate>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
-        for change in selective_changes {
-            let hash = change.0;
-            let state = change.1;
-
-            let finalized_at = match &state {
-                TransactionState::Finalized(date_time) => Some(*date_time),
-                _ => None,
-            };
-            let state = i16::from(L1TxState::from(&state));
-
-            sqlx::query!(
-                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
-                state,
-                finalized_at,
-                hash.as_slice(),
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
-
-        for change in noncewide_changes {
-            let hash = change.0;
-            let nonce = change.1;
-            let state = change.2;
-
-            let finalized_at = match &state {
-                TransactionState::Finalized(date_time) => Some(*date_time),
-                _ => None,
-            };
-            let state = i16::from(L1TxState::from(&state));
-
-            sqlx::query!(
-                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE nonce = $3",
-                i16::from(L1TxState::Failed),
-                Option::<DateTime<Utc>>::None,
-                i64::from(nonce),
-            )
-            .execute(&mut *tx)
+        self.update_transaction_states(&mut tx, &selective_changes, &noncewide_changes)
             .await?;
 
-            sqlx::query!(
-                "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
-                state,
-                finalized_at,
-                hash.as_slice(),
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        self.update_costs(&mut tx, &cost_per_tx).await?;
 
         tx.commit().await?;
 
         Ok(())
+    }
+
+    async fn update_transaction_states(
+        &self,
+        tx: &mut PgConnection,
+        selective_changes: &[([u8; 32], TransactionState)],
+        noncewide_changes: &[([u8; 32], u32, TransactionState)],
+    ) -> Result<()> {
+        for (hash, state) in selective_changes {
+            self.update_transaction_state(tx, hash, state).await?;
+        }
+
+        for (hash, nonce, state) in noncewide_changes {
+            self.update_transactions_noncewide(tx, hash, *nonce, state)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn update_transaction_state(
+        &self,
+        tx: &mut PgConnection,
+        hash: &[u8; 32],
+        state: &TransactionState,
+    ) -> Result<()> {
+        let finalized_at = match state {
+            TransactionState::Finalized(date_time) => Some(*date_time),
+            _ => None,
+        };
+        let state_int = i16::from(L1TxState::from(state));
+
+        sqlx::query!(
+            "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
+            state_int,
+            finalized_at,
+            hash.as_slice(),
+        )
+        .execute(tx)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_transactions_noncewide(
+        &self,
+        tx: &mut PgConnection,
+        hash: &[u8; 32],
+        nonce: u32,
+        state: &TransactionState,
+    ) -> Result<()> {
+        let finalized_at = match state {
+            TransactionState::Finalized(date_time) => Some(*date_time),
+            _ => None,
+        };
+        let state_int = i16::from(L1TxState::from(state));
+
+        // set all transactions with the same nonce to Failed
+        sqlx::query!(
+            "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE nonce = $3",
+            i16::from(L1TxState::Failed),
+            Option::<DateTime<Utc>>::None,
+            nonce as i64,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // update the specific transaction
+        sqlx::query!(
+            "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
+            state_int,
+            finalized_at,
+            hash.as_slice(),
+        )
+        .execute(tx)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_costs(
+        &self,
+        tx: &mut PgConnection,
+        cost_per_tx: &[TransactionCostUpdate],
+    ) -> Result<()> {
+        let bundle_updates = self.process_cost_updates(tx, cost_per_tx).await?;
+
+        for (bundle_id, update) in bundle_updates {
+            self.update_bundle_cost(tx, bundle_id, &update).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn process_cost_updates(
+        &self,
+        tx: &mut PgConnection,
+        cost_per_tx: &[TransactionCostUpdate],
+    ) -> Result<BundleCostUpdates> {
+        let mut bundle_updates: BundleCostUpdates = HashMap::new();
+
+        for TransactionCostUpdate {
+            tx_hash,
+            total_fee,
+            da_block_height,
+        } in cost_per_tx
+        {
+            let row = sqlx::query!(
+                r#"
+                SELECT
+                    f.bundle_id,
+                    SUM(f.total_bytes)::BIGINT AS total_bytes,
+                    SUM(f.unused_bytes)::BIGINT AS unused_bytes
+                FROM
+                    l1_blob_transaction t
+                    JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id
+                    JOIN l1_fragments f ON tf.fragment_id = f.id
+                WHERE
+                    t.hash = $1
+                GROUP BY
+                    f.bundle_id
+                "#,
+                tx_hash.as_slice()
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+
+            let bundle_id = row.bundle_id;
+            let total_bytes: i64 = row.total_bytes.unwrap_or(0);
+            let unused_bytes: i64 = row.unused_bytes.unwrap_or(0);
+            let size_contribution = total_bytes.saturating_sub(unused_bytes) as u64;
+
+            let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
+                cost_contribution: 0,
+                size_contribution: 0,
+                latest_da_block_height: 0,
+            });
+
+            entry.cost_contribution = entry.cost_contribution.saturating_add(*total_fee);
+            entry.size_contribution = entry.size_contribution.saturating_add(size_contribution);
+            // Update with the latest da_block_height
+            entry.latest_da_block_height = *da_block_height;
+        }
+
+        Ok(bundle_updates)
+    }
+
+    async fn update_bundle_cost(
+        &self,
+        tx: &mut PgConnection,
+        bundle_id: i32,
+        update: &BundleCostUpdate,
+    ) -> Result<()> {
+        // Check if any fragment in the bundle is not associated with a finalized transaction
+        let is_finalized = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*) = 0 AS "is_finalized!"
+            FROM l1_fragments f
+            WHERE f.bundle_id = $1 AND NOT EXISTS (
+                SELECT 1
+                FROM l1_transaction_fragments tf
+                JOIN l1_blob_transaction t ON tf.transaction_id = t.id
+                WHERE tf.fragment_id = f.id AND t.state = $2
+            )
+            "#,
+            bundle_id,
+            i16::from(L1TxState::Finalized),
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO bundle_cost (
+                bundle_id, cost, size, da_block_height, is_finalized
+            ) VALUES (
+                $1, $2, $3, $4, $5
+            )
+            ON CONFLICT (bundle_id) DO UPDATE SET
+                cost = bundle_cost.cost + EXCLUDED.cost,
+                size = bundle_cost.size + EXCLUDED.size,
+                da_block_height = EXCLUDED.da_block_height,
+                is_finalized = EXCLUDED.is_finalized
+            "#,
+            bundle_id,
+            u128_to_bigdecimal(update.cost_contribution),
+            i64::try_from(update.size_contribution).unwrap(),
+            i64::try_from(update.latest_da_block_height).unwrap(),
+            is_finalized,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>> {
+        sqlx::query_as!(
+            tables::BundleCost,
+            r#"
+            SELECT
+                bc.bundle_id,
+                bc.cost,
+                bc.size,
+                bc.da_block_height,
+                bc.is_finalized,
+                b.start_height,
+                b.end_height
+            FROM
+                bundle_cost bc
+                JOIN bundles b ON bc.bundle_id = b.id
+            WHERE
+                b.start_height >= $1 AND bc.is_finalized = TRUE
+            ORDER BY
+                b.start_height ASC
+            LIMIT $2
+            "#,
+            from_block_height as i64,
+            limit as i64
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(BundleCost::try_from)
+        .collect::<Result<Vec<_>>>()
     }
 
     pub(crate) async fn _next_bundle_id(&self) -> Result<NonNegative<i32>> {
@@ -819,6 +1014,12 @@ impl Postgres {
                 RETURNING start_height, end_height
             ),
 
+            -- Delete unreferenced bundle costs
+            deleted_bundle_costs AS (
+                DELETE FROM bundle_cost
+                WHERE bundle_id NOT IN (SELECT bundle_id FROM updated_fragments)
+            ),
+
             -- Delete corresponding fuel_blocks entries
             deleted_fuel_blocks AS (
                 DELETE FROM fuel_blocks
@@ -934,8 +1135,14 @@ mod tests {
     use std::{env, fs, path::Path};
 
     use sqlx::{Executor, PgPool, Row};
+    use tokio::time::Instant;
 
     use crate::test_instance;
+
+    use super::*;
+
+    use rand::Rng;
+    use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
 
     #[tokio::test]
     async fn test_second_migration_applies_successfully() {
@@ -1195,18 +1402,99 @@ mod tests {
         let new_fragment_id: i32 = row.try_get("id").unwrap();
         assert!(new_fragment_id > 0, "Failed to insert a valid fragment");
     }
+
+    #[tokio::test]
+    async fn stress_test_update_costs() -> Result<()> {
+        use services::block_bundler::port::Storage;
+        use services::state_committer::port::Storage as CommitterStorage;
+        use services::state_listener::port::Storage as ListenerStorage;
+
+        let mut rng = rand::thread_rng();
+
+        let storage = test_instance::PostgresProcess::shared()
+            .await
+            .expect("Failed to initialize PostgresProcess")
+            .create_random_db()
+            .await
+            .expect("Failed to create random test database");
+
+        let fragments_per_bundle = 1_000_000;
+        let txs_per_fragment = 100;
+
+        // insert the bundle and fragments
+        let bundle_id = storage.next_bundle_id().await.unwrap();
+        let end_height = rng.gen_range(1..5000);
+        let range = 0..=end_height;
+
+        // create fragments for the bundle
+        let fragments = (0..fragments_per_bundle)
+            .map(|_| Fragment {
+                data: NonEmpty::from_vec(vec![rng.gen()]).unwrap(),
+                unused_bytes: rng.gen_range(0..1000),
+                total_bytes: rng.gen_range(1000..5000).try_into().unwrap(),
+            })
+            .collect::<Vec<_>>();
+        let fragments = NonEmpty::from_vec(fragments).unwrap();
+
+        storage
+            .insert_bundle_and_fragments(bundle_id, range, fragments.clone())
+            .await
+            .unwrap();
+
+        let fragment_ids = storage
+            .oldest_nonfinalized_fragments(0, 2)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|f| f.id)
+            .collect_nonempty()
+            .unwrap();
+
+        let mut tx_changes = vec![];
+        let mut cost_updates = vec![];
+
+        // for each fragment, create multiple transactions
+        for _id in fragment_ids.iter() {
+            for _ in 0..txs_per_fragment {
+                let tx_hash = rng.gen::<[u8; 32]>();
+                let tx = L1Tx {
+                    hash: tx_hash,
+                    nonce: rng.gen(),
+                    ..Default::default()
+                };
+
+                storage
+                    .record_pending_tx(tx.clone(), fragment_ids.clone(), Utc::now())
+                    .await
+                    .unwrap();
+
+                // update transaction state to simulate finalized transactions
+                let finalization_time = Utc::now();
+                tx_changes.push((tx.hash, TransactionState::Finalized(finalization_time)));
+
+                // cost updates
+                let total_fee = rng.gen_range(1_000_000u128..10_000_000u128);
+                let da_block_height = rng.gen_range(1_000_000u64..10_000_000u64);
+                cost_updates.push(TransactionCostUpdate {
+                    tx_hash,
+                    total_fee,
+                    da_block_height,
+                });
+            }
+        }
+
+        // update transaction states and costs
+        let start_time = Instant::now();
+
+        storage
+            .update_tx_states_and_costs(tx_changes, vec![], cost_updates)
+            .await
+            .unwrap();
+
+        let duration = start_time.elapsed();
+
+        assert!(duration.as_secs() < 60);
+
+        Ok(())
+    }
 }
-
-// TODO: @hal3e delete this
-// l1_submissions - seems to be unused
-
-// deletion order
-// l1_blob_transaction
-// l1_fragments
-// l1_transaction_fragments
-// bundles
-// fuel_blocks
-
-// deletion order
-// l1_transaction
-// l1_fuel_block_submission

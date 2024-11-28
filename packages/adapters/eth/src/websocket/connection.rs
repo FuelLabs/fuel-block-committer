@@ -437,9 +437,16 @@ impl WsConnection {
 
         let block_number = Self::extract_block_number_from_receipt(&tx_receipt)?;
 
+        let fee = tx_receipt
+            .gas_used
+            .saturating_mul(tx_receipt.effective_gas_price);
+        let blob_fee = Self::extract_blob_fee_from_receipt(&tx_receipt);
+
         Ok(Some(TransactionResponse::new(
             block_number,
             tx_receipt.status(),
+            fee,
+            blob_fee,
         )))
     }
 
@@ -447,6 +454,13 @@ impl WsConnection {
         receipt.block_number.ok_or_else(|| {
             Error::Other("transaction receipt does not contain block number".to_string())
         })
+    }
+
+    fn extract_blob_fee_from_receipt(receipt: &TransactionReceipt) -> u128 {
+        match (receipt.blob_gas_used, receipt.blob_gas_price) {
+            (Some(gas_used), Some(gas_price)) => gas_used.saturating_mul(gas_price),
+            _ => 0,
+        }
     }
 }
 

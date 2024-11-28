@@ -213,6 +213,8 @@ pub mod mocks {
                             Ok(Some(TransactionResponse::new(
                                 height,
                                 matches!(status, TxStatus::Success),
+                                100,
+                                100,
                             )))
                         })
                     });
@@ -245,6 +247,8 @@ pub mod mocks {
                             Ok(Some(TransactionResponse::new(
                                 height.into(),
                                 matches!(status, TxStatus::Success),
+                                100,
+                                100,
                             )))
                         })
                     });
@@ -279,6 +283,8 @@ pub mod mocks {
                         Ok(Some(TransactionResponse::new(
                             height.into(),
                             matches!(status, TxStatus::Success),
+                            100,
+                            100,
                         )))
                     })
                 });

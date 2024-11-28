@@ -2,7 +2,7 @@ pub mod service {
     use std::collections::HashSet;
 
     use crate::{
-        types::{L1Tx, TransactionState},
+        types::{L1Tx, TransactionCostUpdate, TransactionState},
         Runner,
     };
     use metrics::{
@@ -51,6 +51,8 @@ pub mod service {
             let mut skip_nonces = HashSet::new();
             let mut selective_change = vec![];
             let mut noncewide_changes = vec![];
+
+            let mut cost_per_tx = vec![];
 
             for tx in non_finalized_txs {
                 if skip_nonces.contains(&tx.nonce) {
@@ -120,9 +122,14 @@ pub mod service {
                     continue;
                 }
 
-                // set tx to finalized and all txs with the same nonce to failed
+                // st tx to finalized and all txs with the same nonce to failed
                 let now = self.clock.now();
                 noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Finalized(now)));
+                cost_per_tx.push(TransactionCostUpdate {
+                    tx_hash: tx.hash,
+                    total_fee: tx_response.total_fee(),
+                    da_block_height: tx_response.block_number(),
+                });
 
                 self.metrics.last_finalization_time.set(now.timestamp());
 
@@ -140,7 +147,7 @@ pub mod service {
                 .collect();
 
             self.storage
-                .batch_update_tx_states(selective_change, noncewide_changes)
+                .update_tx_states_and_costs(selective_change, noncewide_changes, cost_per_tx)
                 .await?;
 
             Ok(())
@@ -199,7 +206,7 @@ pub mod service {
 
 pub mod port {
     use crate::{
-        types::{DateTime, L1Tx, TransactionState, Utc},
+        types::{DateTime, L1Tx, TransactionCostUpdate, TransactionState, Utc},
         Result,
     };
 
@@ -226,10 +233,11 @@ pub mod port {
     #[trait_variant::make(Send)]
     pub trait Storage: Send + Sync {
         async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
-        async fn batch_update_tx_states(
+        async fn update_tx_states_and_costs(
             &self,
             selective_changes: Vec<([u8; 32], TransactionState)>,
             noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+            cost_per_tx: Vec<TransactionCostUpdate>,
         ) -> Result<()>;
         async fn has_pending_txs(&self) -> Result<bool>;
     }

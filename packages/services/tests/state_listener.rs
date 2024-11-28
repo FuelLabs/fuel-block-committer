@@ -256,7 +256,7 @@ async fn reorg_threw_out_tx_from_block_into_pool_and_got_squeezed_out() -> Resul
     mock.expect_get_transaction_response()
         .once()
         .with(eq(tx_hash))
-        .return_once(|_| Box::pin(async { Ok(Some(TransactionResponse::new(1, true))) }));
+        .return_once(|_| Box::pin(async { Ok(Some(TransactionResponse::new(1, true, 100, 10))) }));
     mock.expect_get_block_number()
         .returning(|| Box::pin(async { Ok(L1Height::from(1u32)) }));
 
@@ -473,7 +473,14 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
         .with(eq(replacement_tx_hash))
         .once()
         .return_once(move |_| {
-            Box::pin(async move { Ok(Some(TransactionResponse::new(current_height, true))) })
+            Box::pin(async move {
+                Ok(Some(TransactionResponse::new(
+                    current_height,
+                    true,
+                    100,
+                    10,
+                )))
+            })
         });
 
     let mut listener = StateListener::new(
@@ -568,6 +575,8 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
                 Ok(Some(TransactionResponse::new(
                     current_height - blocks_to_finalize,
                     replacement_tx_succeeded,
+                    100,
+                    10,
                 )))
             })
         });

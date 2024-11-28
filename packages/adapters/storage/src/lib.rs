@@ -13,29 +13,42 @@ pub use postgres::{DbConfig, Postgres};
 use services::{
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
-        NonEmpty, NonNegative, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
     },
     Result,
 };
 
 impl services::state_listener::port::Storage for Postgres {
     async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
-        Ok(self._get_non_finalized_txs().await?)
+        self._get_non_finalized_txs().await.map_err(Into::into)
     }
 
-    async fn batch_update_tx_states(
+    async fn update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+        cost_per_tx: Vec<TransactionCostUpdate>,
     ) -> Result<()> {
-        Ok(self
-            ._batch_update_tx_states(selective_changes, noncewide_changes)
-            .await?)
+        self._update_tx_states_and_costs(selective_changes, noncewide_changes, cost_per_tx)
+            .await
+            .map_err(Into::into)
     }
 
     async fn has_pending_txs(&self) -> Result<bool> {
         self._has_pending_txs().await.map_err(Into::into)
+    }
+}
+
+impl services::cost_reporter::port::Storage for Postgres {
+    async fn get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleCost>> {
+        self._get_finalized_costs(from_block_height, limit)
+            .await
+            .map_err(Into::into)
     }
 }
 
@@ -209,22 +222,23 @@ mod tests {
 
     async fn ensure_some_fragments_exists_in_the_db(
         storage: impl services::block_bundler::port::Storage + services::state_committer::port::Storage,
+        range: RangeInclusive<u32>,
     ) -> NonEmpty<NonNegative<i32>> {
         let next_id = storage.next_bundle_id().await.unwrap();
         storage
             .insert_bundle_and_fragments(
                 next_id,
-                0..=0,
+                range,
                 nonempty!(
                     Fragment {
                         data: nonempty![0],
-                        unused_bytes: 1000,
-                        total_bytes: 100.try_into().unwrap()
+                        unused_bytes: 100,
+                        total_bytes: 1000.try_into().unwrap()
                     },
                     Fragment {
                         data: nonempty![1],
-                        unused_bytes: 1000,
-                        total_bytes: 100.try_into().unwrap()
+                        unused_bytes: 100,
+                        total_bytes: 1000.try_into().unwrap()
                     }
                 ),
             )
@@ -442,7 +456,7 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone()).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
         let tx = L1Tx {
             hash: rand::random::<[u8; 32]>(),
             ..Default::default()
@@ -460,7 +474,7 @@ mod tests {
         // when
         let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
         storage
-            .batch_update_tx_states(vec![], changes)
+            .update_tx_states_and_costs(vec![], changes, vec![])
             .await
             .unwrap();
 
@@ -834,7 +848,7 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone()).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
         let hash = rand::random::<[u8; 32]>();
         let tx = L1Tx {
             hash,
@@ -860,7 +874,7 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone()).await;
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
         let (fragment_1, fragment_2) = (fragment_ids[0], fragment_ids[1]);
         let inserted_1 = L1Tx {
             hash: rand::random::<[u8; 32]>(),
@@ -894,6 +908,223 @@ mod tests {
         inserted_2.id = retrieved.id;
         inserted_2.created_at = retrieved.created_at;
         assert_eq!(retrieved, inserted_2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_update_costs() -> Result<()> {
+        use services::cost_reporter::port::Storage;
+        use services::state_committer::port::Storage as StateStorage;
+        use services::state_listener::port::Storage as ListenerStorage;
+
+        // given
+        let storage = start_db().await;
+
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
+        let tx = L1Tx {
+            hash: rand::random::<[u8; 32]>(),
+            ..Default::default()
+        };
+        let hash = tx.hash;
+        let nonce = tx.nonce;
+
+        storage
+            .record_pending_tx(tx, fragment_ids, TestClock::default().now())
+            .await
+            .unwrap();
+
+        let finalization_time = Utc::now();
+
+        // when
+        let changes = vec![(hash, nonce, TransactionState::Finalized(finalization_time))];
+        let cost_per_tx = TransactionCostUpdate {
+            tx_hash: hash,
+            total_fee: 1000u128,
+            da_block_height: 5000u64,
+        };
+        storage
+            .update_tx_states_and_costs(vec![], changes, vec![cost_per_tx.clone()])
+            .await
+            .unwrap();
+
+        // then
+        let bundle_cost = storage.get_finalized_costs(0, 10).await?;
+
+        assert_eq!(bundle_cost.len(), 1);
+        assert_eq!(bundle_cost[0].cost, cost_per_tx.total_fee);
+        assert_eq!(bundle_cost[0].da_block_height, cost_per_tx.da_block_height);
+
+        Ok(())
+    }
+
+    async fn ensure_fragments_have_transaction(
+        storage: impl services::state_listener::port::Storage + services::state_committer::port::Storage,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
+        state: TransactionState,
+    ) -> [u8; 32] {
+        let tx_hash = rand::random::<[u8; 32]>();
+        let tx = L1Tx {
+            hash: tx_hash,
+            nonce: rand::random(),
+            ..Default::default()
+        };
+        storage
+            .record_pending_tx(tx.clone(), fragment_ids, TestClock::default().now())
+            .await
+            .unwrap();
+
+        let changes = vec![(tx.hash, tx.nonce, state)];
+        storage
+            .update_tx_states_and_costs(vec![], changes, vec![])
+            .await
+            .expect("tx state should update");
+
+        tx_hash
+    }
+
+    async fn ensure_finalized_fragments_exist_in_the_db(
+        storage: impl services::block_bundler::port::Storage
+            + services::state_committer::port::Storage
+            + services::state_listener::port::Storage
+            + Clone,
+        range: RangeInclusive<u32>,
+        total_fee: u128,
+        da_block_height: u64,
+    ) -> NonEmpty<NonNegative<i32>> {
+        let fragment_in_db = ensure_some_fragments_exists_in_the_db(storage.clone(), range).await;
+
+        let state = TransactionState::Finalized(Utc::now());
+        let tx_hash =
+            ensure_fragments_have_transaction(storage.clone(), fragment_in_db.clone(), state).await;
+
+        let cost_per_tx = TransactionCostUpdate {
+            tx_hash,
+            total_fee,
+            da_block_height,
+        };
+        storage
+            .update_tx_states_and_costs(vec![], vec![], vec![cost_per_tx])
+            .await
+            .expect("cost update shouldn't fail");
+
+        fragment_in_db
+    }
+
+    #[tokio::test]
+    async fn costs_returned_only_for_finalized_bundles() {
+        use services::cost_reporter::port::Storage;
+
+        // given
+        let storage = start_db().await;
+        let cost = 1000u128;
+        let da_height = 5000u64;
+        let bundle_range = 1..=2;
+
+        ensure_finalized_fragments_exist_in_the_db(
+            storage.clone(),
+            bundle_range.clone(),
+            cost,
+            da_height,
+        )
+        .await;
+
+        // add submitted and unsubmitted fragments
+        let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 3..=5).await;
+        ensure_fragments_have_transaction(
+            storage.clone(),
+            fragment_ids,
+            TransactionState::IncludedInBlock,
+        )
+        .await;
+        ensure_some_fragments_exists_in_the_db(storage.clone(), 6..=10).await;
+
+        // when
+        let costs = storage.get_finalized_costs(0, 10).await.unwrap();
+
+        // then
+        assert_eq!(costs.len(), 1);
+
+        let bundle_cost = &costs[0];
+        assert_eq!(bundle_cost.start_height, *bundle_range.start() as u64);
+        assert_eq!(bundle_cost.end_height, *bundle_range.end() as u64);
+        assert_eq!(bundle_cost.cost, cost);
+        assert_eq!(bundle_cost.da_block_height, da_height);
+    }
+
+    #[tokio::test]
+    async fn costs_returned_only_for_finalized_with_replacement_txs() {
+        use services::cost_reporter::port::Storage;
+
+        // given
+        let storage = start_db().await;
+        let cost = 1000u128;
+        let da_height = 5000u64;
+        let bundle_range = 1..=2;
+
+        let fragment_ids = ensure_finalized_fragments_exist_in_the_db(
+            storage.clone(),
+            bundle_range.clone(),
+            cost,
+            da_height,
+        )
+        .await;
+        // simulate replaced txs
+        ensure_fragments_have_transaction(
+            storage.clone(),
+            fragment_ids,
+            TransactionState::SqueezedOut,
+        )
+        .await;
+        ensure_some_fragments_exists_in_the_db(storage.clone(), 6..=10).await;
+
+        // when
+        let costs = storage.get_finalized_costs(0, 10).await.unwrap();
+
+        // then
+        assert_eq!(costs.len(), 1);
+
+        let bundle_cost = &costs[0];
+        assert_eq!(bundle_cost.start_height, *bundle_range.start() as u64);
+        assert_eq!(bundle_cost.end_height, *bundle_range.end() as u64);
+        assert_eq!(bundle_cost.cost, cost);
+        assert_eq!(bundle_cost.da_block_height, da_height);
+    }
+
+    #[tokio::test]
+    async fn respects_from_block_height_and_limit_in_get_finalized_costs() -> Result<()> {
+        use services::cost_reporter::port::Storage;
+
+        // given
+        let storage = start_db().await;
+
+        for i in 0..5 {
+            let start_height = i * 10 + 1;
+            let end_height = start_height + 9;
+            let block_range = start_height..=end_height;
+
+            ensure_finalized_fragments_exist_in_the_db(
+                storage.clone(),
+                block_range,
+                1000u128,
+                5000u64,
+            )
+            .await;
+        }
+
+        // when
+        let from_block_height = 21;
+        let limit = 2;
+        let finalized_costs = storage
+            .get_finalized_costs(from_block_height, limit)
+            .await?;
+
+        // then
+        assert_eq!(finalized_costs.len(), 2);
+
+        for bc in &finalized_costs {
+            assert!(bc.start_height >= from_block_height as u64);
+        }
 
         Ok(())
     }

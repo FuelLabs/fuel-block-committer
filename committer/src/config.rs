@@ -202,6 +202,7 @@ pub struct Internal {
     pub fuel_errors_before_unhealthy: usize,
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
+    pub cost_request_limit: usize,
 }
 
 impl Default for Internal {
@@ -210,6 +211,7 @@ impl Default for Internal {
             fuel_errors_before_unhealthy: 3,
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
+            cost_request_limit: 1000,
         }
     }
 }

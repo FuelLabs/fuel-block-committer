@@ -9,8 +9,8 @@ use services::{
     block_bundler, block_committer, block_importer,
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, CompressedFuelBlock, DateTime, Fragment, L1Tx,
-        NonEmpty, NonNegative, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -186,13 +186,14 @@ impl services::state_listener::port::Storage for DbWithProcess {
         self.db._get_non_finalized_txs().await.map_err(Into::into)
     }
 
-    async fn batch_update_tx_states(
+    async fn update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,
         noncewide_changes: Vec<([u8; 32], u32, TransactionState)>,
+        cost_per_tx: Vec<TransactionCostUpdate>,
     ) -> services::Result<()> {
         self.db
-            ._batch_update_tx_states(selective_changes, noncewide_changes)
+            ._update_tx_states_and_costs(selective_changes, noncewide_changes, cost_per_tx)
             .await
             .map_err(Into::into)
     }
@@ -334,6 +335,19 @@ impl services::status_reporter::port::Storage for DbWithProcess {
     async fn submission_w_latest_block(&self) -> services::Result<Option<BlockSubmission>> {
         self.db
             ._submission_w_latest_block()
+            .await
+            .map_err(Into::into)
+    }
+}
+
+impl services::cost_reporter::port::Storage for DbWithProcess {
+    async fn get_finalized_costs(
+        &self,
+        from_block_height: u32,
+        limit: usize,
+    ) -> services::Result<Vec<BundleCost>> {
+        self.db
+            ._get_finalized_costs(from_block_height, limit)
             .await
             .map_err(Into::into)
     }
