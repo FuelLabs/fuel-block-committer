@@ -121,6 +121,7 @@ mod tests {
             fragments: 2,
             transaction_fragments: 2,
             bundles: 2,
+            bundle_costs: 2,
             blocks: 1300,
             contract_transactions: 2,
             contract_submissions: 2,

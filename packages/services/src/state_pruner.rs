@@ -237,6 +237,7 @@ pub mod port {
         pub fragments: u32,
         pub transaction_fragments: u32,
         pub bundles: u32,
+        pub bundle_costs: u32,
         pub blocks: u32,
         pub contract_transactions: u32,
         pub contract_submissions: u32,

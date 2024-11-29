@@ -1085,6 +1085,7 @@ impl Postgres {
                 (SELECT COUNT(*) FROM l1_transaction_fragments) AS size_transaction_fragments,
                 (SELECT COUNT(*) FROM l1_fragments) AS size_fragments,
                 (SELECT COUNT(*) FROM bundles) AS size_bundles,
+                (SELECT COUNT(*) FROM bundle_cost) AS size_bundle_costs,
                 (SELECT COUNT(*) FROM fuel_blocks) AS size_fuel_blocks,
                 (SELECT COUNT(*) FROM l1_transaction) AS size_contract_transactions,
                 (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions
@@ -1098,6 +1099,7 @@ impl Postgres {
             fragments: response.size_fragments.unwrap_or_default() as u32,
             transaction_fragments: response.size_transaction_fragments.unwrap_or_default() as u32,
             bundles: response.size_bundles.unwrap_or_default() as u32,
+            bundle_costs: response.size_bundle_costs.unwrap_or_default() as u32,
             blocks: response.size_fuel_blocks.unwrap_or_default() as u32,
             contract_transactions: response.size_contract_transactions.unwrap_or_default() as u32,
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
