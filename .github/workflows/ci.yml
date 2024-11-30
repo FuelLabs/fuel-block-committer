@@ -164,6 +164,33 @@ jobs:
           ./target/release/fuel-block-committer --version
           PATH="$(pwd)/target/release:$PATH" cargo test --package e2e --jobs 1
 
+  check-db-preview-updates:
+    needs:
+      - cargo-verifications
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run the 'update_db_preview.sh' script
+        run: |
+          chmod +x ./update_db_preview.sh
+          ./update_db_preview.sh
+
+      - name: Check for updated or new .dot files
+        run: |
+          if [[ -n "$(git status --porcelain db_preview)" ]]; then
+            echo "Error: The 'db_preview' directory contains uncommitted changes."
+            echo "Please run './update_db_preview.sh' and commit the updated files."
+            git status --short db_preview
+            exit 1
+          else
+            echo "No changes detected in 'db_preview'."
+          fi
+
   publish-crates-check:
     runs-on: ubuntu-latest
     steps:
