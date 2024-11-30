@@ -113,6 +113,7 @@ log "Running SchemaSpy..."
 SCHEMASPY_LOG="$SCRIPT_DIR/schemaspy.log"
 docker run --rm \
   --network "$NETWORK_NAME" \
+  --user $(id -u):$(id -g) \
   -v "$TEMP_DB_RENDER_DIR:/output" \
   schemaspy/schemaspy \
   -u "$POSTGRES_USER" \
