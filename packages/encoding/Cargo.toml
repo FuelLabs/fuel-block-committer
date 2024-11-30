@@ -6,7 +6,7 @@ edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
-rust-version = { workspace = true }
+rust-version = "1.81"
 description = "Used to encode/decode bundles created by the fuel block committer."
 publish = true
 
