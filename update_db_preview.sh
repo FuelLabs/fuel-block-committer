@@ -108,14 +108,14 @@ log "Running SchemaSpy..."
 
 # because the docker has a user called java which needs to be able to create
 # directories inside of the docker mount
-# chown "$DOCKER_USER_UID:$DOCKER_USER_UID" "$TEMP_DB_RENDER_DIR"
+chmod 777 "$TEMP_DB_RENDER_DIR"
 
 SCHEMASPY_LOG="$SCRIPT_DIR/schemaspy.log"
 docker run --rm \
   --network "$NETWORK_NAME" \
-  --user $(id -u):$(id -g) \
   -v "$TEMP_DB_RENDER_DIR:/output" \
   schemaspy/schemaspy \
+  -noimplied \
   -u "$POSTGRES_USER" \
   -t pgsql \
   -host "$POSTGRES_CONTAINER_NAME" \
