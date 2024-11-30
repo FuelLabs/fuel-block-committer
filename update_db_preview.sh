@@ -45,7 +45,7 @@ done
 TIMESTAMP=$(date +%s%N)
 NETWORK_NAME="temp_network_$TIMESTAMP"
 POSTGRES_CONTAINER_NAME="temp_postgres_$TIMESTAMP"
-TEMP_DB_RENDER_DIR="$(mktemp -d)"
+TEMP_DB_RENDER_DIR="$(mktemp -d -p "$PWD")"
 DB_PREVIEW_DIR="$SCRIPT_DIR/db_preview"
 DOTS_DIR="$DB_PREVIEW_DIR/dots"
 PNGS_DIR="$DB_PREVIEW_DIR/pngs"
