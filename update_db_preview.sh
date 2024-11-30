@@ -16,7 +16,7 @@ cleanup() {
     docker network rm "$NETWORK_ID" >/dev/null 2>&1 || true
   fi
   if declare -p TEMP_DB_RENDER_DIR &>/dev/null && [[ -d "$TEMP_DB_RENDER_DIR" ]]; then
-    rm -rf "$TEMP_DB_RENDER_DIR"
+    rm -rf "$TEMP_DB_RENDER_DIR" &>/dev/null || true
   fi
 }
 
@@ -45,7 +45,7 @@ done
 TIMESTAMP=$(date +%s%N)
 NETWORK_NAME="temp_network_$TIMESTAMP"
 POSTGRES_CONTAINER_NAME="temp_postgres_$TIMESTAMP"
-TEMP_DB_RENDER_DIR="$(mktemp -d -p "$PWD")"
+TEMP_DB_RENDER_DIR="$(mktemp -d)"
 DB_PREVIEW_DIR="$SCRIPT_DIR/db_preview"
 DOTS_DIR="$DB_PREVIEW_DIR/dots"
 PNGS_DIR="$DB_PREVIEW_DIR/pngs"
@@ -120,7 +120,7 @@ docker run --rm \
   -t pgsql \
   -host "$POSTGRES_CONTAINER_NAME" \
   -db "$POSTGRES_DB" \
-  -p "$POSTGRES_PASSWORD" >"$SCHEMASPY_LOG" 2>&1 || {
+  -p "$POSTGRES_PASSWORD" &>"$SCHEMASPY_LOG" || {
   log "$(cat "$SCHEMASPY_LOG")"
   panic "SchemaSpy failed. Check the log at $SCHEMASPY_LOG" 1>&2
 }
