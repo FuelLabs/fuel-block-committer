@@ -101,14 +101,14 @@ DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:$HOST_POSTG
 
 log "Running SchemaSpy..."
 
-DOCKER_USER_UID="$(docker run --rm --entrypoint id schemaspy/schemaspy java | grep -Po '(?<=uid=)(\d+)')"
-if [[ -z "$DOCKER_USER_UID" ]]; then
-  panic "Failed to retrieve the Docker user UID."
-fi
+# DOCKER_USER_UID="$(docker run --rm --entrypoint id schemaspy/schemaspy java | grep -Po '(?<=uid=)(\d+)')"
+# if [[ -z "$DOCKER_USER_UID" ]]; then
+#   panic "Failed to retrieve the Docker user UID."
+# fi
 
 # because the docker has a user called java which needs to be able to create
 # directories inside of the docker mount
-chown "$DOCKER_USER_UID:$DOCKER_USER_UID" "$TEMP_DB_RENDER_DIR"
+# chown "$DOCKER_USER_UID:$DOCKER_USER_UID" "$TEMP_DB_RENDER_DIR"
 
 SCHEMASPY_LOG="$SCRIPT_DIR/schemaspy.log"
 docker run --rm \
