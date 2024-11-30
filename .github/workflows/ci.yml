@@ -165,20 +165,24 @@ jobs:
           PATH="$(pwd)/target/release:$PATH" cargo test --package e2e --jobs 1
 
   check-db-preview-updates:
-    needs:
-      - cargo-verifications
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install sqlx CLI
+        run: |
+          cargo install sqlx-cli --no-default-features --features native-tls,postgres
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Run the 'update_db_preview.sh' script
-        run: |
-          chmod +x ./update_db_preview.sh
-          ./update_db_preview.sh
+        run: ./update_db_preview.sh
 
       - name: Check for updated or new .dot files
         run: |
@@ -362,6 +366,7 @@ jobs:
   publish:
     needs:
       - cargo-verifications
+      - check-db-preview-updates
       - additional-check-for-published-crates
       - publish-crates-check
       - e2e-tests
