@@ -26,6 +26,8 @@ You can also use `run_tests.sh`, which takes care of building the `fuel-block-co
 
 ## Schema Visualization
 
+![Relationships Diagram](db_preview/pngs/relationships.png)
+
 We use [SchemaSpy](https://github.com/schemaspy/schemaspy) to generate visual representations of the database schema in both `.dot` and `.png` formats.
 
 ### Generating Schema Diagrams
