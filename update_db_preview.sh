@@ -110,6 +110,7 @@ docker run --rm \
   -host "$POSTGRES_CONTAINER_NAME" \
   -db "$POSTGRES_DB" \
   -p "$POSTGRES_PASSWORD" >"$SCHEMASPY_LOG" 2>&1 || {
+  log "$(cat "$SCHEMASPY_LOG")"
   panic "SchemaSpy failed. Check the log at $SCHEMASPY_LOG" 1>&2
 }
 
