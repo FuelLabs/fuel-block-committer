@@ -14,7 +14,7 @@ concurrency:
 
 env:
   DASEL_VERSION: https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_linux_amd64
-  RUST_VERSION: 1.83
+  RUST_VERSION: 1.82
   FUEL_CORE_VERSION: 0.40.0
   IMAGE_NAME: ${{ github.repository }}
   REPO_NAME: ${{ github.event.repository.name }}
