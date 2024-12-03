@@ -45,7 +45,7 @@ impl Default for Metrics {
 
 #[derive(Clone)]
 pub struct Postgres {
-    pub(crate) connection_pool: sqlx::Pool<sqlx::Postgres>,
+    connection_pool: sqlx::Pool<sqlx::Postgres>,
     metrics: Metrics,
 }
 

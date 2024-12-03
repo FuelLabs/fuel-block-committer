@@ -9,19 +9,19 @@ CREATE TABLE IF NOT EXISTS bundle_cost (
 );
 
 ALTER TABLE bundle_cost
-  ADD CONSTRAINT bundle_cost_da_block_height_check
+  ADD CONSTRAINT bundle_cost_da_block_height_check 
   CHECK (
     da_block_height >= 0
 );
 
 ALTER TABLE bundle_cost
-  ADD CONSTRAINT bundle_cost_cost_check
+  ADD CONSTRAINT bundle_cost_cost_check 
   CHECK (
     cost >= 0
 );
 
 ALTER TABLE bundle_cost
-  ADD CONSTRAINT bundle_cost_size_check
+  ADD CONSTRAINT bundle_cost_size_check 
   CHECK (
     size >= 0
 );
@@ -30,9 +30,9 @@ ALTER TABLE l1_blob_transaction
   DROP CONSTRAINT l1_blob_transaction_state_check;
 
 ALTER TABLE l1_blob_transaction
-  ADD CONSTRAINT l1_blob_transaction_state_check
+  ADD CONSTRAINT l1_blob_transaction_state_check 
   CHECK (
-    state IN (0, 1, 2, 3, 4)
+    state IN (0, 1, 2, 3, 4) 
     AND (state != 1 OR finalized_at IS NOT NULL)
 );
 

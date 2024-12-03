@@ -2,35 +2,32 @@ use services::types::{DateTime, Utc};
 
 pub struct SystemClock;
 
-impl services::state_pruner::port::Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
+macro_rules! impl_port {
+    ($($service:ident),+) => {
+        $(
+            impl services::$service::port::Clock for SystemClock {
+                fn now(&self) -> DateTime<Utc> {
+                    Utc::now()
+                }
+            }
+
+            #[cfg(feature = "test-helpers")]
+            impl services::$service::port::Clock for TestClock {
+                fn now(&self) -> DateTime<Utc> {
+                    self.now()
+                }
+            }
+        )*
+    };
 }
 
-impl services::state_listener::port::Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
-
-impl services::block_bundler::port::Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
-
-impl services::block_committer::port::Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
-
-impl services::state_committer::port::Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
+impl_port!(
+    state_pruner,
+    state_listener,
+    state_committer,
+    block_bundler,
+    block_committer
+);
 
 #[cfg(feature = "test-helpers")]
 mod test_helpers {
@@ -72,36 +69,6 @@ mod test_helpers {
                 new_time.timestamp_millis(),
                 std::sync::atomic::Ordering::Relaxed,
             )
-        }
-    }
-
-    impl services::state_pruner::port::Clock for TestClock {
-        fn now(&self) -> DateTime<Utc> {
-            self.now()
-        }
-    }
-
-    impl services::state_listener::port::Clock for TestClock {
-        fn now(&self) -> DateTime<Utc> {
-            self.now()
-        }
-    }
-
-    impl services::block_bundler::port::Clock for TestClock {
-        fn now(&self) -> DateTime<Utc> {
-            self.now()
-        }
-    }
-
-    impl services::block_committer::port::Clock for TestClock {
-        fn now(&self) -> DateTime<Utc> {
-            self.now()
-        }
-    }
-
-    impl services::state_committer::port::Clock for TestClock {
-        fn now(&self) -> DateTime<Utc> {
-            self.now()
         }
     }
 }
