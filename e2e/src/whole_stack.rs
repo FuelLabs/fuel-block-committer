@@ -103,7 +103,7 @@ impl WholeStack {
 
         let committer = {
             let committer_builder = Committer::default()
-                .with_show_logs(true)
+                .with_show_logs(logs)
                 .with_eth_rpc((eth_node).ws_url().clone())
                 .with_fuel_rpc(fuel_node.url())
                 .with_db_port(db.port())

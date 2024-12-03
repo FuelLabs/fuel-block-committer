@@ -1,18 +1,24 @@
-use std::{num::NonZeroU32, time::Duration};
+use std::{num::NonZeroU32, str::FromStr, time::Duration};
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
-use alloy::{primitives::Address, signers::Signer};
+use alloy::{
+    consensus::SignableTransaction,
+    network::TxSigner,
+    primitives::{Address, ChainId, B256},
+    signers::{local::PrivateKeySigner, Signature},
+};
 use ports::{
     l1::{FragmentsSubmitted, Result},
     types::{BlockSubmissionTx, Fragment, L1Tx, NonEmpty, TransactionResponse, U256},
 };
+use serde::Deserialize;
 use url::Url;
 
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::AwsClient;
+use crate::{AwsClient, AwsConfig};
 
 mod connection;
 mod health_tracking_middleware;
@@ -24,10 +30,43 @@ pub struct WebsocketClient {
     contract_caller_address: Address,
 }
 
-#[derive(Debug, Clone)]
-pub struct KmsKeys {
-    pub main_key_arn: String,
-    pub blob_pool_key_arn: Option<String>,
+#[derive(Debug, Clone, PartialEq)]
+pub enum L1Key {
+    Kms(String),
+    Private(String),
+}
+
+impl<'a> serde::Deserialize<'a> for L1Key {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
+            Ok(L1Key::Kms(k.to_string()))
+        } else if let Some(k) = value
+            .strip_prefix("Private(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            Ok(L1Key::Private(k.to_string()))
+        } else {
+            Err(serde::de::Error::custom("invalid L1Key format"))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct L1Keys {
+    /// The eth key authorized by the L1 bridging contracts to post block commitments.
+    pub main: L1Key,
+    /// The eth key for posting L2 state to L1.
+    pub blob: Option<L1Key>,
+}
+
+impl L1Keys {
+    pub fn uses_aws(&self) -> bool {
+        matches!(self.main, L1Key::Kms(_)) || matches!(self.blob, Some(L1Key::Kms(_)))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -36,31 +75,118 @@ pub struct TxConfig {
     pub send_tx_request_timeout: Duration,
 }
 
-impl WebsocketClient {
-    pub async fn connect(
-        url: Url,
-        contract_address: Address,
-        keys: KmsKeys,
-        unhealthy_after_n_errors: usize,
-        aws_client: AwsClient,
-        tx_config: TxConfig,
-    ) -> ports::l1::Result<Self> {
-        let blob_signer = if let Some(key_arn) = keys.blob_pool_key_arn {
-            Some(aws_client.make_signer(key_arn).await?)
+// This trait is needed because you cannot write `dyn TraitA + TraitB` except when TraitB is an
+// auto-trait.
+trait CompositeSigner: alloy::signers::Signer + TxSigner<Signature> {}
+impl<T: alloy::signers::Signer + TxSigner<Signature>> CompositeSigner for T {}
+
+pub struct Signer {
+    signer: Box<dyn CompositeSigner + 'static + Send + Sync>,
+}
+
+#[async_trait::async_trait]
+impl TxSigner<Signature> for Signer {
+    fn address(&self) -> Address {
+        TxSigner::<Signature>::address(&self.signer)
+    }
+
+    async fn sign_transaction(
+        &self,
+        tx: &mut dyn SignableTransaction<Signature>,
+    ) -> alloy::signers::Result<Signature> {
+        TxSigner::<Signature>::sign_transaction(&self.signer, tx).await
+    }
+}
+
+#[async_trait::async_trait]
+impl alloy::signers::Signer<Signature> for Signer {
+    async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
+        self.signer.sign_hash(hash).await
+    }
+
+    fn address(&self) -> Address {
+        alloy::signers::Signer::<Signature>::address(&self.signer)
+    }
+
+    fn chain_id(&self) -> Option<ChainId> {
+        self.signer.chain_id()
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<ChainId>) {
+        self.signer.set_chain_id(chain_id)
+    }
+}
+
+impl Signer {
+    pub async fn make_aws_signer(client: &AwsClient, key: String) -> Result<Self> {
+        let signer = client.make_signer(key).await?;
+
+        Ok(Signer {
+            signer: Box::new(signer),
+        })
+    }
+
+    pub fn make_private_key_signer(key: &str) -> Result<Self> {
+        let signer = PrivateKeySigner::from_str(key)
+            .map_err(|_| ports::l1::Error::Other("Invalid private key".to_string()))?;
+
+        Ok(Signer {
+            signer: Box::new(signer),
+        })
+    }
+}
+
+pub struct Signers {
+    pub main: Signer,
+    pub blob: Option<Signer>,
+}
+impl Signers {
+    pub async fn for_keys(keys: L1Keys) -> Result<Self> {
+        let aws_client = if keys.uses_aws() {
+            let config = AwsConfig::from_env().await;
+            Some(AwsClient::new(config))
         } else {
             None
         };
 
-        let main_signer = aws_client.make_signer(keys.main_key_arn).await?;
+        let blob_signer = match keys.blob {
+            Some(L1Key::Kms(key)) => {
+                Some(Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?)
+            }
+            Some(L1Key::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
+            None => None,
+        };
 
-        let blob_poster_address = blob_signer.as_ref().map(|signer| signer.address());
-        let contract_caller_address = main_signer.address();
+        let main_signer = match keys.main {
+            L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await?,
+            L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
+        };
+
+        Ok(Self {
+            main: main_signer,
+            blob: blob_signer,
+        })
+    }
+}
+
+impl WebsocketClient {
+    pub async fn connect(
+        url: Url,
+        contract_address: Address,
+        signers: Signers,
+        unhealthy_after_n_errors: usize,
+        tx_config: TxConfig,
+    ) -> ports::l1::Result<Self> {
+        let blob_poster_address = signers
+            .blob
+            .as_ref()
+            .map(|signer| TxSigner::address(&signer));
+        let contract_caller_address = TxSigner::address(&signers.main);
 
         let provider = WsConnection::connect(
             url,
             contract_address,
-            main_signer,
-            blob_signer,
+            signers,
             tx_config.tx_max_fee,
             tx_config.send_tx_request_timeout,
         )
@@ -142,5 +268,36 @@ impl WebsocketClient {
 impl RegistersMetrics for WebsocketClient {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.inner.metrics()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+
+    use super::L1Key;
+
+    #[test]
+    fn can_deserialize_private_key() {
+        // given
+        let val = r#""Private(0x1234)""#;
+
+        // when
+        let key: L1Key = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, L1Key::Private("0x1234".to_owned()));
+    }
+
+    #[test]
+    fn can_deserialize_kms_key() {
+        // given
+        let val = r#""Kms(0x1234)""#;
+
+        // when
+        let key: L1Key = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, L1Key::Kms("0x1234".to_owned()));
     }
 }
