@@ -171,10 +171,7 @@ impl services::state_committer::port::Storage for Postgres {
 }
 
 impl services::state_pruner::port::Storage for Postgres {
-    async fn prune_entries_older_than(
-        &self,
-        date: DateTime<Utc>,
-    ) -> Result<services::state_pruner::port::Pruned> {
+    async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()> {
         self._prune_entries_older_than(date)
             .await
             .map_err(Into::into)

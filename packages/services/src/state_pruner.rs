@@ -33,21 +33,56 @@ pub mod service {
         Clock: crate::state_pruner::port::Clock,
     {
         pub async fn prune(&self) -> Result<()> {
-            let pruned = self
-                .storage
+            let pre_pruning_table_sizes = self.storage.table_sizes().await?;
+            self.storage
                 .prune_entries_older_than(self.clock.now() - self.retention)
                 .await?;
 
-            let table_sizes = self.storage.table_sizes().await?;
+            let post_pruning_table_sizes = self.storage.table_sizes().await?;
+            let pruned = diff_dbg_str(&pre_pruning_table_sizes, &post_pruning_table_sizes);
 
-            self.metrics.observe_pruned(&pruned);
-            self.metrics.observe_table_sizes(&table_sizes);
+            tracing::info!("Pruned: {pruned}");
+            tracing::info!("Table sizes: {post_pruning_table_sizes:?}");
 
-            tracing::info!("Pruned: {pruned:?}");
-            tracing::info!("Table sizes: {table_sizes:?}");
+            self.metrics.observe_table_sizes(&post_pruning_table_sizes);
 
             Ok(())
         }
+    }
+
+    fn diff_dbg_str(old: &super::port::TableSizes, new: &super::port::TableSizes) -> String {
+        [
+            format!(
+                "blob_transactions: {}, ",
+                old.blob_transactions.saturating_sub(new.blob_transactions)
+            ),
+            format!(
+                "fragments: {}, ",
+                old.fragments.saturating_sub(new.fragments)
+            ),
+            format!(
+                "transaction_fragments: {}, ",
+                old.transaction_fragments
+                    .saturating_sub(new.transaction_fragments)
+            ),
+            format!("bundles: {}, ", old.bundles.saturating_sub(new.bundles)),
+            format!(
+                "bundle_costs: {}, ",
+                old.bundle_costs.saturating_sub(new.bundle_costs)
+            ),
+            format!("blocks: {}, ", old.blocks.saturating_sub(new.blocks)),
+            format!(
+                "contract_transactions: {}, ",
+                old.contract_transactions
+                    .saturating_sub(new.contract_transactions)
+            ),
+            format!(
+                "contract_submissions: {}",
+                old.contract_submissions
+                    .saturating_sub(new.contract_submissions)
+            ),
+        ]
+        .join("")
     }
 
     impl<Db, Clock> Runner for StatePruner<Db, Clock>
@@ -58,17 +93,6 @@ pub mod service {
         async fn run(&mut self) -> Result<()> {
             self.prune().await
         }
-    }
-
-    #[derive(Clone)]
-    struct Pruned {
-        blob_transactions: IntGauge,
-        fragments: IntGauge,
-        transaction_fragments: IntGauge,
-        bundles: IntGauge,
-        blocks: IntGauge,
-        contract_transactions: IntGauge,
-        contract_submissions: IntGauge,
     }
 
     #[derive(Clone)]
@@ -84,29 +108,10 @@ pub mod service {
 
     #[derive(Clone)]
     struct Metrics {
-        pruned: Pruned,
         sizes: TableSizes,
     }
 
     impl Metrics {
-        fn observe_pruned(&self, pruned: &crate::state_pruner::port::Pruned) {
-            self.pruned
-                .blob_transactions
-                .set(pruned.blob_transactions.into());
-            self.pruned.fragments.set(pruned.fragments.into());
-            self.pruned
-                .transaction_fragments
-                .set(pruned.transaction_fragments.into());
-            self.pruned.bundles.set(pruned.bundles.into());
-            self.pruned.blocks.set(pruned.blocks.into());
-            self.pruned
-                .contract_transactions
-                .set(pruned.contract_transactions.into());
-            self.pruned
-                .contract_submissions
-                .set(pruned.contract_submissions.into());
-        }
-
         fn observe_table_sizes(&self, sizes: &crate::state_pruner::port::TableSizes) {
             self.sizes
                 .blob_transactions
@@ -129,13 +134,6 @@ pub mod service {
     impl<Db, Clock> RegistersMetrics for StatePruner<Db, Clock> {
         fn metrics(&self) -> Vec<Box<dyn Collector>> {
             vec![
-                Box::new(self.metrics.pruned.blob_transactions.clone()),
-                Box::new(self.metrics.pruned.fragments.clone()),
-                Box::new(self.metrics.pruned.transaction_fragments.clone()),
-                Box::new(self.metrics.pruned.bundles.clone()),
-                Box::new(self.metrics.pruned.blocks.clone()),
-                Box::new(self.metrics.pruned.contract_transactions.clone()),
-                Box::new(self.metrics.pruned.contract_submissions.clone()),
                 Box::new(self.metrics.sizes.blob_transactions.clone()),
                 Box::new(self.metrics.sizes.fragments.clone()),
                 Box::new(self.metrics.sizes.transaction_fragments.clone()),
@@ -149,36 +147,6 @@ pub mod service {
 
     impl Default for Metrics {
         fn default() -> Self {
-            let blob_transactions = create_int_gauge(
-                "pruned_blob_transactions",
-                "Number of pruned blob transactions.",
-            );
-            let fragments = create_int_gauge("pruned_fragments", "Number of pruned fragments.");
-            let transaction_fragments = create_int_gauge(
-                "pruned_transaction_fragments",
-                "Number of pruned transaction fragments.",
-            );
-            let bundles = create_int_gauge("pruned_bundles", "Number of pruned bundles.");
-            let blocks = create_int_gauge("pruned_blocks", "Number of pruned blocks.");
-            let contract_transactions = create_int_gauge(
-                "pruned_contract_transactions",
-                "Number of pruned contract transactions.",
-            );
-            let contract_submissions = create_int_gauge(
-                "pruned_contract_submissions",
-                "Number of pruned contract submissions.",
-            );
-
-            let pruned = Pruned {
-                blob_transactions,
-                fragments,
-                transaction_fragments,
-                bundles,
-                blocks,
-                contract_transactions,
-                contract_submissions,
-            };
-
             let blob_transactions =
                 create_int_gauge("tsize_blob_transactions", "Blob transactions table size.");
             let fragments =
@@ -209,7 +177,7 @@ pub mod service {
                 contract_submissions,
             };
 
-            Self { pruned, sizes }
+            Self { sizes }
         }
     }
 }
@@ -219,17 +187,6 @@ pub mod port {
         types::{DateTime, Utc},
         Result,
     };
-
-    #[derive(Debug, Clone)]
-    pub struct Pruned {
-        pub blob_transactions: u32,
-        pub fragments: u32,
-        pub transaction_fragments: u32,
-        pub bundles: u32,
-        pub blocks: u32,
-        pub contract_transactions: u32,
-        pub contract_submissions: u32,
-    }
 
     #[derive(Debug, Clone, PartialEq, PartialOrd)]
     pub struct TableSizes {
@@ -246,7 +203,7 @@ pub mod port {
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Send + Sync {
-        async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<Pruned>;
+        async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()>;
         async fn table_sizes(&self) -> Result<TableSizes>;
     }
 

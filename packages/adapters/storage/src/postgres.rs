@@ -966,11 +966,10 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _prune_entries_older_than(
-        &self,
-        date: DateTime<Utc>,
-    ) -> Result<services::state_pruner::port::Pruned> {
-        let response = sqlx::query!(
+    pub(crate) async fn _prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()> {
+        let mut transaction = self.connection_pool.begin().await?;
+
+        sqlx::query!(
             r#"
             WITH
 
@@ -1027,7 +1026,6 @@ impl Postgres {
                     SELECT 1 FROM deleted_bundles
                     WHERE fuel_blocks.height BETWEEN deleted_bundles.start_height AND deleted_bundles.end_height
                 )
-                RETURNING height
             ),
 
             -- Delete from l1_transaction
@@ -1047,34 +1045,18 @@ impl Postgres {
             deleted_submissions AS (
                 DELETE FROM l1_fuel_block_submission
                 WHERE id NOT IN (SELECT submission_id FROM updated_transactions)
-                RETURNING id
             )
 
-            SELECT
-                (SELECT COUNT(*) FROM deleted_blob_transactions) AS deleted_blob_transactions,
-                (SELECT COUNT(*) FROM deleted_transaction_fragments) AS deleted_transaction_fragments,
-                (SELECT COUNT(*) FROM deleted_fragments) AS deleted_fragments,
-                (SELECT COUNT(*) FROM deleted_bundles) AS deleted_bundles,
-                (SELECT COUNT(*) FROM deleted_fuel_blocks) AS deleted_fuel_blocks,
-                (SELECT COUNT(*) FROM deleted_transactions) AS deleted_contract_transactions,
-                (SELECT COUNT(*) FROM deleted_submissions) AS deleted_contract_submissions;
+            SELECT;
             "#,
            date
         )
-        .fetch_one(&self.connection_pool)
+        .fetch_one(&mut *transaction)
         .await?;
 
-        Ok(services::state_pruner::port::Pruned {
-            blob_transactions: response.deleted_blob_transactions.unwrap_or_default() as u32,
-            fragments: response.deleted_fragments.unwrap_or_default() as u32,
-            transaction_fragments: response.deleted_transaction_fragments.unwrap_or_default()
-                as u32,
-            bundles: response.deleted_bundles.unwrap_or_default() as u32,
-            blocks: response.deleted_fuel_blocks.unwrap_or_default() as u32,
-            contract_transactions: response.deleted_contract_transactions.unwrap_or_default()
-                as u32,
-            contract_submissions: response.deleted_contract_submissions.unwrap_or_default() as u32,
-        })
+        transaction.commit().await?;
+
+        Ok(())
     }
 
     pub(crate) async fn _table_sizes(&self) -> Result<services::state_pruner::port::TableSizes> {
