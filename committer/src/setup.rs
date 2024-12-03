@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clock::SystemClock;
-use eth::{AwsConfig, BlobEncoder, KmsKeys};
+use eth::{BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     prometheus::{IntGauge, Registry},
@@ -19,7 +19,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{config, errors::Result, AwsClient, Database, FuelApi, L1};
+use crate::{config, errors::Result, Database, FuelApi, L1};
 
 pub fn wallet_balance_tracker(
     internal_config: &config::Internal,
@@ -217,19 +217,11 @@ pub async fn l1_adapter(
     internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let aws_config = AwsConfig::from_env().await;
-
-    let aws_client = AwsClient::new(aws_config);
-
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        KmsKeys {
-            main_key_arn: config.eth.main_key_arn.clone(),
-            blob_pool_key_arn: config.eth.blob_pool_key_arn.clone(),
-        },
+        Signers::for_keys(config.eth.l1_keys.clone()).await?,
         internal_config.eth_errors_before_unhealthy,
-        aws_client,
         eth::TxConfig {
             tx_max_fee: config.app.tx_max_fee as u128,
             send_tx_request_timeout: config.app.send_tx_request_timeout,

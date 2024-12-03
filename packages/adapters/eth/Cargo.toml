@@ -17,6 +17,7 @@ alloy = { workspace = true, features = [
   "kzg",
   "contract",
   "signer-aws",
+  "signer-local",
   "rpc-types",
   "reqwest-rustls-tls",
 ] }
@@ -41,6 +42,7 @@ alloy = { workspace = true, features = [
   "node-bindings",
   "json-rpc",
 ] }
+serde_json = { workspace = true }
 mockall = { workspace = true }
 services = { workspace = true, features = ["test-helpers"] }
 pretty_assertions = { workspace = true, features = ["default"] }

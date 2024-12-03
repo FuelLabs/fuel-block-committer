@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::{command, Parser};
-use eth::Address;
+use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use storage::DbConfig;
@@ -21,12 +21,15 @@ pub struct Config {
 
 impl Config {
     pub fn validate(&self) -> crate::errors::Result<()> {
-        if let Some(blob_pool_wallet_key) = &self.eth.blob_pool_key_arn {
-            if blob_pool_wallet_key == &self.eth.main_key_arn {
-                return Err(crate::errors::Error::Other(
-                    "Wallet key and blob pool wallet key must be different".to_string(),
-                ));
-            }
+        let keys = &self.eth.l1_keys;
+        if keys
+            .blob
+            .as_ref()
+            .is_some_and(|blob_key| blob_key == &keys.main)
+        {
+            return Err(crate::errors::Error::Other(
+                "Wallet key and blob pool wallet key must be different".to_string(),
+            ));
         }
 
         if self.app.bundle.fragments_to_accumulate.get() > 6 {
@@ -56,10 +59,8 @@ pub struct Fuel {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
-    /// The AWS KMS key ID authorized by the L1 bridging contracts to post block commitments.
-    pub main_key_arn: String,
-    /// The AWS KMS key ID for posting L2 state to L1.
-    pub blob_pool_key_arn: Option<String>,
+    /// L1 keys for calling the state contract and for posting state
+    pub l1_keys: L1Keys,
     /// URL to a Ethereum RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,

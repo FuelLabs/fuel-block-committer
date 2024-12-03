@@ -23,7 +23,7 @@ mod websocket;
 pub use alloy::primitives::Address;
 pub use aws::*;
 use fuel_block_committer_encoding::blob::{self, generate_sidecar};
-pub use websocket::{KmsKeys, TxConfig, WebsocketClient};
+pub use websocket::{L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient};
 
 #[derive(Debug, Copy, Clone)]
 pub struct BlobEncoder;
