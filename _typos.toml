@@ -1,0 +1,2 @@
+[files]
+extend-exclude = ["db_preview"]
