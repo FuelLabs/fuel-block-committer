@@ -24,6 +24,23 @@ You can also use `run_tests.sh`, which takes care of building the `fuel-block-co
 ./run_tests.sh
 ```
 
+## Schema Visualization
+
+![Relationships Diagram](db_preview/pngs/relationships.png)
+
+We use [SchemaSpy](https://github.com/schemaspy/schemaspy) to generate visual representations of the database schema in both `.dot` and `.png` formats.
+
+### Generating Schema Diagrams
+
+The CI pipeline is configured to automatically run the `update_db_preview.sh` script and check for any updates to the `db_preview` directory. If there are changes (e.g., new or modified `.dot` files), the CI step will fail, prompting you to commit these updates. This ensures that the repository remains in sync with the latest database schema visualizations.
+
+#### Prerequisites
+
+Before running the script, ensure you have the following installed:
+
+- [Docker](https://www.docker.com/get-started) (required for running SchemaSpy)
+- [Sqlx CLI](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli) (required for running migrations)
+
 ## Configuration
 
 The Fuel Block Committer is configured primarily through environment variables.
@@ -211,20 +228,3 @@ The committer performs validation on the provided configuration to ensure consis
 - **Block Height Lookback:** Must be greater than or equal to the number of blocks to accumulate.
 
 If any validation fails, the committer will return an error, preventing it from running with invalid settings.
-
-## Schema Visualization
-
-![Relationships Diagram](db_preview/pngs/relationships.png)
-
-We use [SchemaSpy](https://github.com/schemaspy/schemaspy) to generate visual representations of the database schema in both `.dot` and `.png` formats.
-
-### Generating Schema Diagrams
-
-The CI pipeline is configured to automatically run the `update_db_preview.sh` script and check for any updates to the `db_preview` directory. If there are changes (e.g., new or modified `.dot` files), the CI step will fail, prompting you to commit these updates. This ensures that the repository remains in sync with the latest database schema visualizations.
-
-#### Prerequisites
-
-Before running the script, ensure you have the following installed:
-
-- [Docker](https://www.docker.com/get-started) (required for running SchemaSpy)
-- [Sqlx CLI](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli) (required for running migrations)
