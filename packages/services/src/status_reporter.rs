@@ -1,100 +1,57 @@
-use ports::storage::Storage;
-use serde::Serialize;
+pub mod service {
+    use serde::Serialize;
 
-use crate::Result;
+    use crate::Result;
 
-#[derive(Debug, Serialize, Default, PartialEq, Eq)]
-pub struct StatusReport {
-    pub status: Status,
-}
+    #[derive(Debug, Serialize, Default, PartialEq, Eq)]
+    pub struct StatusReport {
+        pub status: Status,
+    }
 
-#[derive(Serialize, Debug, Default, PartialEq, Eq)]
-pub enum Status {
-    #[default]
-    Idle,
-    Committing,
-}
+    #[derive(Serialize, Debug, Default, PartialEq, Eq)]
+    pub enum Status {
+        #[default]
+        Idle,
+        Committing,
+    }
 
-pub struct StatusReporter<Db> {
-    storage: Db,
-}
+    pub struct StatusReporter<Db> {
+        storage: Db,
+    }
 
-impl<Db> StatusReporter<Db> {
-    pub fn new(storage: Db) -> Self {
-        Self { storage }
+    impl<Db> StatusReporter<Db> {
+        pub fn new(storage: Db) -> Self {
+            Self { storage }
+        }
+    }
+    impl<Db> StatusReporter<Db>
+    where
+        Db: crate::status_reporter::port::Storage,
+    {
+        pub async fn current_status(&self) -> Result<StatusReport> {
+            let last_submission_completed = self
+                .storage
+                .submission_w_latest_block()
+                .await?
+                .map(|submission| submission.completed);
+
+            let status = if last_submission_completed == Some(false) {
+                Status::Committing
+            } else {
+                Status::Idle
+            };
+
+            Ok(StatusReport { status })
+        }
     }
 }
-impl<Db> StatusReporter<Db>
-where
-    Db: Storage,
-{
-    pub async fn current_status(&self) -> Result<StatusReport> {
-        let last_submission_completed = self
-            .storage
-            .submission_w_latest_block()
-            .await?
-            .map(|submission| submission.completed);
 
-        let status = if last_submission_completed == Some(false) {
-            Status::Committing
-        } else {
-            Status::Idle
-        };
+pub mod port {
+    use crate::{types::BlockSubmission, Result};
 
-        Ok(StatusReport { status })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use ports::types::{BlockSubmission, BlockSubmissionTx};
-    use rand::Rng;
-    use storage::PostgresProcess;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn status_depends_on_last_submission() {
-        let process = PostgresProcess::shared().await.unwrap();
-        let test = |submission_status, expected_app_status| {
-            let process = Arc::clone(&process);
-            async move {
-                // given
-                let mut rng = rand::thread_rng();
-                let db = process.create_random_db().await.unwrap();
-
-                if let Some(is_completed) = submission_status {
-                    let latest_submission = BlockSubmission {
-                        completed: is_completed,
-                        ..rng.gen()
-                    };
-                    db.record_block_submission(BlockSubmissionTx::default(), latest_submission)
-                        .await
-                        .unwrap();
-                }
-
-                let status_reporter = StatusReporter::new(db);
-
-                // when
-                let status = status_reporter.current_status().await.unwrap();
-
-                // then
-                assert_eq!(
-                    status,
-                    StatusReport {
-                        status: expected_app_status
-                    }
-                );
-            }
-        };
-
-        // has an entry, not completed
-        test(Some(false), Status::Committing).await;
-        // has an entry, completed
-        test(Some(true), Status::Idle).await;
-        // has no entry
-        test(None, Status::Idle).await;
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    pub trait Storage: Send + Sync {
+        async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     }
 }

@@ -7,7 +7,6 @@ mod setup;
 use api::launch_api_server;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
-use ports::l1::Contract;
 use setup::last_finalization_metric;
 use tokio_util::sync::CancellationToken;
 
@@ -45,8 +44,6 @@ async fn main() -> Result<()> {
             .await
             .with_context(|| "could not setup l1 adapter")?;
 
-    let commit_interval = ethereum_rpc.commit_interval();
-
     let wallet_balance_tracker_handle = setup::wallet_balance_tracker(
         &internal_config,
         &metrics_registry,
@@ -55,7 +52,6 @@ async fn main() -> Result<()> {
     );
 
     let committer_handle = setup::block_committer(
-        commit_interval,
         ethereum_rpc.clone(),
         storage.clone(),
         fuel_adapter.clone(),
@@ -96,10 +92,18 @@ async fn main() -> Result<()> {
             finalization_metric,
         );
 
+        let state_pruner_handle = setup::state_pruner(
+            storage.clone(),
+            cancel_token.clone(),
+            &metrics_registry,
+            &config,
+        );
+
         handles.push(state_committer_handle);
         handles.push(state_importer_handle);
         handles.push(block_bundler);
         handles.push(state_listener_handle);
+        handles.push(state_pruner_handle);
     }
 
     launch_api_server(

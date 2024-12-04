@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, time::Duration};
+use std::time::Duration;
 
 use clock::SystemClock;
 use eth::{BlobEncoder, Signers};
@@ -7,8 +7,14 @@ use metrics::{
     prometheus::{IntGauge, Registry},
     HealthChecker, RegistersMetrics,
 };
-use ports::storage::Storage;
-use services::{BlockBundler, BlockBundlerConfig, BlockCommitter, Runner, WalletBalanceTracker};
+use services::{
+    block_committer::{port::l1::Contract, service::BlockCommitter},
+    state_committer::port::Storage,
+    state_listener::service::StateListener,
+    state_pruner::service::StatePruner,
+    wallet_balance_tracker::service::WalletBalanceTracker,
+    BlockBundler, BlockBundlerConfig, Runner,
+};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -42,13 +48,13 @@ pub fn wallet_balance_tracker(
 }
 
 pub fn block_committer(
-    commit_interval: NonZeroU32,
     l1: L1,
     storage: Database,
     fuel: FuelApi,
     config: &config::Config,
     cancel_token: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
+    let commit_interval = l1.commit_interval();
     let block_committer = BlockCommitter::new(
         l1,
         storage,
@@ -140,8 +146,11 @@ pub fn block_importer(
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> tokio::task::JoinHandle<()> {
-    let block_importer =
-        services::BlockImporter::new(storage, fuel, config.app.bundle.block_height_lookback);
+    let block_importer = services::block_importer::service::BlockImporter::new(
+        storage,
+        fuel,
+        config.app.bundle.block_height_lookback,
+    );
 
     schedule_polling(
         config.app.block_check_interval,
@@ -167,7 +176,7 @@ pub fn state_listener(
     config: &config::Config,
     last_finalization: IntGauge,
 ) -> tokio::task::JoinHandle<()> {
-    let state_listener = services::StateListener::new(
+    let state_listener = StateListener::new(
         l1,
         storage,
         config.app.num_blocks_to_finalize_tx,
@@ -180,6 +189,24 @@ pub fn state_listener(
     schedule_polling(
         config.app.block_check_interval,
         state_listener,
+        "State Listener",
+        cancel_token,
+    )
+}
+
+pub fn state_pruner(
+    storage: Database,
+    cancel_token: CancellationToken,
+    registry: &Registry,
+    config: &config::Config,
+) -> tokio::task::JoinHandle<()> {
+    let state_pruner = StatePruner::new(storage, SystemClock, config.app.state_pruner_retention);
+
+    state_pruner.register_metrics(registry);
+
+    schedule_polling(
+        config.app.state_pruner_run_interval,
+        state_pruner,
         "State Listener",
         cancel_token,
     )

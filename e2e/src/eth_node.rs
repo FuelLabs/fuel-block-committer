@@ -8,7 +8,7 @@ use alloy::{
     signers::local::{coins_bip39::English, MnemonicBuilder, PrivateKeySigner},
 };
 use eth::Address;
-use ports::types::U256;
+use services::types::U256;
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
 use url::Url;

@@ -12,7 +12,7 @@ publish = true
 
 [dependencies]
 # alloy only really needed when generating proofs, and since the core doesn't
-# need to do that we've gated it behing the `kzg` feature flag.
+# need to do that we've gated it behind the `kzg` feature flag.
 alloy = { workspace = true, features = ["consensus", "eips"], optional = true }
 anyhow = { workspace = true, features = ["default"] }
 bitvec = { workspace = true, features = ["default"] }

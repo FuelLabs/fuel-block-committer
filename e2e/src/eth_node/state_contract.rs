@@ -9,8 +9,8 @@ use alloy::{
 };
 use eth::{AwsClient, AwsConfig, Signer, Signers, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
-use ports::{fuel::FuelBlock, types::Address};
 use serde::Deserialize;
+use services::{types::fuel::FuelBlock, types::Address};
 use tokio::process::Command;
 use url::Url;
 

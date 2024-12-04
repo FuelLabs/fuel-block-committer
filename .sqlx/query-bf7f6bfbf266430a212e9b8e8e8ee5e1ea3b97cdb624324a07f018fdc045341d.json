@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO l1_transaction (hash, nonce, max_fee, priority_fee, submission_id, state, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Numeric",
+        "Numeric",
+        "Int4",
+        "Int2",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf7f6bfbf266430a212e9b8e8e8ee5e1ea3b97cdb624324a07f018fdc045341d"
+}

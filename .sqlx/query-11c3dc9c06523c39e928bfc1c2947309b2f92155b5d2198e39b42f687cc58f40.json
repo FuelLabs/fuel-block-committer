@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n        sub.id,\n        sub.idx,\n        sub.bundle_id,\n        sub.data,\n        sub.unused_bytes,\n        sub.total_bytes\n    FROM (\n        SELECT DISTINCT ON (f.id)\n            f.*,\n            b.start_height\n        FROM l1_fragments f\n        JOIN bundles b ON b.id = f.bundle_id\n        WHERE\n            b.end_height >= $2\n            AND NOT EXISTS (\n                SELECT 1\n                FROM l1_transaction_fragments tf\n                JOIN l1_blob_transaction t ON t.id = tf.transaction_id\n                WHERE tf.fragment_id = f.id\n                  AND t.state <> $1\n            )\n        ORDER BY\n            f.id,\n            b.start_height ASC,\n            f.idx ASC\n    ) AS sub\n    ORDER BY\n        sub.start_height ASC,\n        sub.idx ASC\n    LIMIT $3;\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "idx",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "bundle_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "unused_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "total_bytes",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "11c3dc9c06523c39e928bfc1c2947309b2f92155b5d2198e39b42f687cc58f40"
+}

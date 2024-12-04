@@ -1,582 +1,279 @@
-use std::num::NonZeroU32;
+pub mod service {
+    use std::num::NonZeroU32;
 
-use ports::{
-    fuel::FuelBlock,
-    storage::Storage,
-    types::{BlockSubmission, NonNegative, TransactionState},
-};
-use tracing::info;
+    use crate::{
+        types::{fuel::FuelBlock, BlockSubmission, NonNegative, TransactionState},
+        Error, Result,
+    };
+    use tracing::info;
 
-use super::Runner;
-use crate::{Error, Result};
+    use crate::Runner;
 
-pub struct BlockCommitter<L1, Db, Fuel, Clock> {
-    l1_adapter: L1,
-    fuel_adapter: Fuel,
-    storage: Db,
-    clock: Clock,
-    commit_interval: NonZeroU32,
-    num_blocks_to_finalize_tx: u64,
-}
-
-#[derive(Debug)]
-enum Action {
-    UpdateTx {
-        submission_id: NonNegative<i32>,
-        block_height: u32,
-    },
-    Post,
-    DoNothing,
-}
-
-impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock> {
-    pub fn new(
-        l1: L1,
-        storage: Db,
+    pub struct BlockCommitter<L1, Db, Fuel, Clock> {
+        l1_adapter: L1,
         fuel_adapter: Fuel,
+        storage: Db,
         clock: Clock,
         commit_interval: NonZeroU32,
         num_blocks_to_finalize_tx: u64,
-    ) -> Self {
-        Self {
-            l1_adapter: l1,
-            storage,
-            fuel_adapter,
-            clock,
-            commit_interval,
-            num_blocks_to_finalize_tx,
-        }
-    }
-}
-
-impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock>
-where
-    L1: ports::l1::Contract + ports::l1::Api,
-    Db: Storage,
-    Fuel: ports::fuel::Api,
-    Clock: ports::clock::Clock,
-{
-    async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
-        let submission = BlockSubmission::new(*fuel_block.id, fuel_block.header.height);
-
-        let mut tx = self
-            .l1_adapter
-            .submit(*fuel_block.id, fuel_block.header.height)
-            .await?;
-        tx.submission_id = submission.id;
-        self.storage.record_block_submission(tx, submission).await?;
-
-        info!("submitted {fuel_block:?}!");
-
-        Ok(())
     }
 
-    fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
-        current_block_height - (current_block_height % self.commit_interval)
+    #[derive(Debug)]
+    enum Action {
+        UpdateTx {
+            submission_id: NonNegative<i32>,
+            block_height: u32,
+        },
+        Post,
+        DoNothing,
     }
 
-    async fn fetch_block(&self, height: u32) -> Result<FuelBlock> {
-        let fuel_block = self
-            .fuel_adapter
-            .block_at_height(height)
-            .await?
-            .ok_or_else(|| {
-                Error::Other(format!(
-                    "Fuel node could not provide block at height: {height}"
-                ))
-            })?;
-
-        Ok(fuel_block)
-    }
-
-    fn decide_action(
-        &self,
-        latest_submission: Option<&BlockSubmission>,
-        current_epoch_block_height: u32,
-    ) -> Action {
-        let is_stale = latest_submission
-            .map(|s| s.block_height < current_epoch_block_height)
-            .unwrap_or(true);
-
-        // if we reached the next epoch since our last submission, we should post the latest block
-        if is_stale {
-            return Action::Post;
-        }
-
-        match latest_submission {
-            Some(submission) if !submission.completed => Action::UpdateTx {
-                submission_id: submission.id.expect("submission to have id"),
-                block_height: submission.block_height,
-            },
-            _ => Action::DoNothing,
+    impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock> {
+        pub fn new(
+            l1: L1,
+            storage: Db,
+            fuel_adapter: Fuel,
+            clock: Clock,
+            commit_interval: NonZeroU32,
+            num_blocks_to_finalize_tx: u64,
+        ) -> Self {
+            Self {
+                l1_adapter: l1,
+                storage,
+                fuel_adapter,
+                clock,
+                commit_interval,
+                num_blocks_to_finalize_tx,
+            }
         }
     }
 
-    async fn update_transactions(
-        &self,
-        submission_id: NonNegative<i32>,
-        block_height: u32,
-    ) -> Result<()> {
-        let transactions = self
-            .storage
-            .get_pending_block_submission_txs(submission_id)
-            .await?;
-        let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
+    impl<L1, Db, Fuel, Clock> BlockCommitter<L1, Db, Fuel, Clock>
+    where
+        L1: crate::block_committer::port::l1::Contract + crate::block_committer::port::l1::Api,
+        Db: crate::block_committer::port::Storage,
+        Fuel: crate::block_committer::port::fuel::Api,
+        Clock: crate::block_committer::port::Clock,
+    {
+        async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
+            let submission = BlockSubmission::new(*fuel_block.id, fuel_block.header.height);
 
-        for tx in transactions {
-            let tx_hash = tx.hash;
-            let Some(tx_response) = self.l1_adapter.get_transaction_response(tx_hash).await? else {
-                continue; // not included
-            };
+            let mut tx = self
+                .l1_adapter
+                .submit(*fuel_block.id, fuel_block.header.height)
+                .await?;
+            tx.submission_id = submission.id;
+            self.storage
+                .record_block_submission(tx, submission, self.clock.now())
+                .await?;
 
-            if !tx_response.succeeded() {
+            info!("submitted {fuel_block:?}!");
+
+            Ok(())
+        }
+
+        fn current_epoch_block_height(&self, current_block_height: u32) -> u32 {
+            current_block_height - (current_block_height % self.commit_interval)
+        }
+
+        async fn fetch_block(&self, height: u32) -> Result<FuelBlock> {
+            let fuel_block = self
+                .fuel_adapter
+                .block_at_height(height)
+                .await?
+                .ok_or_else(|| {
+                    Error::Other(format!(
+                        "Fuel node could not provide block at height: {height}"
+                    ))
+                })?;
+
+            Ok(fuel_block)
+        }
+
+        fn decide_action(
+            &self,
+            latest_submission: Option<&BlockSubmission>,
+            current_epoch_block_height: u32,
+        ) -> Action {
+            let is_stale = latest_submission
+                .map(|s| s.block_height < current_epoch_block_height)
+                .unwrap_or(true);
+
+            // if we reached the next epoch since our last submission, we should post the latest block
+            if is_stale {
+                return Action::Post;
+            }
+
+            match latest_submission {
+                Some(submission) if !submission.completed => Action::UpdateTx {
+                    submission_id: submission.id.expect("submission to have id"),
+                    block_height: submission.block_height,
+                },
+                _ => Action::DoNothing,
+            }
+        }
+
+        async fn update_transactions(
+            &self,
+            submission_id: NonNegative<i32>,
+            block_height: u32,
+        ) -> Result<()> {
+            let transactions = self
+                .storage
+                .get_pending_block_submission_txs(submission_id)
+                .await?;
+            let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
+
+            for tx in transactions {
+                let tx_hash = tx.hash;
+                let Some(tx_response) = self.l1_adapter.get_transaction_response(tx_hash).await?
+                else {
+                    continue; // not included
+                };
+
+                if !tx_response.succeeded() {
+                    self.storage
+                        .update_block_submission_tx(tx_hash, TransactionState::Failed)
+                        .await?;
+
+                    info!(
+                        "failed submission for block: {block_height} with tx: {}",
+                        hex::encode(tx_hash)
+                    );
+                    continue;
+                }
+
+                if !tx_response.confirmations(current_block_number) < self.num_blocks_to_finalize_tx
+                {
+                    continue; // not finalized
+                }
+
                 self.storage
-                    .update_block_submission_tx(tx_hash, TransactionState::Failed)
+                    .update_block_submission_tx(
+                        tx_hash,
+                        TransactionState::Finalized(self.clock.now()),
+                    )
                     .await?;
 
                 info!(
-                    "failed submission for block: {block_height} with tx: {}",
+                    "finalized submission for block: {block_height} with tx: {}",
                     hex::encode(tx_hash)
                 );
-                continue;
             }
 
-            if !tx_response.confirmations(current_block_number) < self.num_blocks_to_finalize_tx {
-                continue; // not finalized
-            }
-
-            self.storage
-                .update_block_submission_tx(tx_hash, TransactionState::Finalized(self.clock.now()))
-                .await?;
-
-            info!(
-                "finalized submission for block: {block_height} with tx: {}",
-                hex::encode(tx_hash)
-            );
+            Ok(())
         }
+    }
 
-        Ok(())
+    impl<L1, Db, Fuel, Clock> Runner for BlockCommitter<L1, Db, Fuel, Clock>
+    where
+        L1: crate::block_committer::port::l1::Contract + crate::block_committer::port::l1::Api,
+        Db: crate::block_committer::port::Storage,
+        Fuel: crate::block_committer::port::fuel::Api,
+        Clock: crate::block_committer::port::Clock + Send + Sync,
+    {
+        async fn run(&mut self) -> Result<()> {
+            let latest_submission = self.storage.submission_w_latest_block().await?;
+
+            let current_block = self.fuel_adapter.latest_block().await?;
+            let current_epoch_block_height =
+                self.current_epoch_block_height(current_block.header.height);
+
+            let action = self.decide_action(latest_submission.as_ref(), current_epoch_block_height);
+            match action {
+                Action::DoNothing => {}
+                Action::Post => {
+                    let block = if current_block.header.height == current_epoch_block_height {
+                        current_block
+                    } else {
+                        self.fetch_block(current_epoch_block_height).await?
+                    };
+
+                    self.submit_block(block).await?;
+                }
+                Action::UpdateTx {
+                    submission_id,
+                    block_height,
+                } => {
+                    self.update_transactions(submission_id, block_height)
+                        .await?
+                }
+            }
+
+            Ok(())
+        }
     }
 }
 
-impl<L1, Db, Fuel, Clock> Runner for BlockCommitter<L1, Db, Fuel, Clock>
-where
-    L1: ports::l1::Contract + ports::l1::Api,
-    Db: Storage,
-    Fuel: ports::fuel::Api,
-    Clock: ports::clock::Clock + Send + Sync,
-{
-    async fn run(&mut self) -> Result<()> {
-        let latest_submission = self.storage.submission_w_latest_block().await?;
-
-        let current_block = self.fuel_adapter.latest_block().await?;
-        let current_epoch_block_height =
-            self.current_epoch_block_height(current_block.header.height);
-
-        let action = self.decide_action(latest_submission.as_ref(), current_epoch_block_height);
-        match action {
-            Action::DoNothing => {}
-            Action::Post => {
-                let block = if current_block.header.height == current_epoch_block_height {
-                    current_block
-                } else {
-                    self.fetch_block(current_epoch_block_height).await?
-                };
-
-                self.submit_block(block).await?;
-            }
-            Action::UpdateTx {
-                submission_id,
-                block_height,
-            } => {
-                self.update_transactions(submission_id, block_height)
-                    .await?
-            }
-        }
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use clock::SystemClock;
-    use fuel_crypto::{Message, SecretKey, Signature};
-    use mockall::predicate::eq;
-    use ports::{
-        fuel::{FuelBlock, FuelBlockId, FuelConsensus, FuelHeader, FuelPoAConsensus},
-        l1::{Contract, FragmentsSubmitted, MockContract},
-        types::{
-            BlockSubmissionTx, Fragment, L1Height, L1Tx, NonEmpty, TransactionResponse, Utc, U256,
-        },
+pub mod port {
+    use crate::{
+        types::{BlockSubmission, BlockSubmissionTx, DateTime, NonNegative, TransactionState, Utc},
+        Result,
     };
-    use rand::{rngs::StdRng, Rng, SeedableRng};
-    use storage::{DbWithProcess, PostgresProcess};
 
-    use super::*;
+    pub mod l1 {
+        use std::num::NonZeroU32;
 
-    struct MockL1 {
-        api: ports::l1::MockApi,
-        contract: MockContract,
-    }
-    impl MockL1 {
-        fn new() -> Self {
-            Self {
-                api: ports::l1::MockApi::new(),
-                contract: MockContract::new(),
-            }
+        use crate::{
+            types::{BlockSubmissionTx, L1Height, TransactionResponse},
+            Result,
+        };
+
+        #[allow(async_fn_in_trait)]
+        #[trait_variant::make(Send)]
+        #[cfg_attr(feature = "test-helpers", mockall::automock)]
+        pub trait Contract: Send + Sync {
+            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
+            fn commit_interval(&self) -> NonZeroU32;
+        }
+
+        #[allow(async_fn_in_trait)]
+        #[trait_variant::make(Send)]
+        #[cfg_attr(feature = "test-helpers", mockall::automock)]
+        pub trait Api {
+            async fn get_block_number(&self) -> Result<L1Height>;
+            async fn get_transaction_response(
+                &self,
+                tx_hash: [u8; 32],
+            ) -> Result<Option<TransactionResponse>>;
         }
     }
 
-    impl Contract for MockL1 {
-        async fn submit(
+    pub mod fuel {
+        use crate::Result;
+        pub use fuel_core_client::client::types::block::Block as FuelBlock;
+
+        #[allow(async_fn_in_trait)]
+        #[trait_variant::make(Send)]
+        #[cfg_attr(feature = "test-helpers", mockall::automock)]
+        pub trait Api: Send + Sync {
+            async fn latest_block(&self) -> Result<FuelBlock>;
+            async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
+        }
+    }
+
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    pub trait Storage: Send + Sync {
+        async fn record_block_submission(
+            &self,
+            submission_tx: BlockSubmissionTx,
+            submission: BlockSubmission,
+            created_at: DateTime<Utc>,
+        ) -> Result<NonNegative<i32>>;
+        async fn get_pending_block_submission_txs(
+            &self,
+            submission_id: NonNegative<i32>,
+        ) -> Result<Vec<BlockSubmissionTx>>;
+        async fn update_block_submission_tx(
             &self,
             hash: [u8; 32],
-            height: u32,
-        ) -> ports::l1::Result<BlockSubmissionTx> {
-            self.contract.submit(hash, height).await
-        }
-
-        fn commit_interval(&self) -> NonZeroU32 {
-            self.contract.commit_interval()
-        }
+            state: TransactionState,
+        ) -> Result<BlockSubmission>;
+        async fn submission_w_latest_block(&self) -> Result<Option<BlockSubmission>>;
     }
 
-    impl ports::l1::Api for MockL1 {
-        async fn submit_state_fragments(
-            &self,
-            _fragments: NonEmpty<Fragment>,
-            _previous_tx: Option<L1Tx>,
-        ) -> ports::l1::Result<(L1Tx, FragmentsSubmitted)> {
-            unimplemented!()
-        }
-
-        async fn get_block_number(&self) -> ports::l1::Result<L1Height> {
-            self.api.get_block_number().await
-        }
-
-        async fn balance(&self, address: ports::types::Address) -> ports::l1::Result<U256> {
-            self.api.balance(address).await
-        }
-
-        async fn get_transaction_response(
-            &self,
-            tx_hash: [u8; 32],
-        ) -> ports::l1::Result<Option<TransactionResponse>> {
-            self.api.get_transaction_response(tx_hash).await
-        }
-
-        async fn is_squeezed_out(&self, _tx_hash: [u8; 32]) -> ports::l1::Result<bool> {
-            unimplemented!()
-        }
-    }
-
-    fn given_l1_that_expects_submission(block: FuelBlock) -> MockL1 {
-        let mut l1 = MockL1::new();
-
-        let submission_tx = BlockSubmissionTx {
-            hash: [1u8; 32],
-            ..Default::default()
-        };
-        l1.contract
-            .expect_submit()
-            .withf(move |hash, height| *hash == *block.id && *height == block.header.height)
-            .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }))
-            .once();
-
-        l1.api
-            .expect_get_block_number()
-            .return_once(move || Box::pin(async { Ok(0u32.into()) }));
-
-        l1
-    }
-
-    fn given_l1_that_expects_transaction_response(
-        block_number: u32,
-        tx_hash: [u8; 32],
-        response: Option<TransactionResponse>,
-    ) -> MockL1 {
-        let mut l1 = MockL1::new();
-
-        l1.api
-            .expect_get_block_number()
-            .returning(move || Box::pin(async move { Ok(block_number.into()) }));
-
-        l1.api
-            .expect_get_transaction_response()
-            .with(eq(tx_hash))
-            .returning(move |_| {
-                let response = response.clone();
-                Box::pin(async move { Ok(response) })
-            });
-
-        l1.contract.expect_submit().never();
-
-        l1
-    }
-
-    #[tokio::test]
-    async fn will_do_nothing_if_latest_block_is_completed_and_not_stale() {
-        // given
-        let secret_key = given_secret_key();
-        let latest_block = given_a_block(10, &secret_key);
-        let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
-
-        let db = db_with_submissions(vec![6, 8, 10]).await;
-        db.update_block_submission_tx([10; 32], TransactionState::Finalized(Utc::now()))
-            .await
-            .unwrap();
-
-        let mut l1 = MockL1::new();
-        l1.contract.expect_submit().never();
-
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // MockL1 verifies that submit was not called
-    }
-
-    #[tokio::test]
-    async fn will_submit_on_latest_epoch() {
-        // given
-        let secret_key = given_secret_key();
-        let latest_block = given_a_block(10, &secret_key);
-        let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
-
-        let l1 = given_l1_that_expects_submission(latest_block);
-        let db = db_with_submissions(vec![]).await;
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // MockL1 validates the expected calls are made
-    }
-
-    #[tokio::test]
-    async fn will_skip_incomplete_submission_to_submit_latest() {
-        // given
-        let secret_key = given_secret_key();
-        let latest_block = given_a_block(10, &secret_key);
-        let all_blocks = vec![
-            given_a_block(8, &secret_key),
-            given_a_block(9, &secret_key),
-            latest_block.clone(),
-        ];
-        let fuel_adapter = given_fetcher(all_blocks);
-
-        let l1 = given_l1_that_expects_submission(latest_block);
-        let db = db_with_submissions(vec![8]).await;
-
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // MockL1 validates the expected calls are made
-    }
-
-    #[tokio::test]
-    async fn will_fetch_and_submit_missed_block() {
-        // given
-        let secret_key = given_secret_key();
-        let missed_block = given_a_block(4, &secret_key);
-        let latest_block = given_a_block(5, &secret_key);
-        let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
-
-        let l1 = given_l1_that_expects_submission(missed_block);
-        let db = db_with_submissions(vec![0, 2]).await;
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        // MockL1 validates the expected calls are made
-    }
-
-    #[tokio::test]
-    async fn will_not_reattempt_submitting_missed_block() {
-        // given
-        let secret_key = given_secret_key();
-        let missed_block = given_a_block(4, &secret_key);
-        let latest_block = given_a_block(5, &secret_key);
-        let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
-
-        let db = db_with_submissions(vec![0, 2, 4]).await;
-
-        let l1 = given_l1_that_expects_transaction_response(5, [4; 32], None);
-
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        // Mock verifies that the submit didn't happen
-    }
-
-    #[tokio::test]
-    async fn propagates_block_if_epoch_reached() {
-        // given
-        let secret_key = given_secret_key();
-        let block = given_a_block(4, &secret_key);
-        let fuel_adapter = given_fetcher(vec![block.clone()]);
-
-        let db = db_with_submissions(vec![0, 2]).await;
-        let l1 = given_l1_that_expects_submission(block);
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        // Mock verifies that submit was called with the appropriate block
-    }
-
-    #[tokio::test]
-    async fn updates_submission_state_to_finalized() {
-        // given
-        let secret_key = given_secret_key();
-        let latest_height = 4;
-        let latest_block = given_a_block(latest_height, &secret_key);
-        let fuel_adapter = given_fetcher(vec![latest_block]);
-
-        let db = db_with_submissions(vec![0, 2, 4]).await;
-        let tx_response = TransactionResponse::new(latest_height as u64, true, 100, 0);
-        let l1 =
-            given_l1_that_expects_transaction_response(latest_height, [4; 32], Some(tx_response));
-
-        let mut block_committer =
-            BlockCommitter::new(l1, db, fuel_adapter, SystemClock, 2.try_into().unwrap(), 1);
-
-        // when
-        block_committer.run().await.unwrap();
-
-        // then
-        let latest_submission = block_committer
-            .storage
-            .submission_w_latest_block()
-            .await
-            .unwrap()
-            .expect("submission to exist");
-        let pending_txs = block_committer
-            .storage
-            .get_pending_block_submission_txs(latest_submission.id.expect("submission to have id"))
-            .await
-            .unwrap();
-
-        assert!(pending_txs.is_empty());
-    }
-
-    async fn db_with_submissions(pending_submissions: Vec<u32>) -> DbWithProcess {
-        let db = PostgresProcess::shared()
-            .await
-            .unwrap()
-            .create_random_db()
-            .await
-            .unwrap();
-        for height in pending_submissions {
-            let submission_tx = BlockSubmissionTx {
-                hash: [height as u8; 32],
-                nonce: height,
-                ..Default::default()
-            };
-            db.record_block_submission(submission_tx, given_incomplete_submission(height))
-                .await
-                .unwrap();
-        }
-
-        db
-    }
-
-    fn given_fetcher(available_blocks: Vec<FuelBlock>) -> ports::fuel::MockApi {
-        let mut fetcher = ports::fuel::MockApi::new();
-        for block in available_blocks.clone() {
-            fetcher
-                .expect_block_at_height()
-                .with(eq(block.header.height))
-                .returning(move |_| {
-                    let block = block.clone();
-                    Box::pin(async move { Ok(Some(block)) })
-                });
-        }
-        if let Some(block) = available_blocks
-            .into_iter()
-            .max_by_key(|el| el.header.height)
-        {
-            fetcher.expect_latest_block().returning(move || {
-                let block = block.clone();
-                Box::pin(async { Ok(block) })
-            });
-        }
-
-        fetcher
-    }
-
-    fn given_incomplete_submission(block_height: u32) -> BlockSubmission {
-        let mut submission: BlockSubmission = rand::thread_rng().gen();
-        submission.block_height = block_height;
-        submission.completed = false;
-
-        submission
-    }
-
-    fn given_a_block(height: u32, secret_key: &SecretKey) -> FuelBlock {
-        let header = given_header(height);
-
-        let mut hasher = fuel_crypto::Hasher::default();
-        hasher.input(header.prev_root.as_ref());
-        hasher.input(header.height.to_be_bytes());
-        hasher.input(header.time.0.to_be_bytes());
-        hasher.input(header.application_hash.as_ref());
-
-        let id = FuelBlockId::from(hasher.digest());
-        let id_message = Message::from_bytes(*id);
-        let signature = Signature::sign(secret_key, &id_message);
-
-        FuelBlock {
-            id,
-            header,
-            consensus: FuelConsensus::PoAConsensus(FuelPoAConsensus { signature }),
-            transactions: vec![],
-            block_producer: Some(secret_key.public_key()),
-        }
-    }
-
-    fn given_header(height: u32) -> FuelHeader {
-        let application_hash = "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
-            .parse()
-            .unwrap();
-
-        FuelHeader {
-            id: Default::default(),
-            da_height: Default::default(),
-            consensus_parameters_version: Default::default(),
-            state_transition_bytecode_version: Default::default(),
-            transactions_count: Default::default(),
-            message_receipt_count: Default::default(),
-            transactions_root: Default::default(),
-            message_outbox_root: Default::default(),
-            event_inbox_root: Default::default(),
-            height,
-            prev_root: Default::default(),
-            time: tai64::Tai64(0),
-            application_hash,
-        }
-    }
-
-    fn given_secret_key() -> SecretKey {
-        let mut rng = StdRng::seed_from_u64(42);
-
-        SecretKey::random(&mut rng)
+    pub trait Clock {
+        fn now(&self) -> DateTime<Utc>;
     }
 }
