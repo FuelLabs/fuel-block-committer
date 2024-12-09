@@ -7,9 +7,11 @@ use ::metrics::{
 use actix_web::{
     error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
 };
-use ports::storage::Storage;
 use serde::Deserialize;
-use services::{CostReporter, HealthReporter, StatusReporter};
+use services::{
+    cost_reporter::service::CostReporter, health_reporter::service::HealthReporter,
+    status_reporter::service::StatusReporter,
+};
 
 use crate::{
     config::{Config, Internal},
@@ -21,7 +23,7 @@ pub async fn launch_api_server(
     config: &Config,
     internal_config: &Internal,
     metrics_registry: Registry,
-    storage: impl Storage + 'static + Clone,
+    storage: impl services::status_reporter::port::Storage + Clone + 'static,
     fuel_health_check: HealthChecker,
     eth_health_check: HealthChecker,
 ) -> Result<()> {

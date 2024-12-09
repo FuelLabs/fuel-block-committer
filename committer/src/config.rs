@@ -105,6 +105,12 @@ pub struct App {
     //// Duration for timeout when sending tx requests
     #[serde(deserialize_with = "human_readable_duration")]
     pub send_tx_request_timeout: Duration,
+    //// Retention duration for state pruner
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub state_pruner_retention: Duration,
+    /// How often to run state pruner
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub state_pruner_run_interval: Duration,
 }
 
 /// Configuration settings for managing fuel block bundling and fragment submission operations.

@@ -3,14 +3,14 @@ resolver = "2"
 members = [
   "committer",
   "e2e",
-  "packages/clock",
+  "packages/adapters/clock",
+  "packages/adapters/eth",
+  "packages/adapters/fuel",
+  "packages/adapters/storage",
   "packages/encoding",
-  "packages/eth",
-  "packages/fuel",
   "packages/metrics",
-  "packages/ports",
   "packages/services",
-  "packages/storage",
+  "packages/test-helpers",
 ]
 
 [workspace.package]
@@ -26,13 +26,13 @@ rust-version = "1.82"
 publish = false
 
 [workspace.dependencies]
-eth = { path = "./packages/eth", default-features = false }
-fuel = { path = "./packages/fuel", default-features = false }
+clock = { path = "./packages/adapters/clock", default-features = false }
+eth = { path = "./packages/adapters/eth", default-features = false }
+fuel = { path = "./packages/adapters/fuel", default-features = false }
+storage = { path = "./packages/adapters/storage", default-features = false }
 metrics = { path = "./packages/metrics", default-features = false }
-ports = { path = "./packages/ports", default-features = false }
-storage = { path = "./packages/storage", default-features = false }
 services = { path = "./packages/services", default-features = false }
-clock = { path = "./packages/clock", default-features = false }
+test-helpers = { path = "./packages/test-helpers/", default-features = false }
 fuel-block-committer-encoding = { path = "./packages/encoding", default-features = false }
 actix-web = { version = "4", default-features = false }
 bitvec = { version = "1.0", default-features = false }

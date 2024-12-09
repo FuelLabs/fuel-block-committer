@@ -11,8 +11,8 @@ use fuel_core_types::{
 };
 use futures::{stream, StreamExt};
 use itertools::Itertools;
-use ports::fuel::FuelPublicKey;
 use rand::Rng;
+use services::types::fuel::FuelPublicKey;
 use url::Url;
 
 #[derive(Default, Debug)]
