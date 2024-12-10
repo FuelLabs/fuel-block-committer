@@ -2,6 +2,8 @@
 
 The Fuel Block Committer is a standalone service dedicated to uploading Fuel Block metadata to Ethereum.
 
+test
+
 ## Building
 
 Building the project doesn't require any special steps beyond the standard Cargo build process.
