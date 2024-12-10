@@ -104,7 +104,10 @@ impl WsConnection {
         provider: &WsProvider,
     ) -> Result<(u128, u128, u128)> {
         let next_blob_fee = self.get_next_blob_fee(provider).await?;
-        let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
+        let max_fee_per_blob_gas = max(
+            next_blob_fee.saturating_mul(2),
+            previous_tx.blob_fee.saturating_mul(2),
+        );
 
         let Eip1559Estimation {
             max_fee_per_gas,
@@ -279,9 +282,17 @@ impl EthApi for WsConnection {
                     .with_blob_sidecar(sidecar)
                     .with_to(*blob_signer_address)
             }
-            _ => TransactionRequest::default()
-                .with_blob_sidecar(sidecar)
-                .with_to(*blob_signer_address),
+            _ => {
+                let blob_fee = self
+                    .get_next_blob_fee(blob_provider)
+                    .await?
+                    .saturating_mul(2);
+
+                TransactionRequest::default()
+                    .with_max_fee_per_blob_gas(blob_fee)
+                    .with_blob_sidecar(sidecar)
+                    .with_to(*blob_signer_address)
+            }
         };
 
         let blob_tx = blob_provider.fill(blob_tx).await?;
