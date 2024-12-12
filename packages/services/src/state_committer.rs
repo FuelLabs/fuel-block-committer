@@ -1,3 +1,5 @@
+mod fee_optimization;
+
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
