@@ -21,6 +21,7 @@ impl<P> SendOrWaitDecider<P> {
 }
 
 impl<P: FeesProvider> SendOrWaitDecider<P> {
+    // TODO: segfault validate blob number
     pub async fn should_send_blob_tx(&self, num_blobs: u32) -> bool {
         let short_term_sma = self
             .price_service
@@ -52,14 +53,9 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::historical_fees::port::{l1::testing::TestFeesProvider, Fees};
-
     use super::*;
-
-    fn constant_fees(num_blocks: u64, fees: Fees) -> Vec<(u64, Fees)> {
-        (0..=num_blocks).map(|height| (height, fees)).collect()
-    }
+    use crate::historical_fees::port::{l1::testing::TestFeesProvider, Fees};
+    use test_case::test_case;
 
     fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {
         let older_fees = std::iter::repeat_n(
@@ -75,35 +71,39 @@ mod tests {
             .collect()
     }
 
-    fn update_last_n_fees(fees: &mut [(u64, Fees)], num_latest: u64, updated_fees: Fees) {
-        fees.iter_mut()
-            .rev()
-            .take(num_latest as usize)
-            .for_each(|(_, f)| *f = updated_fees);
-    }
-
     #[tokio::test]
-    async fn should_send_if_shortterm_prices_lower_than_longterm_ones() {
+    #[test_case(
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
+        Fees { base_fee_per_gas: 20, reward: 20, base_fee_per_blob_gas: 20 },
+        true; "Should send because short-term prices lower than long-term"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
+        Fees { base_fee_per_gas: 10_000, reward: 20, base_fee_per_blob_gas: 20 },
+        false; "Wont send because normal gas too expensive"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
+        Fees { base_fee_per_gas: 20, reward: 20, base_fee_per_blob_gas: 1000 },
+        false; "Wont send because blob gas too expensive"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
+        Fees { base_fee_per_gas: 20, reward: 100_000_000, base_fee_per_blob_gas: 20 },
+        false; "Wont send because rewards too expensive"
+    )]
+    async fn parameterized_send_or_wait_tests(
+        old_fees: Fees,
+        new_fees: Fees,
+        expected_decision: bool,
+    ) {
         // given
         let config = Config {
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
         };
 
-        let fees = generate_fees(
-            config,
-            Fees {
-                base_fee_per_gas: 50,
-                reward: 50,
-                base_fee_per_blob_gas: 50,
-            },
-            Fees {
-                base_fee_per_gas: 20,
-                reward: 20,
-                base_fee_per_blob_gas: 20,
-            },
-        );
-
+        let fees = generate_fees(config, old_fees, new_fees);
         let fees_provider = TestFeesProvider::new(fees);
         let price_service = HistoricalFeesProvider::new(fees_provider);
 
@@ -111,114 +111,12 @@ mod tests {
         let num_blobs = 6;
 
         // when
-        let decision = sut.should_send_blob_tx(num_blobs).await;
+        let should_send = sut.should_send_blob_tx(num_blobs).await;
 
         // then
-        assert!(decision, "Should have sent");
-    }
-
-    #[tokio::test]
-    async fn wont_send_because_normal_gas_too_expensive() {
-        // given
-        let config = Config {
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-        };
-
-        let fees = generate_fees(
-            config,
-            Fees {
-                base_fee_per_gas: 50,
-                reward: 50,
-                base_fee_per_blob_gas: 50,
-            },
-            Fees {
-                base_fee_per_gas: 100,
-                reward: 100_000_000,
-                base_fee_per_blob_gas: 100,
-            },
+        assert_eq!(
+            should_send, expected_decision,
+            "Expected decision: {expected_decision}, got: {should_send}",
         );
-
-        let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
-
-        let sut = SendOrWaitDecider::new(price_service, config);
-        let num_blobs = 6;
-
-        // when
-        let decision = sut.should_send_blob_tx(num_blobs).await;
-
-        // then
-        assert!(!decision, "Should not have sent");
-    }
-
-    #[tokio::test]
-    async fn wont_send_because_blob_gas_too_expensive() {
-        // given
-        let config = Config {
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-        };
-
-        let fees = generate_fees(
-            config,
-            Fees {
-                base_fee_per_gas: 50,
-                reward: 50,
-                base_fee_per_blob_gas: 50,
-            },
-            Fees {
-                base_fee_per_gas: 20,
-                reward: 100_000_000,
-                base_fee_per_blob_gas: 100,
-            },
-        );
-
-        let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
-
-        let sut = SendOrWaitDecider::new(price_service, config);
-        let num_blobs = 6;
-
-        // when
-        let decision = sut.should_send_blob_tx(num_blobs).await;
-
-        // then
-        assert!(!decision, "Should not have sent");
-    }
-
-    #[tokio::test]
-    async fn wont_send_because_rewards_too_expensive() {
-        // given
-        let config = Config {
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-        };
-
-        let fees = generate_fees(
-            config,
-            Fees {
-                base_fee_per_gas: 50,
-                reward: 50,
-                base_fee_per_blob_gas: 50,
-            },
-            Fees {
-                base_fee_per_gas: 20,
-                reward: 100_000_000,
-                base_fee_per_blob_gas: 20,
-            },
-        );
-
-        let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
-
-        let sut = SendOrWaitDecider::new(price_service, config);
-        let num_blobs = 6;
-
-        // when
-        let decision = sut.should_send_blob_tx(num_blobs).await;
-
-        // then
-        assert!(!decision, "Should not have sent");
     }
 }
