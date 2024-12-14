@@ -73,28 +73,65 @@ mod tests {
 
     #[tokio::test]
     #[test_case(
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
-        Fees { base_fee_per_gas: 20, reward: 20, base_fee_per_blob_gas: 20 },
-        true; "Should send because short-term prices lower than long-term"
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },  // Old fees
+        Fees { base_fee_per_gas: 20, reward: 20, base_fee_per_blob_gas: 20 },  // New fees
+        6,                                                                     // num_blobs
+        true; 
+        "Should send because all short-term prices lower than long-term"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
         Fees { base_fee_per_gas: 10_000, reward: 20, base_fee_per_blob_gas: 20 },
-        false; "Wont send because normal gas too expensive"
+        6,
+        false; 
+        "Wont send because normal gas too expensive"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
         Fees { base_fee_per_gas: 20, reward: 20, base_fee_per_blob_gas: 1000 },
-        false; "Wont send because blob gas too expensive"
+        6,
+        false; 
+        "Wont send because blob gas too expensive"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
         Fees { base_fee_per_gas: 20, reward: 100_000_000, base_fee_per_blob_gas: 20 },
-        false; "Wont send because rewards too expensive"
+        6,
+        false; 
+        "Wont send because rewards too expensive"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
+        1,
+        false;
+        "Fees identical"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 500, reward: 500, base_fee_per_blob_gas: 500 },
+        Fees { base_fee_per_gas: 100, reward: 100, base_fee_per_blob_gas: 100 },
+        6,
+        true;
+        "6 blobs significantly cheaper in short-term"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
+        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 70 },
+        6,
+        false;
+        "6 blobs slightly more expensive blob gas in short-term"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 100, reward: 100, base_fee_per_blob_gas: 100 },
+        Fees { base_fee_per_gas: 100, reward: 100, base_fee_per_blob_gas: 100 },
+        5,
+        false;
+        "Five blobs but identical fees"
     )]
     async fn parameterized_send_or_wait_tests(
         old_fees: Fees,
         new_fees: Fees,
+        num_blobs: u32,
         expected_decision: bool,
     ) {
         // given
@@ -108,7 +145,6 @@ mod tests {
         let price_service = HistoricalFeesProvider::new(fees_provider);
 
         let sut = SendOrWaitDecider::new(price_service, config);
-        let num_blobs = 6;
 
         // when
         let should_send = sut.should_send_blob_tx(num_blobs).await;
@@ -116,7 +152,7 @@ mod tests {
         // then
         assert_eq!(
             should_send, expected_decision,
-            "Expected decision: {expected_decision}, got: {should_send}",
+            "For num_blobs={num_blobs}: Expected decision: {expected_decision}, got: {should_send}",
         );
     }
 }
