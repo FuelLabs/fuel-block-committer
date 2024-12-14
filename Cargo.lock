@@ -2673,6 +2673,7 @@ dependencies = [
  "serde",
  "serde_json",
  "services",
+ "static_assertions",
  "test-case",
  "thiserror 1.0.69",
  "tokio",

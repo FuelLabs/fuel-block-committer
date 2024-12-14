@@ -1,13 +1,19 @@
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::{
+    cmp::min,
+    num::{NonZeroU32, NonZeroUsize},
+    ops::RangeInclusive,
+};
 
 use alloy::{
     consensus::BlobTransactionSidecar,
     eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
     primitives::U256,
+    providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE,
 };
 use delegate::delegate;
-use itertools::{izip, Itertools};
+use itertools::{izip, zip, Itertools};
 use services::{
+    fee_analytics::port::{l1::SequentialBlockFees, BlockFees, Fees},
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty, NonNegative,
         TransactionResponse,
@@ -23,6 +29,7 @@ mod websocket;
 pub use alloy::primitives::Address;
 pub use aws::*;
 use fuel_block_committer_encoding::blob::{self, generate_sidecar};
+use static_assertions::const_assert;
 pub use websocket::{L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient};
 
 #[derive(Debug, Copy, Clone)]
@@ -186,13 +193,101 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
     }
 }
 
+impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
+    async fn fees(&self, height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+        const REWARD_PERCENTILE: f64 =
+            alloy::providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE;
+
+        // so that a alloy version bump doesn't surprise us
+        const_assert!(REWARD_PERCENTILE == 20.0,);
+
+        let mut fees = vec![];
+
+        // TODO: segfault see when this can be None
+        // TODO: check edgecases
+        let mut current_height = height_range.clone().min().unwrap();
+        while current_height <= *height_range.end() {
+            // There is a comment in alloy about not doing more than 1024 blocks at a time
+            const RPC_LIMIT: u64 = 1024;
+
+            let upper_bound = min(
+                current_height.saturating_add(RPC_LIMIT),
+                *height_range.end(),
+            );
+
+            let history = self
+                .fees(
+                    current_height..=upper_bound,
+                    std::slice::from_ref(&REWARD_PERCENTILE),
+                )
+                .await
+                .unwrap();
+
+            fees.push(history);
+
+            current_height = upper_bound.saturating_add(1);
+        }
+
+        let new_fees = fees
+            .into_iter()
+            .flat_map(|fees| {
+                // TODO: segfault check if the vector is ever going to have less than 2 elements, maybe
+                // for block count 0?
+                eprintln!("received {fees:?}");
+                let number_of_blocks = fees.base_fee_per_blob_gas.len().checked_sub(1).unwrap();
+                let rewards = fees
+                    .reward
+                    .unwrap()
+                    .into_iter()
+                    .map(|mut perc| perc.pop().unwrap())
+                    .collect_vec();
+
+                let oldest_block = fees.oldest_block;
+
+                debug_assert_eq!(rewards.len(), number_of_blocks);
+
+                izip!(
+                    (oldest_block..),
+                    fees.base_fee_per_gas.into_iter(),
+                    fees.base_fee_per_blob_gas.into_iter(),
+                    rewards
+                )
+                .take(number_of_blocks)
+                .map(
+                    |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| BlockFees {
+                        height,
+                        fees: Fees {
+                            base_fee_per_gas,
+                            reward,
+                            base_fee_per_blob_gas,
+                        },
+                    },
+                )
+            })
+            .collect_vec();
+
+        eprintln!("converted into {new_fees:?}");
+
+        new_fees.try_into().unwrap()
+    }
+
+    async fn current_block_height(&self) -> u64 {
+        self._get_block_number().await.unwrap()
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
     use fuel_block_committer_encoding::blob;
-    use services::block_bundler::port::l1::FragmentEncoder;
+    use services::{
+        block_bundler::port::l1::FragmentEncoder, block_committer::port::l1::Api,
+        fee_analytics::port::l1::FeesProvider,
+    };
 
-    use crate::BlobEncoder;
+    use crate::{BlobEncoder, Signer, Signers};
 
     #[test]
     fn gas_usage_correctly_calculated() {
@@ -206,5 +301,36 @@ mod test {
 
         // then
         assert_eq!(gas_usage, 4 * DATA_GAS_PER_BLOB);
+    }
+
+    #[tokio::test]
+    async fn can_connect_to_eth_mainnet() {
+        let signers = Signers::for_keys(crate::L1Keys {
+            main: crate::L1Key::Private(
+                "98d88144512cc5747fed20bdc81fb820c4785f7411bd65a88526f3b084dc931e".to_string(),
+            ),
+            blob: None,
+        })
+        .await
+        .unwrap();
+
+        let client = crate::WebsocketClient::connect(
+            "wss://ethereum-rpc.publicnode.com".parse().unwrap(),
+            Default::default(),
+            signers,
+            10,
+            crate::TxConfig {
+                tx_max_fee: u128::MAX,
+                send_tx_request_timeout: Duration::MAX,
+            },
+        )
+        .await
+        .unwrap();
+
+        let current_height = client._get_block_number().await.unwrap();
+
+        let fees = FeesProvider::fees(&client, current_height - 1026..=current_height).await;
+
+        panic!("{:?}", fees);
     }
 }
