@@ -1,5 +1,5 @@
 pub mod port {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Fees {
         pub base_fee_per_gas: u128,
         pub reward: u128,
@@ -134,9 +134,9 @@ pub mod port {
                         (
                             i,
                             Fees {
-                                base_fee_per_gas: i as u128,
-                                reward: i as u128,
-                                base_fee_per_blob_gas: i as u128,
+                                base_fee_per_gas: i as u128 + 1,
+                                reward: i as u128 + 1,
+                                base_fee_per_blob_gas: i as u128 + 1,
                             },
                         )
                     })
@@ -146,7 +146,11 @@ pub mod port {
     }
 
     pub mod service {
-        use super::{l1::FeesProvider, Fees};
+        use std::ops::RangeInclusive;
+
+        use nonempty::NonEmpty;
+
+        use super::{l1::FeesProvider, BlockFees, Fees};
 
         pub struct HistoricalFeesProvider<P> {
             fees_provider: P,
@@ -158,14 +162,39 @@ pub mod port {
         }
 
         impl<P: FeesProvider> HistoricalFeesProvider<P> {
-            pub async fn calculate_sma(&self, last_n_blocks: u32) -> Fees {
-                let fees = self.fees_provider.fees(0..=last_n_blocks as u64).await;
+            // TODO: segfault fail or signal if missing blocks/holes present
+            // TODO: segfault cache fees/save to db
+            // TODO: segfault job to update fees in the background
+            pub async fn calculate_sma(&self, last_n_blocks: u64) -> Fees {
+                let current_height = self.fees_provider.current_block_height().await;
 
-                eprintln!("got fees: {:?}", fees);
+                let starting_block = current_height.saturating_sub(last_n_blocks.saturating_sub(1));
+                let fees = self
+                    .fees_provider
+                    .fees(starting_block..=current_height)
+                    .await;
 
-                let a = fees.last().fees;
-                eprintln!("got fees: {:?}", a);
-                a
+                Self::mean(&fees)
+            }
+
+            fn mean(fees: &NonEmpty<BlockFees>) -> Fees {
+                let total = fees
+                    .iter()
+                    .map(|bf| bf.fees)
+                    .fold(Fees::default(), |acc, f| Fees {
+                        base_fee_per_gas: acc.base_fee_per_gas + f.base_fee_per_gas,
+                        reward: acc.reward + f.reward,
+                        base_fee_per_blob_gas: acc.base_fee_per_blob_gas + f.base_fee_per_blob_gas,
+                    });
+
+                let count = fees.len() as u128;
+
+                // TODO: segfault should we round to nearest here?
+                Fees {
+                    base_fee_per_gas: total.base_fee_per_gas.saturating_div(count),
+                    reward: total.reward.saturating_div(count),
+                    base_fee_per_blob_gas: total.base_fee_per_blob_gas.saturating_div(count),
+                }
             }
         }
     }
