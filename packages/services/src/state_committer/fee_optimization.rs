@@ -61,6 +61,20 @@ mod tests {
         (0..=num_blocks).map(|height| (height, fees)).collect()
     }
 
+    fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {
+        let older_fees = std::iter::repeat_n(
+            old_fees,
+            (config.long_term_sma_num_blocks - config.short_term_sma_num_blocks) as usize,
+        );
+        let newer_fees = std::iter::repeat_n(new_fees, config.short_term_sma_num_blocks as usize);
+
+        older_fees
+            .chain(newer_fees)
+            .enumerate()
+            .map(|(i, f)| (i as u64, f))
+            .collect()
+    }
+
     fn update_last_n_fees(fees: &mut [(u64, Fees)], num_latest: u64, updated_fees: Fees) {
         fees.iter_mut()
             .rev()
@@ -76,18 +90,13 @@ mod tests {
             long_term_sma_num_blocks: 6,
         };
 
-        let mut fees = constant_fees(
-            config.long_term_sma_num_blocks,
+        let fees = generate_fees(
+            config,
             Fees {
                 base_fee_per_gas: 50,
                 reward: 50,
                 base_fee_per_blob_gas: 50,
             },
-        );
-
-        update_last_n_fees(
-            &mut fees,
-            config.short_term_sma_num_blocks,
             Fees {
                 base_fee_per_gas: 20,
                 reward: 20,
@@ -116,22 +125,17 @@ mod tests {
             long_term_sma_num_blocks: 6,
         };
 
-        let mut fees = constant_fees(
-            config.long_term_sma_num_blocks,
+        let fees = generate_fees(
+            config,
             Fees {
                 base_fee_per_gas: 50,
                 reward: 50,
                 base_fee_per_blob_gas: 50,
             },
-        );
-
-        update_last_n_fees(
-            &mut fees,
-            config.short_term_sma_num_blocks,
             Fees {
-                base_fee_per_gas: 10000,
-                reward: 20,
-                base_fee_per_blob_gas: 20,
+                base_fee_per_gas: 100,
+                reward: 100_000_000,
+                base_fee_per_blob_gas: 100,
             },
         );
 
@@ -156,22 +160,17 @@ mod tests {
             long_term_sma_num_blocks: 6,
         };
 
-        let mut fees = constant_fees(
-            config.long_term_sma_num_blocks,
+        let fees = generate_fees(
+            config,
             Fees {
                 base_fee_per_gas: 50,
                 reward: 50,
                 base_fee_per_blob_gas: 50,
             },
-        );
-
-        update_last_n_fees(
-            &mut fees,
-            config.short_term_sma_num_blocks,
             Fees {
                 base_fee_per_gas: 20,
-                reward: 20,
-                base_fee_per_blob_gas: 1000,
+                reward: 100_000_000,
+                base_fee_per_blob_gas: 100,
             },
         );
 
@@ -196,18 +195,13 @@ mod tests {
             long_term_sma_num_blocks: 6,
         };
 
-        let mut fees = constant_fees(
-            config.long_term_sma_num_blocks,
+        let fees = generate_fees(
+            config,
             Fees {
                 base_fee_per_gas: 50,
                 reward: 50,
                 base_fee_per_blob_gas: 50,
             },
-        );
-
-        update_last_n_fees(
-            &mut fees,
-            config.short_term_sma_num_blocks,
             Fees {
                 base_fee_per_gas: 20,
                 reward: 100_000_000,
