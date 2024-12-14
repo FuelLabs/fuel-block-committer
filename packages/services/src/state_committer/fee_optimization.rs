@@ -1,4 +1,4 @@
-use crate::historical_fees::port::{l1::FeesProvider, service::HistoricalFeesProvider, Fees};
+use crate::fee_analytics::port::{l1::FeesProvider, service::FeeAnalytics, Fees};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -7,14 +7,14 @@ pub struct Config {
 }
 
 pub struct SendOrWaitDecider<P> {
-    price_service: HistoricalFeesProvider<P>,
+    fee_analytics: FeeAnalytics<P>,
     config: Config,
 }
 
 impl<P> SendOrWaitDecider<P> {
-    pub fn new(price_service: HistoricalFeesProvider<P>, config: Config) -> Self {
+    pub fn new(fee_analytics: FeeAnalytics<P>, config: Config) -> Self {
         Self {
-            price_service,
+            fee_analytics,
             config,
         }
     }
@@ -24,12 +24,12 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
     // TODO: segfault validate blob number
     pub async fn should_send_blob_tx(&self, num_blobs: u32) -> bool {
         let short_term_sma = self
-            .price_service
+            .fee_analytics
             .calculate_sma(self.config.short_term_sma_num_blocks)
             .await;
 
         let long_term_sma = self
-            .price_service
+            .fee_analytics
             .calculate_sma(self.config.long_term_sma_num_blocks)
             .await;
 
@@ -54,7 +54,7 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::historical_fees::port::{l1::testing::TestFeesProvider, Fees};
+    use crate::fee_analytics::port::{l1::testing::TestFeesProvider, Fees};
     use test_case::test_case;
 
     // Function to generate historical fees data
@@ -171,9 +171,9 @@ mod tests {
 
         let fees = generate_fees(config, old_fees, new_fees);
         let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
+        let analytics_service = FeeAnalytics::new(fees_provider);
 
-        let sut = SendOrWaitDecider::new(price_service, config);
+        let sut = SendOrWaitDecider::new(analytics_service, config);
 
         // When
         let should_send = sut.should_send_blob_tx(num_blobs).await;

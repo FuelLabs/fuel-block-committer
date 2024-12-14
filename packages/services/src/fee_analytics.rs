@@ -80,7 +80,7 @@ pub mod port {
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
         pub trait FeesProvider {
-            async fn fees(&self, height_range: RangeInclusive<u64>) -> NonEmpty<super::BlockFees>;
+            async fn fees(&self, height_range: RangeInclusive<u64>) -> SequentialBlockFees;
             async fn current_block_height(&self) -> u64;
         }
 
@@ -88,14 +88,15 @@ pub mod port {
         pub mod testing {
             use std::{collections::BTreeMap, ops::RangeInclusive};
 
+            use itertools::Itertools;
             use nonempty::NonEmpty;
 
             use crate::{
-                historical_fees::port::{BlockFees, Fees},
+                fee_analytics::port::{BlockFees, Fees},
                 types::CollectNonEmpty,
             };
 
-            use super::FeesProvider;
+            use super::{FeesProvider, SequentialBlockFees};
 
             pub struct TestFeesProvider {
                 fees: BTreeMap<u64, Fees>,
@@ -106,8 +107,9 @@ pub mod port {
                     *self.fees.keys().last().unwrap()
                 }
 
-                async fn fees(&self, height_range: RangeInclusive<u64>) -> NonEmpty<BlockFees> {
-                    self.fees
+                async fn fees(&self, height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+                    let fees = self
+                        .fees
                         .iter()
                         .skip_while(|(height, _)| !height_range.contains(height))
                         .take_while(|(height, _)| height_range.contains(height))
@@ -115,8 +117,9 @@ pub mod port {
                             height: *height,
                             fees: *fees,
                         })
-                        .collect_nonempty()
-                        .unwrap()
+                        .collect_vec();
+
+                    fees.try_into().unwrap()
                 }
             }
 
@@ -146,22 +149,24 @@ pub mod port {
     }
 
     pub mod service {
-        
 
         use nonempty::NonEmpty;
 
-        use super::{l1::FeesProvider, BlockFees, Fees};
+        use super::{
+            l1::{FeesProvider, SequentialBlockFees},
+            BlockFees, Fees,
+        };
 
-        pub struct HistoricalFeesProvider<P> {
+        pub struct FeeAnalytics<P> {
             fees_provider: P,
         }
-        impl<P> HistoricalFeesProvider<P> {
+        impl<P> FeeAnalytics<P> {
             pub fn new(fees_provider: P) -> Self {
                 Self { fees_provider }
             }
         }
 
-        impl<P: FeesProvider> HistoricalFeesProvider<P> {
+        impl<P: FeesProvider> FeeAnalytics<P> {
             // TODO: segfault fail or signal if missing blocks/holes present
             // TODO: segfault cache fees/save to db
             // TODO: segfault job to update fees in the background
@@ -174,20 +179,20 @@ pub mod port {
                     .fees(starting_block..=current_height)
                     .await;
 
-                Self::mean(&fees)
+                Self::mean(fees)
             }
 
-            fn mean(fees: &NonEmpty<BlockFees>) -> Fees {
+            fn mean(fees: SequentialBlockFees) -> Fees {
+                let count = fees.len() as u128;
+
                 let total = fees
-                    .iter()
+                    .into_iter()
                     .map(|bf| bf.fees)
                     .fold(Fees::default(), |acc, f| Fees {
                         base_fee_per_gas: acc.base_fee_per_gas + f.base_fee_per_gas,
                         reward: acc.reward + f.reward,
                         base_fee_per_blob_gas: acc.base_fee_per_blob_gas + f.base_fee_per_blob_gas,
                     });
-
-                let count = fees.len() as u128;
 
                 // TODO: segfault should we round to nearest here?
                 Fees {
@@ -207,7 +212,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn given_sequential_block_fees_when_valid_then_creation_succeeds() {
+    fn can_create_valid_sequential_fees() {
         // Given
         let block_fees = vec![
             BlockFees {
@@ -241,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn given_sequential_block_fees_when_empty_then_creation_fails() {
+    fn sequential_fees_cannot_be_empty() {
         // Given
         let block_fees: Vec<BlockFees> = vec![];
 
@@ -260,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn given_sequential_block_fees_when_non_sequential_then_creation_fails() {
+    fn fees_must_be_sequential() {
         // Given
         let block_fees = vec![
             BlockFees {
@@ -295,24 +300,27 @@ mod tests {
         );
     }
 
+    // TODO: segfault add more tests so that the in-order iteration invariant is properly tested
     #[test]
-    fn given_sequential_block_fees_when_valid_then_can_iterate_over_fees() {
+    fn produced_iterator_gives_correct_values() {
         // Given
+        // notice the heights are out of order so that we validate that the returned sequence is in
+        // order
         let block_fees = vec![
-            BlockFees {
-                height: 1,
-                fees: Fees {
-                    base_fee_per_gas: 100,
-                    reward: 50,
-                    base_fee_per_blob_gas: 10,
-                },
-            },
             BlockFees {
                 height: 2,
                 fees: Fees {
                     base_fee_per_gas: 110,
                     reward: 55,
                     base_fee_per_blob_gas: 15,
+                },
+            },
+            BlockFees {
+                height: 1,
+                fees: Fees {
+                    base_fee_per_gas: 100,
+                    reward: 50,
+                    base_fee_per_blob_gas: 10,
                 },
             },
         ];
