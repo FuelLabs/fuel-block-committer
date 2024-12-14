@@ -2,6 +2,7 @@ use crate::fee_analytics::port::{l1::FeesProvider, service::FeeAnalytics, Fees};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
+    pub sma_activation_fee_treshold: u128,
     pub short_term_sma_num_blocks: u64,
     pub long_term_sma_num_blocks: u64,
 }
@@ -34,6 +35,10 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             .await;
 
         let short_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
+        if short_term_tx_price < self.config.sma_activation_fee_treshold {
+            return true;
+        }
+
         let long_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
 
         short_term_tx_price < long_term_tx_price
@@ -72,18 +77,35 @@ mod tests {
             .collect()
     }
 
-    #[tokio::test]
     #[test_case(
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 }, // Old fees
         Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 }, // New fees
-        10,                                                                    // num_blobs
+        6,
+        0,
         true; 
         "Should send because all short-term fees are lower than long-term"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },  // Old fees
+        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },// New fees
+        6,
+        0,
+        false; 
+        "Should not send because all short-term fees are higher than long-term"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },  // Old fees
+        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },// New fees
+        6,
+        21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
+        true; 
+        "Should send since we're below the activation fee threshold, even if all short-term fees are higher than long-term"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
         Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000 }, // New fees
         5,
+        0,
         true;
         "Should send because short-term base_fee_per_gas is lower"
     )]
@@ -91,6 +113,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
         Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000 }, // New fees
         5,
+        0,
         false;
         "Should not send because short-term base_fee_per_gas is higher"
     )]
@@ -98,6 +121,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 900 },  // New fees
         5,
+        0,
         true;
         "Should send because short-term base_fee_per_blob_gas is lower"
     )]
@@ -105,6 +129,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1100 }, // New fees
         5,
+        0,
         false;
         "Should not send because short-term base_fee_per_blob_gas is higher"
     )]
@@ -112,6 +137,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
         Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000 },  // New fees
         5,
+        0,
         true;
         "Should send because short-term reward is lower"
     )]
@@ -119,26 +145,30 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
         Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000 }, // New fees
         5,
+        0,
         false;
         "Should not send because short-term reward is higher"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 4000, reward: 8000, base_fee_per_blob_gas: 4000 }, // Old fees
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500 }, // New fees
-        10,
+        6,
+        0,
         true;
         "Should send because multiple short-term fees are lower"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 }, // Old fees
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 }, // New fees
-        10,
+        6,
+        0,
         false;
         "Should not send because all fees are identical"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 }, // Old fees
         Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000 }, // New fees
+        0,
         0,
         true;
         "Zero blobs but short-term base_fee_per_gas and reward are lower"
@@ -147,6 +177,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 }, // Old fees
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000 }, // New fees
         0,
+        0,
         false;
         "Zero blobs but short-term reward is higher"
     )]
@@ -154,17 +185,21 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 }, // Old fees
         Fees { base_fee_per_gas: 2000, reward: 7000, base_fee_per_blob_gas: 50_000_000 }, // New fees
         0,
+        0,
         true;
         "Zero blobs dont care about higher short-term base_fee_per_blob_gas"
     )]
+    #[tokio::test]
     async fn parameterized_send_or_wait_tests(
         old_fees: Fees,
         new_fees: Fees,
         num_blobs: u32,
+        activation_fee_treshold: u128,
         expected_decision: bool,
     ) {
         // Given
         let config = Config {
+            sma_activation_fee_treshold: activation_fee_treshold,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
         };
