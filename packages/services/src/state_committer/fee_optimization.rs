@@ -1,9 +1,4 @@
-use std::{ops::RangeInclusive, time::Duration};
-
 use crate::historical_fees::port::{l1::FeesProvider, service::HistoricalFeesProvider, Fees};
-use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
-use nonempty::NonEmpty;
-use rayon::range_inclusive;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -39,10 +34,6 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 
         let short_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
         let long_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
-        eprintln!(
-            "Short term: {:?}, Long term: {:?}, Short term tx price: {}, Long term tx price: {}",
-            short_term_sma, long_term_sma, short_term_tx_price, long_term_tx_price
-        );
 
         short_term_tx_price < long_term_tx_price
     }
@@ -61,19 +52,21 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{BTreeMap, BTreeSet, HashMap},
-        time::Duration,
-    };
 
-    use crate::historical_fees::port::{
-        l1::testing::{incrementing_fees, TestFeesProvider},
-        BlockFees, Fees,
-    };
-
-    use crate::types::CollectNonEmpty;
+    use crate::historical_fees::port::{l1::testing::TestFeesProvider, Fees};
 
     use super::*;
+
+    fn constant_fees(num_blocks: u64, fees: Fees) -> Vec<(u64, Fees)> {
+        (0..=num_blocks).map(|height| (height, fees)).collect()
+    }
+
+    fn update_last_n_fees(fees: &mut [(u64, Fees)], num_latest: u64, updated_fees: Fees) {
+        fees.iter_mut()
+            .rev()
+            .take(num_latest as usize)
+            .for_each(|(_, f)| *f = updated_fees);
+    }
 
     #[tokio::test]
     async fn should_send_if_shortterm_prices_lower_than_longterm_ones() {
@@ -82,78 +75,28 @@ mod tests {
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
         };
-        let fees = [
-            (
-                1,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                2,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                3,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                4,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                5,
-                Fees {
-                    base_fee_per_gas: 20,
-                    reward: 20,
-                    base_fee_per_blob_gas: 20,
-                },
-            ),
-            (
-                6,
-                Fees {
-                    base_fee_per_gas: 20,
-                    reward: 20,
-                    base_fee_per_blob_gas: 20,
-                },
-            ),
-        ];
 
-        let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
-
-        let short_sma = price_service.calculate_sma(2).await;
-        let long_sma = price_service.calculate_sma(6).await;
-        assert_eq!(
-            long_sma,
+        let mut fees = constant_fees(
+            config.long_term_sma_num_blocks,
             Fees {
-                base_fee_per_gas: 40,
-                reward: 40,
-                base_fee_per_blob_gas: 40
-            }
+                base_fee_per_gas: 50,
+                reward: 50,
+                base_fee_per_blob_gas: 50,
+            },
         );
-        assert_eq!(
-            short_sma,
+
+        update_last_n_fees(
+            &mut fees,
+            config.short_term_sma_num_blocks,
             Fees {
                 base_fee_per_gas: 20,
                 reward: 20,
-                base_fee_per_blob_gas: 20
-            }
+                base_fee_per_blob_gas: 20,
+            },
         );
+
+        let fees_provider = TestFeesProvider::new(fees);
+        let price_service = HistoricalFeesProvider::new(fees_provider);
 
         let sut = SendOrWaitDecider::new(price_service, config);
         let num_blobs = 6;
@@ -172,78 +115,28 @@ mod tests {
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
         };
-        let fees = [
-            (
-                1,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                2,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                3,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                4,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                5,
-                Fees {
-                    base_fee_per_gas: 10000,
-                    reward: 20,
-                    base_fee_per_blob_gas: 20,
-                },
-            ),
-            (
-                6,
-                Fees {
-                    base_fee_per_gas: 10000,
-                    reward: 20,
-                    base_fee_per_blob_gas: 20,
-                },
-            ),
-        ];
 
-        let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
-
-        let short_sma = price_service.calculate_sma(2).await;
-        let long_sma = price_service.calculate_sma(6).await;
-        assert_eq!(
-            long_sma,
+        let mut fees = constant_fees(
+            config.long_term_sma_num_blocks,
             Fees {
-                base_fee_per_gas: 3366,
-                reward: 40,
-                base_fee_per_blob_gas: 40
-            }
+                base_fee_per_gas: 50,
+                reward: 50,
+                base_fee_per_blob_gas: 50,
+            },
         );
-        assert_eq!(
-            short_sma,
+
+        update_last_n_fees(
+            &mut fees,
+            config.short_term_sma_num_blocks,
             Fees {
                 base_fee_per_gas: 10000,
                 reward: 20,
-                base_fee_per_blob_gas: 20
-            }
+                base_fee_per_blob_gas: 20,
+            },
         );
+
+        let fees_provider = TestFeesProvider::new(fees);
+        let price_service = HistoricalFeesProvider::new(fees_provider);
 
         let sut = SendOrWaitDecider::new(price_service, config);
         let num_blobs = 6;
@@ -262,78 +155,28 @@ mod tests {
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
         };
-        let fees = [
-            (
-                1,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                2,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                3,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                4,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                5,
-                Fees {
-                    base_fee_per_gas: 20,
-                    reward: 20,
-                    base_fee_per_blob_gas: 1000,
-                },
-            ),
-            (
-                6,
-                Fees {
-                    base_fee_per_gas: 20,
-                    reward: 20,
-                    base_fee_per_blob_gas: 1000,
-                },
-            ),
-        ];
 
-        let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
-
-        let short_sma = price_service.calculate_sma(2).await;
-        let long_sma = price_service.calculate_sma(6).await;
-        assert_eq!(
-            long_sma,
+        let mut fees = constant_fees(
+            config.long_term_sma_num_blocks,
             Fees {
-                base_fee_per_gas: 40,
-                reward: 40,
-                base_fee_per_blob_gas: 366
-            }
+                base_fee_per_gas: 50,
+                reward: 50,
+                base_fee_per_blob_gas: 50,
+            },
         );
-        assert_eq!(
-            short_sma,
+
+        update_last_n_fees(
+            &mut fees,
+            config.short_term_sma_num_blocks,
             Fees {
                 base_fee_per_gas: 20,
                 reward: 20,
-                base_fee_per_blob_gas: 1000
-            }
+                base_fee_per_blob_gas: 1000,
+            },
         );
+
+        let fees_provider = TestFeesProvider::new(fees);
+        let price_service = HistoricalFeesProvider::new(fees_provider);
 
         let sut = SendOrWaitDecider::new(price_service, config);
         let num_blobs = 6;
@@ -352,78 +195,28 @@ mod tests {
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
         };
-        let fees = [
-            (
-                1,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                2,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                3,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                4,
-                Fees {
-                    base_fee_per_gas: 50,
-                    reward: 50,
-                    base_fee_per_blob_gas: 50,
-                },
-            ),
-            (
-                5,
-                Fees {
-                    base_fee_per_gas: 20,
-                    reward: 100_000_000,
-                    base_fee_per_blob_gas: 20,
-                },
-            ),
-            (
-                6,
-                Fees {
-                    base_fee_per_gas: 20,
-                    reward: 100_000_000,
-                    base_fee_per_blob_gas: 20,
-                },
-            ),
-        ];
 
-        let fees_provider = TestFeesProvider::new(fees);
-        let price_service = HistoricalFeesProvider::new(fees_provider);
-
-        let short_sma = price_service.calculate_sma(2).await;
-        let long_sma = price_service.calculate_sma(6).await;
-        assert_eq!(
-            long_sma,
+        let mut fees = constant_fees(
+            config.long_term_sma_num_blocks,
             Fees {
-                base_fee_per_gas: 40,
-                reward: 33333366,
-                base_fee_per_blob_gas: 40,
-            }
+                base_fee_per_gas: 50,
+                reward: 50,
+                base_fee_per_blob_gas: 50,
+            },
         );
-        assert_eq!(
-            short_sma,
+
+        update_last_n_fees(
+            &mut fees,
+            config.short_term_sma_num_blocks,
             Fees {
                 base_fee_per_gas: 20,
                 reward: 100_000_000,
-                base_fee_per_blob_gas: 20
-            }
+                base_fee_per_blob_gas: 20,
+            },
         );
+
+        let fees_provider = TestFeesProvider::new(fees);
+        let price_service = HistoricalFeesProvider::new(fees_provider);
 
         let sut = SendOrWaitDecider::new(price_service, config);
         let num_blobs = 6;

@@ -1,14 +1,8 @@
-use std::{collections::BTreeMap, ops::RangeInclusive};
 
-use nonempty::NonEmpty;
-use services::{
-    historical_fees::port::{
-        l1::{testing, FeesProvider},
+use services::historical_fees::port::{
+        l1::testing,
         service::HistoricalFeesProvider,
-        BlockFees, Fees,
-    },
-    types::CollectNonEmpty,
-};
+    };
 
 #[tokio::test]
 async fn calculates_sma_correctly_for_last_1_block() {
