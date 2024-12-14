@@ -57,6 +57,7 @@ mod tests {
     use crate::historical_fees::port::{l1::testing::TestFeesProvider, Fees};
     use test_case::test_case;
 
+    // Function to generate historical fees data
     fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {
         let older_fees = std::iter::repeat_n(
             old_fees,
@@ -73,60 +74,88 @@ mod tests {
 
     #[tokio::test]
     #[test_case(
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },  // Old fees
-        Fees { base_fee_per_gas: 20, reward: 20, base_fee_per_blob_gas: 20 },  // New fees
-        6,                                                                     // num_blobs
+        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 }, // Old fees
+        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 }, // New fees
+        10,                                                                    // num_blobs
         true; 
-        "Should send because all short-term prices lower than long-term"
+        "Should send because all short-term fees are lower than long-term"
     )]
     #[test_case(
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
-        Fees { base_fee_per_gas: 10_000, reward: 20, base_fee_per_blob_gas: 20 },
-        6,
-        false; 
-        "Wont send because normal gas too expensive"
-    )]
-    #[test_case(
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
-        Fees { base_fee_per_gas: 20, reward: 20, base_fee_per_blob_gas: 1000 },
-        6,
-        false; 
-        "Wont send because blob gas too expensive"
-    )]
-    #[test_case(
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
-        Fees { base_fee_per_gas: 20, reward: 100_000_000, base_fee_per_blob_gas: 20 },
-        6,
-        false; 
-        "Wont send because rewards too expensive"
-    )]
-    #[test_case(
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
-        1,
-        false;
-        "Fees identical"
-    )]
-    #[test_case(
-        Fees { base_fee_per_gas: 500, reward: 500, base_fee_per_blob_gas: 500 },
-        Fees { base_fee_per_gas: 100, reward: 100, base_fee_per_blob_gas: 100 },
-        6,
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
+        Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000 }, // New fees
+        5,
         true;
-        "6 blobs significantly cheaper in short-term"
+        "Should send because short-term base_fee_per_gas is lower"
     )]
     #[test_case(
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 50 },
-        Fees { base_fee_per_gas: 50, reward: 50, base_fee_per_blob_gas: 70 },
-        6,
-        false;
-        "6 blobs slightly more expensive blob gas in short-term"
-    )]
-    #[test_case(
-        Fees { base_fee_per_gas: 100, reward: 100, base_fee_per_blob_gas: 100 },
-        Fees { base_fee_per_gas: 100, reward: 100, base_fee_per_blob_gas: 100 },
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
+        Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000 }, // New fees
         5,
         false;
-        "Five blobs but identical fees"
+        "Should not send because short-term base_fee_per_gas is higher"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 900 },  // New fees
+        5,
+        true;
+        "Should send because short-term base_fee_per_blob_gas is lower"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1100 }, // New fees
+        5,
+        false;
+        "Should not send because short-term base_fee_per_blob_gas is higher"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
+        Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000 },  // New fees
+        5,
+        true;
+        "Should send because short-term reward is lower"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 }, // Old fees
+        Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000 }, // New fees
+        5,
+        false;
+        "Should not send because short-term reward is higher"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 4000, reward: 8000, base_fee_per_blob_gas: 4000 }, // Old fees
+        Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500 }, // New fees
+        10,
+        true;
+        "Should send because multiple short-term fees are lower"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 }, // Old fees
+        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 }, // New fees
+        10,
+        false;
+        "Should not send because all fees are identical"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 }, // Old fees
+        Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000 }, // New fees
+        0,
+        true;
+        "Zero blobs but short-term base_fee_per_gas and reward are lower"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 }, // Old fees
+        Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000 }, // New fees
+        0,
+        false;
+        "Zero blobs but short-term reward is higher"
+    )]
+    #[test_case(
+        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 }, // Old fees
+        Fees { base_fee_per_gas: 2000, reward: 7000, base_fee_per_blob_gas: 50_000_000 }, // New fees
+        0,
+        true;
+        "Zero blobs dont care about higher short-term base_fee_per_blob_gas"
     )]
     async fn parameterized_send_or_wait_tests(
         old_fees: Fees,
@@ -134,7 +163,7 @@ mod tests {
         num_blobs: u32,
         expected_decision: bool,
     ) {
-        // given
+        // Given
         let config = Config {
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
@@ -146,10 +175,10 @@ mod tests {
 
         let sut = SendOrWaitDecider::new(price_service, config);
 
-        // when
+        // When
         let should_send = sut.should_send_blob_tx(num_blobs).await;
 
-        // then
+        // Then
         assert_eq!(
             should_send, expected_decision,
             "For num_blobs={num_blobs}: Expected decision: {expected_decision}, got: {should_send}",
