@@ -1,10 +1,26 @@
 use crate::fee_analytics::port::{l1::FeesProvider, service::FeeAnalytics, Fees};
 
+// TODO: segfault validate percentages
+#[derive(Debug, Clone, Copy)]
+pub enum ComparisonStrategy {
+    /// Short-term fee must be at most (1 - percentage) of the long-term fee.
+    /// For example, if percentage = 0.1 (10%), then:
+    /// short_term ≤ long_term * 0.9.
+    StrictlyLessOrEqualByPercent(f64),
+
+    /// Short-term fee may be more expensive, but not by more than the given percentage.
+    /// For example, if percentage = 0.1 (10%), then:
+    /// short_term ≤ long_term * 1.1.
+    /// Short-term can be cheaper by any amount.
+    WithinVicinityOfPriceByPercent(f64),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub sma_activation_fee_treshold: u128,
     pub short_term_sma_num_blocks: u64,
     pub long_term_sma_num_blocks: u64,
+    pub comparison_strategy: ComparisonStrategy,
 }
 
 pub struct SendOrWaitDecider<P> {
@@ -35,13 +51,30 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             .await;
 
         let short_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
+
         if short_term_tx_price < self.config.sma_activation_fee_treshold {
             return true;
         }
 
         let long_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
 
-        short_term_tx_price < long_term_tx_price
+        let percentage = match self.config.comparison_strategy {
+            ComparisonStrategy::StrictlyLessOrEqualByPercent(p) => 1.0 - p,
+            ComparisonStrategy::WithinVicinityOfPriceByPercent(p) => 1.0 + p,
+        };
+
+        // TODO: segfault proper type conversions
+        let allowed_max = (long_term_tx_price as f64 * percentage) as u128;
+
+        eprintln!(
+            "Short-term: {}, Long-term: {}, Allowed max: {}, diff: {}",
+            short_term_tx_price,
+            long_term_tx_price,
+            allowed_max,
+            short_term_tx_price.saturating_sub(allowed_max)
+        );
+
+        short_term_tx_price <= allowed_max
     }
 
     // TODO: Segfault maybe dont leak so much eth abstractions
@@ -82,7 +115,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 }, // New fees
         6,
         0,
-        true; 
+        true;
         "Should send because all short-term fees are lower than long-term"
     )]
     #[test_case(
@@ -90,7 +123,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },// New fees
         6,
         0,
-        false; 
+        false;
         "Should not send because all short-term fees are higher than long-term"
     )]
     #[test_case(
@@ -98,7 +131,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },// New fees
         6,
         21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
-        true; 
+        true;
         "Should send since we're below the activation fee threshold, even if all short-term fees are higher than long-term"
     )]
     #[test_case(
@@ -202,6 +235,7 @@ mod tests {
             sma_activation_fee_treshold: activation_fee_treshold,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
+            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0),
         };
 
         let fees = generate_fees(config, old_fees, new_fees);
