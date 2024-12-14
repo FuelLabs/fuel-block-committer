@@ -39,15 +39,17 @@ impl<P> SendOrWaitDecider<P> {
 
 impl<P: FeesProvider> SendOrWaitDecider<P> {
     // TODO: segfault validate blob number
-    pub async fn should_send_blob_tx(&self, num_blobs: u32) -> bool {
+    pub async fn should_send_blob_tx(&self, num_blobs: u32, at_block_height: u64) -> bool {
         let short_term_sma = self
             .fee_analytics
-            .calculate_sma(self.config.short_term_sma_num_blocks)
+            .calculate_sma(
+                at_block_height - self.config.short_term_sma_num_blocks..=at_block_height,
+            )
             .await;
 
         let long_term_sma = self
             .fee_analytics
-            .calculate_sma(self.config.long_term_sma_num_blocks)
+            .calculate_sma(at_block_height - self.config.long_term_sma_num_blocks..=at_block_height)
             .await;
 
         let short_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
@@ -66,13 +68,13 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         // TODO: segfault proper type conversions, probably max(,,) - min(,,) <= delta
         let treshold = (long_term_tx_price as f64 * percentage) as u128;
 
-        eprintln!(
-            "Short-term: {}, Long-term: {}, Allowed max: {}, diff: {}",
-            short_term_tx_price,
-            long_term_tx_price,
-            treshold,
-            short_term_tx_price.saturating_sub(treshold)
-        );
+        // eprintln!(
+        //     "Short-term: {}, Long-term: {}, Allowed max: {}, diff: {}",
+        //     short_term_tx_price,
+        //     long_term_tx_price,
+        //     treshold,
+        //     short_term_tx_price.saturating_sub(treshold)
+        // );
 
         short_term_tx_price < treshold
     }
@@ -370,11 +372,14 @@ mod tests {
     ) {
         let fees = generate_fees(config, old_fees, new_fees);
         let fees_provider = TestFeesProvider::new(fees);
+        let current_block_height = fees_provider.current_block_height().await;
         let analytics_service = FeeAnalytics::new(fees_provider);
 
         let sut = SendOrWaitDecider::new(analytics_service, config);
 
-        let should_send = sut.should_send_blob_tx(num_blobs).await;
+        let should_send = sut
+            .should_send_blob_tx(num_blobs, current_block_height)
+            .await;
 
         assert_eq!(
             should_send, expected_decision,

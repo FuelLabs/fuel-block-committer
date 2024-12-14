@@ -66,10 +66,11 @@ pub mod port {
                     .tuple_windows()
                     .all(|(l, r)| l.height + 1 == r.height);
 
+                let heights = fees.iter().map(|f| f.height).collect::<Vec<_>>();
                 if !is_sequential {
-                    return Err(InvalidSequence(
-                        "blocks are not sequential by height".to_string(),
-                    ));
+                    return Err(InvalidSequence(format!(
+                        "blocks are not sequential by height: {heights:?}"
+                    )));
                 }
 
                 Ok(Self { fees })
@@ -98,6 +99,7 @@ pub mod port {
 
             use super::{FeesProvider, SequentialBlockFees};
 
+            #[derive(Debug, Clone)]
             pub struct TestFeesProvider {
                 fees: BTreeMap<u64, Fees>,
             }
@@ -150,6 +152,8 @@ pub mod port {
 
     pub mod service {
 
+        use std::ops::RangeInclusive;
+
         use nonempty::NonEmpty;
 
         use super::{
@@ -170,14 +174,8 @@ pub mod port {
             // TODO: segfault fail or signal if missing blocks/holes present
             // TODO: segfault cache fees/save to db
             // TODO: segfault job to update fees in the background
-            pub async fn calculate_sma(&self, last_n_blocks: u64) -> Fees {
-                let current_height = self.fees_provider.current_block_height().await;
-
-                let starting_block = current_height.saturating_sub(last_n_blocks.saturating_sub(1));
-                let fees = self
-                    .fees_provider
-                    .fees(starting_block..=current_height)
-                    .await;
+            pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> Fees {
+                let fees = self.fees_provider.fees(block_range).await;
 
                 Self::mean(fees)
             }

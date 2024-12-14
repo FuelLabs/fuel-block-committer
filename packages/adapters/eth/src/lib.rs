@@ -2,6 +2,7 @@ use std::{
     cmp::min,
     num::{NonZeroU32, NonZeroUsize},
     ops::RangeInclusive,
+    time::Duration,
 };
 
 use alloy::{
@@ -35,6 +36,29 @@ pub use websocket::{L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient};
 #[derive(Debug, Copy, Clone)]
 pub struct BlobEncoder;
 
+pub async fn make_pub_eth_client() -> WebsocketClient {
+    let signers = Signers::for_keys(crate::L1Keys {
+        main: crate::L1Key::Private(
+            "98d88144512cc5747fed20bdc81fb820c4785f7411bd65a88526f3b084dc931e".to_string(),
+        ),
+        blob: None,
+    })
+    .await
+    .unwrap();
+
+    crate::WebsocketClient::connect(
+        "wss://ethereum-rpc.publicnode.com".parse().unwrap(),
+        Default::default(),
+        signers,
+        10,
+        crate::TxConfig {
+            tx_max_fee: u128::MAX,
+            send_tx_request_timeout: Duration::MAX,
+        },
+    )
+    .await
+    .unwrap()
+}
 impl BlobEncoder {
     #[cfg(feature = "test-helpers")]
     pub const FRAGMENT_SIZE: usize = BYTES_PER_BLOB;
@@ -211,7 +235,7 @@ impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
             const RPC_LIMIT: u64 = 1024;
 
             let upper_bound = min(
-                current_height.saturating_add(RPC_LIMIT),
+                current_height.saturating_add(RPC_LIMIT).saturating_sub(1),
                 *height_range.end(),
             );
 
@@ -223,6 +247,11 @@ impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
                 .await
                 .unwrap();
 
+            assert_eq!(
+                history.reward.as_ref().unwrap().len(),
+                (current_height..=upper_bound).count()
+            );
+
             fees.push(history);
 
             current_height = upper_bound.saturating_add(1);
@@ -233,7 +262,7 @@ impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
             .flat_map(|fees| {
                 // TODO: segfault check if the vector is ever going to have less than 2 elements, maybe
                 // for block count 0?
-                eprintln!("received {fees:?}");
+                // eprintln!("received {fees:?}");
                 let number_of_blocks = fees.base_fee_per_blob_gas.len().checked_sub(1).unwrap();
                 let rewards = fees
                     .reward
@@ -266,7 +295,7 @@ impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
             })
             .collect_vec();
 
-        eprintln!("converted into {new_fees:?}");
+        // eprintln!("converted into {new_fees:?}");
 
         new_fees.try_into().unwrap()
     }
@@ -303,34 +332,12 @@ mod test {
         assert_eq!(gas_usage, 4 * DATA_GAS_PER_BLOB);
     }
 
-    #[tokio::test]
-    async fn can_connect_to_eth_mainnet() {
-        let signers = Signers::for_keys(crate::L1Keys {
-            main: crate::L1Key::Private(
-                "98d88144512cc5747fed20bdc81fb820c4785f7411bd65a88526f3b084dc931e".to_string(),
-            ),
-            blob: None,
-        })
-        .await
-        .unwrap();
-
-        let client = crate::WebsocketClient::connect(
-            "wss://ethereum-rpc.publicnode.com".parse().unwrap(),
-            Default::default(),
-            signers,
-            10,
-            crate::TxConfig {
-                tx_max_fee: u128::MAX,
-                send_tx_request_timeout: Duration::MAX,
-            },
-        )
-        .await
-        .unwrap();
-
-        let current_height = client._get_block_number().await.unwrap();
-
-        let fees = FeesProvider::fees(&client, current_height - 1026..=current_height).await;
-
-        panic!("{:?}", fees);
-    }
+    // #[tokio::test]
+    // async fn can_connect_to_eth_mainnet() {
+    //     let current_height = client._get_block_number().await.unwrap();
+    //
+    //     let fees = FeesProvider::fees(&client, current_height - 1026..=current_height).await;
+    //
+    //     panic!("{:?}", fees);
+    // }
 }
