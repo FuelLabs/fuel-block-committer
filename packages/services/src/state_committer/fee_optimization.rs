@@ -1,26 +1,27 @@
+use std::cmp::min;
+
 use crate::fee_analytics::port::{l1::FeesProvider, service::FeeAnalytics, Fees};
 
-// TODO: segfault validate percentages
 #[derive(Debug, Clone, Copy)]
-pub enum ComparisonStrategy {
-    /// Short-term fee must be at most (1 - percentage) of the long-term fee.
-    /// For example, if percentage = 0.1 (10%), then:
-    /// short_term ≤ long_term * 0.9.
-    StrictlyLessOrEqualByPercent(f64),
+pub struct SmaBlockNumPeriods {
+    pub short: u64,
+    pub long: u64,
+}
 
-    /// Short-term fee may be more expensive, but not by more than the given percentage.
-    /// For example, if percentage = 0.1 (10%), then:
-    /// short_term ≤ long_term * 1.1.
-    /// Short-term can be cheaper by any amount.
-    WithinVicinityOfPriceByPercent(f64),
+// TODO: segfault validate start discount is less than end premium and both are positive
+#[derive(Debug, Clone, Copy)]
+pub struct Feethresholds {
+    // TODO: segfault validate not 0
+    pub max_l2_blocks_behind: u64,
+    pub start_discount_percentage: f64,
+    pub end_premium_percentage: f64,
+    pub always_acceptable_fee: u128,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
-    pub sma_activation_fee_treshold: u128,
-    pub short_term_sma_num_blocks: u64,
-    pub long_term_sma_num_blocks: u64,
-    pub comparison_strategy: ComparisonStrategy,
+    pub sma_periods: SmaBlockNumPeriods,
+    pub fee_thresholds: Feethresholds,
 }
 
 pub struct SendOrWaitDecider<P> {
@@ -37,46 +38,75 @@ impl<P> SendOrWaitDecider<P> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Context {
+    pub num_l2_blocks_behind: u64,
+    pub at_l1_height: u64,
+}
+
 impl<P: FeesProvider> SendOrWaitDecider<P> {
     // TODO: segfault validate blob number
-    pub async fn should_send_blob_tx(&self, num_blobs: u32, at_block_height: u64) -> bool {
+    pub async fn should_send_blob_tx(&self, num_blobs: u32, context: Context) -> bool {
+        let last_n_blocks = |n: u64| context.at_l1_height.saturating_sub(n)..=context.at_l1_height;
+
         let short_term_sma = self
             .fee_analytics
-            .calculate_sma(
-                at_block_height - self.config.short_term_sma_num_blocks..=at_block_height,
-            )
+            .calculate_sma(last_n_blocks(self.config.sma_periods.short))
             .await;
 
         let long_term_sma = self
             .fee_analytics
-            .calculate_sma(at_block_height - self.config.long_term_sma_num_blocks..=at_block_height)
+            .calculate_sma(last_n_blocks(self.config.sma_periods.long))
             .await;
 
-        let short_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
+        let short_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
 
-        if short_term_tx_price < self.config.sma_activation_fee_treshold {
+        let fee_always_acceptable =
+            short_term_tx_fee <= self.config.fee_thresholds.always_acceptable_fee;
+
+        // TODO: segfault test this
+        let too_far_behind =
+            context.num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind;
+
+        if fee_always_acceptable || too_far_behind {
             return true;
         }
 
-        let long_term_tx_price = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
+        let long_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
+        let max_upper_tx_fee = self.calculate_max_upper_fee(long_term_tx_fee, context);
 
-        let percentage = match self.config.comparison_strategy {
-            ComparisonStrategy::StrictlyLessOrEqualByPercent(p) => 1.0 - p,
-            ComparisonStrategy::WithinVicinityOfPriceByPercent(p) => 1.0 + p,
-        };
+        short_term_tx_fee < max_upper_tx_fee
+    }
 
-        // TODO: segfault proper type conversions, probably max(,,) - min(,,) <= delta
-        let treshold = (long_term_tx_price as f64 * percentage) as u128;
+    // TODO: segfault test this
+    fn calculate_max_upper_fee(&self, fee: u128, context: Context) -> u128 {
+        // Define percentages in Parts Per Million (PPM) for precision
+        // 1 PPM = 0.0001%
+        const PPM: u128 = 1_000_000;
+        let start_discount_ppm =
+            (self.config.fee_thresholds.start_discount_percentage * PPM as f64) as u128;
+        let end_premium_ppm =
+            (self.config.fee_thresholds.end_premium_percentage * PPM as f64) as u128;
 
-        // eprintln!(
-        //     "Short-term: {}, Long-term: {}, Allowed max: {}, diff: {}",
-        //     short_term_tx_price,
-        //     long_term_tx_price,
-        //     treshold,
-        //     short_term_tx_price.saturating_sub(treshold)
-        // );
+        let max_blocks_behind = self.config.fee_thresholds.max_l2_blocks_behind as u128;
 
-        short_term_tx_price < treshold
+        let blocks_behind = context.num_l2_blocks_behind;
+
+        // TODO: segfault rename possibly
+        let ratio_ppm = (blocks_behind as u128 * PPM) / max_blocks_behind;
+
+        let initial_multiplier = PPM.saturating_sub(start_discount_ppm);
+
+        let effect_of_being_late = (start_discount_ppm + end_premium_ppm)
+            .saturating_mul(ratio_ppm)
+            .saturating_div(PPM);
+
+        let multiplier_ppm = initial_multiplier.saturating_add(effect_of_being_late);
+
+        // TODO: segfault, for now just in case, but this should never happen
+        let multiplier_ppm = min(PPM + end_premium_ppm, multiplier_ppm);
+
+        fee.saturating_mul(multiplier_ppm).saturating_div(PPM)
     }
 
     // TODO: Segfault maybe dont leak so much eth abstractions
@@ -101,9 +131,9 @@ mod tests {
     fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {
         let older_fees = std::iter::repeat_n(
             old_fees,
-            (config.long_term_sma_num_blocks - config.short_term_sma_num_blocks) as usize,
+            (config.sma_periods.long - config.sma_periods.short) as usize,
         );
-        let newer_fees = std::iter::repeat_n(new_fees, config.short_term_sma_num_blocks as usize);
+        let newer_fees = std::iter::repeat_n(new_fees, config.sma_periods.short as usize);
 
         older_fees
             .chain(newer_fees)
@@ -117,7 +147,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -130,7 +160,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -143,7 +173,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_treshold: 21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
+            sma_activation_fee_threshold: 21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -156,7 +186,7 @@ mod tests {
         Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -169,7 +199,7 @@ mod tests {
         Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -182,7 +212,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 900 },
         5,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -195,7 +225,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1100 },
         5,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -208,7 +238,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -221,7 +251,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -234,7 +264,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -247,7 +277,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -260,7 +290,7 @@ mod tests {
         Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000 },
         0,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -273,7 +303,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000 },
         0,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -286,7 +316,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 7000, base_fee_per_blob_gas: 50_000_000 },
         0,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
@@ -300,7 +330,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.1)
@@ -313,7 +343,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             // Strictly less or equal by 0% means must be cheaper or equal, which it's not
@@ -328,7 +358,7 @@ mod tests {
         6,
         Config {
             // Below threshold means we send anyway
-            sma_activation_fee_treshold: 21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
+            sma_activation_fee_threshold: 21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::WithinVicinityOfPriceByPercent(0.1)
@@ -341,7 +371,7 @@ mod tests {
         Fees { base_fee_per_gas: 3200, reward: 5000, base_fee_per_blob_gas: 3200 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::WithinVicinityOfPriceByPercent(0.1)
@@ -354,7 +384,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_treshold: 0,
+            sma_activation_fee_threshold: 0,
             short_term_sma_num_blocks: 2,
             long_term_sma_num_blocks: 6,
             comparison_strategy: ComparisonStrategy::WithinVicinityOfPriceByPercent(0.0)
@@ -378,7 +408,13 @@ mod tests {
         let sut = SendOrWaitDecider::new(analytics_service, config);
 
         let should_send = sut
-            .should_send_blob_tx(num_blobs, current_block_height)
+            .should_send_blob_tx(
+                num_blobs,
+                Context {
+                    at_l1_height: current_block_height,
+                    num_l2_blocks_behind: 0,
+                },
+            )
             .await;
 
         assert_eq!(

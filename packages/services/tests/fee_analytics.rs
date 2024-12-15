@@ -10,7 +10,7 @@ use services::{
             BlockFees, Fees,
         },
     },
-    state_committer::fee_optimization::SendOrWaitDecider,
+    state_committer::fee_optimization::{Context, SendOrWaitDecider},
 };
 
 #[tokio::test]
@@ -83,6 +83,7 @@ async fn something() {
         .collect::<HashMap<_, _>>();
 
     let short_sma = 25u64;
+    let middle_sma = 300;
     let long_sma = 900;
 
     let current_tx_fees = data
@@ -107,6 +108,16 @@ async fn something() {
     }
     save_tx_fees(&short_sma_tx_fees, "short_sma_fees.csv");
 
+    let mut middle_sma_tx_fees = vec![];
+    for height in (starting_block_height..=current_block_height).skip(middle_sma as usize) {
+        let fees = fee_analytics
+            .calculate_sma(height - middle_sma..=height)
+            .await;
+        let tx_fee = calculate_tx_fee(&fees);
+        middle_sma_tx_fees.push((height, tx_fee));
+    }
+    save_tx_fees(&middle_sma_tx_fees, "middle_sma_fees.csv");
+
     let decider = SendOrWaitDecider::new(
     FeeAnalytics::new(local_client.clone()),
         services::state_committer::fee_optimization::Config {
@@ -127,7 +138,16 @@ async fn something() {
         let tx_fee = calculate_tx_fee(&fees);
         long_sma_tx_fees.push((height, tx_fee));
 
-        if decider.should_send_blob_tx(6, height).await {
+        if decider
+            .should_send_blob_tx(
+                6,
+                Context {
+                    at_l1_height: height,
+                    num_l2_blocks_behind: 0,
+                },
+            )
+            .await
+        {
             let current_fees = fee_lookup.get(&height).unwrap();
             let current_tx_fee = calculate_tx_fee(current_fees);
             decisions.push((height, current_tx_fee));
