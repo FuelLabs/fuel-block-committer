@@ -9,6 +9,7 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
+    fee_analytics::{self, service::FeeAnalytics},
     state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
@@ -117,6 +118,7 @@ pub fn state_committer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
+    fee_analytics: FeeAnalytics<L1>,
 ) -> tokio::task::JoinHandle<()> {
     let state_committer = services::StateCommitter::new(
         l1,
@@ -130,6 +132,7 @@ pub fn state_committer(
             tx_max_fee: config.app.tx_max_fee as u128,
         },
         SystemClock,
+        fee_analytics,
     );
 
     schedule_polling(

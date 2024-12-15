@@ -1,6 +1,9 @@
 use std::cmp::min;
 
-use crate::fee_analytics::port::{l1::FeesProvider, service::FeeAnalytics, Fees};
+use crate::fee_analytics::{
+    port::{l1::FeesProvider, Fees},
+    service::FeeAnalytics,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmaBlockNumPeriods {
@@ -46,6 +49,8 @@ pub struct Context {
 
 impl<P: FeesProvider> SendOrWaitDecider<P> {
     // TODO: segfault validate blob number
+    // TODO: segfault test that too far behind should work even if we cannot fetch prices due to holes
+    // (once that is implemented)
     pub async fn should_send_blob_tx(&self, num_blobs: u32, context: Context) -> bool {
         let last_n_blocks = |n: u64| context.at_l1_height.saturating_sub(n)..=context.at_l1_height;
 
@@ -479,7 +484,7 @@ mod tests {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.20,
                 end_premium_percentage: 0.20,
-                always_acceptable_fee: 26_000_000_000,
+                always_acceptable_fee: 1_781_000_000_000
             },
         },
         0,

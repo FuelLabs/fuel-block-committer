@@ -4,6 +4,7 @@ pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
     use crate::{
+        fee_analytics::service::FeeAnalytics,
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
         Result, Runner,
     };
@@ -35,16 +36,17 @@ pub mod service {
     }
 
     /// The `StateCommitter` is responsible for committing state fragments to L1.
-    pub struct StateCommitter<L1, FuelApi, Db, Clock> {
+    pub struct StateCommitter<L1, FuelApi, Db, Clock, FeeProvider> {
         l1_adapter: L1,
         fuel_api: FuelApi,
         storage: Db,
         config: Config,
         clock: Clock,
         startup_time: DateTime<Utc>,
+        fee_analytics: FeeAnalytics<FeeProvider>,
     }
 
-    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, FeeProvider> StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
     where
         Clock: crate::state_committer::port::Clock,
     {
@@ -55,6 +57,7 @@ pub mod service {
             storage: Db,
             config: Config,
             clock: Clock,
+            fee_analytics: FeeAnalytics<FeeProvider>,
         ) -> Self {
             let startup_time = clock.now();
             Self {
@@ -64,16 +67,18 @@ pub mod service {
                 config,
                 clock,
                 startup_time,
+                fee_analytics,
             }
         }
     }
 
-    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, FeeProvider> StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
     where
         L1: crate::state_committer::port::l1::Api,
         FuelApi: crate::state_committer::port::fuel::Api,
         Db: crate::state_committer::port::Storage,
         Clock: crate::state_committer::port::Clock,
+        FeeProvider: crate::fee_analytics::port::l1::FeesProvider,
     {
         async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
             Ok(self
@@ -234,12 +239,14 @@ pub mod service {
         }
     }
 
-    impl<L1, FuelApi, Db, Clock> Runner for StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, FeeProvider> Runner
+        for StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
     where
         L1: crate::state_committer::port::l1::Api + Send + Sync,
         FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
         Db: crate::state_committer::port::Storage + Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock + Send + Sync,
+        FeeProvider: crate::fee_analytics::port::l1::FeesProvider + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {
             if self.storage.has_nonfinalized_txs().await? {

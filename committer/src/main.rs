@@ -7,6 +7,7 @@ mod setup;
 use api::launch_api_server;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
+use services::fee_analytics;
 use setup::last_finalization_metric;
 use tokio_util::sync::CancellationToken;
 
@@ -72,12 +73,15 @@ async fn main() -> Result<()> {
             &metrics_registry,
         );
 
+        let fee_analytics = fee_analytics::service::FeeAnalytics::new(ethereum_rpc.clone());
+
         let state_committer_handle = setup::state_committer(
             fuel_adapter.clone(),
             ethereum_rpc.clone(),
             storage.clone(),
             cancel_token.clone(),
             &config,
+            fee_analytics,
         );
 
         let state_importer_handle =

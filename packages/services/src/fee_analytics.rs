@@ -149,55 +149,55 @@ pub mod port {
             }
         }
     }
+}
 
-    pub mod service {
+pub mod service {
 
-        use std::ops::RangeInclusive;
+    use std::ops::RangeInclusive;
 
-        use nonempty::NonEmpty;
+    use nonempty::NonEmpty;
 
-        use super::{
-            l1::{FeesProvider, SequentialBlockFees},
-            BlockFees, Fees,
-        };
+    use super::port::{
+        l1::{FeesProvider, SequentialBlockFees},
+        Fees,
+    };
 
-        pub struct FeeAnalytics<P> {
-            fees_provider: P,
+    pub struct FeeAnalytics<P> {
+        fees_provider: P,
+    }
+    impl<P> FeeAnalytics<P> {
+        pub fn new(fees_provider: P) -> Self {
+            Self { fees_provider }
         }
-        impl<P> FeeAnalytics<P> {
-            pub fn new(fees_provider: P) -> Self {
-                Self { fees_provider }
-            }
+    }
+
+    impl<P: FeesProvider> FeeAnalytics<P> {
+        // TODO: segfault fail or signal if missing blocks/holes present
+        // TODO: segfault cache fees/save to db
+        // TODO: segfault job to update fees in the background
+        pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> Fees {
+            let fees = self.fees_provider.fees(block_range).await;
+
+            Self::mean(fees)
         }
 
-        impl<P: FeesProvider> FeeAnalytics<P> {
-            // TODO: segfault fail or signal if missing blocks/holes present
-            // TODO: segfault cache fees/save to db
-            // TODO: segfault job to update fees in the background
-            pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> Fees {
-                let fees = self.fees_provider.fees(block_range).await;
+        fn mean(fees: SequentialBlockFees) -> Fees {
+            let count = fees.len() as u128;
 
-                Self::mean(fees)
-            }
+            let total = fees
+                .into_iter()
+                .map(|bf| bf.fees)
+                .fold(Fees::default(), |acc, f| Fees {
+                    base_fee_per_gas: acc.base_fee_per_gas + f.base_fee_per_gas,
+                    reward: acc.reward + f.reward,
+                    base_fee_per_blob_gas: acc.base_fee_per_blob_gas + f.base_fee_per_blob_gas,
+                });
 
-            fn mean(fees: SequentialBlockFees) -> Fees {
-                let count = fees.len() as u128;
-
-                let total = fees
-                    .into_iter()
-                    .map(|bf| bf.fees)
-                    .fold(Fees::default(), |acc, f| Fees {
-                        base_fee_per_gas: acc.base_fee_per_gas + f.base_fee_per_gas,
-                        reward: acc.reward + f.reward,
-                        base_fee_per_blob_gas: acc.base_fee_per_blob_gas + f.base_fee_per_blob_gas,
-                    });
-
-                // TODO: segfault should we round to nearest here?
-                Fees {
-                    base_fee_per_gas: total.base_fee_per_gas.saturating_div(count),
-                    reward: total.reward.saturating_div(count),
-                    base_fee_per_blob_gas: total.base_fee_per_blob_gas.saturating_div(count),
-                }
+            // TODO: segfault should we round to nearest here?
+            Fees {
+                base_fee_per_gas: total.base_fee_per_gas.saturating_div(count),
+                reward: total.reward.saturating_div(count),
+                base_fee_per_blob_gas: total.base_fee_per_blob_gas.saturating_div(count),
             }
         }
     }
@@ -205,6 +205,7 @@ pub mod port {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use port::{l1::SequentialBlockFees, BlockFees, Fees};
 
     use super::*;
@@ -294,7 +295,7 @@ mod tests {
         );
         assert_eq!(
             result.unwrap_err().to_string(),
-            "InvalidSequence(\"blocks are not sequential by height\")"
+            "InvalidSequence(\"blocks are not sequential by height: [1, 3]\")"
         );
     }
 
@@ -328,8 +329,12 @@ mod tests {
         let iterated_fees: Vec<BlockFees> = sequential_fees.into_iter().collect();
 
         // Then
+        let expectation = block_fees
+            .into_iter()
+            .sorted_by_key(|b| b.height)
+            .collect_vec();
         assert_eq!(
-            iterated_fees, block_fees,
+            iterated_fees, expectation,
             "Expected iterator to yield the same block fees"
         );
     }

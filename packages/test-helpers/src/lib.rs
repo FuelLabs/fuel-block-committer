@@ -8,6 +8,8 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
+use services::fee_analytics::port::l1::testing::TestFeesProvider;
+use services::fee_analytics::service::FeeAnalytics;
 use services::types::{
     BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty,
 };
@@ -550,6 +552,7 @@ impl Setup {
                 tx_max_fee: 1_000_000_000,
             },
             self.test_clock.clone(),
+            FeeAnalytics::new(TestFeesProvider::new(vec![])),
         )
         .run()
         .await
@@ -584,6 +587,7 @@ impl Setup {
                 tx_max_fee: 1_000_000_000,
             },
             self.test_clock.clone(),
+            FeeAnalytics::new(TestFeesProvider::new(vec![])),
         );
         committer.run().await.unwrap();
 

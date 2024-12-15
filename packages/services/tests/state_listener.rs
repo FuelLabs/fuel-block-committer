@@ -3,6 +3,7 @@ use std::time::Duration;
 use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use services::{
+    fee_analytics::{port::l1::testing::TestFeesProvider, service::FeeAnalytics},
     state_listener::{port::Storage, service::StateListener},
     types::{L1Height, L1Tx, TransactionResponse},
     Result, Runner, StateCommitter, StateCommitterConfig,
@@ -447,6 +448,7 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // Orig tx
@@ -544,6 +546,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
             ..Default::default()
         },
         test_clock.clone(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // Orig tx

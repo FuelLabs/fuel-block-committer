@@ -1,4 +1,5 @@
 use services::{
+    fee_analytics::{port::l1::testing::TestFeesProvider, service::FeeAnalytics},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
@@ -33,6 +34,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // when
@@ -73,6 +75,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // Advance time beyond the timeout
@@ -108,6 +111,7 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
             ..Default::default()
         },
         test_clock.clone(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // Advance time less than the timeout
@@ -150,6 +154,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // when
@@ -193,6 +198,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -236,6 +242,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
             ..Default::default()
         },
         test_clock.clone(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // Advance time beyond the timeout from startup
@@ -291,6 +298,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        FeeAnalytics::new(TestFeesProvider::new(vec![])),
     );
 
     // Submit the initial fragments
