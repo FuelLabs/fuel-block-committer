@@ -63,10 +63,13 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 
         let fee_always_acceptable =
             short_term_tx_fee <= self.config.fee_thresholds.always_acceptable_fee;
+        eprintln!("fee always acceptable: {}", fee_always_acceptable);
 
         // TODO: segfault test this
         let too_far_behind =
             context.num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind;
+
+        eprintln!("too far behind: {}", too_far_behind);
 
         if fee_always_acceptable || too_far_behind {
             return true;
@@ -74,6 +77,32 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 
         let long_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
         let max_upper_tx_fee = self.calculate_max_upper_fee(long_term_tx_fee, context);
+
+        let long_vs_max_delta_perc =
+            ((max_upper_tx_fee as f64 - long_term_tx_fee as f64) / long_term_tx_fee as f64 * 100.)
+                .abs();
+
+        let short_vs_max_delta_perc = ((max_upper_tx_fee as f64 - short_term_tx_fee as f64)
+            / short_term_tx_fee as f64
+            * 100.)
+            .abs();
+
+        if long_term_tx_fee <= max_upper_tx_fee {
+            eprintln!("The max upper fee({max_upper_tx_fee}) is above the long-term fee({long_term_tx_fee}) by {long_vs_max_delta_perc}%",);
+        } else {
+            eprintln!("The max upper fee({max_upper_tx_fee}) is below the long-term fee({long_term_tx_fee}) by {long_vs_max_delta_perc}%",);
+        }
+
+        if short_term_tx_fee <= max_upper_tx_fee {
+            eprintln!("The short term fee({short_term_tx_fee}) is below the max upper fee({max_upper_tx_fee}) by {short_vs_max_delta_perc}%",);
+        } else {
+            eprintln!("The short term fee({short_term_tx_fee}) is above the max upper fee({max_upper_tx_fee}) by {short_vs_max_delta_perc}%",);
+        }
+
+        eprintln!(
+            "Short-term fee: {}, Long-term fee: {}, Max upper fee: {}",
+            short_term_tx_fee, long_term_tx_fee, max_upper_tx_fee
+        );
 
         short_term_tx_fee < max_upper_tx_fee
     }
@@ -126,8 +155,8 @@ mod tests {
     use super::*;
     use crate::fee_analytics::port::{l1::testing::TestFeesProvider, Fees};
     use test_case::test_case;
+    use tokio;
 
-    // Function to generate historical fees data
     fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {
         let older_fees = std::iter::repeat_n(
             old_fees,
@@ -147,11 +176,15 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
         6,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            },
         },
+        0, // not behind at all
         true;
         "Should send because all short-term fees are lower than long-term"
     )]
@@ -160,11 +193,15 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            },
         },
+        0,
         false;
         "Should not send because all short-term fees are higher than long-term"
     )]
@@ -173,24 +210,32 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_threshold: 21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                always_acceptable_fee: (21_000 * 5000) + (6 * 131_072 * 5000) + 5000 + 1,
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+            }
         },
+        0,
         true;
-        "Should send since we're below the activation fee threshold, even if all short-term fees are higher than long-term"
+        "Should send since short-term fee < always_acceptable_fee"
     )]
     #[test_case(
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
         Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         true;
         "Should send because short-term base_fee_per_gas is lower"
     )]
@@ -199,37 +244,49 @@ mod tests {
         Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         false;
         "Should not send because short-term base_fee_per_gas is higher"
     )]
     #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 900 },
+        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000 },
+        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 900 },
         5,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         true;
         "Should send because short-term base_fee_per_blob_gas is lower"
     )]
     #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1100 },
+        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000 },
+        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1100 },
         5,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         false;
         "Should not send because short-term base_fee_per_blob_gas is higher"
     )]
@@ -238,11 +295,15 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         true;
         "Should send because short-term reward is lower"
     )]
@@ -251,24 +312,33 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         false;
         "Should not send because short-term reward is higher"
     )]
     #[test_case(
+        // Multiple short-term fees are lower
         Fees { base_fee_per_gas: 4000, reward: 8000, base_fee_per_blob_gas: 4000 },
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500 },
         6,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         true;
         "Should send because multiple short-term fees are lower"
     )]
@@ -277,120 +347,144 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         false;
-        "Should not send because all fees are identical"
+        "Should not send because all fees are identical and no tolerance"
     )]
     #[test_case(
+        // Zero blobs scenario: blob fee differences don't matter
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 },
         Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000 },
         0,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         true;
-        "Zero blobs but short-term base_fee_per_gas and reward are lower"
+        "Zero blobs: short-term base_fee_per_gas and reward are lower, send"
     )]
     #[test_case(
+        // Zero blobs but short-term reward is higher
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 },
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000 },
         0,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         false;
-        "Zero blobs but short-term reward is higher"
+        "Zero blobs: short-term reward is higher, don't send"
     )]
     #[test_case(
+        // Zero blobs don't care about higher short-term base_fee_per_blob_gas
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 },
         Fees { base_fee_per_gas: 2000, reward: 7000, base_fee_per_blob_gas: 50_000_000 },
         0,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.0,
+                end_premium_percentage: 0.0,
+                always_acceptable_fee: 0,
+            }
         },
+        0,
         true;
-        "Zero blobs dont care about higher short-term base_fee_per_blob_gas"
+        "Zero blobs: ignore blob fee, short-term base_fee_per_gas is lower, send"
     )]
-    // New Tests (Introducing other Comparison Strategies)
+    // Initially not send, but as num_l2_blocks_behind increases, acceptance grows.
     #[test_case(
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
-        6,
+        // Initially short-term fee too high compared to long-term (strict scenario), no send at t=0
+    Fees { base_fee_per_gas: 6000, reward: 0, base_fee_per_blob_gas: 6000 },
+    Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
+        1,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.1)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.20,
+                end_premium_percentage: 0.20,
+                always_acceptable_fee: 0,
+            },
         },
-        true;
-        "Should send (cheaper) with StrictlyLessOrEqualByPercent(10%)"
-    )]
-    #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
-        6,
-        Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            // Strictly less or equal by 0% means must be cheaper or equal, which it's not
-            comparison_strategy: ComparisonStrategy::StrictlyLessOrEqualByPercent(0.0)
-        },
+        0,
         false;
-        "Should not send (more expensive) with StrictlyLessOrEqualByPercent(0%)"
+        "Early: short-term expensive, not send"
     )]
     #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
-        6,
+        // At max_l2_blocks_behind, send regardless
+        Fees { base_fee_per_gas: 6000, reward: 0, base_fee_per_blob_gas: 6000 },
+        Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
+        1,
         Config {
-            // Below threshold means we send anyway
-            sma_activation_fee_threshold: 21_000 * 5000 + 6 * 131_072 * 5000 + 5000 + 1,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::WithinVicinityOfPriceByPercent(0.1)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.20,
+                end_premium_percentage: 0.20,
+                always_acceptable_fee: 0,
+            }
         },
+        100,
         true;
-        "Below activation threshold, send anyway for WithinVicinityOfPriceByPercent(10%)"
+        "Later: after max wait, send regardless"
     )]
     #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
-        Fees { base_fee_per_gas: 3200, reward: 5000, base_fee_per_blob_gas: 3200 },
-        6,
+        // Partway: at 80 blocks behind, tolerance might have increased enough to accept
+        Fees { base_fee_per_gas: 6000, reward: 0, base_fee_per_blob_gas: 6000 },
+        Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
+        1,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::WithinVicinityOfPriceByPercent(0.1)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.20,
+                end_premium_percentage: 0.20,
+                always_acceptable_fee: 0,
+            },
         },
+        65,
         true;
-        "Within vicinity of price by 10%: short_term slightly more expensive but allowed"
+        "Mid-wait: increased tolerance allows acceptance"
     )]
     #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
-        6,
+        // Short-term fee is huge, but always_acceptable_fee is large, so send immediately
+        Fees { base_fee_per_gas: 100_000, reward: 0, base_fee_per_blob_gas: 100_000 },
+        Fees { base_fee_per_gas: 2_000_000, reward: 1_000_000, base_fee_per_blob_gas: 20_000_000 },
+        1,
         Config {
-            sma_activation_fee_threshold: 0,
-            short_term_sma_num_blocks: 2,
-            long_term_sma_num_blocks: 6,
-            comparison_strategy: ComparisonStrategy::WithinVicinityOfPriceByPercent(0.0)
+            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            fee_thresholds: Feethresholds {
+                max_l2_blocks_behind: 100,
+                start_discount_percentage: 0.20,
+                end_premium_percentage: 0.20,
+                always_acceptable_fee: 26_000_000_000,
+            },
         },
-        false;
-        "Within vicinity with 0% means must not exceed long-term, not sending"
+        0,
+        true;
+        "Always acceptable fee triggers immediate send"
     )]
     #[tokio::test]
     async fn parameterized_send_or_wait_tests(
@@ -398,6 +492,7 @@ mod tests {
         new_fees: Fees,
         num_blobs: u32,
         config: Config,
+        num_l2_blocks_behind: u64,
         expected_decision: bool,
     ) {
         let fees = generate_fees(config, old_fees, new_fees);
@@ -412,15 +507,14 @@ mod tests {
                 num_blobs,
                 Context {
                     at_l1_height: current_block_height,
-                    num_l2_blocks_behind: 0,
+                    num_l2_blocks_behind,
                 },
             )
             .await;
 
         assert_eq!(
             should_send, expected_decision,
-            "For num_blobs={num_blobs}, config={:?}: Expected decision: {}, got: {}",
-            config, expected_decision, should_send
+            "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {expected_decision}, got: {should_send}",
         );
     }
 }
