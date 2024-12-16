@@ -94,33 +94,63 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 
     // TODO: segfault test this
     fn calculate_max_upper_fee(&self, fee: u128, context: Context) -> u128 {
-        // Define percentages in Parts Per Million (PPM) for precision
-        // 1 PPM = 0.0001%
-        const PPM: u128 = 1_000_000;
+        const PPM: u128 = 1_000_000; // 100% in PPM
+
+        let max_blocks_behind = u128::from(self.config.fee_thresholds.max_l2_blocks_behind.get());
+        let blocks_behind = u128::from(context.num_l2_blocks_behind);
+
+        debug_assert!(
+            blocks_behind <= max_blocks_behind,
+            "blocks_behind ({}) should not exceed max_blocks_behind ({})",
+            blocks_behind,
+            max_blocks_behind
+        );
+
         let start_discount_ppm =
-            (self.config.fee_thresholds.start_discount_percentage * PPM as f64) as u128;
-        let end_premium_ppm =
-            (self.config.fee_thresholds.end_premium_percentage * PPM as f64) as u128;
+            percentage_to_ppm(self.config.fee_thresholds.start_discount_percentage);
+        let end_premium_ppm = percentage_to_ppm(self.config.fee_thresholds.end_premium_percentage);
 
-        let max_blocks_behind = self.config.fee_thresholds.max_l2_blocks_behind.get() as u128;
+        // 1. The highest we're initially willing to go: eg. 100% - 20% = 80%
+        let base_multiplier = PPM.saturating_sub(start_discount_ppm);
 
-        let blocks_behind = context.num_l2_blocks_behind;
+        // 2. How late are we: eg. late enough to add 25% to our base multiplier
+        let premium_increment = self.calculate_premium_increment(
+            start_discount_ppm,
+            end_premium_ppm,
+            blocks_behind,
+            max_blocks_behind,
+        );
 
-        // TODO: segfault rename possibly
-        let ratio_ppm = (blocks_behind as u128 * PPM) / max_blocks_behind;
+        // 3. Total multiplier consist of the base and the premium increment: eg. 80% + 25% = 105%
+        let multiplier_ppm = min(
+            base_multiplier.saturating_add(premium_increment),
+            PPM + end_premium_ppm,
+        );
 
-        let initial_multiplier = PPM.saturating_sub(start_discount_ppm);
-
-        let effect_of_being_late = (start_discount_ppm + end_premium_ppm)
-            .saturating_mul(ratio_ppm)
-            .saturating_div(PPM);
-
-        let multiplier_ppm = initial_multiplier.saturating_add(effect_of_being_late);
-
-        // TODO: segfault, for now just in case, but this should never happen
-        let multiplier_ppm = min(PPM + end_premium_ppm, multiplier_ppm);
-
+        // 3. Final fee: eg. 105% of the base fee
         fee.saturating_mul(multiplier_ppm).saturating_div(PPM)
+    }
+
+    fn calculate_premium_increment(
+        &self,
+        start_discount_ppm: u128,
+        end_premium_ppm: u128,
+        blocks_behind: u128,
+        max_blocks_behind: u128,
+    ) -> u128 {
+        const PPM: u128 = 1_000_000; // 100% in PPM
+
+        let total_ppm = start_discount_ppm.saturating_add(end_premium_ppm);
+
+        let proportion = if max_blocks_behind == 0 {
+            0
+        } else {
+            blocks_behind
+                .saturating_mul(PPM)
+                .saturating_div(max_blocks_behind)
+        };
+
+        total_ppm.saturating_mul(proportion).saturating_div(PPM)
     }
 
     // TODO: Segfault maybe dont leak so much eth abstractions
@@ -135,11 +165,20 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
     }
 }
 
+fn percentage_to_ppm(percentage: f64) -> u128 {
+    (percentage * 1_000_000.0) as u128
+}
+
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU64;
+
     use super::*;
     use crate::{
-        fee_analytics::port::{l1::testing::PreconfiguredFeesProvider, Fees},
+        fee_analytics::port::{
+            l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
+            Fees,
+        },
         state_committer::service::{FeeThresholds, SmaPeriods},
     };
     use test_case::test_case;

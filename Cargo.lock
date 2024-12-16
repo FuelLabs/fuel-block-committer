@@ -5796,6 +5796,7 @@ dependencies = [
  "mockall",
  "nonempty",
  "pretty_assertions",
+ "proptest",
  "rand",
  "rayon",
  "serde",
