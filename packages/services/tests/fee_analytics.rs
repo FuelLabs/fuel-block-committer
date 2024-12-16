@@ -1,17 +1,11 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
-use eth::make_pub_eth_client;
-use services::{
-    fee_analytics::{
-        self,
+use services::fee_analytics::{
         port::{
-            l1::testing::{self, PreconfiguredFeesProvider},
-            BlockFees, Fees,
+            l1::testing::{self}, Fees,
         },
         service::FeeAnalytics,
-    },
-    state_committer::fee_optimization::{Context, SendOrWaitDecider},
-};
+    };
 
 #[tokio::test]
 async fn calculates_sma_correctly_for_last_1_block() {

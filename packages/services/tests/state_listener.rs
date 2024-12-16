@@ -5,7 +5,7 @@ use mockall::predicate::eq;
 use services::{
     fee_analytics::{
         port::{
-            l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
+            l1::testing::ConstantFeesProvider,
             Fees,
         },
         service::FeeAnalytics,

@@ -1,18 +1,42 @@
-pub mod fee_optimization;
+mod fee_algo;
 
 pub mod service {
-    use std::{num::NonZeroUsize, time::Duration};
+    use std::{
+        num::{NonZeroU64, NonZeroUsize},
+        time::Duration,
+    };
 
     use crate::{
         fee_analytics::service::FeeAnalytics,
-        state_committer::fee_optimization::Context,
+        state_committer::fee_algo::Context,
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
-        Error, Result, Runner,
+        Result, Runner,
     };
     use itertools::Itertools;
     use tracing::info;
 
-    use super::fee_optimization::{FeeThresholds, SendOrWaitDecider, SmaBlockNumPeriods};
+    use super::fee_algo::SendOrWaitDecider;
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct SmaBlockNumPeriods {
+        pub short: u64,
+        pub long: u64,
+    }
+
+    // TODO: segfault validate start discount is less than end premium and both are positive
+    #[derive(Debug, Clone, Copy)]
+    pub struct FeeThresholds {
+        pub max_l2_blocks_behind: NonZeroU64,
+        pub start_discount_percentage: f64,
+        pub end_premium_percentage: f64,
+        pub always_acceptable_fee: u128,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct FeeAlgoConfig {
+        pub sma_periods: SmaBlockNumPeriods,
+        pub fee_thresholds: FeeThresholds,
+    }
 
     // src/config.rs
     #[derive(Debug, Clone)]
@@ -22,7 +46,7 @@ pub mod service {
         pub fragment_accumulation_timeout: Duration,
         pub fragments_to_accumulate: NonZeroUsize,
         pub gas_bump_timeout: Duration,
-        pub price_algo: crate::state_committer::fee_optimization::Config,
+        pub fee_algo: FeeAlgoConfig,
     }
 
     #[cfg(feature = "test-helpers")]
@@ -33,10 +57,10 @@ pub mod service {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
-                price_algo: crate::state_committer::fee_optimization::Config {
+                fee_algo: FeeAlgoConfig {
                     sma_periods: SmaBlockNumPeriods { short: 1, long: 2 },
                     fee_thresholds: FeeThresholds {
-                        max_l2_blocks_behind: 100,
+                        max_l2_blocks_behind: 100.try_into().unwrap(),
                         start_discount_percentage: 0.,
                         end_premium_percentage: 0.,
                         always_acceptable_fee: u128::MAX,
@@ -71,7 +95,7 @@ pub mod service {
             fee_analytics: FeeAnalytics<FeeProvider>,
         ) -> Self {
             let startup_time = clock.now();
-            let price_algo = config.price_algo;
+            let price_algo = config.fee_algo;
             Self {
                 l1_adapter,
                 fuel_api,

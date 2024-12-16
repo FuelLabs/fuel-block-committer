@@ -16,7 +16,7 @@ pub mod port {
         use std::ops::RangeInclusive;
 
         use itertools::Itertools;
-        use nonempty::NonEmpty;
+        
 
         use super::BlockFees;
 
@@ -90,12 +90,9 @@ pub mod port {
             use std::{collections::BTreeMap, ops::RangeInclusive};
 
             use itertools::Itertools;
-            use nonempty::NonEmpty;
+            
 
-            use crate::{
-                fee_analytics::port::{BlockFees, Fees},
-                types::CollectNonEmpty,
-            };
+            use crate::fee_analytics::port::{BlockFees, Fees};
 
             use super::{FeesProvider, SequentialBlockFees};
 
@@ -180,7 +177,7 @@ pub mod service {
 
     use std::ops::RangeInclusive;
 
-    use nonempty::NonEmpty;
+    
 
     use super::port::{
         l1::{FeesProvider, SequentialBlockFees},

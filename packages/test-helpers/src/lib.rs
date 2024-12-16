@@ -8,7 +8,7 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::fee_analytics::port::l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider};
+use services::fee_analytics::port::l1::testing::ConstantFeesProvider;
 use services::fee_analytics::port::Fees;
 use services::fee_analytics::service::FeeAnalytics;
 use services::types::{

@@ -9,10 +9,9 @@ use alloy::{
     consensus::BlobTransactionSidecar,
     eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
     primitives::U256,
-    providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE,
 };
 use delegate::delegate;
-use itertools::{izip, zip, Itertools};
+use itertools::{izip, Itertools};
 use services::{
     fee_analytics::port::{l1::SequentialBlockFees, BlockFees, Fees},
     types::{
@@ -311,16 +310,13 @@ impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
+    
 
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
     use fuel_block_committer_encoding::blob;
-    use services::{
-        block_bundler::port::l1::FragmentEncoder, block_committer::port::l1::Api,
-        fee_analytics::port::l1::FeesProvider,
-    };
+    use services::block_bundler::port::l1::FragmentEncoder;
 
-    use crate::{BlobEncoder, Signer, Signers};
+    use crate::BlobEncoder;
 
     #[test]
     fn gas_usage_correctly_calculated() {

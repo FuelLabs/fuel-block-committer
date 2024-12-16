@@ -3,7 +3,6 @@ use services::{
         port::{l1::testing::ConstantFeesProvider, Fees},
         service::FeeAnalytics,
     },
-    state_committer::port::l1::Api,
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };

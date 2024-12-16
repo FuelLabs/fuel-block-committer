@@ -9,7 +9,7 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_analytics::{self, service::FeeAnalytics},
+    fee_analytics::service::FeeAnalytics,
     state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
@@ -129,7 +129,7 @@ pub fn state_committer(
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
             gas_bump_timeout: config.app.gas_bump_timeout,
-            price_algo: todo!(),
+            fee_algo: todo!(),
         },
         SystemClock,
         fee_analytics,
