@@ -13,7 +13,7 @@ pub struct SmaBlockNumPeriods {
 
 // TODO: segfault validate start discount is less than end premium and both are positive
 #[derive(Debug, Clone, Copy)]
-pub struct Feethresholds {
+pub struct FeeThresholds {
     // TODO: segfault validate not 0
     pub max_l2_blocks_behind: u64,
     pub start_discount_percentage: f64,
@@ -24,7 +24,7 @@ pub struct Feethresholds {
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub sma_periods: SmaBlockNumPeriods,
-    pub fee_thresholds: Feethresholds,
+    pub fee_thresholds: FeeThresholds,
 }
 
 pub struct SendOrWaitDecider<P> {
@@ -158,7 +158,7 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fee_analytics::port::{l1::testing::TestFeesProvider, Fees};
+    use crate::fee_analytics::port::{l1::testing::PreconfiguredFeesProvider, Fees};
     use test_case::test_case;
     use tokio;
 
@@ -182,7 +182,7 @@ mod tests {
         6,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -199,7 +199,7 @@ mod tests {
         6,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -216,7 +216,7 @@ mod tests {
         6,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 always_acceptable_fee: (21_000 * 5000) + (6 * 131_072 * 5000) + 5000 + 1,
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
@@ -233,7 +233,7 @@ mod tests {
         5,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -250,7 +250,7 @@ mod tests {
         5,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -267,7 +267,7 @@ mod tests {
         5,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -284,7 +284,7 @@ mod tests {
         5,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -301,7 +301,7 @@ mod tests {
         5,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -318,7 +318,7 @@ mod tests {
         5,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -336,7 +336,7 @@ mod tests {
         6,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -353,7 +353,7 @@ mod tests {
         6,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -371,7 +371,7 @@ mod tests {
         0,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -389,7 +389,7 @@ mod tests {
         0,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -407,7 +407,7 @@ mod tests {
         0,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.0,
                 end_premium_percentage: 0.0,
@@ -426,7 +426,7 @@ mod tests {
         1,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.20,
                 end_premium_percentage: 0.20,
@@ -444,7 +444,7 @@ mod tests {
         1,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.20,
                 end_premium_percentage: 0.20,
@@ -462,7 +462,7 @@ mod tests {
         1,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.20,
                 end_premium_percentage: 0.20,
@@ -480,7 +480,7 @@ mod tests {
         1,
         Config {
             sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
-            fee_thresholds: Feethresholds {
+            fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100,
                 start_discount_percentage: 0.20,
                 end_premium_percentage: 0.20,
@@ -501,7 +501,7 @@ mod tests {
         expected_decision: bool,
     ) {
         let fees = generate_fees(config, old_fees, new_fees);
-        let fees_provider = TestFeesProvider::new(fees);
+        let fees_provider = PreconfiguredFeesProvider::new(fees);
         let current_block_height = fees_provider.current_block_height().await;
         let analytics_service = FeeAnalytics::new(fees_provider);
 

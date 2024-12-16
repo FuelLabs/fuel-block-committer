@@ -99,12 +99,37 @@ pub mod port {
 
             use super::{FeesProvider, SequentialBlockFees};
 
+            #[derive(Debug, Clone, Copy)]
+            pub struct ConstantFeesProvider {
+                fees: Fees,
+            }
+
+            impl ConstantFeesProvider {
+                pub fn new(fees: Fees) -> Self {
+                    Self { fees }
+                }
+            }
+
+            impl FeesProvider for ConstantFeesProvider {
+                async fn fees(&self, _height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+                    let fees = BlockFees {
+                        height: self.current_block_height().await,
+                        fees: self.fees,
+                    };
+
+                    vec![fees].try_into().unwrap()
+                }
+                async fn current_block_height(&self) -> u64 {
+                    0
+                }
+            }
+
             #[derive(Debug, Clone)]
-            pub struct TestFeesProvider {
+            pub struct PreconfiguredFeesProvider {
                 fees: BTreeMap<u64, Fees>,
             }
 
-            impl FeesProvider for TestFeesProvider {
+            impl FeesProvider for PreconfiguredFeesProvider {
                 async fn current_block_height(&self) -> u64 {
                     *self.fees.keys().last().unwrap()
                 }
@@ -125,7 +150,7 @@ pub mod port {
                 }
             }
 
-            impl TestFeesProvider {
+            impl PreconfiguredFeesProvider {
                 pub fn new(blocks: impl IntoIterator<Item = (u64, Fees)>) -> Self {
                     Self {
                         fees: blocks.into_iter().collect(),

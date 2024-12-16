@@ -5,18 +5,18 @@ use services::{
     fee_analytics::{
         self,
         port::{
-            l1::testing::{self, TestFeesProvider},
+            l1::testing::{self, PreconfiguredFeesProvider},
             BlockFees, Fees,
         },
         service::FeeAnalytics,
     },
-    state_committer::fee_optimization::{Context, Feethresholds, SendOrWaitDecider},
+    state_committer::fee_optimization::{Context, SendOrWaitDecider},
 };
 
 #[tokio::test]
 async fn calculates_sma_correctly_for_last_1_block() {
     // given
-    let fees_provider = testing::TestFeesProvider::new(testing::incrementing_fees(5));
+    let fees_provider = testing::PreconfiguredFeesProvider::new(testing::incrementing_fees(5));
     let fee_analytics = FeeAnalytics::new(fees_provider);
     let last_n_blocks = 1;
 
@@ -32,7 +32,7 @@ async fn calculates_sma_correctly_for_last_1_block() {
 #[tokio::test]
 async fn calculates_sma_correctly_for_last_5_blocks() {
     // given
-    let fees_provider = testing::TestFeesProvider::new(testing::incrementing_fees(5));
+    let fees_provider = testing::PreconfiguredFeesProvider::new(testing::incrementing_fees(5));
     let fee_analytics = FeeAnalytics::new(fees_provider);
     let last_n_blocks = 5;
 

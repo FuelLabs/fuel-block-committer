@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{i64, num::NonZeroU32};
 
 use num_bigint::BigInt;
 use services::types::{
@@ -193,6 +193,7 @@ pub struct BundleFragment {
     pub data: Vec<u8>,
     pub unused_bytes: i64,
     pub total_bytes: i64,
+    pub start_height: i64,
 }
 
 impl TryFrom<BundleFragment> for services::types::storage::BundleFragment {
@@ -261,10 +262,18 @@ impl TryFrom<BundleFragment> for services::types::storage::BundleFragment {
             total_bytes,
         };
 
+        let start_height = value.start_height.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `start_height` ({}). Reason: {e}",
+                value.start_height
+            ))
+        })?;
+
         Ok(Self {
             id,
-            idx,
             bundle_id,
+            idx,
+            oldest_block_in_bundle: start_height,
             fragment,
         })
     }

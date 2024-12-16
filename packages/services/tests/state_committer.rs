@@ -1,5 +1,9 @@
 use services::{
-    fee_analytics::{port::l1::testing::TestFeesProvider, service::FeeAnalytics},
+    fee_analytics::{
+        port::{l1::testing::ConstantFeesProvider, Fees},
+        service::FeeAnalytics,
+    },
+    state_committer::port::l1::Api,
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
@@ -13,7 +17,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
     let fragments = setup.insert_fragments(0, 4).await;
 
     let tx_hash = [0; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -21,6 +25,9 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
     )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
@@ -34,7 +41,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        FeeAnalytics::new(TestFeesProvider::new(vec![])),
+        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // when
@@ -54,7 +61,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
     let fragments = setup.insert_fragments(0, 5).await; // Only 5 fragments, less than required
 
     let tx_hash = [1; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -63,6 +70,9 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
         },
     )]);
 
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
@@ -75,7 +85,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(TestFeesProvider::new(vec![])),
+        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time beyond the timeout
@@ -111,7 +121,7 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(TestFeesProvider::new(vec![])),
+        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time less than the timeout
@@ -133,7 +143,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
     let fragments = setup.insert_fragments(0, 5).await;
 
     let tx_hash = [3; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -141,6 +151,9 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
     )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
@@ -154,7 +167,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        FeeAnalytics::new(TestFeesProvider::new(vec![])),
+        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // when
@@ -177,7 +190,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
     let fragments_to_submit = setup.insert_fragments(1, 2).await;
 
     let tx_hash = [4; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments_to_submit).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -185,6 +198,9 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
     )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(1) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(1);
     let mut state_committer = StateCommitter::new(
@@ -198,7 +214,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(TestFeesProvider::new(vec![])),
+        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -221,7 +237,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
     let fragments = setup.insert_fragments(0, 5).await; // Only 5 fragments, less than required
 
     let tx_hash = [5; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -231,6 +247,9 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
     )]);
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(1) }));
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
         fuel_mock,
@@ -242,7 +261,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(TestFeesProvider::new(vec![])),
+        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time beyond the timeout from startup
@@ -266,7 +285,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
 
     let tx_hash_1 = [6; 32];
     let tx_hash_2 = [7; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
             L1Tx {
@@ -285,6 +304,11 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
         ),
     ]);
 
+    l1_mock_submit.expect_current_height().returning(|| {
+        eprintln!("I was called");
+        Box::pin(async { Ok(0) })
+    });
+
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
@@ -298,7 +322,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(TestFeesProvider::new(vec![])),
+        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Submit the initial fragments

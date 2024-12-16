@@ -16,6 +16,7 @@ pub struct BundleFragment {
     pub id: NonNegative<i32>,
     pub idx: NonNegative<i32>,
     pub bundle_id: NonNegative<i32>,
+    pub oldest_block_in_bundle: u32,
     pub fragment: Fragment,
 }
 

@@ -277,7 +277,8 @@ impl Postgres {
         sub.bundle_id,
         sub.data,
         sub.unused_bytes,
-        sub.total_bytes
+        sub.total_bytes,
+        sub.start_height
     FROM (
         SELECT DISTINCT ON (f.id)
             f.*,
@@ -323,11 +324,14 @@ impl Postgres {
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
-            SELECT f.*
-            FROM l1_fragments f
-            JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-            JOIN l1_blob_transaction t ON t.id = tf.transaction_id
-            WHERE t.hash = $1
+                SELECT
+                    f.*,
+                    b.start_height
+                FROM l1_fragments f
+                JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+                JOIN l1_blob_transaction t ON t.id = tf.transaction_id
+                JOIN bundles b ON b.id = f.bundle_id
+                WHERE t.hash = $1
         "#,
             tx_hash.as_slice()
         )

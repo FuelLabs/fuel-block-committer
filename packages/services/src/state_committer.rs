@@ -5,11 +5,14 @@ pub mod service {
 
     use crate::{
         fee_analytics::service::FeeAnalytics,
+        state_committer::fee_optimization::Context,
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
-        Result, Runner,
+        Error, Result, Runner,
     };
     use itertools::Itertools;
     use tracing::info;
+
+    use super::fee_optimization::{FeeThresholds, SendOrWaitDecider, SmaBlockNumPeriods};
 
     // src/config.rs
     #[derive(Debug, Clone)]
@@ -19,7 +22,7 @@ pub mod service {
         pub fragment_accumulation_timeout: Duration,
         pub fragments_to_accumulate: NonZeroUsize,
         pub gas_bump_timeout: Duration,
-        pub tx_max_fee: u128,
+        pub price_algo: crate::state_committer::fee_optimization::Config,
     }
 
     #[cfg(feature = "test-helpers")]
@@ -30,7 +33,15 @@ pub mod service {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
-                tx_max_fee: 1_000_000_000,
+                price_algo: crate::state_committer::fee_optimization::Config {
+                    sma_periods: SmaBlockNumPeriods { short: 1, long: 2 },
+                    fee_thresholds: FeeThresholds {
+                        max_l2_blocks_behind: 100,
+                        start_discount_percentage: 0.,
+                        end_premium_percentage: 0.,
+                        always_acceptable_fee: u128::MAX,
+                    },
+                },
             }
         }
     }
@@ -43,7 +54,7 @@ pub mod service {
         config: Config,
         clock: Clock,
         startup_time: DateTime<Utc>,
-        fee_analytics: FeeAnalytics<FeeProvider>,
+        decider: SendOrWaitDecider<FeeProvider>,
     }
 
     impl<L1, FuelApi, Db, Clock, FeeProvider> StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
@@ -60,6 +71,7 @@ pub mod service {
             fee_analytics: FeeAnalytics<FeeProvider>,
         ) -> Self {
             let startup_time = clock.now();
+            let price_algo = config.price_algo;
             Self {
                 l1_adapter,
                 fuel_api,
@@ -67,7 +79,7 @@ pub mod service {
                 config,
                 clock,
                 startup_time,
-                fee_analytics,
+                decider: SendOrWaitDecider::new(fee_analytics, price_algo),
             }
         }
     }
@@ -103,6 +115,33 @@ pub mod service {
             previous_tx: Option<L1Tx>,
         ) -> Result<()> {
             info!("about to send at most {} fragments", fragments.len());
+
+            // TODO: segfault proper type conversion
+            let l1_height = self.l1_adapter.current_height().await?;
+            // TODO: segfault test this
+            let l2_height = self.fuel_api.latest_height().await?;
+
+            let oldest_l2_block_in_fragments = fragments
+                .maximum_by_key(|b| b.oldest_block_in_bundle)
+                .oldest_block_in_bundle;
+
+            let behind_on_l2 = l2_height.saturating_sub(oldest_l2_block_in_fragments);
+
+            let should_send = self
+                .decider
+                .should_send_blob_tx(
+                    fragments.len() as u32,
+                    Context {
+                        num_l2_blocks_behind: behind_on_l2 as u64,
+                        at_l1_height: l1_height,
+                    },
+                )
+                .await;
+
+            if !should_send {
+                // TODO: segfault log here
+                return Ok(());
+            }
 
             let data = fragments.clone().map(|f| f.fragment);
 
@@ -287,6 +326,7 @@ pub mod port {
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
         pub trait Api {
+            async fn current_height(&self) -> Result<u64>;
             async fn submit_state_fragments(
                 &self,
                 fragments: NonEmpty<Fragment>,

@@ -8,7 +8,8 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::fee_analytics::port::l1::testing::TestFeesProvider;
+use services::fee_analytics::port::l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider};
+use services::fee_analytics::port::Fees;
 use services::fee_analytics::service::FeeAnalytics;
 use services::types::{
     BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty,
@@ -533,15 +534,20 @@ impl Setup {
     }
 
     pub async fn send_fragments(&self, eth_tx: [u8; 32], eth_nonce: u32) {
+        let mut l1_mock = mocks::l1::expects_state_submissions(vec![(
+            None,
+            L1Tx {
+                hash: eth_tx,
+                nonce: eth_nonce,
+                ..Default::default()
+            },
+        )]);
+        l1_mock
+            .expect_current_height()
+            .return_once(move || Box::pin(async { Ok(0) }));
+
         StateCommitter::new(
-            mocks::l1::expects_state_submissions(vec![(
-                None,
-                L1Tx {
-                    hash: eth_tx,
-                    nonce: eth_nonce,
-                    ..Default::default()
-                },
-            )]),
+            l1_mock,
             mocks::fuel::latest_height_is(0),
             self.db(),
             services::StateCommitterConfig {
@@ -549,10 +555,10 @@ impl Setup {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
-                tx_max_fee: 1_000_000_000,
+                ..Default::default()
             },
             self.test_clock.clone(),
-            FeeAnalytics::new(TestFeesProvider::new(vec![])),
+            FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
         )
         .run()
         .await
@@ -566,7 +572,7 @@ impl Setup {
     pub async fn commit_block_bundle(&self, eth_tx: [u8; 32], eth_nonce: u32, height: u32) {
         self.insert_fragments(height, 6).await;
 
-        let l1_mock = mocks::l1::expects_state_submissions(vec![(
+        let mut l1_mock = mocks::l1::expects_state_submissions(vec![(
             None,
             L1Tx {
                 hash: eth_tx,
@@ -574,6 +580,10 @@ impl Setup {
                 ..Default::default()
             },
         )]);
+        l1_mock
+            .expect_current_height()
+            .return_once(move || Box::pin(async { Ok(0) }));
+
         let fuel_mock = mocks::fuel::latest_height_is(height);
         let mut committer = StateCommitter::new(
             l1_mock,
@@ -584,10 +594,10 @@ impl Setup {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
-                tx_max_fee: 1_000_000_000,
+                ..Default::default()
             },
             self.test_clock.clone(),
-            FeeAnalytics::new(TestFeesProvider::new(vec![])),
+            FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
         );
         committer.run().await.unwrap();
 

@@ -206,6 +206,10 @@ impl services::block_committer::port::l1::Api for WebsocketClient {
 }
 
 impl services::state_committer::port::l1::Api for WebsocketClient {
+    async fn current_height(&self) -> Result<u64> {
+        self._get_block_number().await
+    }
+
     delegate! {
         to (*self) {
             async fn submit_state_fragments(
