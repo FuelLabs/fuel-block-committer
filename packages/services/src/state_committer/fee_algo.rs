@@ -5,7 +5,7 @@ use crate::fee_analytics::{
     service::FeeAnalytics,
 };
 
-use super::service::FeeAlgoConfig;
+use super::service::{FeeAlgoConfig, FeeThresholds};
 
 pub struct SendOrWaitDecider<P> {
     fee_analytics: FeeAnalytics<P>,
@@ -61,7 +61,8 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         }
 
         let long_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
-        let max_upper_tx_fee = self.calculate_max_upper_fee(long_term_tx_fee, context);
+        let max_upper_tx_fee =
+            Self::calculate_max_upper_fee(&self.config.fee_thresholds, long_term_tx_fee, context);
 
         let long_vs_max_delta_perc =
             ((max_upper_tx_fee as f64 - long_term_tx_fee as f64) / long_term_tx_fee as f64 * 100.)
@@ -92,11 +93,14 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         short_term_tx_fee < max_upper_tx_fee
     }
 
-    // TODO: segfault test this
-    fn calculate_max_upper_fee(&self, fee: u128, context: Context) -> u128 {
+    fn calculate_max_upper_fee(
+        fee_thresholds: &FeeThresholds,
+        fee: u128,
+        context: Context,
+    ) -> u128 {
         const PPM: u128 = 1_000_000; // 100% in PPM
 
-        let max_blocks_behind = u128::from(self.config.fee_thresholds.max_l2_blocks_behind.get());
+        let max_blocks_behind = u128::from(fee_thresholds.max_l2_blocks_behind.get());
         let blocks_behind = u128::from(context.num_l2_blocks_behind);
 
         debug_assert!(
@@ -106,15 +110,14 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             max_blocks_behind
         );
 
-        let start_discount_ppm =
-            percentage_to_ppm(self.config.fee_thresholds.start_discount_percentage);
-        let end_premium_ppm = percentage_to_ppm(self.config.fee_thresholds.end_premium_percentage);
+        let start_discount_ppm = percentage_to_ppm(fee_thresholds.start_discount_percentage);
+        let end_premium_ppm = percentage_to_ppm(fee_thresholds.end_premium_percentage);
 
         // 1. The highest we're initially willing to go: eg. 100% - 20% = 80%
         let base_multiplier = PPM.saturating_sub(start_discount_ppm);
 
         // 2. How late are we: eg. late enough to add 25% to our base multiplier
-        let premium_increment = self.calculate_premium_increment(
+        let premium_increment = Self::calculate_premium_increment(
             start_discount_ppm,
             end_premium_ppm,
             blocks_behind,
@@ -132,7 +135,6 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
     }
 
     fn calculate_premium_increment(
-        &self,
         start_discount_ppm: u128,
         end_premium_ppm: u128,
         blocks_behind: u128,
@@ -171,16 +173,13 @@ fn percentage_to_ppm(percentage: f64) -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
-
     use super::*;
-    use crate::{
-        fee_analytics::port::{
-            l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
-            Fees,
-        },
-        state_committer::service::{FeeThresholds, SmaPeriods},
+    use crate::fee_analytics::port::{
+        l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
+        Fees,
     };
+    use crate::state_committer::service::{FeeThresholds, SmaPeriods};
+    use std::num::NonZeroU64;
     use test_case::test_case;
     use tokio;
 
@@ -542,6 +541,107 @@ mod tests {
         assert_eq!(
             should_send, expected_decision,
             "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {expected_decision}, got: {should_send}",
+        );
+    }
+
+    /// Helper function to convert a percentage to Parts Per Million (PPM)
+    fn percentage_to_ppm_test_helper(percentage: f64) -> u128 {
+        (percentage * 1_000_000.0) as u128
+    }
+
+    #[test_case(
+        // Test Case 1: No blocks behind, no discount or premium
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            start_discount_percentage: 0.0,
+            end_premium_percentage: 0.0,
+            always_acceptable_fee: 0,
+        },
+        1000,
+        Context {
+            num_l2_blocks_behind: 0,
+            at_l1_height: 0,
+        },
+        1000;
+        "No blocks behind, multiplier should be 100%"
+    )]
+    #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            start_discount_percentage: 0.20,
+            end_premium_percentage: 0.25,
+            always_acceptable_fee: 0,
+        },
+        2000,
+        Context {
+            num_l2_blocks_behind: 50,
+            at_l1_height: 0,
+        },
+        2050;
+        "Half blocks behind with discount and premium"
+    )]
+    #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            start_discount_percentage: 0.25,
+            end_premium_percentage: 0.0,
+            always_acceptable_fee: 0,
+        },
+        800,
+        Context {
+            num_l2_blocks_behind: 50,
+            at_l1_height: 0,
+        },
+        700;
+        "Start discount only, no premium"
+    )]
+    #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            start_discount_percentage: 0.0,
+            end_premium_percentage: 0.30,
+            always_acceptable_fee: 0,
+        },
+        1000,
+        Context {
+            num_l2_blocks_behind: 50,
+            at_l1_height: 0,
+        },
+        1150;
+        "End premium only, no discount"
+    )]
+    #[test_case(
+        // Test Case 8: High fee with premium
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            start_discount_percentage: 0.10, // 100,000 PPM
+            end_premium_percentage: 0.20,    // 200,000 PPM
+            always_acceptable_fee: 0,
+        },
+        10_000,
+        Context {
+            num_l2_blocks_behind: 99,
+            at_l1_height: 0,
+        },
+        11970;
+        "High fee with premium"
+    )]
+    fn test_calculate_max_upper_fee(
+        fee_thresholds: FeeThresholds,
+        fee: u128,
+        context: Context,
+        expected_max_upper_fee: u128,
+    ) {
+        let max_upper_fee = SendOrWaitDecider::<ConstantFeesProvider>::calculate_max_upper_fee(
+            &fee_thresholds,
+            fee,
+            context,
+        );
+
+        assert_eq!(
+            max_upper_fee, expected_max_upper_fee,
+            "Expected max_upper_fee to be {}, but got {}",
+            expected_max_upper_fee, max_upper_fee
         );
     }
 }
