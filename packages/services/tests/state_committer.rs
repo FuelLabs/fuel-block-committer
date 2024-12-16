@@ -6,7 +6,7 @@ use services::{
         },
         service::FeeAnalytics,
     },
-    state_committer::service::{FeeAlgoConfig, FeeThresholds, SmaBlockNumPeriods},
+    state_committer::service::{FeeAlgoConfig, FeeThresholds, SmaPeriods},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
@@ -403,7 +403,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
     let fee_analytics = FeeAnalytics::new(fees_provider);
 
     let fee_algo_config = FeeAlgoConfig {
-        sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: NonZeroU64::new(100).unwrap(),
             start_discount_percentage: 0.0,
@@ -514,7 +514,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
     let fee_analytics = FeeAnalytics::new(fees_provider);
 
     let fee_algo_config = FeeAlgoConfig {
-        sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: NonZeroU64::new(100).unwrap(),
             start_discount_percentage: 0.0,
@@ -616,7 +616,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
     let fee_analytics = FeeAnalytics::new(fees_provider);
 
     let fee_algo_config = FeeAlgoConfig {
-        sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: NonZeroU64::new(50).unwrap(),
             start_discount_percentage: 0.0,
@@ -726,7 +726,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
     let fee_analytics = FeeAnalytics::new(fees_provider);
 
     let fee_algo_config = FeeAlgoConfig {
-        sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: NonZeroU64::new(100).unwrap(),
             start_discount_percentage: 0.20,

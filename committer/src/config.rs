@@ -1,6 +1,6 @@
 use std::{
     net::Ipv4Addr,
-    num::{NonZeroU32, NonZeroUsize},
+    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
     str::FromStr,
     time::Duration,
 };
@@ -111,6 +111,30 @@ pub struct App {
     /// How often to run state pruner
     #[serde(deserialize_with = "human_readable_duration")]
     pub state_pruner_run_interval: Duration,
+    /// Configuration for the fee algorithm used by the StateCommitter
+    pub fee_algo: FeeAlgoConfig,
+}
+
+/// Configuration for the fee algorithm used by the StateCommitter
+#[derive(Debug, Clone, Deserialize)]
+pub struct FeeAlgoConfig {
+    /// Short-term period for Simple Moving Average (SMA) in block numbers
+    pub short_sma_blocks: u64,
+
+    /// Long-term period for Simple Moving Average (SMA) in block numbers
+    pub long_sma_blocks: u64,
+
+    /// Maximum number of unposted L2 blocks before sending a transaction regardless of fees
+    pub max_l2_blocks_behind: NonZeroU64,
+
+    /// Starting discount percentage applied we try to achieve if we're 0 l2 blocks behind
+    pub start_discount_percentage: f64,
+
+    /// Premium percentage we're willing to pay if we're max_l2_blocks_behind - 1 blocks behind
+    pub end_premium_percentage: f64,
+
+    /// A fee that is always acceptable regardless of other conditions
+    pub always_acceptable_fee: u64,
 }
 
 /// Configuration settings for managing fuel block bundling and fragment submission operations.

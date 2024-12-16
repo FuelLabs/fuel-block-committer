@@ -121,6 +121,16 @@ impl Committer {
                 "COMMITTER__APP__STATE_PRUNER_RUN_INTERVAL",
                 get_field!(state_pruner_run_interval),
             )
+            .env("COMMITTER__APP__FEE_ALGO__SHORT_SMA_BLOCKS", "1")
+            .env("COMMITTER__APP__FEE_ALGO__LONG_SMA_BLOCKS", "1")
+            .env("COMMITTER__APP__FEE_ALGO__MAX_L2_BLOCKS_BEHIND", "1")
+            .env("COMMITTER__APP__FEE_ALGO__START_DISCOUNT_PERCENTAGE", "0")
+            .env("COMMITTER__APP__FEE_ALGO__END_PREMIUM_PERCENTAGE", "0")
+            // we're basically disabling the fee algo here
+            .env(
+                "COMMITTER__APP__FEE_ALGO__ALWAYS_ACCEPTABLE_FEE",
+                u64::MAX.to_string(),
+            )
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 

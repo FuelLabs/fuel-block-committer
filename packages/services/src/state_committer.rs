@@ -18,7 +18,7 @@ pub mod service {
     use super::fee_algo::SendOrWaitDecider;
 
     #[derive(Debug, Clone, Copy)]
-    pub struct SmaBlockNumPeriods {
+    pub struct SmaPeriods {
         pub short: u64,
         pub long: u64,
     }
@@ -34,7 +34,7 @@ pub mod service {
 
     #[derive(Debug, Clone, Copy)]
     pub struct FeeAlgoConfig {
-        pub sma_periods: SmaBlockNumPeriods,
+        pub sma_periods: SmaPeriods,
         pub fee_thresholds: FeeThresholds,
     }
 
@@ -58,7 +58,7 @@ pub mod service {
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
                 fee_algo: FeeAlgoConfig {
-                    sma_periods: SmaBlockNumPeriods { short: 1, long: 2 },
+                    sma_periods: SmaPeriods { short: 1, long: 2 },
                     fee_thresholds: FeeThresholds {
                         max_l2_blocks_behind: 100.try_into().unwrap(),
                         start_discount_percentage: 0.,

@@ -140,7 +140,7 @@ mod tests {
     use super::*;
     use crate::{
         fee_analytics::port::{l1::testing::PreconfiguredFeesProvider, Fees},
-        state_committer::service::{FeeThresholds, SmaBlockNumPeriods},
+        state_committer::service::{FeeThresholds, SmaPeriods},
     };
     use test_case::test_case;
     use tokio;
@@ -164,7 +164,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
         6,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -181,7 +181,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -198,7 +198,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 always_acceptable_fee: (21_000 * 5000) + (6 * 131_072 * 5000) + 5000 + 1,
                 max_l2_blocks_behind: 100.try_into().unwrap(),
@@ -215,7 +215,7 @@ mod tests {
         Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -232,7 +232,7 @@ mod tests {
         Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -249,7 +249,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 900 },
         5,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -266,7 +266,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1100 },
         5,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -283,7 +283,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000 },
         5,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -300,7 +300,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000 },
         5,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -318,7 +318,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500 },
         6,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -335,7 +335,7 @@ mod tests {
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -353,7 +353,7 @@ mod tests {
         Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000 },
         0,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -371,7 +371,7 @@ mod tests {
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000 },
         0,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -389,7 +389,7 @@ mod tests {
         Fees { base_fee_per_gas: 2000, reward: 7000, base_fee_per_blob_gas: 50_000_000 },
         0,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.0,
@@ -408,7 +408,7 @@ mod tests {
     Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
         1,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20,
@@ -426,7 +426,7 @@ mod tests {
         Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
         1,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20,
@@ -444,7 +444,7 @@ mod tests {
         Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
         1,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20,
@@ -462,7 +462,7 @@ mod tests {
         Fees { base_fee_per_gas: 2_000_000, reward: 1_000_000, base_fee_per_blob_gas: 20_000_000 },
         1,
         FeeAlgoConfig {
-            sma_periods: SmaBlockNumPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20,

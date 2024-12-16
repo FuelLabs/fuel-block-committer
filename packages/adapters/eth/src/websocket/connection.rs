@@ -399,9 +399,7 @@ impl WsConnection {
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FuelStateContract::new(contract_address, provider.clone());
 
-        // TODO: segfault revert this
-        // let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
-        let interval_u256 = 1u32;
+        let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
 
         let commit_interval = u32::try_from(interval_u256)
             .map_err(|e| Error::Other(e.to_string()))
