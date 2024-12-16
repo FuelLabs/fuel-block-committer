@@ -221,7 +221,7 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
 }
 
 impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
-    async fn fees(&self, height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+    async fn fees(&self, height_range: RangeInclusive<u64>) -> Result<SequentialBlockFees> {
         const REWARD_PERCENTILE: f64 =
             alloy::providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE;
 
@@ -232,7 +232,7 @@ impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
 
         // TODO: segfault see when this can be None
         // TODO: check edgecases
-        let mut current_height = height_range.clone().min().unwrap();
+        let mut current_height = *height_range.start();
         while current_height <= *height_range.end() {
             // There is a comment in alloy about not doing more than 1024 blocks at a time
             const RPC_LIMIT: u64 = 1024;
@@ -298,19 +298,16 @@ impl services::fee_analytics::port::l1::FeesProvider for WebsocketClient {
             })
             .collect_vec();
 
-        // eprintln!("converted into {new_fees:?}");
-
-        new_fees.try_into().unwrap()
+        Ok(new_fees.try_into().unwrap())
     }
 
-    async fn current_block_height(&self) -> u64 {
-        self._get_block_number().await.unwrap()
+    async fn current_block_height(&self) -> Result<u64> {
+        self._get_block_number().await
     }
 }
 
 #[cfg(test)]
 mod test {
-    
 
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
     use fuel_block_committer_encoding::blob;
@@ -331,13 +328,4 @@ mod test {
         // then
         assert_eq!(gas_usage, 4 * DATA_GAS_PER_BLOB);
     }
-
-    // #[tokio::test]
-    // async fn can_connect_to_eth_mainnet() {
-    //     let current_height = client._get_block_number().await.unwrap();
-    //
-    //     let fees = FeesProvider::fees(&client, current_height - 1026..=current_height).await;
-    //
-    //     panic!("{:?}", fees);
-    // }
 }

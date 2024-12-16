@@ -1,21 +1,21 @@
 use std::path::PathBuf;
 
 use services::fee_analytics::{
-        port::{
-            l1::testing::{self}, Fees,
-        },
-        service::FeeAnalytics,
-    };
+    port::{
+        l1::testing::{self},
+        Fees,
+    },
+    service::FeeAnalytics,
+};
 
 #[tokio::test]
 async fn calculates_sma_correctly_for_last_1_block() {
     // given
     let fees_provider = testing::PreconfiguredFeesProvider::new(testing::incrementing_fees(5));
     let fee_analytics = FeeAnalytics::new(fees_provider);
-    let last_n_blocks = 1;
 
     // when
-    let sma = fee_analytics.calculate_sma(4..=4).await;
+    let sma = fee_analytics.calculate_sma(4..=4).await.unwrap();
 
     // then
     assert_eq!(sma.base_fee_per_gas, 5);
@@ -28,10 +28,9 @@ async fn calculates_sma_correctly_for_last_5_blocks() {
     // given
     let fees_provider = testing::PreconfiguredFeesProvider::new(testing::incrementing_fees(5));
     let fee_analytics = FeeAnalytics::new(fees_provider);
-    let last_n_blocks = 5;
 
     // when
-    let sma = fee_analytics.calculate_sma(0..=4).await;
+    let sma = fee_analytics.calculate_sma(0..=4).await.unwrap();
 
     // then
     let mean = (5 + 4 + 3 + 2 + 1) / 5;

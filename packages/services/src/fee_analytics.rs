@@ -16,7 +16,6 @@ pub mod port {
         use std::ops::RangeInclusive;
 
         use itertools::Itertools;
-        
 
         use super::BlockFees;
 
@@ -81,8 +80,11 @@ pub mod port {
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
         pub trait FeesProvider {
-            async fn fees(&self, height_range: RangeInclusive<u64>) -> SequentialBlockFees;
-            async fn current_block_height(&self) -> u64;
+            async fn fees(
+                &self,
+                height_range: RangeInclusive<u64>,
+            ) -> crate::Result<SequentialBlockFees>;
+            async fn current_block_height(&self) -> crate::Result<u64>;
         }
 
         #[cfg(feature = "test-helpers")]
@@ -90,7 +92,6 @@ pub mod port {
             use std::{collections::BTreeMap, ops::RangeInclusive};
 
             use itertools::Itertools;
-            
 
             use crate::fee_analytics::port::{BlockFees, Fees};
 
@@ -108,16 +109,20 @@ pub mod port {
             }
 
             impl FeesProvider for ConstantFeesProvider {
-                async fn fees(&self, _height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+                async fn fees(
+                    &self,
+                    _height_range: RangeInclusive<u64>,
+                ) -> crate::Result<SequentialBlockFees> {
                     let fees = BlockFees {
-                        height: self.current_block_height().await,
+                        height: self.current_block_height().await?,
                         fees: self.fees,
                     };
 
-                    vec![fees].try_into().unwrap()
+                    Ok(vec![fees].try_into().unwrap())
                 }
-                async fn current_block_height(&self) -> u64 {
-                    0
+
+                async fn current_block_height(&self) -> crate::Result<u64> {
+                    Ok(0)
                 }
             }
 
@@ -127,11 +132,18 @@ pub mod port {
             }
 
             impl FeesProvider for PreconfiguredFeesProvider {
-                async fn current_block_height(&self) -> u64 {
-                    *self.fees.keys().last().unwrap()
+                async fn current_block_height(&self) -> crate::Result<u64> {
+                    Ok(*self
+                        .fees
+                        .keys()
+                        .last()
+                        .expect("no fees registered with PreconfiguredFeesProvider"))
                 }
 
-                async fn fees(&self, height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+                async fn fees(
+                    &self,
+                    height_range: RangeInclusive<u64>,
+                ) -> crate::Result<SequentialBlockFees> {
                     let fees = self
                         .fees
                         .iter()
@@ -143,7 +155,7 @@ pub mod port {
                         })
                         .collect_vec();
 
-                    fees.try_into().unwrap()
+                    Ok(fees.try_into().expect("block fees not sequential"))
                 }
             }
 
@@ -177,8 +189,6 @@ pub mod service {
 
     use std::ops::RangeInclusive;
 
-    
-
     use super::port::{
         l1::{FeesProvider, SequentialBlockFees},
         Fees,
@@ -197,10 +207,8 @@ pub mod service {
         // TODO: segfault fail or signal if missing blocks/holes present
         // TODO: segfault cache fees/save to db
         // TODO: segfault job to update fees in the background
-        pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> Fees {
-            let fees = self.fees_provider.fees(block_range).await;
-
-            Self::mean(fees)
+        pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> crate::Result<Fees> {
+            self.fees_provider.fees(block_range).await.map(Self::mean)
         }
 
         fn mean(fees: SequentialBlockFees) -> Fees {

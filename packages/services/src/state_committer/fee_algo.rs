@@ -23,7 +23,7 @@ impl<P> SendOrWaitDecider<P> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Context {
-    pub num_l2_blocks_behind: u64,
+    pub num_l2_blocks_behind: u32,
     pub at_l1_height: u64,
 }
 
@@ -31,18 +31,22 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
     // TODO: segfault validate blob number
     // TODO: segfault test that too far behind should work even if we cannot fetch prices due to holes
     // (once that is implemented)
-    pub async fn should_send_blob_tx(&self, num_blobs: u32, context: Context) -> bool {
+    pub async fn should_send_blob_tx(
+        &self,
+        num_blobs: u32,
+        context: Context,
+    ) -> crate::Result<bool> {
         let last_n_blocks = |n: u64| context.at_l1_height.saturating_sub(n)..=context.at_l1_height;
 
         let short_term_sma = self
             .fee_analytics
             .calculate_sma(last_n_blocks(self.config.sma_periods.short))
-            .await;
+            .await?;
 
         let long_term_sma = self
             .fee_analytics
             .calculate_sma(last_n_blocks(self.config.sma_periods.long))
-            .await;
+            .await?;
 
         let short_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
 
@@ -50,14 +54,13 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             short_term_tx_fee <= self.config.fee_thresholds.always_acceptable_fee;
         eprintln!("fee always acceptable: {}", fee_always_acceptable);
 
-        // TODO: segfault test this
         let too_far_behind =
             context.num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind.get();
 
         eprintln!("too far behind: {}", too_far_behind);
 
         if fee_always_acceptable || too_far_behind {
-            return true;
+            return Ok(true);
         }
 
         let long_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
@@ -90,7 +93,7 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             short_term_tx_fee, long_term_tx_fee, max_upper_tx_fee
         );
 
-        short_term_tx_fee < max_upper_tx_fee
+        Ok(short_term_tx_fee < max_upper_tx_fee)
     }
 
     fn calculate_max_upper_fee(
@@ -518,12 +521,12 @@ mod tests {
         new_fees: Fees,
         num_blobs: u32,
         config: FeeAlgoConfig,
-        num_l2_blocks_behind: u64,
+        num_l2_blocks_behind: u32,
         expected_decision: bool,
     ) {
         let fees = generate_fees(config, old_fees, new_fees);
         let fees_provider = PreconfiguredFeesProvider::new(fees);
-        let current_block_height = fees_provider.current_block_height().await;
+        let current_block_height = fees_provider.current_block_height().await.unwrap();
         let analytics_service = FeeAnalytics::new(fees_provider);
 
         let sut = SendOrWaitDecider::new(analytics_service, config);
@@ -536,7 +539,8 @@ mod tests {
                     num_l2_blocks_behind,
                 },
             )
-            .await;
+            .await
+            .unwrap();
 
         assert_eq!(
             should_send, expected_decision,

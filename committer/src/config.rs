@@ -125,7 +125,7 @@ pub struct FeeAlgoConfig {
     pub long_sma_blocks: u64,
 
     /// Maximum number of unposted L2 blocks before sending a transaction regardless of fees
-    pub max_l2_blocks_behind: NonZeroU64,
+    pub max_l2_blocks_behind: NonZeroU32,
 
     /// Starting discount percentage applied we try to achieve if we're 0 l2 blocks behind
     pub start_discount_percentage: f64,

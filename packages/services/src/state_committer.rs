@@ -2,7 +2,7 @@ mod fee_algo;
 
 pub mod service {
     use std::{
-        num::{NonZeroU64, NonZeroUsize},
+        num::{NonZeroU32, NonZeroU64, NonZeroUsize},
         time::Duration,
     };
 
@@ -26,7 +26,7 @@ pub mod service {
     // TODO: segfault validate start discount is less than end premium and both are positive
     #[derive(Debug, Clone, Copy)]
     pub struct FeeThresholds {
-        pub max_l2_blocks_behind: NonZeroU64,
+        pub max_l2_blocks_behind: NonZeroU32,
         pub start_discount_percentage: f64,
         pub end_premium_percentage: f64,
         pub always_acceptable_fee: u128,
@@ -133,39 +133,38 @@ pub mod service {
             Ok(std_elapsed >= self.config.fragment_accumulation_timeout)
         }
 
-        async fn submit_fragments(
-            &self,
-            fragments: NonEmpty<BundleFragment>,
-            previous_tx: Option<L1Tx>,
-        ) -> Result<()> {
-            info!("about to send at most {} fragments", fragments.len());
-
-            // TODO: segfault proper type conversion
+        async fn should_send_tx(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
             let l1_height = self.l1_adapter.current_height().await?;
-            // TODO: segfault test this
             let l2_height = self.fuel_api.latest_height().await?;
 
             let oldest_l2_block_in_fragments = fragments
                 .maximum_by_key(|b| b.oldest_block_in_bundle)
                 .oldest_block_in_bundle;
 
-            let behind_on_l2 = l2_height.saturating_sub(oldest_l2_block_in_fragments);
+            let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block_in_fragments);
 
-            let should_send = self
-                .decider
+            self.decider
                 .should_send_blob_tx(
-                    fragments.len() as u32,
+                    u32::try_from(fragments.len()).expect("not to send more than u32::MAX blobs"),
                     Context {
-                        num_l2_blocks_behind: behind_on_l2 as u64,
+                        num_l2_blocks_behind,
                         at_l1_height: l1_height,
                     },
                 )
-                .await;
+                .await
+        }
 
-            if !should_send {
-                // TODO: segfault log here
+        async fn submit_fragments(
+            &self,
+            fragments: NonEmpty<BundleFragment>,
+            previous_tx: Option<L1Tx>,
+        ) -> Result<()> {
+            if !self.should_send_tx(&fragments).await? {
+                info!("decided against sending fragments");
                 return Ok(());
             }
+
+            info!("about to send at most {} fragments", fragments.len());
 
             let data = fragments.clone().map(|f| f.fragment);
 
