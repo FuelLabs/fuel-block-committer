@@ -544,6 +544,14 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
     // Define fee sequence with high fees to ensure that without the behind condition, it wouldn't send
     let fee_sequence = vec![
         (
+            0,
+            Fees {
+                base_fee_per_gas: 7000,
+                reward: 7000,
+                base_fee_per_blob_gas: 7000,
+            },
+        ),
+        (
             1,
             Fees {
                 base_fee_per_gas: 7000,
@@ -583,18 +591,10 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
                 base_fee_per_blob_gas: 7000,
             },
         ),
-        (
-            6,
-            Fees {
-                base_fee_per_gas: 7000,
-                reward: 7000,
-                base_fee_per_blob_gas: 7000,
-            },
-        ),
     ];
 
     let fee_algo_config = FeeAlgoConfig {
-        sma_periods: SmaPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods { short: 2, long: 5 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 50.try_into().unwrap(),
             start_discount_percentage: 0.0,
@@ -700,7 +700,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
     ];
 
     let fee_algo_config = FeeAlgoConfig {
-        sma_periods: SmaPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods { short: 2, long: 5 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
             start_discount_percentage: 0.20,
@@ -727,6 +727,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(80);
 
+    eprintln!("about to contrust the committer");
     let mut state_committer = StateCommitter::new(
         ApiMockWFees::new(l1_mock_submit).w_preconfigured_fees(fee_sequence),
         fuel_mock,
@@ -740,9 +741,11 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         },
         setup.test_clock(),
     );
+    eprintln!("constructed the committer");
 
     // when
     state_committer.run().await?;
+    eprintln!("ran the committer");
 
     // then
     // Mocks validate that the fragments have been sent due to increased tolerance from nearing max blocks behind

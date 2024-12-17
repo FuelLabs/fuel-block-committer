@@ -8,7 +8,7 @@ pub mod service {
     };
 
     use crate::{
-        state_committer::fee_algo::Context,
+        state_committer::{fee_algo::Context, fee_analytics::CachingFeesProvider},
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
         Result, Runner,
     };
@@ -78,7 +78,7 @@ pub mod service {
         config: Config,
         clock: Clock,
         startup_time: DateTime<Utc>,
-        decider: SendOrWaitDecider<L1>,
+        decider: SendOrWaitDecider<CachingFeesProvider<L1>>,
     }
 
     impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
@@ -96,14 +96,20 @@ pub mod service {
         ) -> Self {
             let startup_time = clock.now();
             let price_algo = config.fee_algo;
+
+            // TODO: segfault, configure this cache
+            let decider = SendOrWaitDecider::new(
+                CachingFeesProvider::new(l1_adapter.clone(), 24 * 3600 / 12),
+                price_algo,
+            );
             Self {
-                l1_adapter: l1_adapter.clone(),
+                l1_adapter,
                 fuel_api,
                 storage,
                 config,
                 clock,
                 startup_time,
-                decider: SendOrWaitDecider::new(l1_adapter, price_algo),
+                decider,
             }
         }
     }
@@ -141,6 +147,10 @@ pub mod service {
                 .oldest_block_in_bundle;
 
             let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block_in_fragments);
+            eprintln!(
+                "deciding whether to send tx with {} fragments",
+                fragments.len()
+            );
 
             self.decider
                 .should_send_blob_tx(
@@ -159,9 +169,11 @@ pub mod service {
             previous_tx: Option<L1Tx>,
         ) -> Result<()> {
             if !self.should_send_tx(&fragments).await? {
+                eprintln!("decided against sending fragments");
                 info!("decided against sending fragments");
                 return Ok(());
             }
+            eprintln!("decided to send fragments");
 
             info!("about to send at most {} fragments", fragments.len());
 

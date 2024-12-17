@@ -292,15 +292,21 @@ impl<P> FeeAnalytics<P> {
 impl<P: FeesProvider> FeeAnalytics<P> {
     // TODO: segfault cache fees
     pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> crate::Result<Fees> {
+        eprintln!("asking for fees");
         let fees = self.fees_provider.fees(block_range.clone()).await?;
+        eprintln!("fees received");
 
+        eprintln!("checking if fees are complete");
         let received_height_range = fees.height_range();
+        eprintln!("received height range: {:?}", received_height_range);
         if received_height_range != block_range {
+            eprintln!("not equeal {received_height_range:?} != {block_range:?}",);
             return Err(crate::Error::from(format!(
                 "fees received from the adapter({received_height_range:?}) don't cover the requested range ({block_range:?})"
             )));
         }
 
+        eprintln!("calculating mean");
         Ok(Self::mean(fees))
     }
 

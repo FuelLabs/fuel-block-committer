@@ -36,17 +36,21 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
     ) -> crate::Result<bool> {
         // opted out of validating that num_blobs <= 6, it's not this fn's problem if the caller
         // wants to send more than 6 blobs
-        let last_n_blocks = |n: u64| context.at_l1_height.saturating_sub(n)..=context.at_l1_height;
+        let last_n_blocks = |n: u64| {
+            context.at_l1_height.saturating_sub(n.saturating_sub(1))..=context.at_l1_height
+        };
 
         let short_term_sma = self
             .fee_analytics
             .calculate_sma(last_n_blocks(self.config.sma_periods.short))
             .await?;
+        eprintln!("short term sma: {:?}", short_term_sma);
 
         let long_term_sma = self
             .fee_analytics
             .calculate_sma(last_n_blocks(self.config.sma_periods.long))
             .await?;
+        eprintln!("long term sma: {:?}", long_term_sma);
 
         let short_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
 
@@ -479,7 +483,6 @@ mod tests {
         "Later: after max wait, send regardless"
     )]
     #[test_case(
-        // Partway: at 80 blocks behind, tolerance might have increased enough to accept
         Fees { base_fee_per_gas: 6000, reward: 0, base_fee_per_blob_gas: 6000 },
         Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
         1,
@@ -492,7 +495,7 @@ mod tests {
                 always_acceptable_fee: 0,
             },
         },
-        65,
+        80,
         true;
         "Mid-wait: increased tolerance allows acceptance"
     )]
@@ -507,7 +510,7 @@ mod tests {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20,
                 end_premium_percentage: 0.20,
-                always_acceptable_fee: 1_781_000_000_000
+                always_acceptable_fee: 2_700_000_000_000
             },
         },
         0,
