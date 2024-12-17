@@ -865,6 +865,36 @@ impl Postgres {
         .collect::<Result<Vec<_>>>()
     }
 
+    pub(crate) async fn _get_latest_costs(&self, limit: usize) -> Result<Vec<BundleCost>> {
+        sqlx::query_as!(
+            tables::BundleCost,
+            r#"
+            SELECT
+                bc.bundle_id,
+                bc.cost,
+                bc.size,
+                bc.da_block_height,
+                bc.is_finalized,
+                b.start_height,
+                b.end_height
+            FROM
+                bundle_cost bc
+                JOIN bundles b ON bc.bundle_id = b.id
+            WHERE
+                bc.is_finalized = TRUE
+            ORDER BY
+                b.start_height DESC
+            LIMIT $1
+            "#,
+            limit as i64
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(BundleCost::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
     pub(crate) async fn _next_bundle_id(&self) -> Result<NonNegative<i32>> {
         let next_id = sqlx::query!("SELECT nextval(pg_get_serial_sequence('bundles', 'id'))")
             .fetch_one(&self.connection_pool)
