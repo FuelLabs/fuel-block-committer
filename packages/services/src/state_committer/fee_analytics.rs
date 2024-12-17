@@ -1,6 +1,7 @@
-use std::ops::RangeInclusive;
+use std::{collections::BTreeMap, ops::RangeInclusive};
 
 use itertools::Itertools;
+use tokio::sync::RwLock;
 
 use crate::state_committer::port::l1::Api;
 
@@ -17,7 +18,7 @@ pub struct BlockFees {
     pub fees: Fees,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SequentialBlockFees {
     fees: Vec<BlockFees>,
 }
@@ -28,6 +29,90 @@ pub struct SequentialBlockFees {
 pub trait FeesProvider {
     async fn fees(&self, height_range: RangeInclusive<u64>) -> crate::Result<SequentialBlockFees>;
     async fn current_block_height(&self) -> crate::Result<u64>;
+}
+
+#[derive(Debug)]
+pub struct CachingFeesProvider<P> {
+    fees_provider: P,
+    cache: RwLock<BTreeMap<u64, Fees>>,
+    cache_limit: usize,
+}
+
+impl<P> CachingFeesProvider<P> {
+    pub fn new(fees_provider: P, cache_limit: usize) -> Self {
+        Self {
+            fees_provider,
+            cache: RwLock::new(BTreeMap::new()),
+            cache_limit,
+        }
+    }
+}
+
+impl<P: FeesProvider + Send + Sync> FeesProvider for CachingFeesProvider<P> {
+    async fn fees(&self, height_range: RangeInclusive<u64>) -> crate::Result<SequentialBlockFees> {
+        self.get_fees(height_range).await
+    }
+
+    async fn current_block_height(&self) -> crate::Result<u64> {
+        self.fees_provider.current_block_height().await
+    }
+}
+
+impl<P: FeesProvider> CachingFeesProvider<P> {
+    pub async fn get_fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+    ) -> crate::Result<SequentialBlockFees> {
+        let mut missing_heights = vec![];
+
+        // Mind the scope to release the read lock
+        {
+            let cache = self.cache.read().await;
+            for height in height_range.clone() {
+                if !cache.contains_key(&height) {
+                    missing_heights.push(height);
+                }
+            }
+        }
+
+        if !missing_heights.is_empty() {
+            let fetched_fees = self
+                .fees_provider
+                .fees(
+                    *missing_heights.first().expect("not empty")
+                        ..=*missing_heights.last().expect("not empty"),
+                )
+                .await?;
+
+            let mut cache = self.cache.write().await;
+            for block_fee in fetched_fees {
+                cache.insert(block_fee.height, block_fee.fees);
+            }
+        }
+
+        let fees: Vec<_> = {
+            let cache = self.cache.read().await;
+            height_range
+                .filter_map(|h| {
+                    cache.get(&h).map(|f| BlockFees {
+                        height: h,
+                        fees: *f,
+                    })
+                })
+                .collect()
+        };
+
+        self.shrink_cache().await;
+
+        SequentialBlockFees::try_from(fees).map_err(|e| crate::Error::Other(e.to_string()))
+    }
+
+    async fn shrink_cache(&self) {
+        let mut cache = self.cache.write().await;
+        while cache.len() > self.cache_limit {
+            cache.pop_first();
+        }
+    }
 }
 
 impl<T: Api + Send + Sync> FeesProvider for T {
@@ -194,6 +279,7 @@ pub mod testing {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct FeeAnalytics<P> {
     fees_provider: P,
 }
@@ -204,7 +290,6 @@ impl<P> FeeAnalytics<P> {
 }
 
 impl<P: FeesProvider> FeeAnalytics<P> {
-    // TODO: segfault fail or signal if missing blocks/holes present
     // TODO: segfault cache fees
     pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> crate::Result<Fees> {
         let fees = self.fees_provider.fees(block_range.clone()).await?;
@@ -243,6 +328,7 @@ impl<P: FeesProvider> FeeAnalytics<P> {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
+    use mockall::{predicate::eq, Sequence};
 
     use super::*;
 
@@ -426,6 +512,173 @@ mod tests {
             err.to_string(),
             "fees received from the adapter(0..=3) don't cover the requested range (0..=4)"
         );
+    }
+
+    #[tokio::test]
+    async fn caching_provider_avoids_duplicate_requests() {
+        // given
+        let mut mock_provider = MockFeesProvider::new();
+
+        mock_provider
+            .expect_fees()
+            .with(eq(0..=4))
+            .once()
+            .return_once(|range| {
+                Box::pin(async move {
+                    Ok(SequentialBlockFees::try_from(
+                        range
+                            .map(|h| BlockFees {
+                                height: h,
+                                fees: Fees {
+                                    base_fee_per_gas: h as u128,
+                                    reward: h as u128,
+                                    base_fee_per_blob_gas: h as u128,
+                                },
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap())
+                })
+            });
+
+        let provider = CachingFeesProvider::new(mock_provider, 5);
+        let _ = provider.get_fees(0..=4).await.unwrap();
+
+        // when
+        let _ = provider.get_fees(0..=4).await.unwrap();
+
+        // then
+        // mock validates no extra calls made
+    }
+
+    #[tokio::test]
+    async fn caching_provider_fetches_only_missing_blocks() {
+        // Given: A mock FeesProvider
+        let mut mock_provider = MockFeesProvider::new();
+
+        // Expectation: The provider will fetch blocks 3..=5, since 0..=2 are cached
+        let mut sequence = Sequence::new();
+        mock_provider
+            .expect_fees()
+            .with(eq(0..=2))
+            .once()
+            .return_once(|range| {
+                Box::pin(async move {
+                    Ok(SequentialBlockFees::try_from(
+                        range
+                            .map(|h| BlockFees {
+                                height: h,
+                                fees: Fees {
+                                    base_fee_per_gas: h as u128,
+                                    reward: h as u128,
+                                    base_fee_per_blob_gas: h as u128,
+                                },
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap())
+                })
+            })
+            .in_sequence(&mut sequence);
+
+        mock_provider
+            .expect_fees()
+            .with(eq(3..=5))
+            .once()
+            .return_once(|range| {
+                Box::pin(async move {
+                    Ok(SequentialBlockFees::try_from(
+                        range
+                            .map(|h| BlockFees {
+                                height: h,
+                                fees: Fees {
+                                    base_fee_per_gas: h as u128,
+                                    reward: h as u128,
+                                    base_fee_per_blob_gas: h as u128,
+                                },
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap())
+                })
+            })
+            .in_sequence(&mut sequence);
+
+        let provider = CachingFeesProvider::new(mock_provider, 5);
+        let _ = provider.get_fees(0..=2).await.unwrap();
+
+        // when
+        let _ = provider.get_fees(2..=5).await.unwrap();
+
+        // then
+        // not called for the overlapping area
+    }
+
+    fn generate_sequential_fees(height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+        SequentialBlockFees::try_from(
+            height_range
+                .map(|h| BlockFees {
+                    height: h,
+                    fees: Fees {
+                        base_fee_per_gas: h as u128,
+                        reward: h as u128,
+                        base_fee_per_blob_gas: h as u128,
+                    },
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn caching_provider_evicts_oldest_blocks() {
+        // given
+        let mut mock_provider = MockFeesProvider::new();
+
+        mock_provider
+            .expect_fees()
+            .with(eq(0..=4))
+            .times(2)
+            .returning(|range| Box::pin(async { Ok(generate_sequential_fees(range)) }));
+
+        mock_provider
+            .expect_fees()
+            .with(eq(5..=9))
+            .times(1)
+            .returning(|range| Box::pin(async { Ok(generate_sequential_fees(range)) }));
+
+        let provider = CachingFeesProvider::new(mock_provider, 5);
+        let _ = provider.get_fees(0..=4).await.unwrap();
+        let _ = provider.get_fees(5..=9).await.unwrap();
+
+        // when
+        let _ = provider.get_fees(0..=4).await.unwrap();
+
+        // then
+        // will refetch 0..=4 due to eviction
+    }
+
+    #[tokio::test]
+    async fn caching_provider_handles_request_larger_than_cache() {
+        use mockall::predicate::*;
+
+        // given
+        let mut mock_provider = MockFeesProvider::new();
+
+        let cache_limit = 5;
+
+        mock_provider
+            .expect_fees()
+            .with(eq(0..=9))
+            .times(1)
+            .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+        let provider = CachingFeesProvider::new(mock_provider, cache_limit);
+
+        // when
+        let result = provider.get_fees(0..=9).await.unwrap();
+
+        assert_eq!(result, generate_sequential_fees(0..=9));
     }
 
     // fn calculate_tx_fee(fees: &Fees) -> u128 {
