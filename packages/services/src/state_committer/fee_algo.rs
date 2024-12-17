@@ -1,11 +1,10 @@
 use std::cmp::min;
 
-use crate::fee_analytics::{
-    port::{l1::FeesProvider, Fees},
-    service::FeeAnalytics,
+use super::{
+    fee_analytics::{FeeAnalytics, FeesProvider},
+    port::l1::Fees,
+    service::{FeeAlgoConfig, FeeThresholds},
 };
-
-use super::service::{FeeAlgoConfig, FeeThresholds};
 
 pub struct SendOrWaitDecider<P> {
     fee_analytics: FeeAnalytics<P>,
@@ -13,9 +12,9 @@ pub struct SendOrWaitDecider<P> {
 }
 
 impl<P> SendOrWaitDecider<P> {
-    pub fn new(fee_analytics: FeeAnalytics<P>, config: FeeAlgoConfig) -> Self {
+    pub fn new(fee_provider: P, config: FeeAlgoConfig) -> Self {
         Self {
-            fee_analytics,
+            fee_analytics: FeeAnalytics::new(fee_provider),
             config,
         }
     }
@@ -28,7 +27,6 @@ pub struct Context {
 }
 
 impl<P: FeesProvider> SendOrWaitDecider<P> {
-    // TODO: segfault validate blob number
     // TODO: segfault test that too far behind should work even if we cannot fetch prices due to holes
     // (once that is implemented)
     pub async fn should_send_blob_tx(
@@ -36,6 +34,8 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         num_blobs: u32,
         context: Context,
     ) -> crate::Result<bool> {
+        // opted out of validating that num_blobs <= 6, it's not this fn's problem if the caller
+        // wants to send more than 6 blobs
         let last_n_blocks = |n: u64| context.at_l1_height.saturating_sub(n)..=context.at_l1_height;
 
         let short_term_sma = self
@@ -177,12 +177,11 @@ fn percentage_to_ppm(percentage: f64) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fee_analytics::port::{
-        l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
-        Fees,
+    use crate::state_committer::{
+        fee_analytics::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
+        service::{FeeThresholds, SmaPeriods},
     };
-    use crate::state_committer::service::{FeeThresholds, SmaPeriods};
-    
+
     use test_case::test_case;
     use tokio;
 
@@ -527,9 +526,8 @@ mod tests {
         let fees = generate_fees(config, old_fees, new_fees);
         let fees_provider = PreconfiguredFeesProvider::new(fees);
         let current_block_height = fees_provider.current_block_height().await.unwrap();
-        let analytics_service = FeeAnalytics::new(fees_provider);
 
-        let sut = SendOrWaitDecider::new(analytics_service, config);
+        let sut = SendOrWaitDecider::new(fees_provider, config);
 
         let should_send = sut
             .should_send_blob_tx(
@@ -546,11 +544,6 @@ mod tests {
             should_send, expected_decision,
             "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {expected_decision}, got: {should_send}",
         );
-    }
-
-    /// Helper function to convert a percentage to Parts Per Million (PPM)
-    fn percentage_to_ppm_test_helper(percentage: f64) -> u128 {
-        (percentage * 1_000_000.0) as u128
     }
 
     #[test_case(

@@ -1,12 +1,8 @@
 use services::{
-    fee_analytics::{
-        port::{
-            l1::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
-            Fees,
-        },
-        service::FeeAnalytics,
+    state_committer::{
+        port::l1::{testing::ApiMockWFees, Fees},
+        service::{FeeAlgoConfig, FeeThresholds, SmaPeriods},
     },
-    state_committer::service::{FeeAlgoConfig, FeeThresholds, SmaPeriods},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
@@ -34,7 +30,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -44,7 +40,6 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // when
@@ -78,7 +73,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
         .returning(|| Box::pin(async { Ok(0) }));
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -88,7 +83,6 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time beyond the timeout
@@ -114,7 +108,7 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -124,7 +118,6 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time less than the timeout
@@ -160,7 +153,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -170,7 +163,6 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // when
@@ -207,7 +199,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(1);
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -217,7 +209,6 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -254,7 +245,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
         .expect_current_height()
         .returning(|| Box::pin(async { Ok(1) }));
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -264,7 +255,6 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Advance time beyond the timeout from startup
@@ -314,7 +304,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -325,7 +315,6 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Submit the initial fragments
@@ -399,9 +388,6 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         ),
     ];
 
-    let fees_provider = PreconfiguredFeesProvider::new(fee_sequence);
-    let fee_analytics = FeeAnalytics::new(fees_provider);
-
     let fee_algo_config = FeeAlgoConfig {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
@@ -431,7 +417,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(6);
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit).w_preconfigured_fees(fee_sequence),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -442,7 +428,6 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        fee_analytics,
     );
 
     // When
@@ -510,9 +495,6 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         ),
     ];
 
-    let fees_provider = PreconfiguredFeesProvider::new(fee_sequence);
-    let fee_analytics = FeeAnalytics::new(fees_provider);
-
     let fee_algo_config = FeeAlgoConfig {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
@@ -533,7 +515,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(6);
     let mut state_committer = StateCommitter::new(
-        l1_mock,
+        ApiMockWFees::new(l1_mock).w_preconfigured_fees(fee_sequence),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -544,7 +526,6 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
             ..Default::default()
         },
         setup.test_clock(),
-        fee_analytics,
     );
 
     // when
@@ -612,9 +593,6 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         ),
     ];
 
-    let fees_provider = PreconfiguredFeesProvider::new(fee_sequence);
-    let fee_analytics = FeeAnalytics::new(fees_provider);
-
     let fee_algo_config = FeeAlgoConfig {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
@@ -644,7 +622,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(50); // L2 height is 50, behind by 50
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit).w_preconfigured_fees(fee_sequence),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -655,7 +633,6 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        fee_analytics,
     );
 
     // when
@@ -722,9 +699,6 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         ),
     ];
 
-    let fees_provider = PreconfiguredFeesProvider::new(fee_sequence);
-    let fee_analytics = FeeAnalytics::new(fees_provider);
-
     let fee_algo_config = FeeAlgoConfig {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
@@ -754,7 +728,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(80);
 
     let mut state_committer = StateCommitter::new(
-        l1_mock_submit,
+        ApiMockWFees::new(l1_mock_submit).w_preconfigured_fees(fee_sequence),
         fuel_mock,
         setup.db(),
         StateCommitterConfig {
@@ -765,7 +739,6 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
             ..Default::default()
         },
         setup.test_clock(),
-        fee_analytics,
     );
 
     // when

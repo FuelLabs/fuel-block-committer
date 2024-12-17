@@ -3,13 +3,7 @@ use std::time::Duration;
 use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use services::{
-    fee_analytics::{
-        port::{
-            l1::testing::ConstantFeesProvider,
-            Fees,
-        },
-        service::FeeAnalytics,
-    },
+    state_committer::port::l1::testing::ApiMockWFees,
     state_listener::{port::Storage, service::StateListener},
     types::{L1Height, L1Tx, TransactionResponse},
     Result, Runner, StateCommitter, StateCommitterConfig,
@@ -452,7 +446,7 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
         .returning(|| Box::pin(async { Ok(0) }));
 
     let mut committer = StateCommitter::new(
-        l1_mock,
+        ApiMockWFees::new(l1_mock),
         mocks::fuel::latest_height_is(0),
         setup.db(),
         StateCommitterConfig {
@@ -460,7 +454,6 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Orig tx
@@ -556,7 +549,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
         .returning(|| Box::pin(async { Ok(0) }));
 
     let mut committer = StateCommitter::new(
-        l1_mock,
+        ApiMockWFees::new(l1_mock),
         mocks::fuel::latest_height_is(0),
         setup.db(),
         crate::StateCommitterConfig {
@@ -564,7 +557,6 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
             ..Default::default()
         },
         test_clock.clone(),
-        FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
     );
 
     // Orig tx

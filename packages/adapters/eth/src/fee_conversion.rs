@@ -2,11 +2,10 @@ use std::ops::RangeInclusive;
 
 use alloy::rpc::types::FeeHistory;
 use itertools::{izip, Itertools};
-use services::Result;
-
-use services::fee_analytics::port::Fees;
-
-use services::fee_analytics::port::BlockFees;
+use services::{
+    state_committer::port::l1::{BlockFees, Fees},
+    Result,
+};
 
 pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     let number_of_blocks = if fees.base_fee_per_gas.is_empty() {
@@ -99,8 +98,8 @@ pub fn chunk_range_inclusive(
 #[cfg(test)]
 mod test {
     use alloy::rpc::types::FeeHistory;
+    use services::state_committer::port::l1::{BlockFees, Fees};
 
-    use services::fee_analytics::port::{BlockFees, Fees};
     use std::ops::RangeInclusive;
 
     use crate::fee_conversion::{self};

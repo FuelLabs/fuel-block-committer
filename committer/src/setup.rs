@@ -9,7 +9,6 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_analytics::service::FeeAnalytics,
     state_committer::{
         port::Storage,
         service::{FeeAlgoConfig, FeeThresholds, SmaPeriods},
@@ -121,7 +120,6 @@ pub fn state_committer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
-    fee_analytics: FeeAnalytics<L1>,
 ) -> tokio::task::JoinHandle<()> {
     let state_committer = services::StateCommitter::new(
         l1,
@@ -146,7 +144,6 @@ pub fn state_committer(
             },
         },
         SystemClock,
-        fee_analytics,
     );
 
     schedule_polling(

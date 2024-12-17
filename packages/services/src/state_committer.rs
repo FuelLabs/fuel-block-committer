@@ -1,4 +1,5 @@
 mod fee_algo;
+mod fee_analytics;
 
 pub mod service {
     use std::{
@@ -7,7 +8,6 @@ pub mod service {
     };
 
     use crate::{
-        fee_analytics::service::FeeAnalytics,
         state_committer::fee_algo::Context,
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
         Result, Runner,
@@ -71,18 +71,19 @@ pub mod service {
     }
 
     /// The `StateCommitter` is responsible for committing state fragments to L1.
-    pub struct StateCommitter<L1, FuelApi, Db, Clock, FeeProvider> {
+    pub struct StateCommitter<L1, FuelApi, Db, Clock> {
         l1_adapter: L1,
         fuel_api: FuelApi,
         storage: Db,
         config: Config,
         clock: Clock,
         startup_time: DateTime<Utc>,
-        decider: SendOrWaitDecider<FeeProvider>,
+        decider: SendOrWaitDecider<L1>,
     }
 
-    impl<L1, FuelApi, Db, Clock, FeeProvider> StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
+    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
     where
+        L1: Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock,
     {
         /// Creates a new `StateCommitter`.
@@ -92,29 +93,27 @@ pub mod service {
             storage: Db,
             config: Config,
             clock: Clock,
-            fee_analytics: FeeAnalytics<FeeProvider>,
         ) -> Self {
             let startup_time = clock.now();
             let price_algo = config.fee_algo;
             Self {
-                l1_adapter,
+                l1_adapter: l1_adapter.clone(),
                 fuel_api,
                 storage,
                 config,
                 clock,
                 startup_time,
-                decider: SendOrWaitDecider::new(fee_analytics, price_algo),
+                decider: SendOrWaitDecider::new(l1_adapter, price_algo),
             }
         }
     }
 
-    impl<L1, FuelApi, Db, Clock, FeeProvider> StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
+    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
     where
-        L1: crate::state_committer::port::l1::Api,
+        L1: crate::state_committer::port::l1::Api + Send + Sync,
         FuelApi: crate::state_committer::port::fuel::Api,
         Db: crate::state_committer::port::Storage,
         Clock: crate::state_committer::port::Clock,
-        FeeProvider: crate::fee_analytics::port::l1::FeesProvider,
     {
         async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
             Ok(self
@@ -301,14 +300,12 @@ pub mod service {
         }
     }
 
-    impl<L1, FuelApi, Db, Clock, FeeProvider> Runner
-        for StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
+    impl<L1, FuelApi, Db, Clock> Runner for StateCommitter<L1, FuelApi, Db, Clock>
     where
         L1: crate::state_committer::port::l1::Api + Send + Sync,
         FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
         Db: crate::state_committer::port::Storage + Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock + Send + Sync,
-        FeeProvider: crate::fee_analytics::port::l1::FeesProvider + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {
             if self.storage.has_nonfinalized_txs().await? {
@@ -331,13 +328,15 @@ pub mod port {
     };
 
     pub mod l1 {
+        use std::ops::RangeInclusive;
+
         use nonempty::NonEmpty;
 
+        pub use crate::state_committer::fee_analytics::{BlockFees, Fees, SequentialBlockFees};
         use crate::{
             types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
             Result,
         };
-
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -355,6 +354,80 @@ pub mod port {
                 fragments: NonEmpty<Fragment>,
                 previous_tx: Option<L1Tx>,
             ) -> Result<(L1Tx, FragmentsSubmitted)>;
+            async fn fees(
+                &self,
+                height_range: RangeInclusive<u64>,
+            ) -> crate::Result<SequentialBlockFees>;
+        }
+
+        #[cfg(feature = "test-helpers")]
+        pub mod testing {
+            use std::{ops::RangeInclusive, sync::Arc};
+
+            use nonempty::NonEmpty;
+
+            use crate::{
+                state_committer::fee_analytics::{
+                    testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
+                    FeesProvider,
+                },
+                types::{FragmentsSubmitted, L1Tx},
+            };
+
+            use super::{Api, Fees, MockApi, SequentialBlockFees};
+
+            #[derive(Clone)]
+            pub struct ApiMockWFees<Fees> {
+                pub api: Arc<MockApi>,
+                fee_provider: Fees,
+            }
+
+            impl ApiMockWFees<ConstantFeesProvider> {
+                pub fn new(api: MockApi) -> Self {
+                    Self {
+                        api: Arc::new(api),
+                        fee_provider: ConstantFeesProvider::new(Fees::default()),
+                    }
+                }
+            }
+
+            impl<T> ApiMockWFees<T> {
+                pub fn w_preconfigured_fees(
+                    self,
+                    fees: impl IntoIterator<Item = (u64, Fees)>,
+                ) -> ApiMockWFees<PreconfiguredFeesProvider> {
+                    ApiMockWFees {
+                        api: self.api,
+                        fee_provider: PreconfiguredFeesProvider::new(fees),
+                    }
+                }
+            }
+
+            impl<T> Api for ApiMockWFees<T>
+            where
+                T: FeesProvider + Send + Sync,
+            {
+                async fn fees(
+                    &self,
+                    height_range: RangeInclusive<u64>,
+                ) -> crate::Result<SequentialBlockFees> {
+                    FeesProvider::fees(&self.fee_provider, height_range).await
+                }
+
+                async fn current_height(&self) -> crate::Result<u64> {
+                    self.api.current_height().await
+                }
+
+                async fn submit_state_fragments(
+                    &self,
+                    fragments: NonEmpty<crate::types::Fragment>,
+                    previous_tx: Option<L1Tx>,
+                ) -> crate::Result<(L1Tx, FragmentsSubmitted)> {
+                    self.api
+                        .submit_state_fragments(fragments, previous_tx)
+                        .await
+                }
+            }
         }
     }
 

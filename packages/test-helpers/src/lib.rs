@@ -1,5 +1,6 @@
 #![deny(unused_crate_dependencies)]
 
+use std::sync::Arc;
 use std::{ops::RangeInclusive, time::Duration};
 
 use clock::TestClock;
@@ -8,9 +9,7 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::fee_analytics::port::l1::testing::ConstantFeesProvider;
-use services::fee_analytics::port::Fees;
-use services::fee_analytics::service::FeeAnalytics;
+use services::state_committer::port::l1::testing::ApiMockWFees;
 use services::types::{
     BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty,
 };
@@ -547,7 +546,7 @@ impl Setup {
             .return_once(move || Box::pin(async { Ok(0) }));
 
         StateCommitter::new(
-            l1_mock,
+            ApiMockWFees::new(l1_mock),
             mocks::fuel::latest_height_is(0),
             self.db(),
             services::StateCommitterConfig {
@@ -558,7 +557,6 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
-            FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
         )
         .run()
         .await
@@ -586,7 +584,7 @@ impl Setup {
 
         let fuel_mock = mocks::fuel::latest_height_is(height);
         let mut committer = StateCommitter::new(
-            l1_mock,
+            ApiMockWFees::new(l1_mock),
             fuel_mock,
             self.db(),
             services::StateCommitterConfig {
@@ -597,7 +595,6 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
-            FeeAnalytics::new(ConstantFeesProvider::new(Fees::default())),
         );
         committer.run().await.unwrap();
 
