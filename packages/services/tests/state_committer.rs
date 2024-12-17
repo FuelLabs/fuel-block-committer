@@ -10,7 +10,7 @@ use services::{
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
-use std::{num::NonZeroU64, time::Duration};
+use std::time::Duration;
 
 #[tokio::test]
 async fn submits_fragments_when_required_count_accumulated() -> Result<()> {

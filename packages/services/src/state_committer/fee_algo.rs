@@ -182,7 +182,7 @@ mod tests {
         Fees,
     };
     use crate::state_committer::service::{FeeThresholds, SmaPeriods};
-    use std::num::NonZeroU64;
+    
     use test_case::test_case;
     use tokio;
 

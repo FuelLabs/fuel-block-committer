@@ -2,7 +2,7 @@ mod fee_algo;
 
 pub mod service {
     use std::{
-        num::{NonZeroU32, NonZeroU64, NonZeroUsize},
+        num::{NonZeroU32, NonZeroUsize},
         time::Duration,
     };
 
