@@ -339,6 +339,14 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
 
     let fee_sequence = vec![
         (
+            0,
+            Fees {
+                base_fee_per_gas: 5000,
+                reward: 5000,
+                base_fee_per_blob_gas: 5000,
+            },
+        ),
+        (
             1,
             Fees {
                 base_fee_per_gas: 5000,
@@ -349,9 +357,9 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         (
             2,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 3000,
+                reward: 3000,
+                base_fee_per_blob_gas: 3000,
             },
         ),
         (
@@ -372,14 +380,6 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         ),
         (
             5,
-            Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
-            },
-        ),
-        (
-            6,
             Fees {
                 base_fee_per_gas: 3000,
                 reward: 3000,
@@ -413,7 +413,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
     )]);
     l1_mock_submit
         .expect_current_height()
-        .returning(|| Box::pin(async { Ok(6) }));
+        .returning(|| Box::pin(async { Ok(5) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(6);
     let mut state_committer = StateCommitter::new(
@@ -446,6 +446,14 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
     // Define fee sequence: last 2 blocks have higher fees than the long-term average
     let fee_sequence = vec![
         (
+            0,
+            Fees {
+                base_fee_per_gas: 3000,
+                reward: 3000,
+                base_fee_per_blob_gas: 3000,
+            },
+        ),
+        (
             1,
             Fees {
                 base_fee_per_gas: 3000,
@@ -456,9 +464,9 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         (
             2,
             Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
+                base_fee_per_gas: 5000,
+                reward: 5000,
+                base_fee_per_blob_gas: 5000,
             },
         ),
         (
@@ -485,14 +493,6 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
                 base_fee_per_blob_gas: 5000,
             },
         ),
-        (
-            6,
-            Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
-            },
-        ),
     ];
 
     let fee_algo_config = FeeAlgoConfig {
@@ -511,7 +511,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
     let mut l1_mock = test_helpers::mocks::l1::expects_state_submissions([]);
     l1_mock
         .expect_current_height()
-        .returning(|| Box::pin(async { Ok(6) }));
+        .returning(|| Box::pin(async { Ok(5) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(6);
     let mut state_committer = StateCommitter::new(

@@ -54,6 +54,12 @@ impl SequentialBlockFees {
     pub fn len(&self) -> usize {
         self.fees.len()
     }
+
+    pub fn height_range(&self) -> RangeInclusive<u64> {
+        let start = self.fees.first().expect("not empty").height;
+        let end = self.fees.last().expect("not empty").height;
+        start..=end
+    }
 }
 
 #[derive(Debug)]
@@ -199,10 +205,18 @@ impl<P> FeeAnalytics<P> {
 
 impl<P: FeesProvider> FeeAnalytics<P> {
     // TODO: segfault fail or signal if missing blocks/holes present
-    // TODO: segfault cache fees/save to db
-    // TODO: segfault job to update fees in the background
+    // TODO: segfault cache fees
     pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> crate::Result<Fees> {
-        self.fees_provider.fees(block_range).await.map(Self::mean)
+        let fees = self.fees_provider.fees(block_range.clone()).await?;
+
+        let received_height_range = fees.height_range();
+        if received_height_range != block_range {
+            return Err(crate::Error::from(format!(
+                "fees received from the adapter({received_height_range:?}) don't cover the requested range ({block_range:?})"
+            )));
+        }
+
+        Ok(Self::mean(fees))
     }
 
     fn mean(fees: SequentialBlockFees) -> Fees {
@@ -393,24 +407,45 @@ mod tests {
         assert_eq!(sma.base_fee_per_blob_gas, mean);
     }
 
-    fn calculate_tx_fee(fees: &Fees) -> u128 {
-        21_000 * fees.base_fee_per_gas + fees.reward + 6 * fees.base_fee_per_blob_gas * 131_072
+    #[tokio::test]
+    async fn errors_out_if_returned_fees_are_not_complete() {
+        // given
+        let mut fees = testing::incrementing_fees(5);
+        fees.remove(&4);
+        let fees_provider = testing::PreconfiguredFeesProvider::new(fees);
+        let fee_analytics = FeeAnalytics::new(fees_provider);
+
+        // when
+        let err = fee_analytics
+            .calculate_sma(0..=4)
+            .await
+            .expect_err("should have failed because returned fees are not complete");
+
+        // then
+        assert_eq!(
+            err.to_string(),
+            "fees received from the adapter(0..=3) don't cover the requested range (0..=4)"
+        );
     }
 
-    fn save_tx_fees(tx_fees: &[(u64, u128)], path: &str) {
-        let mut csv_writer =
-            csv::Writer::from_path(PathBuf::from("/home/segfault_magnet/grafovi/").join(path))
-                .unwrap();
-        csv_writer
-            .write_record(["height", "tx_fee"].iter())
-            .unwrap();
-        for (height, fee) in tx_fees {
-            csv_writer
-                .write_record([height.to_string(), fee.to_string()])
-                .unwrap();
-        }
-        csv_writer.flush().unwrap();
-    }
+    // fn calculate_tx_fee(fees: &Fees) -> u128 {
+    //     21_000 * fees.base_fee_per_gas + fees.reward + 6 * fees.base_fee_per_blob_gas * 131_072
+    // }
+    //
+    // fn save_tx_fees(tx_fees: &[(u64, u128)], path: &str) {
+    //     let mut csv_writer =
+    //         csv::Writer::from_path(PathBuf::from("/home/segfault_magnet/grafovi/").join(path))
+    //             .unwrap();
+    //     csv_writer
+    //         .write_record(["height", "tx_fee"].iter())
+    //         .unwrap();
+    //     for (height, fee) in tx_fees {
+    //         csv_writer
+    //             .write_record([height.to_string(), fee.to_string()])
+    //             .unwrap();
+    //     }
+    //     csv_writer.flush().unwrap();
+    // }
 
     // #[tokio::test]
     // async fn something() {
