@@ -23,7 +23,7 @@ pub use block_bundler::{
 pub use state_committer::service::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum Error {
     #[error("{0}")]
     Other(String),

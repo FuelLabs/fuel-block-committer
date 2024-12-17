@@ -1,6 +1,6 @@
 use std::{
     net::Ipv4Addr,
-    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
+    num::{NonZeroU32, NonZeroUsize},
     str::FromStr,
     time::Duration,
 };
