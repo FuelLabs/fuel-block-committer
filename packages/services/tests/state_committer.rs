@@ -395,7 +395,10 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
     ];
 
     let fee_tracker_config = services::fee_tracker::service::Config {
-        sma_periods: SmaPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 6.try_into().unwrap(),
+        },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
             always_acceptable_fee: 0,
@@ -501,7 +504,10 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
     ];
 
     let fee_tracker_config = FeeTrackerConfig {
-        sma_periods: SmaPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 6.try_into().unwrap(),
+        },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
             always_acceptable_fee: 0,
@@ -598,7 +604,10 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
     ];
 
     let fee_tracker_config = FeeTrackerConfig {
-        sma_periods: SmaPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 6.try_into().unwrap(),
+        },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 50.try_into().unwrap(),
             always_acceptable_fee: 0,
@@ -703,7 +712,10 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
     ];
 
     let fee_tracker_config = services::fee_tracker::service::Config {
-        sma_periods: SmaPeriods { short: 2, long: 5 },
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 5.try_into().unwrap(),
+        },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
             start_discount_percentage: 0.20.try_into().unwrap(),

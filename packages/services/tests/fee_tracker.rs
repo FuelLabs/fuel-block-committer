@@ -11,9 +11,9 @@ use test_case::test_case;
 fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {
     let older_fees = std::iter::repeat_n(
         old_fees,
-        (config.sma_periods.long - config.sma_periods.short) as usize,
+        (config.sma_periods.long.get() - config.sma_periods.short.get()) as usize,
     );
-    let newer_fees = std::iter::repeat_n(new_fees, config.sma_periods.short as usize);
+    let newer_fees = std::iter::repeat_n(new_fees, config.sma_periods.short.get() as usize);
 
     older_fees
         .chain(newer_fees)
@@ -27,7 +27,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
         6,
         Config {
-            sma_periods: services::fee_tracker::service::SmaPeriods { short: 2, long: 6 },
+            sma_periods: services::fee_tracker::service::SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -43,7 +43,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -59,7 +59,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 always_acceptable_fee: (21_000 * 5000) + (6 * 131_072 * 5000) + 5000 + 1,
                 max_l2_blocks_behind: 100.try_into().unwrap(),
@@ -75,7 +75,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -91,7 +91,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -107,7 +107,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 900 },
         5,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -123,7 +123,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1100 },
         5,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -139,7 +139,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -155,7 +155,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000 },
         5,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -172,7 +172,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500 },
         6,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -188,7 +188,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
         6,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -205,7 +205,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000 },
         0,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -222,7 +222,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000 },
         0,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -239,7 +239,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2000, reward: 7000, base_fee_per_blob_gas: 50_000_000 },
         0,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 always_acceptable_fee: 0,
@@ -257,7 +257,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
     Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
         1,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: Percentage::try_from(0.20).unwrap(),
@@ -275,7 +275,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
         1,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6},
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20.try_into().unwrap(),
@@ -292,7 +292,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
         1,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20.try_into().unwrap(),
@@ -310,7 +310,7 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Fees { base_fee_per_gas: 2_000_000, reward: 1_000_000, base_fee_per_blob_gas: 20_000_000 },
         1,
         Config {
-            sma_periods: SmaPeriods { short: 2, long: 6 },
+            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 start_discount_percentage: 0.20.try_into().unwrap(),
@@ -352,7 +352,10 @@ async fn parameterized_send_or_wait_tests(
 async fn test_send_when_too_far_behind_and_fee_provider_fails() {
     // given
     let config = Config {
-        sma_periods: SmaPeriods { short: 2, long: 6 },
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 6.try_into().unwrap(),
+        },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 10.try_into().unwrap(),
             always_acceptable_fee: 0,

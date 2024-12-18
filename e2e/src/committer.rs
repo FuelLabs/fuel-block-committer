@@ -73,6 +73,7 @@ impl Committer {
             .env("COMMITTER__APP__HOST", "127.0.0.1")
             .env("COMMITTER__APP__BLOCK_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "5s")
+            .env("COMMITTER__APP__L1_PRICES_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
             .env("COMMITTER__APP__GAS_BUMP_TIMEOUT", "300s")
             .env("COMMITTER__APP__TX_MAX_FEE", "4000000000000000")

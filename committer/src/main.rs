@@ -72,12 +72,21 @@ async fn main() -> Result<()> {
             &metrics_registry,
         );
 
+        let (fee_tracker, fee_tracker_handle) = setup::fee_tracker(
+            ethereum_rpc.clone(),
+            cancel_token.clone(),
+            &config,
+            &metrics_registry,
+        )?;
+
         let state_committer_handle = setup::state_committer(
             fuel_adapter.clone(),
             ethereum_rpc.clone(),
             storage.clone(),
             cancel_token.clone(),
             &config,
+            &metrics_registry,
+            fee_tracker,
         )?;
 
         let state_importer_handle =
@@ -104,6 +113,7 @@ async fn main() -> Result<()> {
         handles.push(block_bundler);
         handles.push(state_listener_handle);
         handles.push(state_pruner_handle);
+        handles.push(fee_tracker_handle);
     }
 
     launch_api_server(

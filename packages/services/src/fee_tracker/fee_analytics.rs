@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use crate::Error;
 
-use super::port::l1::{Api, Fees, SequentialBlockFees};
+use super::port::l1::{Api, BlockFees, Fees, SequentialBlockFees};
 
 #[derive(Debug, Clone)]
 pub struct FeeAnalytics<P> {
@@ -29,7 +29,9 @@ impl<P: Api> FeeAnalytics<P> {
         Ok(Self::mean(fees))
     }
 
-    pub async fn fees_at_height(&self, height: u64) -> crate::Result<Fees> {
+    pub async fn latest_fees(&self) -> crate::Result<BlockFees> {
+        let height = self.fees_provider.current_height().await?;
+
         let fee = self
             .fees_provider
             .fees(height..=height)
@@ -38,7 +40,7 @@ impl<P: Api> FeeAnalytics<P> {
             .next()
             .expect("sequential fees guaranteed not empty");
 
-        Ok(fee.fees)
+        Ok(fee)
     }
 
     fn mean(fees: SequentialBlockFees) -> Fees {
@@ -252,21 +254,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn price_at_height_returns_correct_fee() {
+    async fn latest_fees_on_fee_analytics() {
         // given
         let fees_map = testing::incrementing_fees(5);
         let fees_provider = testing::PreconfiguredFeeApi::new(fees_map.clone());
         let fee_analytics = FeeAnalytics::new(fees_provider);
-        let height = 2;
+        let height = 4;
 
         // when
-        let fee = fee_analytics.fees_at_height(height).await.unwrap();
+        let fee = fee_analytics.latest_fees().await.unwrap();
 
         // then
-        let expected_fee = Fees {
-            base_fee_per_gas: 3,
-            reward: 3,
-            base_fee_per_blob_gas: 3,
+        let expected_fee = BlockFees {
+            height,
+            fees: Fees {
+                base_fee_per_gas: 5,
+                reward: 5,
+                base_fee_per_blob_gas: 5,
+            },
         };
         assert_eq!(
             fee, expected_fee,

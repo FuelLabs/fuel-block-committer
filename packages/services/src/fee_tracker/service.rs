@@ -1,12 +1,20 @@
-use std::{cmp::min, num::NonZeroU32};
+use std::{
+    cmp::min,
+    num::{NonZeroU32, NonZeroU64},
+    ops::RangeInclusive,
+};
 
+use metrics::{
+    prometheus::{core::Collector, IntGauge, Opts},
+    RegistersMetrics,
+};
 use tracing::info;
 
-use crate::{state_committer::service::SendOrWaitDecider, Error};
+use crate::{state_committer::service::SendOrWaitDecider, Error, Result, Runner};
 
 use super::{
     fee_analytics::FeeAnalytics,
-    port::l1::{Api, Fees},
+    port::l1::{Api, BlockFees, Fees},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -19,7 +27,10 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            sma_periods: SmaPeriods { short: 1, long: 2 },
+            sma_periods: SmaPeriods {
+                short: 1.try_into().expect("not zero"),
+                long: 2.try_into().expect("not zero"),
+            },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 ..FeeThresholds::default()
@@ -30,8 +41,8 @@ impl Default for Config {
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmaPeriods {
-    pub short: u64,
-    pub long: u64,
+    pub short: NonZeroU64,
+    pub long: NonZeroU64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -60,7 +71,7 @@ impl<P: Api + Send + Sync> SendOrWaitDecider for FeeTracker<P> {
         num_blobs: u32,
         num_l2_blocks_behind: u32,
         at_l1_height: u64,
-    ) -> crate::Result<bool> {
+    ) -> Result<bool> {
         if self.too_far_behind(num_l2_blocks_behind) {
             info!("Sending because we've fallen behind by {} which is more than the configured maximum of {}", num_l2_blocks_behind, self.config.fee_thresholds.max_l2_blocks_behind);
             return Ok(true);
@@ -68,8 +79,7 @@ impl<P: Api + Send + Sync> SendOrWaitDecider for FeeTracker<P> {
 
         // opted out of validating that num_blobs <= 6, it's not this fn's problem if the caller
         // wants to send more than 6 blobs
-        let last_n_blocks =
-            |n: u64| at_l1_height.saturating_sub(n.saturating_sub(1))..=at_l1_height;
+        let last_n_blocks = |n| Self::last_n_blocks(at_l1_height, n);
 
         let short_term_sma = self
             .fee_analytics
@@ -81,14 +91,14 @@ impl<P: Api + Send + Sync> SendOrWaitDecider for FeeTracker<P> {
             .calculate_sma(last_n_blocks(self.config.sma_periods.long))
             .await?;
 
-        let short_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
+        let short_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, &short_term_sma);
 
         if self.fee_always_acceptable(short_term_tx_fee) {
             info!("Sending because: short term price {} is deemed always acceptable since it is <= {}", short_term_tx_fee, self.config.fee_thresholds.always_acceptable_fee);
             return Ok(true);
         }
 
-        let long_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, long_term_sma);
+        let long_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, &long_term_sma);
         let max_upper_tx_fee = Self::calculate_max_upper_fee(
             &self.config.fee_thresholds,
             long_term_tx_fee,
@@ -143,9 +153,56 @@ impl Percentage {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Metrics {
+    current_blob_tx_fee: IntGauge,
+    short_term_blob_tx_fee: IntGauge,
+    long_term_blob_tx_fee: IntGauge,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let current_blob_tx_fee = IntGauge::with_opts(Opts::new(
+            "current_blob_tx_fee",
+            "The current fee for a transaction with 6 blobs",
+        ))
+        .expect("metric config to be correct");
+
+        let short_term_blob_tx_fee = IntGauge::with_opts(Opts::new(
+            "short_term_blob_tx_fee",
+            "The short term fee for a transaction with 6 blobs",
+        ))
+        .expect("metric config to be correct");
+
+        let long_term_blob_tx_fee = IntGauge::with_opts(Opts::new(
+            "long_term_blob_tx_fee",
+            "The long term fee for a transaction with 6 blobs",
+        ))
+        .expect("metric config to be correct");
+
+        Self {
+            current_blob_tx_fee,
+            short_term_blob_tx_fee,
+            long_term_blob_tx_fee,
+        }
+    }
+}
+
+impl<P> RegistersMetrics for FeeTracker<P> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
+        vec![
+            Box::new(self.metrics.current_blob_tx_fee.clone()),
+            Box::new(self.metrics.short_term_blob_tx_fee.clone()),
+            Box::new(self.metrics.long_term_blob_tx_fee.clone()),
+        ]
+    }
+}
+
+#[derive(Clone)]
 pub struct FeeTracker<P> {
     fee_analytics: FeeAnalytics<P>,
     config: Config,
+    metrics: Metrics,
 }
 
 impl<P: Api> FeeTracker<P> {
@@ -167,7 +224,7 @@ impl<P: Api> FeeTracker<P> {
 
         debug_assert!(
             blocks_behind <= max_blocks_behind,
-            "blocks_behind ({}) should not exceed max_blocks_behind ({})",
+            "blocks_behind ({}) should not exceed max_blocks_behind ({}), it should have been handled earlier",
             blocks_behind,
             max_blocks_behind
         );
@@ -222,7 +279,7 @@ impl<P: Api> FeeTracker<P> {
     }
 
     // TODO: Segfault maybe dont leak so much eth abstractions
-    fn calculate_blob_tx_fee(num_blobs: u32, fees: Fees) -> u128 {
+    fn calculate_blob_tx_fee(num_blobs: u32, fees: &Fees) -> u128 {
         const DATA_GAS_PER_BLOB: u128 = 131_072u128;
         const INTRINSIC_GAS: u128 = 21_000u128;
 
@@ -231,6 +288,44 @@ impl<P: Api> FeeTracker<P> {
 
         base_fee + blob_fee + fees.reward
     }
+
+    fn last_n_blocks(current_block: u64, n: NonZeroU64) -> RangeInclusive<u64> {
+        current_block.saturating_sub(n.get().saturating_sub(1))..=current_block
+    }
+
+    pub async fn update_metrics(&self) -> Result<()> {
+        let latest_fees = self.fee_analytics.latest_fees().await?;
+        let short_term_sma = self
+            .fee_analytics
+            .calculate_sma(Self::last_n_blocks(
+                latest_fees.height,
+                self.config.sma_periods.short,
+            ))
+            .await?;
+
+        let long_term_sma = self
+            .fee_analytics
+            .calculate_sma(Self::last_n_blocks(
+                latest_fees.height,
+                self.config.sma_periods.long,
+            ))
+            .await?;
+
+        let calc_fee =
+            |fees: &Fees| i64::try_from(Self::calculate_blob_tx_fee(6, fees)).unwrap_or(i64::MAX);
+
+        self.metrics
+            .current_blob_tx_fee
+            .set(calc_fee(&latest_fees.fees));
+        self.metrics
+            .short_term_blob_tx_fee
+            .set(calc_fee(&short_term_sma));
+        self.metrics
+            .long_term_blob_tx_fee
+            .set(calc_fee(&long_term_sma));
+
+        Ok(())
+    }
 }
 
 impl<P> FeeTracker<P> {
@@ -238,7 +333,18 @@ impl<P> FeeTracker<P> {
         Self {
             fee_analytics: FeeAnalytics::new(fee_provider),
             config,
+            metrics: Metrics::default(),
         }
+    }
+}
+
+impl<P> Runner for FeeTracker<P>
+where
+    P: crate::fee_tracker::port::l1::Api + Send + Sync,
+{
+    async fn run(&mut self) -> Result<()> {
+        self.update_metrics().await?;
+        Ok(())
     }
 }
 

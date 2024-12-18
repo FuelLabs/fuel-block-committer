@@ -1,6 +1,6 @@
 use std::{
     net::Ipv4Addr,
-    num::{NonZeroU32, NonZeroUsize},
+    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
     str::FromStr,
     time::Duration,
 };
@@ -93,6 +93,9 @@ pub struct App {
     /// How often to check for finalized l1 txs
     #[serde(deserialize_with = "human_readable_duration")]
     pub tx_finalization_check_interval: Duration,
+    /// How often to check for l1 prices
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub l1_prices_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
     /// Interval after which to bump a pending tx
@@ -119,10 +122,10 @@ pub struct App {
 #[derive(Debug, Clone, Deserialize)]
 pub struct FeeAlgoConfig {
     /// Short-term period for Simple Moving Average (SMA) in block numbers
-    pub short_sma_blocks: u64,
+    pub short_sma_blocks: NonZeroU64,
 
     /// Long-term period for Simple Moving Average (SMA) in block numbers
-    pub long_sma_blocks: u64,
+    pub long_sma_blocks: NonZeroU64,
 
     /// Maximum number of unposted L2 blocks before sending a transaction regardless of fees
     pub max_l2_blocks_behind: NonZeroU32,

@@ -6,6 +6,10 @@ pub mod service {
         Result, Runner,
     };
     use itertools::Itertools;
+    use metrics::{
+        prometheus::{core::Collector, IntGauge, Opts},
+        RegistersMetrics,
+    };
     use tracing::info;
 
     // src/config.rs
@@ -41,6 +45,29 @@ pub mod service {
         ) -> Result<bool>;
     }
 
+    struct Metrics {
+        num_l2_blocks_behind: IntGauge,
+    }
+
+    impl Default for Metrics {
+        fn default() -> Self {
+            let num_l2_blocks_behind = IntGauge::with_opts(Opts::new(
+                "num_l2_blocks_behind",
+                "How many L2 blocks have been produced since the starting height of the oldest bundle we're committing",
+            )).expect("metric config to be correct");
+
+            Self {
+                num_l2_blocks_behind,
+            }
+        }
+    }
+
+    impl<L1, FuelApi, Db, Clock, D> RegistersMetrics for StateCommitter<L1, FuelApi, Db, Clock, D> {
+        fn metrics(&self) -> Vec<Box<dyn Collector>> {
+            vec![Box::new(self.metrics.num_l2_blocks_behind.clone())]
+        }
+    }
+
     /// The `StateCommitter` is responsible for committing state fragments to L1.
     pub struct StateCommitter<L1, FuelApi, Db, Clock, D> {
         l1_adapter: L1,
@@ -50,6 +77,7 @@ pub mod service {
         clock: Clock,
         startup_time: DateTime<Utc>,
         decider: D,
+        metrics: Metrics,
     }
 
     impl<L1, FuelApi, Db, Clock, Decider> StateCommitter<L1, FuelApi, Db, Clock, Decider>
@@ -75,6 +103,7 @@ pub mod service {
                 clock,
                 startup_time,
                 decider,
+                metrics: Default::default(),
             }
         }
     }
@@ -113,6 +142,10 @@ pub mod service {
                 .oldest_block_in_bundle;
 
             let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block_in_fragments);
+
+            self.metrics
+                .num_l2_blocks_behind
+                .set(num_l2_blocks_behind as i64);
 
             self.decider
                 .should_send_blob_tx(
