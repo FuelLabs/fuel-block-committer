@@ -117,7 +117,10 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             max_blocks_behind
         );
 
-        let start_discount_ppm = fee_thresholds.start_discount_percentage.ppm();
+        let start_discount_ppm = min(
+            fee_thresholds.start_discount_percentage.ppm(),
+            Percentage::PPM,
+        );
         let end_premium_ppm = fee_thresholds.end_premium_percentage.ppm();
 
         // 1. The highest we're initially willing to go: eg. 100% - 20% = 80%
@@ -611,6 +614,21 @@ mod tests {
         11970;
         "High fee with premium"
     )]
+    #[test_case(
+    FeeThresholds {
+        max_l2_blocks_behind: 100.try_into().unwrap(),
+        start_discount_percentage: 1.50.try_into().unwrap(), // 150%
+        end_premium_percentage: 0.20.try_into().unwrap(),
+        always_acceptable_fee: 0,
+    },
+    1000,
+    Context {
+        num_l2_blocks_behind: 1,
+        at_l1_height: 0,
+    },
+    12;
+    "Discount exceeds 100%, should be capped to 100%"
+)]
     fn test_calculate_max_upper_fee(
         fee_thresholds: FeeThresholds,
         fee: u128,
