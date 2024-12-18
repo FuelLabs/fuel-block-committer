@@ -14,7 +14,7 @@ use delegate::delegate;
 use futures::{stream, StreamExt, TryStreamExt};
 use itertools::{izip, Itertools};
 use services::{
-    state_committer::port::l1::SequentialBlockFees,
+    fee_tracker::port::l1::SequentialBlockFees,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty, NonNegative,
         TransactionResponse,
@@ -206,20 +206,11 @@ impl services::block_committer::port::l1::Api for WebsocketClient {
     }
 }
 
-impl services::state_committer::port::l1::Api for WebsocketClient {
+impl services::fee_tracker::port::l1::Api for WebsocketClient {
     async fn current_height(&self) -> Result<u64> {
         self._get_block_number().await
     }
 
-    delegate! {
-        to (*self) {
-            async fn submit_state_fragments(
-                &self,
-                fragments: NonEmpty<Fragment>,
-                previous_tx: Option<services::types::L1Tx>,
-            ) -> Result<(L1Tx, FragmentsSubmitted)>;
-        }
-    }
     async fn fees(&self, height_range: RangeInclusive<u64>) -> Result<SequentialBlockFees> {
         const REWARD_PERCENTILE: f64 =
             alloy::providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE;
@@ -245,6 +236,22 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
         unpacked_fees
             .try_into()
             .map_err(|e| services::Error::Other(format!("{e}")))
+    }
+}
+
+impl services::state_committer::port::l1::Api for WebsocketClient {
+    async fn current_height(&self) -> Result<u64> {
+        self._get_block_number().await
+    }
+
+    delegate! {
+        to (*self) {
+            async fn submit_state_fragments(
+                &self,
+                fragments: NonEmpty<Fragment>,
+                previous_tx: Option<services::types::L1Tx>,
+            ) -> Result<(L1Tx, FragmentsSubmitted)>;
+        }
     }
 }
 

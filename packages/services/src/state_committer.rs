@@ -1,6 +1,3 @@
-mod fee_algo;
-mod fee_analytics;
-
 pub mod service {
     use std::{
         num::{NonZeroU32, NonZeroUsize},
@@ -8,76 +5,12 @@ pub mod service {
     };
 
     use crate::{
-        state_committer::{fee_algo::Context, fee_analytics::CachingFeesProvider},
+        fee_tracker::service::FeeTracker,
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
         Error, Result, Runner,
     };
     use itertools::Itertools;
     use tracing::info;
-
-    use super::fee_algo::SendOrWaitDecider;
-
-    #[derive(Debug, Clone, Copy)]
-    pub struct SmaPeriods {
-        pub short: u64,
-        pub long: u64,
-    }
-
-    #[derive(Default, Copy, Clone, Debug, PartialEq)]
-    pub struct Percentage(f64);
-
-    impl TryFrom<f64> for Percentage {
-        type Error = crate::Error;
-
-        fn try_from(value: f64) -> std::result::Result<Self, Self::Error> {
-            if value < 0. {
-                return Err(Error::Other(format!("Invalid percentage value {value}")));
-            }
-
-            Ok(Self(value))
-        }
-    }
-
-    impl From<Percentage> for f64 {
-        fn from(value: Percentage) -> Self {
-            value.0
-        }
-    }
-
-    impl Percentage {
-        pub const ZERO: Self = Percentage(0.);
-        pub const PPM: u128 = 1_000_000;
-
-        pub fn ppm(&self) -> u128 {
-            (self.0 * 1_000_000.) as u128
-        }
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    pub struct FeeThresholds {
-        pub max_l2_blocks_behind: NonZeroU32,
-        pub start_discount_percentage: Percentage,
-        pub end_premium_percentage: Percentage,
-        pub always_acceptable_fee: u128,
-    }
-
-    #[cfg(feature = "test-helpers")]
-    impl Default for FeeThresholds {
-        fn default() -> Self {
-            Self {
-                max_l2_blocks_behind: NonZeroU32::MAX,
-                start_discount_percentage: Percentage::ZERO,
-                end_premium_percentage: Percentage::ZERO,
-                always_acceptable_fee: u128::MAX,
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    pub struct FeeAlgoConfig {
-        pub sma_periods: SmaPeriods,
-        pub fee_thresholds: FeeThresholds,
-    }
 
     // src/config.rs
     #[derive(Debug, Clone)]
@@ -87,7 +20,6 @@ pub mod service {
         pub fragment_accumulation_timeout: Duration,
         pub fragments_to_accumulate: NonZeroUsize,
         pub gas_bump_timeout: Duration,
-        pub fee_algo: FeeAlgoConfig,
     }
 
     #[cfg(feature = "test-helpers")]
@@ -98,31 +30,34 @@ pub mod service {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
-                fee_algo: FeeAlgoConfig {
-                    sma_periods: SmaPeriods { short: 1, long: 2 },
-                    fee_thresholds: FeeThresholds {
-                        max_l2_blocks_behind: 100.try_into().unwrap(),
-                        ..FeeThresholds::default()
-                    },
-                },
             }
         }
     }
 
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    pub trait SendOrWaitDecider {
+        async fn should_send_blob_tx(
+            &self,
+            num_blobs: u32,
+            num_l2_blocks_behind: u32,
+            at_l1_height: u64,
+        ) -> Result<bool>;
+    }
+
     /// The `StateCommitter` is responsible for committing state fragments to L1.
-    pub struct StateCommitter<L1, FuelApi, Db, Clock> {
+    pub struct StateCommitter<L1, FuelApi, Db, Clock, D> {
         l1_adapter: L1,
         fuel_api: FuelApi,
         storage: Db,
         config: Config,
         clock: Clock,
         startup_time: DateTime<Utc>,
-        decider: SendOrWaitDecider<CachingFeesProvider<L1>>,
+        decider: D,
     }
 
-    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, Decider> StateCommitter<L1, FuelApi, Db, Clock, Decider>
     where
-        L1: Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock,
     {
         /// Creates a new `StateCommitter`.
@@ -132,15 +67,10 @@ pub mod service {
             storage: Db,
             config: Config,
             clock: Clock,
+            decider: Decider,
         ) -> Self {
             let startup_time = clock.now();
-            let price_algo = config.fee_algo;
 
-            // TODO: segfault, configure this cache
-            let decider = SendOrWaitDecider::new(
-                CachingFeesProvider::new(l1_adapter.clone(), 24 * 3600 / 12),
-                price_algo,
-            );
             Self {
                 l1_adapter,
                 fuel_api,
@@ -153,12 +83,13 @@ pub mod service {
         }
     }
 
-    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, Decider> StateCommitter<L1, FuelApi, Db, Clock, Decider>
     where
         L1: crate::state_committer::port::l1::Api + Send + Sync,
         FuelApi: crate::state_committer::port::fuel::Api,
         Db: crate::state_committer::port::Storage,
         Clock: crate::state_committer::port::Clock,
+        Decider: SendOrWaitDecider,
     {
         async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
             Ok(self
@@ -190,10 +121,8 @@ pub mod service {
             self.decider
                 .should_send_blob_tx(
                     u32::try_from(fragments.len()).expect("not to send more than u32::MAX blobs"),
-                    Context {
-                        num_l2_blocks_behind,
-                        at_l1_height: l1_height,
-                    },
+                    num_l2_blocks_behind,
+                    l1_height,
                 )
                 .await
         }
@@ -344,12 +273,13 @@ pub mod service {
         }
     }
 
-    impl<L1, FuelApi, Db, Clock> Runner for StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, Decider> Runner for StateCommitter<L1, FuelApi, Db, Clock, Decider>
     where
         L1: crate::state_committer::port::l1::Api + Send + Sync,
         FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
         Db: crate::state_committer::port::Storage + Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock + Send + Sync,
+        Decider: SendOrWaitDecider + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {
             if self.storage.has_nonfinalized_txs().await? {
@@ -376,7 +306,6 @@ pub mod port {
 
         use nonempty::NonEmpty;
 
-        pub use crate::state_committer::fee_analytics::{BlockFees, Fees, SequentialBlockFees};
         use crate::{
             types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
             Result,
@@ -398,80 +327,6 @@ pub mod port {
                 fragments: NonEmpty<Fragment>,
                 previous_tx: Option<L1Tx>,
             ) -> Result<(L1Tx, FragmentsSubmitted)>;
-            async fn fees(
-                &self,
-                height_range: RangeInclusive<u64>,
-            ) -> crate::Result<SequentialBlockFees>;
-        }
-
-        #[cfg(feature = "test-helpers")]
-        pub mod testing {
-            use std::{ops::RangeInclusive, sync::Arc};
-
-            use nonempty::NonEmpty;
-
-            use crate::{
-                state_committer::fee_analytics::{
-                    testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
-                    FeesProvider,
-                },
-                types::{FragmentsSubmitted, L1Tx},
-            };
-
-            use super::{Api, Fees, MockApi, SequentialBlockFees};
-
-            #[derive(Clone)]
-            pub struct ApiMockWFees<P> {
-                pub api: Arc<MockApi>,
-                fee_provider: P,
-            }
-
-            impl ApiMockWFees<ConstantFeesProvider> {
-                pub fn new(api: MockApi) -> Self {
-                    Self {
-                        api: Arc::new(api),
-                        fee_provider: ConstantFeesProvider::new(Fees::default()),
-                    }
-                }
-            }
-
-            impl<P> ApiMockWFees<P> {
-                pub fn w_preconfigured_fees(
-                    self,
-                    fees: impl IntoIterator<Item = (u64, Fees)>,
-                ) -> ApiMockWFees<PreconfiguredFeesProvider> {
-                    ApiMockWFees {
-                        api: self.api,
-                        fee_provider: PreconfiguredFeesProvider::new(fees),
-                    }
-                }
-            }
-
-            impl<P> Api for ApiMockWFees<P>
-            where
-                P: FeesProvider + Send + Sync,
-            {
-                async fn fees(
-                    &self,
-                    height_range: RangeInclusive<u64>,
-                ) -> crate::Result<SequentialBlockFees> {
-                    FeesProvider::fees(&self.fee_provider, height_range).await
-                }
-
-                async fn current_height(&self) -> crate::Result<u64> {
-                    self.api.current_height().await
-                }
-
-                async fn submit_state_fragments(
-                    &self,
-                    fragments: NonEmpty<crate::types::Fragment>,
-                    previous_tx: Option<L1Tx>,
-                ) -> crate::Result<(L1Tx, FragmentsSubmitted)> {
-                    self.api
-                        .submit_state_fragments(fragments, previous_tx)
-                        .await
-                }
-            }
         }
     }
 

@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use alloy::rpc::types::FeeHistory;
 use itertools::{izip, Itertools};
 use services::{
-    state_committer::port::l1::{BlockFees, Fees},
+    fee_tracker::port::l1::{BlockFees, Fees},
     Result,
 };
 
@@ -98,7 +98,7 @@ pub fn chunk_range_inclusive(
 #[cfg(test)]
 mod test {
     use alloy::rpc::types::FeeHistory;
-    use services::state_committer::port::l1::{BlockFees, Fees};
+    use services::fee_tracker::port::l1::{BlockFees, Fees};
 
     use std::ops::RangeInclusive;
 

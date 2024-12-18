@@ -8,7 +8,9 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::state_committer::port::l1::testing::ApiMockWFees;
+use services::fee_tracker::port::l1::testing::ConstantFeeApi;
+use services::fee_tracker::port::l1::Fees;
+use services::fee_tracker::service::FeeTracker;
 use services::types::{
     BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty,
 };
@@ -485,6 +487,10 @@ pub mod mocks {
     }
 }
 
+pub fn noop_fee_tracker() -> FeeTracker<ConstantFeeApi> {
+    FeeTracker::new(ConstantFeeApi::new(Fees::default()), Default::default())
+}
+
 pub struct Setup {
     db: DbWithProcess,
     test_clock: TestClock,
@@ -545,7 +551,7 @@ impl Setup {
             .return_once(move || Box::pin(async { Ok(0) }));
 
         StateCommitter::new(
-            ApiMockWFees::new(l1_mock),
+            l1_mock,
             mocks::fuel::latest_height_is(0),
             self.db(),
             services::StateCommitterConfig {
@@ -556,6 +562,7 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
+            noop_fee_tracker(),
         )
         .run()
         .await
@@ -583,7 +590,7 @@ impl Setup {
 
         let fuel_mock = mocks::fuel::latest_height_is(height);
         let mut committer = StateCommitter::new(
-            ApiMockWFees::new(l1_mock),
+            l1_mock,
             fuel_mock,
             self.db(),
             services::StateCommitterConfig {
@@ -591,9 +598,9 @@ impl Setup {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
-                ..Default::default()
             },
             self.test_clock.clone(),
+            noop_fee_tracker(),
         );
         committer.run().await.unwrap();
 

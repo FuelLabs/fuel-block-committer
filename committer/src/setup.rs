@@ -9,10 +9,8 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    state_committer::{
-        port::Storage,
-        service::{FeeAlgoConfig, FeeThresholds, SmaPeriods},
-    },
+    fee_tracker::service::{FeeThresholds, FeeTracker, SmaPeriods},
+    state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
@@ -121,6 +119,26 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
 ) -> Result<tokio::task::JoinHandle<()>> {
+    let fee_tracker = FeeTracker::new(
+        l1.clone(),
+        services::fee_tracker::service::Config {
+            sma_periods: SmaPeriods {
+                short: config.app.fee_algo.short_sma_blocks,
+                long: config.app.fee_algo.long_sma_blocks,
+            },
+            fee_thresholds: FeeThresholds {
+                max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
+                start_discount_percentage: config
+                    .app
+                    .fee_algo
+                    .start_discount_percentage
+                    .try_into()?,
+                end_premium_percentage: config.app.fee_algo.end_premium_percentage.try_into()?,
+                always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
+            },
+        },
+    );
+
     let state_committer = services::StateCommitter::new(
         l1,
         fuel,
@@ -130,28 +148,9 @@ pub fn state_committer(
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
             gas_bump_timeout: config.app.gas_bump_timeout,
-            fee_algo: FeeAlgoConfig {
-                sma_periods: SmaPeriods {
-                    short: config.app.fee_algo.short_sma_blocks,
-                    long: config.app.fee_algo.long_sma_blocks,
-                },
-                fee_thresholds: FeeThresholds {
-                    max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
-                    start_discount_percentage: config
-                        .app
-                        .fee_algo
-                        .start_discount_percentage
-                        .try_into()?,
-                    end_premium_percentage: config
-                        .app
-                        .fee_algo
-                        .end_premium_percentage
-                        .try_into()?,
-                    always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
-                },
-            },
         },
         SystemClock,
+        fee_tracker,
     );
 
     Ok(schedule_polling(
