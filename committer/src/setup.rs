@@ -120,7 +120,7 @@ pub fn state_committer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
-) -> tokio::task::JoinHandle<()> {
+) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
         l1,
         fuel,
@@ -137,8 +137,16 @@ pub fn state_committer(
                 },
                 fee_thresholds: FeeThresholds {
                     max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
-                    start_discount_percentage: config.app.fee_algo.start_discount_percentage,
-                    end_premium_percentage: config.app.fee_algo.end_premium_percentage,
+                    start_discount_percentage: config
+                        .app
+                        .fee_algo
+                        .start_discount_percentage
+                        .try_into()?,
+                    end_premium_percentage: config
+                        .app
+                        .fee_algo
+                        .end_premium_percentage
+                        .try_into()?,
                     always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
                 },
             },
@@ -146,12 +154,12 @@ pub fn state_committer(
         SystemClock,
     );
 
-    schedule_polling(
+    Ok(schedule_polling(
         config.app.tx_finalization_check_interval,
         state_committer,
         "State Committer",
         cancel_token,
-    )
+    ))
 }
 
 pub fn block_importer(

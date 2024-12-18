@@ -392,9 +392,8 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.0,
-            end_premium_percentage: 0.0,
             always_acceptable_fee: 0,
+            ..Default::default()
         },
     };
 
@@ -499,9 +498,8 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.0,
-            end_premium_percentage: 0.0,
             always_acceptable_fee: 0,
+            ..Default::default()
         },
     };
 
@@ -597,9 +595,8 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 50.try_into().unwrap(),
-            start_discount_percentage: 0.0,
-            end_premium_percentage: 0.0,
             always_acceptable_fee: 0,
+            ..Default::default()
         },
     };
 
@@ -703,8 +700,8 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         sma_periods: SmaPeriods { short: 2, long: 5 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.20,
-            end_premium_percentage: 0.20,
+            start_discount_percentage: 0.20.try_into().unwrap(),
+            end_premium_percentage: 0.20.try_into().unwrap(),
             always_acceptable_fee: 0,
         },
     };

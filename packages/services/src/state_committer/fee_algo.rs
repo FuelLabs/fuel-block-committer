@@ -1,5 +1,7 @@
 use std::cmp::min;
 
+use crate::state_committer::service::Percentage;
+
 use super::{
     fee_analytics::{FeeAnalytics, FeesProvider},
     port::l1::Fees,
@@ -105,8 +107,6 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         fee: u128,
         context: Context,
     ) -> u128 {
-        const PPM: u128 = 1_000_000; // 100% in PPM
-
         let max_blocks_behind = u128::from(fee_thresholds.max_l2_blocks_behind.get());
         let blocks_behind = u128::from(context.num_l2_blocks_behind);
 
@@ -117,11 +117,11 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             max_blocks_behind
         );
 
-        let start_discount_ppm = percentage_to_ppm(fee_thresholds.start_discount_percentage);
-        let end_premium_ppm = percentage_to_ppm(fee_thresholds.end_premium_percentage);
+        let start_discount_ppm = fee_thresholds.start_discount_percentage.ppm();
+        let end_premium_ppm = fee_thresholds.end_premium_percentage.ppm();
 
         // 1. The highest we're initially willing to go: eg. 100% - 20% = 80%
-        let base_multiplier = PPM.saturating_sub(start_discount_ppm);
+        let base_multiplier = Percentage::PPM.saturating_sub(start_discount_ppm);
 
         // 2. How late are we: eg. late enough to add 25% to our base multiplier
         let premium_increment = Self::calculate_premium_increment(
@@ -134,11 +134,12 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         // 3. Total multiplier consist of the base and the premium increment: eg. 80% + 25% = 105%
         let multiplier_ppm = min(
             base_multiplier.saturating_add(premium_increment),
-            PPM + end_premium_ppm,
+            Percentage::PPM + end_premium_ppm,
         );
 
         // 3. Final fee: eg. 105% of the base fee
-        fee.saturating_mul(multiplier_ppm).saturating_div(PPM)
+        fee.saturating_mul(multiplier_ppm)
+            .saturating_div(Percentage::PPM)
     }
 
     fn calculate_premium_increment(
@@ -147,19 +148,19 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         blocks_behind: u128,
         max_blocks_behind: u128,
     ) -> u128 {
-        const PPM: u128 = 1_000_000; // 100% in PPM
-
         let total_ppm = start_discount_ppm.saturating_add(end_premium_ppm);
 
         let proportion = if max_blocks_behind == 0 {
             0
         } else {
             blocks_behind
-                .saturating_mul(PPM)
+                .saturating_mul(Percentage::PPM)
                 .saturating_div(max_blocks_behind)
         };
 
-        total_ppm.saturating_mul(proportion).saturating_div(PPM)
+        total_ppm
+            .saturating_mul(proportion)
+            .saturating_div(Percentage::PPM)
     }
 
     // TODO: Segfault maybe dont leak so much eth abstractions
@@ -174,16 +175,15 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
     }
 }
 
-fn percentage_to_ppm(percentage: f64) -> u128 {
-    (percentage * 1_000_000.0) as u128
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_committer::{
-        fee_analytics::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
-        service::{FeeThresholds, SmaPeriods},
+    use crate::{
+        state_committer::{
+            fee_analytics::testing::{ConstantFeesProvider, PreconfiguredFeesProvider},
+            service::{FeeThresholds, Percentage, SmaPeriods},
+        },
+        types::NonNegative,
     };
 
     use test_case::test_case;
@@ -211,9 +211,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             },
         },
         0, // not behind at all
@@ -228,9 +227,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             },
         },
         0,
@@ -246,8 +244,7 @@ mod tests {
             fee_thresholds: FeeThresholds {
                 always_acceptable_fee: (21_000 * 5000) + (6 * 131_072 * 5000) + 5000 + 1,
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
+                ..Default::default()
             }
         },
         0,
@@ -262,9 +259,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -279,9 +275,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -296,9 +291,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -313,9 +307,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -330,9 +323,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -347,9 +339,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -365,9 +356,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -382,9 +372,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -400,9 +389,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -418,9 +406,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -436,9 +423,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.0,
-                end_premium_percentage: 0.0,
                 always_acceptable_fee: 0,
+                ..Default::default()
             }
         },
         0,
@@ -455,8 +441,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.20,
-                end_premium_percentage: 0.20,
+                start_discount_percentage: Percentage::try_from(0.20).unwrap(),
+                end_premium_percentage: Percentage::try_from(0.20).unwrap(),
                 always_acceptable_fee: 0,
             },
         },
@@ -473,8 +459,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6},
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.20,
-                end_premium_percentage: 0.20,
+                start_discount_percentage: 0.20.try_into().unwrap(),
+                end_premium_percentage: 0.20.try_into().unwrap(),
                 always_acceptable_fee: 0,
             }
         },
@@ -490,8 +476,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.20,
-                end_premium_percentage: 0.20,
+                start_discount_percentage: 0.20.try_into().unwrap(),
+                end_premium_percentage: 0.20.try_into().unwrap(),
                 always_acceptable_fee: 0,
             },
         },
@@ -508,8 +494,8 @@ mod tests {
             sma_periods: SmaPeriods { short: 2, long: 6 },
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
-                start_discount_percentage: 0.20,
-                end_premium_percentage: 0.20,
+                start_discount_percentage: 0.20.try_into().unwrap(),
+                end_premium_percentage: 0.20.try_into().unwrap(),
                 always_acceptable_fee: 2_700_000_000_000
             },
         },
@@ -553,9 +539,8 @@ mod tests {
         // Test Case 1: No blocks behind, no discount or premium
         FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.0,
-            end_premium_percentage: 0.0,
             always_acceptable_fee: 0,
+            ..Default::default()
         },
         1000,
         Context {
@@ -568,8 +553,8 @@ mod tests {
     #[test_case(
         FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.20,
-            end_premium_percentage: 0.25,
+            start_discount_percentage: 0.20.try_into().unwrap(),
+            end_premium_percentage: 0.25.try_into().unwrap(),
             always_acceptable_fee: 0,
         },
         2000,
@@ -583,9 +568,9 @@ mod tests {
     #[test_case(
         FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.25,
-            end_premium_percentage: 0.0,
+            start_discount_percentage: 0.25.try_into().unwrap(),
             always_acceptable_fee: 0,
+            ..Default::default()
         },
         800,
         Context {
@@ -598,9 +583,9 @@ mod tests {
     #[test_case(
         FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.0,
-            end_premium_percentage: 0.30,
+            end_premium_percentage: 0.30.try_into().unwrap(),
             always_acceptable_fee: 0,
+            ..Default::default()
         },
         1000,
         Context {
@@ -614,8 +599,8 @@ mod tests {
         // Test Case 8: High fee with premium
         FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.10, // 100,000 PPM
-            end_premium_percentage: 0.20,    // 200,000 PPM
+            start_discount_percentage: 0.10.try_into().unwrap(),
+            end_premium_percentage: 0.20.try_into().unwrap(),
             always_acceptable_fee: 0,
         },
         10_000,

@@ -1,6 +1,5 @@
 #![deny(unused_crate_dependencies)]
 
-use std::sync::Arc;
 use std::{ops::RangeInclusive, time::Duration};
 
 use clock::TestClock;

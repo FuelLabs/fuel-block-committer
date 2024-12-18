@@ -293,7 +293,6 @@ impl<P> FeeAnalytics<P> {
 }
 
 impl<P: FeesProvider> FeeAnalytics<P> {
-    // TODO: segfault cache fees
     pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> crate::Result<Fees> {
         eprintln!("asking for fees");
         let fees = self.fees_provider.fees(block_range.clone()).await?;

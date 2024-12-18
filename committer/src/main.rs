@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
             storage.clone(),
             cancel_token.clone(),
             &config,
-        );
+        )?;
 
         let state_importer_handle =
             setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);

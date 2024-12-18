@@ -10,7 +10,7 @@ pub mod service {
     use crate::{
         state_committer::{fee_algo::Context, fee_analytics::CachingFeesProvider},
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
-        Result, Runner,
+        Error, Result, Runner,
     };
     use itertools::Itertools;
     use tracing::info;
@@ -23,13 +23,54 @@ pub mod service {
         pub long: u64,
     }
 
-    // TODO: segfault validate start discount is less than end premium and both are positive
+    #[derive(Default, Copy, Clone, Debug, PartialEq)]
+    pub struct Percentage(f64);
+
+    impl TryFrom<f64> for Percentage {
+        type Error = crate::Error;
+
+        fn try_from(value: f64) -> std::result::Result<Self, Self::Error> {
+            if value < 0. {
+                return Err(Error::Other(format!("Invalid percentage value {value}")));
+            }
+
+            Ok(Self(value))
+        }
+    }
+
+    impl From<Percentage> for f64 {
+        fn from(value: Percentage) -> Self {
+            value.0
+        }
+    }
+
+    impl Percentage {
+        pub const ZERO: Self = Percentage(0.);
+        pub const PPM: u128 = 1_000_000;
+
+        pub fn ppm(&self) -> u128 {
+            (self.0 * 1_000_000.) as u128
+        }
+    }
+
     #[derive(Debug, Clone, Copy)]
     pub struct FeeThresholds {
         pub max_l2_blocks_behind: NonZeroU32,
-        pub start_discount_percentage: f64,
-        pub end_premium_percentage: f64,
+        pub start_discount_percentage: Percentage,
+        pub end_premium_percentage: Percentage,
         pub always_acceptable_fee: u128,
+    }
+
+    #[cfg(feature = "test-helpers")]
+    impl Default for FeeThresholds {
+        fn default() -> Self {
+            Self {
+                max_l2_blocks_behind: NonZeroU32::MAX,
+                start_discount_percentage: Percentage::ZERO,
+                end_premium_percentage: Percentage::ZERO,
+                always_acceptable_fee: u128::MAX,
+            }
+        }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -61,9 +102,7 @@ pub mod service {
                     sma_periods: SmaPeriods { short: 1, long: 2 },
                     fee_thresholds: FeeThresholds {
                         max_l2_blocks_behind: 100.try_into().unwrap(),
-                        start_discount_percentage: 0.,
-                        end_premium_percentage: 0.,
-                        always_acceptable_fee: u128::MAX,
+                        ..FeeThresholds::default()
                     },
                 },
             }
