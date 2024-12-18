@@ -249,11 +249,6 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    struct Context {
-        num_l2_blocks_behind: u32,
-        at_l1_height: u64,
-    }
-
     #[test_case(
         // Test Case 1: No blocks behind, no discount or premium
         FeeThresholds {
@@ -262,10 +257,7 @@ mod tests {
             ..Default::default()
         },
         1000,
-        Context {
-            num_l2_blocks_behind: 0,
-            at_l1_height: 0,
-        },
+        0,
         1000;
         "No blocks behind, multiplier should be 100%"
     )]
@@ -277,10 +269,7 @@ mod tests {
             always_acceptable_fee: 0,
         },
         2000,
-        Context {
-            num_l2_blocks_behind: 50,
-            at_l1_height: 0,
-        },
+        50,
         2050;
         "Half blocks behind with discount and premium"
     )]
@@ -292,10 +281,7 @@ mod tests {
             ..Default::default()
         },
         800,
-        Context {
-            num_l2_blocks_behind: 50,
-            at_l1_height: 0,
-        },
+        50,
         700;
         "Start discount only, no premium"
     )]
@@ -307,10 +293,7 @@ mod tests {
             ..Default::default()
         },
         1000,
-        Context {
-            num_l2_blocks_behind: 50,
-            at_l1_height: 0,
-        },
+        50,
         1150;
         "End premium only, no discount"
     )]
@@ -323,10 +306,7 @@ mod tests {
             always_acceptable_fee: 0,
         },
         10_000,
-        Context {
-            num_l2_blocks_behind: 99,
-            at_l1_height: 0,
-        },
+        99,
         11970;
         "High fee with premium"
     )]
@@ -338,23 +318,16 @@ mod tests {
         always_acceptable_fee: 0,
     },
     1000,
-    Context {
-        num_l2_blocks_behind: 1,
-        at_l1_height: 0,
-    },
+    1,
     12;
     "Discount exceeds 100%, should be capped to 100%"
 )]
     fn test_calculate_max_upper_fee(
         fee_thresholds: FeeThresholds,
         fee: u128,
-        context: Context,
+        num_l2_blocks_behind: u32,
         expected_max_upper_fee: u128,
     ) {
-        let Context {
-            num_l2_blocks_behind,
-            at_l1_height,
-        } = context;
         let max_upper_fee = FeeTracker::<ConstantFeeApi>::calculate_max_upper_fee(
             &fee_thresholds,
             fee,
