@@ -29,13 +29,16 @@ pub struct Context {
 }
 
 impl<P: FeesProvider> SendOrWaitDecider<P> {
-    // TODO: segfault test that too far behind should work even if we cannot fetch prices due to holes
-    // (once that is implemented)
+    // TODO: segfault logging
     pub async fn should_send_blob_tx(
         &self,
         num_blobs: u32,
         context: Context,
     ) -> crate::Result<bool> {
+        if self.too_far_behind(context) {
+            return Ok(true);
+        }
+
         // opted out of validating that num_blobs <= 6, it's not this fn's problem if the caller
         // wants to send more than 6 blobs
         let last_n_blocks = |n: u64| {
@@ -56,16 +59,7 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
 
         let short_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
 
-        let fee_always_acceptable =
-            short_term_tx_fee <= self.config.fee_thresholds.always_acceptable_fee;
-        eprintln!("fee always acceptable: {}", fee_always_acceptable);
-
-        let too_far_behind =
-            context.num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind.get();
-
-        eprintln!("too far behind: {}", too_far_behind);
-
-        if fee_always_acceptable || too_far_behind {
+        if self.fee_always_acceptable(short_term_tx_fee) {
             return Ok(true);
         }
 
@@ -100,6 +94,14 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         );
 
         Ok(short_term_tx_fee < max_upper_tx_fee)
+    }
+
+    fn too_far_behind(&self, context: Context) -> bool {
+        context.num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind.get()
+    }
+
+    fn fee_always_acceptable(&self, short_term_tx_fee: u128) -> bool {
+        short_term_tx_fee <= self.config.fee_thresholds.always_acceptable_fee
     }
 
     fn calculate_max_upper_fee(
@@ -645,6 +647,39 @@ mod tests {
             max_upper_fee, expected_max_upper_fee,
             "Expected max_upper_fee to be {}, but got {}",
             expected_max_upper_fee, max_upper_fee
+        );
+    }
+    #[tokio::test]
+    async fn test_send_when_too_far_behind_and_fee_provider_fails() {
+        // given
+        let config = FeeAlgoConfig {
+            sma_periods: SmaPeriods { short: 2, long: 6 },
+            fee_thresholds: FeeThresholds {
+                max_l2_blocks_behind: 10.try_into().unwrap(),
+                always_acceptable_fee: 0,
+                ..Default::default()
+            },
+        };
+
+        // having no fees will make the validation in fee analytics fail
+        let fee_provider = PreconfiguredFeesProvider::new(vec![]);
+        let sut = SendOrWaitDecider::new(fee_provider, config);
+
+        let context = Context {
+            num_l2_blocks_behind: 20,
+            at_l1_height: 100,
+        };
+
+        // when
+        let should_send = sut
+            .should_send_blob_tx(1, context)
+            .await
+            .expect("Should send despite fee provider failure");
+
+        // then
+        assert!(
+            should_send,
+            "Should send because too far behind, regardless of fee provider status"
         );
     }
 }
