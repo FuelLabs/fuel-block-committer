@@ -1,13 +1,13 @@
 use services::{
     fee_tracker::{
-        port::l1::{testing::PreconfiguredFeeApi, Fees},
-        service::{Config as FeeTrackerConfig, FeeThresholds, FeeTracker, SmaPeriods},
+        port::l1::Fees,
+        service::{Config as FeeTrackerConfig, FeeThresholds, SmaPeriods},
     },
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use std::time::Duration;
-use test_helpers::noop_fee_tracker;
+use test_helpers::{noop_fee_tracker, preconfigured_fee_tracker};
 
 #[tokio::test]
 async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
@@ -318,7 +318,6 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
             fragment_accumulation_timeout: Duration::from_secs(60),
             fragments_to_accumulate: 5.try_into().unwrap(),
             gas_bump_timeout: Duration::from_secs(60),
-            ..Default::default()
         },
         test_clock.clone(),
         noop_fee_tracker(),
@@ -395,7 +394,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         ),
     ];
 
-    let fee_algo_config = services::fee_tracker::service::Config {
+    let fee_tracker_config = services::fee_tracker::service::Config {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
@@ -433,7 +432,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        FeeTracker::new(PreconfiguredFeeApi::new(fee_sequence), fee_algo_config),
+        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
     );
 
     // When
@@ -501,7 +500,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         ),
     ];
 
-    let fee_algo_config = FeeTrackerConfig {
+    let fee_tracker_config = FeeTrackerConfig {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
@@ -530,7 +529,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
             ..Default::default()
         },
         setup.test_clock(),
-        FeeTracker::new(PreconfiguredFeeApi::new(fee_sequence), fee_algo_config),
+        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
     );
 
     // when
@@ -598,7 +597,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         ),
     ];
 
-    let fee_algo_config = FeeTrackerConfig {
+    let fee_tracker_config = FeeTrackerConfig {
         sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 50.try_into().unwrap(),
@@ -636,7 +635,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        FeeTracker::new(PreconfiguredFeeApi::new(fee_sequence), fee_algo_config),
+        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
     );
 
     // when
@@ -742,7 +741,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
             ..Default::default()
         },
         setup.test_clock(),
-        FeeTracker::new(PreconfiguredFeeApi::new(fee_sequence), fee_tracker_config),
+        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
     );
 
     // when

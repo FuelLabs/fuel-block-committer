@@ -8,7 +8,7 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::fee_tracker::port::l1::testing::ConstantFeeApi;
+use services::fee_tracker::port::l1::testing::{ConstantFeeApi, PreconfiguredFeeApi};
 use services::fee_tracker::port::l1::Fees;
 use services::fee_tracker::service::FeeTracker;
 use services::types::{
@@ -489,6 +489,13 @@ pub mod mocks {
 
 pub fn noop_fee_tracker() -> FeeTracker<ConstantFeeApi> {
     FeeTracker::new(ConstantFeeApi::new(Fees::default()), Default::default())
+}
+
+pub fn preconfigured_fee_tracker(
+    fee_sequence: impl IntoIterator<Item = (u64, Fees)>,
+    config: services::fee_tracker::service::Config,
+) -> FeeTracker<PreconfiguredFeeApi> {
+    FeeTracker::new(PreconfiguredFeeApi::new(fee_sequence), config)
 }
 
 pub struct Setup {
