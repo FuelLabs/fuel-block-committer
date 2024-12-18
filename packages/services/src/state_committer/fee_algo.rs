@@ -1,5 +1,7 @@
 use std::cmp::min;
 
+use tracing::info;
+
 use crate::state_committer::service::Percentage;
 
 use super::{
@@ -29,13 +31,13 @@ pub struct Context {
 }
 
 impl<P: FeesProvider> SendOrWaitDecider<P> {
-    // TODO: segfault logging
     pub async fn should_send_blob_tx(
         &self,
         num_blobs: u32,
         context: Context,
     ) -> crate::Result<bool> {
         if self.too_far_behind(context) {
+            info!("Sending because we've fallen behind by {} which is more than the configured maximum of {}", context.num_l2_blocks_behind, self.config.fee_thresholds.max_l2_blocks_behind);
             return Ok(true);
         }
 
@@ -49,17 +51,16 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
             .fee_analytics
             .calculate_sma(last_n_blocks(self.config.sma_periods.short))
             .await?;
-        eprintln!("short term sma: {:?}", short_term_sma);
 
         let long_term_sma = self
             .fee_analytics
             .calculate_sma(last_n_blocks(self.config.sma_periods.long))
             .await?;
-        eprintln!("long term sma: {:?}", long_term_sma);
 
         let short_term_tx_fee = Self::calculate_blob_tx_fee(num_blobs, short_term_sma);
 
         if self.fee_always_acceptable(short_term_tx_fee) {
+            info!("Sending because: short term price {} is deemed always acceptable since it is <= {}", short_term_tx_fee, self.config.fee_thresholds.always_acceptable_fee);
             return Ok(true);
         }
 
@@ -67,33 +68,21 @@ impl<P: FeesProvider> SendOrWaitDecider<P> {
         let max_upper_tx_fee =
             Self::calculate_max_upper_fee(&self.config.fee_thresholds, long_term_tx_fee, context);
 
-        let long_vs_max_delta_perc =
-            ((max_upper_tx_fee as f64 - long_term_tx_fee as f64) / long_term_tx_fee as f64 * 100.)
-                .abs();
+        let should_send = short_term_tx_fee < max_upper_tx_fee;
 
-        let short_vs_max_delta_perc = ((max_upper_tx_fee as f64 - short_term_tx_fee as f64)
-            / short_term_tx_fee as f64
-            * 100.)
-            .abs();
-
-        if long_term_tx_fee <= max_upper_tx_fee {
-            eprintln!("The max upper fee({max_upper_tx_fee}) is above the long-term fee({long_term_tx_fee}) by {long_vs_max_delta_perc}%",);
+        if should_send {
+            info!(
+                "Sending because short term price {} is lower than the max upper fee {}",
+                short_term_tx_fee, max_upper_tx_fee
+            );
         } else {
-            eprintln!("The max upper fee({max_upper_tx_fee}) is below the long-term fee({long_term_tx_fee}) by {long_vs_max_delta_perc}%",);
+            info!(
+                "Not sending because short term price {} is higher than the max upper fee {}",
+                short_term_tx_fee, max_upper_tx_fee
+            );
         }
 
-        if short_term_tx_fee <= max_upper_tx_fee {
-            eprintln!("The short term fee({short_term_tx_fee}) is below the max upper fee({max_upper_tx_fee}) by {short_vs_max_delta_perc}%",);
-        } else {
-            eprintln!("The short term fee({short_term_tx_fee}) is above the max upper fee({max_upper_tx_fee}) by {short_vs_max_delta_perc}%",);
-        }
-
-        eprintln!(
-            "Short-term fee: {}, Long-term fee: {}, Max upper fee: {}",
-            short_term_tx_fee, long_term_tx_fee, max_upper_tx_fee
-        );
-
-        Ok(short_term_tx_fee < max_upper_tx_fee)
+        Ok(should_send)
     }
 
     fn too_far_behind(&self, context: Context) -> bool {

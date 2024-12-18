@@ -297,10 +297,9 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
         ),
     ]);
 
-    l1_mock_submit.expect_current_height().returning(|| {
-        eprintln!("I was called");
-        Box::pin(async { Ok(0) })
-    });
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
@@ -724,7 +723,6 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(80);
 
-    eprintln!("about to contrust the committer");
     let mut state_committer = StateCommitter::new(
         ApiMockWFees::new(l1_mock_submit).w_preconfigured_fees(fee_sequence),
         fuel_mock,
@@ -738,11 +736,9 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         },
         setup.test_clock(),
     );
-    eprintln!("constructed the committer");
 
     // when
     state_committer.run().await?;
-    eprintln!("ran the committer");
 
     // then
     // Mocks validate that the fragments have been sent due to increased tolerance from nearing max blocks behind

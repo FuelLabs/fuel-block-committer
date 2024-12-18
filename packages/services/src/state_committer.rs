@@ -186,10 +186,6 @@ pub mod service {
                 .oldest_block_in_bundle;
 
             let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block_in_fragments);
-            eprintln!(
-                "deciding whether to send tx with {} fragments",
-                fragments.len()
-            );
 
             self.decider
                 .should_send_blob_tx(
@@ -208,12 +204,9 @@ pub mod service {
             previous_tx: Option<L1Tx>,
         ) -> Result<()> {
             if !self.should_send_tx(&fragments).await? {
-                eprintln!("decided against sending fragments");
-                info!("decided against sending fragments");
+                info!("decided against sending fragments due to high fees");
                 return Ok(());
             }
-            eprintln!("decided to send fragments");
-
             info!("about to send at most {} fragments", fragments.len());
 
             let data = fragments.clone().map(|f| f.fragment);
