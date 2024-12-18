@@ -306,6 +306,18 @@ impl<P: FeesProvider> FeeAnalytics<P> {
         Ok(Self::mean(fees))
     }
 
+    pub async fn fees_at_height(&self, height: u64) -> crate::Result<Fees> {
+        let fee = self
+            .fees_provider
+            .fees(height..=height)
+            .await?
+            .into_iter()
+            .next()
+            .expect("sequential fees guaranteed not empty");
+
+        Ok(fee.fees)
+    }
+
     fn mean(fees: SequentialBlockFees) -> Fees {
         let count = fees.len() as u128;
 
@@ -331,6 +343,7 @@ impl<P: FeesProvider> FeeAnalytics<P> {
 mod tests {
     use itertools::Itertools;
     use mockall::{predicate::eq, Sequence};
+    use testing::{incrementing_fees, PreconfiguredFeesProvider};
 
     use super::*;
 
@@ -681,6 +694,29 @@ mod tests {
         let result = provider.get_fees(0..=9).await.unwrap();
 
         assert_eq!(result, generate_sequential_fees(0..=9));
+    }
+
+    #[tokio::test]
+    async fn price_at_height_returns_correct_fee() {
+        // given
+        let fees_map = incrementing_fees(5);
+        let fees_provider = PreconfiguredFeesProvider::new(fees_map.clone());
+        let fee_analytics = FeeAnalytics::new(fees_provider);
+        let height = 2;
+
+        // when
+        let fee = fee_analytics.fees_at_height(height).await.unwrap();
+
+        // then
+        let expected_fee = Fees {
+            base_fee_per_gas: 3,
+            reward: 3,
+            base_fee_per_blob_gas: 3,
+        };
+        assert_eq!(
+            fee, expected_fee,
+            "Fee at height {height} should be {expected_fee:?}"
+        );
     }
 
     // fn calculate_tx_fee(fees: &Fees) -> u128 {
