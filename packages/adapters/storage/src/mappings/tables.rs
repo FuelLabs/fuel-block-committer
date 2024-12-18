@@ -452,6 +452,13 @@ impl TryFrom<BundleCost> for services::types::BundleCost {
     type Error = crate::error::Error;
 
     fn try_from(value: BundleCost) -> Result<Self, Self::Error> {
+        let id = value.bundle_id.try_into().map_err(|e| {
+            crate::error::Error::Conversion(format!(
+                "Invalid db `bundle_id` ({}). Reason: {e}",
+                value.bundle_id
+            ))
+        })?;
+
         let cost = bigdecimal_to_u128(value.cost)?;
 
         let size = value.size.try_into().map_err(|e| {
@@ -483,6 +490,7 @@ impl TryFrom<BundleCost> for services::types::BundleCost {
         })?;
 
         Ok(Self {
+            id,
             cost,
             size,
             da_block_height,
