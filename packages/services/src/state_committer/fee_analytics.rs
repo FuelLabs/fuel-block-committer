@@ -207,14 +207,17 @@ pub mod testing {
     impl FeesProvider for ConstantFeesProvider {
         async fn fees(
             &self,
-            _height_range: RangeInclusive<u64>,
+            height_range: RangeInclusive<u64>,
         ) -> crate::Result<SequentialBlockFees> {
-            let fees = BlockFees {
-                height: self.current_block_height().await?,
-                fees: self.fees,
-            };
+            let fees = height_range
+                .into_iter()
+                .map(|height| BlockFees {
+                    height,
+                    fees: self.fees,
+                })
+                .collect_vec();
 
-            Ok(vec![fees].try_into().unwrap())
+            Ok(fees.try_into().unwrap())
         }
 
         async fn current_block_height(&self) -> crate::Result<u64> {

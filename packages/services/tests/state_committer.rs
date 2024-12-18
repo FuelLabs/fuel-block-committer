@@ -594,7 +594,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
     ];
 
     let fee_algo_config = FeeAlgoConfig {
-        sma_periods: SmaPeriods { short: 2, long: 5 },
+        sma_periods: SmaPeriods { short: 2, long: 6 },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 50.try_into().unwrap(),
             start_discount_percentage: 0.0,
@@ -618,7 +618,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
     )]);
     l1_mock_submit
         .expect_current_height()
-        .returning(|| Box::pin(async { Ok(6) }));
+        .returning(|| Box::pin(async { Ok(5) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(50); // L2 height is 50, behind by 50
     let mut state_committer = StateCommitter::new(

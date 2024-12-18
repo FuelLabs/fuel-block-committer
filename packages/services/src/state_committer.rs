@@ -389,9 +389,9 @@ pub mod port {
             use super::{Api, Fees, MockApi, SequentialBlockFees};
 
             #[derive(Clone)]
-            pub struct ApiMockWFees<Fees> {
+            pub struct ApiMockWFees<P> {
                 pub api: Arc<MockApi>,
-                fee_provider: Fees,
+                fee_provider: P,
             }
 
             impl ApiMockWFees<ConstantFeesProvider> {
@@ -403,7 +403,7 @@ pub mod port {
                 }
             }
 
-            impl<T> ApiMockWFees<T> {
+            impl<P> ApiMockWFees<P> {
                 pub fn w_preconfigured_fees(
                     self,
                     fees: impl IntoIterator<Item = (u64, Fees)>,
@@ -415,9 +415,9 @@ pub mod port {
                 }
             }
 
-            impl<T> Api for ApiMockWFees<T>
+            impl<P> Api for ApiMockWFees<P>
             where
-                T: FeesProvider + Send + Sync,
+                P: FeesProvider + Send + Sync,
             {
                 async fn fees(
                     &self,
