@@ -1,4 +1,3 @@
-use services::fee_tracker::port::l1::testing::ConstantFeeApi;
 use services::fee_tracker::port::l1::testing::PreconfiguredFeeApi;
 use services::fee_tracker::port::l1::Api;
 use services::fee_tracker::service::FeeThresholds;

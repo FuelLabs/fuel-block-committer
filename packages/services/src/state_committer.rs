@@ -1,13 +1,9 @@
 pub mod service {
-    use std::{
-        num::{NonZeroU32, NonZeroUsize},
-        time::Duration,
-    };
+    use std::{num::NonZeroUsize, time::Duration};
 
     use crate::{
-        fee_tracker::service::FeeTracker,
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
-        Error, Result, Runner,
+        Result, Runner,
     };
     use itertools::Itertools;
     use tracing::info;
@@ -302,7 +298,6 @@ pub mod port {
     };
 
     pub mod l1 {
-        use std::ops::RangeInclusive;
 
         use nonempty::NonEmpty;
 

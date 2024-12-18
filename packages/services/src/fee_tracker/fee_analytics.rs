@@ -65,7 +65,6 @@ impl<P: Api> FeeAnalytics<P> {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use mockall::{predicate::eq, Sequence};
 
     use crate::fee_tracker::port::l1::{testing, BlockFees};
 
@@ -199,7 +198,6 @@ mod tests {
             "Expected iterator to yield the same block fees"
         );
     }
-    use std::path::PathBuf;
 
     #[tokio::test]
     async fn calculates_sma_correctly_for_last_1_block() {
