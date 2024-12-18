@@ -9,6 +9,8 @@ pub struct TransactionCostUpdate {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BundleCost {
+    // the bundle id
+    pub id: u64,
     // total cost of the bundle
     pub cost: u128,
     // total size of the data contained in the bundle

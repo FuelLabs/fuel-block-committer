@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                bc.bundle_id,\n                bc.cost,\n                bc.size,\n                bc.da_block_height,\n                bc.is_finalized,\n                b.start_height,\n                b.end_height\n            FROM\n                bundle_cost bc\n                JOIN bundles b ON bc.bundle_id = b.id\n            WHERE\n                b.start_height >= $1 AND bc.is_finalized = TRUE\n            ORDER BY\n                b.start_height ASC\n            LIMIT $2\n            ",
+  "query": "\n            SELECT\n                bc.bundle_id,\n                bc.cost,\n                bc.size,\n                bc.da_block_height,\n                bc.is_finalized,\n                b.start_height,\n                b.end_height\n            FROM\n                bundle_cost bc\n                JOIN bundles b ON bc.bundle_id = b.id\n            WHERE\n                b.end_height >= $1 AND bc.is_finalized = TRUE\n            ORDER BY\n                b.start_height ASC\n            LIMIT $2\n            ",
   "describe": {
     "columns": [
       {
@@ -55,5 +55,5 @@
       false
     ]
   },
-  "hash": "f1ac90602eca2f5966383dc436593f3050820931aeea93d35239f980a22ced1f"
+  "hash": "365408c350d49ba41303b49b319a0fb317ced0dc5bae79b8a491b0807cf97958"
 }

@@ -846,7 +846,7 @@ impl Postgres {
                 bundle_cost bc
                 JOIN bundles b ON bc.bundle_id = b.id
             WHERE
-                b.start_height >= $1 AND bc.is_finalized = TRUE
+                b.end_height >= $1 AND bc.is_finalized = TRUE
             ORDER BY
                 b.start_height ASC
             LIMIT $2

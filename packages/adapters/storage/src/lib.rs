@@ -1125,4 +1125,42 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn get_finalized_costs_from_middle_of_range() -> Result<()> {
+        use services::cost_reporter::port::Storage;
+
+        // given
+        let storage = start_db().await;
+
+        for i in 0..5 {
+            let start_height = i * 10 + 1;
+            let end_height = start_height + 9;
+            let block_range = start_height..=end_height;
+
+            ensure_finalized_fragments_exist_in_the_db(
+                storage.clone(),
+                block_range,
+                1000u128,
+                5000u64,
+            )
+            .await;
+        }
+
+        // when
+        let from_block_height = 25;
+        let limit = 3;
+        let finalized_costs = storage
+            .get_finalized_costs(from_block_height, limit)
+            .await?;
+
+        // then
+        assert_eq!(finalized_costs.len(), 3);
+
+        assert_eq!(finalized_costs[0].start_height, 21);
+        assert_eq!(finalized_costs[1].start_height, 31);
+        assert_eq!(finalized_costs[2].start_height, 41);
+
+        Ok(())
+    }
 }
