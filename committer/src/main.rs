@@ -101,19 +101,23 @@ async fn main() -> Result<()> {
             finalization_metric,
         );
 
-        let state_pruner_handle = setup::state_pruner(
-            storage.clone(),
-            cancel_token.clone(),
-            &metrics_registry,
-            &config,
-        );
+        // Enable pruner once the issue is resolved
+        //TODO: https://github.com/FuelLabs/fuel-block-committer/issues/173
+        // let state_pruner_handle = setup::state_pruner(
+        //     storage.clone(),
+        //     cancel_token.clone(),
+        //     &metrics_registry,
+        //     &config,
+        // );
 
         handles.push(state_committer_handle);
         handles.push(state_importer_handle);
         handles.push(block_bundler);
         handles.push(state_listener_handle);
-        handles.push(state_pruner_handle);
         handles.push(fee_tracker_handle);
+        // Enable pruner once the issue is resolved
+        //TODO: https://github.com/FuelLabs/fuel-block-committer/issues/173
+        // handles.push(state_pruner_handle);
     }
 
     launch_api_server(
