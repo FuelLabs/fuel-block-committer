@@ -101,6 +101,7 @@ pub mod service {
         fragments: IntGauge,
         transaction_fragments: IntGauge,
         bundles: IntGauge,
+        bundle_costs: IntGauge,
         blocks: IntGauge,
         contract_transactions: IntGauge,
         contract_submissions: IntGauge,
@@ -121,6 +122,7 @@ pub mod service {
                 .transaction_fragments
                 .set(sizes.transaction_fragments.into());
             self.sizes.bundles.set(sizes.bundles.into());
+            self.sizes.bundle_costs.set(sizes.bundle_costs.into());
             self.sizes.blocks.set(sizes.blocks.into());
             self.sizes
                 .contract_transactions
@@ -138,6 +140,7 @@ pub mod service {
                 Box::new(self.metrics.sizes.fragments.clone()),
                 Box::new(self.metrics.sizes.transaction_fragments.clone()),
                 Box::new(self.metrics.sizes.bundles.clone()),
+                Box::new(self.metrics.sizes.bundle_costs.clone()),
                 Box::new(self.metrics.sizes.blocks.clone()),
                 Box::new(self.metrics.sizes.contract_transactions.clone()),
                 Box::new(self.metrics.sizes.contract_submissions.clone()),
@@ -157,6 +160,7 @@ pub mod service {
                 "Transaction fragments table size.",
             );
             let bundles = create_int_gauge("tsize_bundles", "Bundles table size.");
+            let bundle_costs = create_int_gauge("tsize_bundle_costs", "Bundle costs table size.");
             let blocks = create_int_gauge("tsize_blocks", "Blocks table size.");
             let contract_transactions = create_int_gauge(
                 "tsize_contract_transactions",
@@ -172,6 +176,7 @@ pub mod service {
                 fragments,
                 transaction_fragments,
                 bundles,
+                bundle_costs,
                 blocks,
                 contract_transactions,
                 contract_submissions,

@@ -984,7 +984,7 @@ impl Postgres {
             deleted_transaction_fragments AS (
                 DELETE FROM l1_transaction_fragments
                 WHERE transaction_id IN (SELECT id FROM deleted_blob_transactions)
-                RETURNING transaction_id
+                RETURNING transaction_id, fragment_id
             ),
 
             -- Build updated_transaction_fragments that represent the state after deletions
@@ -993,38 +993,50 @@ impl Postgres {
                 WHERE transaction_id NOT IN (SELECT transaction_id FROM deleted_transaction_fragments)
             ),
 
-            -- Delete unreferenced fragments
+            -- Delete fragments that are not referenced by any other transaction
             deleted_fragments AS (
-                DELETE FROM l1_fragments
-                WHERE id NOT IN (SELECT fragment_id FROM updated_transaction_fragments)
-                RETURNING id
+                DELETE FROM l1_fragments f
+                WHERE id IN (SELECT fragment_id FROM deleted_transaction_fragments)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM updated_transaction_fragments tf
+                      WHERE tf.fragment_id = f.id
+                  )
+                RETURNING id, bundle_id
             ),
 
-            -- Step 4: Build updated_fragments that represent the state of after deletions
+            -- Step 4: Build updated_fragments that represent the state after deletions
             updated_fragments AS (
-                SELECT bundle_id FROM l1_fragments
+                SELECT bundle_id
+                FROM l1_fragments
                 WHERE id NOT IN (SELECT id FROM deleted_fragments)
             ),
 
             -- Delete unreferenced bundles and collect start and end heights
             deleted_bundles AS (
-                DELETE FROM bundles
-                WHERE id NOT IN (SELECT bundle_id FROM updated_fragments)
-                RETURNING start_height, end_height
+                DELETE FROM bundles b
+                WHERE id IN (SELECT bundle_id FROM deleted_fragments)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM updated_fragments f
+                      WHERE f.bundle_id = b.id
+                  )
+                RETURNING start_height, end_height, id
             ),
 
             -- Delete unreferenced bundle costs
             deleted_bundle_costs AS (
-                DELETE FROM bundle_cost
-                WHERE bundle_id NOT IN (SELECT bundle_id FROM updated_fragments)
+                DELETE FROM bundle_cost bc
+                WHERE bundle_id IN (SELECT id FROM deleted_bundles)
             ),
 
             -- Delete corresponding fuel_blocks entries
             deleted_fuel_blocks AS (
-                DELETE FROM fuel_blocks
+                DELETE FROM fuel_blocks fb
                 WHERE EXISTS (
-                    SELECT 1 FROM deleted_bundles
-                    WHERE fuel_blocks.height BETWEEN deleted_bundles.start_height AND deleted_bundles.end_height
+                    SELECT 1
+                    FROM deleted_bundles db
+                    WHERE fb.height BETWEEN db.start_height AND db.end_height
                 )
             ),
 
@@ -1032,10 +1044,10 @@ impl Postgres {
             deleted_transactions AS (
                 DELETE FROM l1_transaction
                 WHERE created_at < $1
-                RETURNING id
+                RETURNING id, submission_id
             ),
 
-            -- Build updated_contract transaction that represent the state after deletions
+            -- Build updated_transactions that represent the state after deletions
             updated_transactions AS (
                 SELECT submission_id FROM l1_transaction
                 WHERE id NOT IN (SELECT id FROM deleted_transactions)
@@ -1043,8 +1055,13 @@ impl Postgres {
 
             -- Delete from l1_fuel_block_submission
             deleted_submissions AS (
-                DELETE FROM l1_fuel_block_submission
-                WHERE id NOT IN (SELECT submission_id FROM updated_transactions)
+                DELETE FROM l1_fuel_block_submission bs
+                WHERE id IN (SELECT submission_id FROM deleted_transactions)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM updated_transactions t
+                      WHERE t.submission_id = bs.id
+                  )
             )
 
             SELECT;

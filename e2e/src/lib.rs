@@ -84,9 +84,6 @@ mod tests {
         Ok(())
     }
 
-    // Enable test once the issue is resolved
-    //TODO: https://github.com/FuelLabs/fuel-block-committer/issues/173
-    #[ignore]
     #[tokio::test(flavor = "multi_thread")]
     async fn old_state_will_be_pruned() -> Result<()> {
         use services::state_pruner::port::Storage;
