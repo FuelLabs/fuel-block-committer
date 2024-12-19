@@ -9,7 +9,10 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_tracker::service::{FeeThresholds, FeeTracker, SmaPeriods},
+    fee_tracker::{
+        port::cache::CachingApi,
+        service::{FeeThresholds, FeeTracker, SmaPeriods},
+    },
     state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
@@ -119,7 +122,7 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-    fee_tracker: FeeTracker<L1>,
+    fee_tracker: FeeTracker<CachingApi<L1>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
         l1,
@@ -327,9 +330,9 @@ pub fn fee_tracker(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-) -> Result<(FeeTracker<L1>, tokio::task::JoinHandle<()>)> {
+) -> Result<(FeeTracker<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
     let fee_tracker = FeeTracker::new(
-        l1,
+        CachingApi::new(l1, 24 * 3600 / 12),
         services::fee_tracker::service::Config {
             sma_periods: SmaPeriods {
                 short: config.app.fee_algo.short_sma_blocks,
