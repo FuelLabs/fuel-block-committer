@@ -188,7 +188,7 @@ pub mod l1 {
 }
 
 pub mod cache {
-    use std::{collections::BTreeMap, ops::RangeInclusive};
+    use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc};
 
     use tokio::sync::RwLock;
 
@@ -196,10 +196,10 @@ pub mod cache {
 
     use super::l1::{Api, BlockFees, Fees, SequentialBlockFees};
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct CachingApi<P> {
         fees_provider: P,
-        cache: RwLock<BTreeMap<u64, Fees>>,
+        cache: Arc<RwLock<BTreeMap<u64, Fees>>>,
         cache_limit: usize,
     }
 
@@ -207,7 +207,7 @@ pub mod cache {
         pub fn new(fees_provider: P, cache_limit: usize) -> Self {
             Self {
                 fees_provider,
-                cache: RwLock::new(BTreeMap::new()),
+                cache: Arc::new(RwLock::new(BTreeMap::new())),
                 cache_limit,
             }
         }
