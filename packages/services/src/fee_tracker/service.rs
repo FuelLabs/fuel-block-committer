@@ -105,6 +105,8 @@ impl<P: Api + Send + Sync> SendOrWaitDecider for FeeTracker<P> {
             num_l2_blocks_behind,
         );
 
+        info!("short_term_tx_fee: {short_term_tx_fee}, long_term_tx_fee: {long_term_tx_fee}, max_upper_tx_fee: {max_upper_tx_fee}");
+
         let should_send = short_term_tx_fee < max_upper_tx_fee;
 
         if should_send {
@@ -251,6 +253,8 @@ impl<P: Api> FeeTracker<P> {
             base_multiplier.saturating_add(premium_increment),
             Percentage::PPM + end_premium_ppm,
         );
+
+        info!("start_discount_ppm: {start_discount_ppm}, end_premium_ppm: {end_premium_ppm}, base_multiplier: {base_multiplier}, premium_increment: {premium_increment}, multiplier_ppm: {multiplier_ppm}");
 
         // 3. Final fee: eg. 105% of the base fee
         fee.saturating_mul(multiplier_ppm)
