@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     num::NonZeroU32,
+    ops::RangeInclusive,
     time::Duration,
 };
 
@@ -14,7 +15,7 @@ use alloy::{
     primitives::{Address, U256},
     providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
     pubsub::PubSubFrontend,
-    rpc::types::{TransactionReceipt, TransactionRequest},
+    rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
     sol,
 };
 use itertools::Itertools;
@@ -210,6 +211,19 @@ impl EthApi for WsConnection {
         };
 
         Ok(submission_tx)
+    }
+
+    async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+        reward_percentiles: &[f64],
+    ) -> Result<FeeHistory> {
+        let max = *height_range.end();
+        let count = height_range.clone().count() as u64;
+        Ok(self
+            .provider
+            .get_fee_history(count, BlockNumberOrTag::Number(max), reward_percentiles)
+            .await?)
     }
 
     async fn get_block_number(&self) -> Result<u64> {

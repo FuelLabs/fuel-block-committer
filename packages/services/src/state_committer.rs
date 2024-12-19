@@ -6,6 +6,10 @@ pub mod service {
         Result, Runner,
     };
     use itertools::Itertools;
+    use metrics::{
+        prometheus::{core::Collector, IntGauge, Opts},
+        RegistersMetrics,
+    };
     use tracing::info;
 
     // src/config.rs
@@ -16,7 +20,6 @@ pub mod service {
         pub fragment_accumulation_timeout: Duration,
         pub fragments_to_accumulate: NonZeroUsize,
         pub gas_bump_timeout: Duration,
-        pub tx_max_fee: u128,
     }
 
     #[cfg(feature = "test-helpers")]
@@ -27,22 +30,57 @@ pub mod service {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
-                tx_max_fee: 1_000_000_000,
             }
         }
     }
 
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    pub trait SendOrWaitDecider {
+        async fn should_send_blob_tx(
+            &self,
+            num_blobs: u32,
+            num_l2_blocks_behind: u32,
+            at_l1_height: u64,
+        ) -> Result<bool>;
+    }
+
+    struct Metrics {
+        num_l2_blocks_behind: IntGauge,
+    }
+
+    impl Default for Metrics {
+        fn default() -> Self {
+            let num_l2_blocks_behind = IntGauge::with_opts(Opts::new(
+                "num_l2_blocks_behind",
+                "How many L2 blocks have been produced since the starting height of the oldest bundle we're committing",
+            )).expect("metric config to be correct");
+
+            Self {
+                num_l2_blocks_behind,
+            }
+        }
+    }
+
+    impl<L1, FuelApi, Db, Clock, D> RegistersMetrics for StateCommitter<L1, FuelApi, Db, Clock, D> {
+        fn metrics(&self) -> Vec<Box<dyn Collector>> {
+            vec![Box::new(self.metrics.num_l2_blocks_behind.clone())]
+        }
+    }
+
     /// The `StateCommitter` is responsible for committing state fragments to L1.
-    pub struct StateCommitter<L1, FuelApi, Db, Clock> {
+    pub struct StateCommitter<L1, FuelApi, Db, Clock, D> {
         l1_adapter: L1,
         fuel_api: FuelApi,
         storage: Db,
         config: Config,
         clock: Clock,
         startup_time: DateTime<Utc>,
+        decider: D,
+        metrics: Metrics,
     }
 
-    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, Decider> StateCommitter<L1, FuelApi, Db, Clock, Decider>
     where
         Clock: crate::state_committer::port::Clock,
     {
@@ -53,8 +91,10 @@ pub mod service {
             storage: Db,
             config: Config,
             clock: Clock,
+            decider: Decider,
         ) -> Self {
             let startup_time = clock.now();
+
             Self {
                 l1_adapter,
                 fuel_api,
@@ -62,16 +102,19 @@ pub mod service {
                 config,
                 clock,
                 startup_time,
+                decider,
+                metrics: Default::default(),
             }
         }
     }
 
-    impl<L1, FuelApi, Db, Clock> StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, Decider> StateCommitter<L1, FuelApi, Db, Clock, Decider>
     where
-        L1: crate::state_committer::port::l1::Api,
+        L1: crate::state_committer::port::l1::Api + Send + Sync,
         FuelApi: crate::state_committer::port::fuel::Api,
         Db: crate::state_committer::port::Storage,
         Clock: crate::state_committer::port::Clock,
+        Decider: SendOrWaitDecider,
     {
         async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
             Ok(self
@@ -90,11 +133,38 @@ pub mod service {
             Ok(std_elapsed >= self.config.fragment_accumulation_timeout)
         }
 
+        async fn should_send_tx(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
+            let l1_height = self.l1_adapter.current_height().await?;
+            let l2_height = self.fuel_api.latest_height().await?;
+
+            let oldest_l2_block_in_fragments = fragments
+                .maximum_by_key(|b| b.oldest_block_in_bundle)
+                .oldest_block_in_bundle;
+
+            let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block_in_fragments);
+
+            self.metrics
+                .num_l2_blocks_behind
+                .set(num_l2_blocks_behind as i64);
+
+            self.decider
+                .should_send_blob_tx(
+                    u32::try_from(fragments.len()).expect("not to send more than u32::MAX blobs"),
+                    num_l2_blocks_behind,
+                    l1_height,
+                )
+                .await
+        }
+
         async fn submit_fragments(
             &self,
             fragments: NonEmpty<BundleFragment>,
             previous_tx: Option<L1Tx>,
         ) -> Result<()> {
+            if !self.should_send_tx(&fragments).await? {
+                info!("decided against sending fragments due to high fees");
+                return Ok(());
+            }
             info!("about to send at most {} fragments", fragments.len());
 
             let data = fragments.clone().map(|f| f.fragment);
@@ -232,12 +302,13 @@ pub mod service {
         }
     }
 
-    impl<L1, FuelApi, Db, Clock> Runner for StateCommitter<L1, FuelApi, Db, Clock>
+    impl<L1, FuelApi, Db, Clock, Decider> Runner for StateCommitter<L1, FuelApi, Db, Clock, Decider>
     where
         L1: crate::state_committer::port::l1::Api + Send + Sync,
         FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
         Db: crate::state_committer::port::Storage + Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock + Send + Sync,
+        Decider: SendOrWaitDecider + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {
             if self.storage.has_nonfinalized_txs().await? {
@@ -260,13 +331,13 @@ pub mod port {
     };
 
     pub mod l1 {
+
         use nonempty::NonEmpty;
 
         use crate::{
             types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
             Result,
         };
-
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -278,6 +349,7 @@ pub mod port {
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
         pub trait Api {
+            async fn current_height(&self) -> Result<u64>;
             async fn submit_state_fragments(
                 &self,
                 fragments: NonEmpty<Fragment>,

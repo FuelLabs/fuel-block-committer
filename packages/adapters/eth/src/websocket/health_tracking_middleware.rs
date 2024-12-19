@@ -1,8 +1,9 @@
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, ops::RangeInclusive};
 
 use ::metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
+use alloy::rpc::types::FeeHistory;
 use delegate::delegate;
 use services::types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
 
@@ -15,6 +16,11 @@ use crate::{
 #[async_trait::async_trait]
 pub trait EthApi {
     async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
+    async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+        reward_percentiles: &[f64],
+    ) -> Result<FeeHistory>;
     async fn get_block_number(&self) -> Result<u64>;
     async fn balance(&self, address: Address) -> Result<U256>;
     fn commit_interval(&self) -> NonZeroU32;
@@ -113,6 +119,16 @@ where
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
         let response = self.adapter.get_transaction_response(tx_hash).await;
+        self.note_network_status(&response);
+        response
+    }
+
+    async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+        reward_percentiles: &[f64],
+    ) -> Result<FeeHistory> {
+        let response = self.adapter.fees(height_range, reward_percentiles).await;
         self.note_network_status(&response);
         response
     }

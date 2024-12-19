@@ -277,7 +277,8 @@ impl Postgres {
         sub.bundle_id,
         sub.data,
         sub.unused_bytes,
-        sub.total_bytes
+        sub.total_bytes,
+        sub.start_height
     FROM (
         SELECT DISTINCT ON (f.id)
             f.*,
@@ -323,11 +324,14 @@ impl Postgres {
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
-            SELECT f.*
-            FROM l1_fragments f
-            JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-            JOIN l1_blob_transaction t ON t.id = tf.transaction_id
-            WHERE t.hash = $1
+                SELECT
+                    f.*,
+                    b.start_height
+                FROM l1_fragments f
+                JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+                JOIN l1_blob_transaction t ON t.id = tf.transaction_id
+                JOIN bundles b ON b.id = f.bundle_id
+                WHERE t.hash = $1
         "#,
             tx_hash.as_slice()
         )
@@ -852,6 +856,36 @@ impl Postgres {
             LIMIT $2
             "#,
             from_block_height as i64,
+            limit as i64
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(BundleCost::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _get_latest_costs(&self, limit: usize) -> Result<Vec<BundleCost>> {
+        sqlx::query_as!(
+            tables::BundleCost,
+            r#"
+            SELECT
+                bc.bundle_id,
+                bc.cost,
+                bc.size,
+                bc.da_block_height,
+                bc.is_finalized,
+                b.start_height,
+                b.end_height
+            FROM
+                bundle_cost bc
+                JOIN bundles b ON bc.bundle_id = b.id
+            WHERE
+                bc.is_finalized = TRUE
+            ORDER BY
+                b.start_height DESC
+            LIMIT $1
+            "#,
             limit as i64
         )
         .fetch_all(&self.connection_pool)
