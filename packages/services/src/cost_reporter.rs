@@ -36,6 +36,17 @@ pub mod service {
                 .get_finalized_costs(from_block_height, limit)
                 .await
         }
+
+        pub async fn get_latest_costs(&self, limit: usize) -> Result<Vec<BundleCost>> {
+            if limit > self.request_limit {
+                return Err(Error::Other(format!(
+                    "requested: {} items, but limit is: {}",
+                    limit, self.request_limit
+                )));
+            }
+
+            self.storage.get_latest_costs(limit).await
+        }
     }
 }
 
@@ -50,5 +61,7 @@ pub mod port {
             from_block_height: u32,
             limit: usize,
         ) -> Result<Vec<BundleCost>>;
+
+        async fn get_latest_costs(&self, limit: usize) -> Result<Vec<BundleCost>>;
     }
 }
