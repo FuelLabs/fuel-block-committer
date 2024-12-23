@@ -90,7 +90,7 @@ async fn metrics(registry: web::Data<Arc<Registry>>) -> impl Responder {
     std::result::Result::<_, InternalError<_>>::Ok(text)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum HeightVariant {
     Latest,
