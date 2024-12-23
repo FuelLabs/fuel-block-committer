@@ -133,7 +133,7 @@ pub mod service {
             Ok(std_elapsed >= self.config.fragment_accumulation_timeout)
         }
 
-        async fn should_send_tx(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
+        async fn fees_acceptable(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
             let l1_height = self.l1_adapter.current_height().await?;
             let l2_height = self.fuel_api.latest_height().await?;
 
@@ -166,10 +166,6 @@ pub mod service {
             fragments: NonEmpty<BundleFragment>,
             previous_tx: Option<L1Tx>,
         ) -> Result<()> {
-            if !self.should_send_tx(&fragments).await? {
-                info!("decided against sending fragments due to high fees");
-                return Ok(());
-            }
             info!("about to send at most {} fragments", fragments.len());
 
             let data = fragments.clone().map(|f| f.fragment);
@@ -248,32 +244,41 @@ pub mod service {
                 .set(l2_blocks_behind as i64);
         }
 
-        async fn should_submit_fragments(&self, fragment_count: NonZeroUsize) -> Result<bool> {
-            if fragment_count >= self.config.fragments_to_accumulate {
-                return Ok(true);
-            }
-            info!(
-                "have only {} out of the target {} fragments per tx",
-                fragment_count, self.config.fragments_to_accumulate
-            );
+        async fn should_submit_fragments(
+            &self,
+            fragments: &NonEmpty<BundleFragment>,
+        ) -> Result<bool> {
+            let fragment_count = fragments.len_nonzero();
 
-            let expired = self.is_timeout_expired().await?;
-            if expired {
-                info!(
-                    "fragment accumulation timeout expired, proceeding with {} fragments",
-                    fragment_count
-                );
-            }
+            let expired = || async {
+                let expired = self.is_timeout_expired().await?;
+                if expired {
+                    info!(
+                        "fragment accumulation timeout expired, available {}/{} fragments",
+                        fragment_count, self.config.fragments_to_accumulate
+                    );
+                }
+                Result::Ok(expired)
+            };
 
-            Ok(expired)
+            let enough_fragments = || {
+                let enough_fragments = fragment_count >= self.config.fragments_to_accumulate;
+                if !enough_fragments {
+                    info!(
+                        "not enough fragments {}/{}",
+                        fragment_count, self.config.fragments_to_accumulate
+                    );
+                };
+                enough_fragments
+            };
+
+            // wrapped in closures so that we short-circuit *and* reduce redundant logs
+            Ok((enough_fragments() || expired().await?) && self.fees_acceptable(fragments).await?)
         }
 
         async fn submit_fragments_if_ready(&self) -> Result<()> {
             if let Some(fragments) = self.next_fragments_to_submit().await? {
-                if self
-                    .should_submit_fragments(fragments.len_nonzero())
-                    .await?
-                {
+                if self.should_submit_fragments(&fragments).await? {
                     self.submit_fragments(fragments, None).await?;
                 }
             }
@@ -317,7 +322,9 @@ pub mod service {
                 );
 
                 let fragments = self.fragments_submitted_by_tx(previous_tx.hash).await?;
-                self.submit_fragments(fragments, Some(previous_tx)).await?;
+                if self.fees_acceptable(&fragments).await? {
+                    self.submit_fragments(fragments, Some(previous_tx)).await?;
+                }
             }
 
             Ok(())
