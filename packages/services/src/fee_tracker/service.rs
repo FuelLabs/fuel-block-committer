@@ -287,10 +287,14 @@ impl<P: Api> FeeTracker<P> {
         const DATA_GAS_PER_BLOB: u128 = 131_072u128;
         const INTRINSIC_GAS: u128 = 21_000u128;
 
-        let base_fee = INTRINSIC_GAS * fees.base_fee_per_gas;
-        let blob_fee = fees.base_fee_per_blob_gas * num_blobs as u128 * DATA_GAS_PER_BLOB;
+        let base_fee = INTRINSIC_GAS.saturating_mul(fees.base_fee_per_gas);
+        let blob_fee = fees
+            .base_fee_per_blob_gas
+            .saturating_mul(num_blobs as u128)
+            .saturating_mul(DATA_GAS_PER_BLOB);
+        let reward_fee = fees.reward.saturating_mul(INTRINSIC_GAS);
 
-        base_fee + blob_fee + fees.reward
+        base_fee.saturating_add(blob_fee).saturating_add(reward_fee)
     }
 
     fn last_n_blocks(current_block: u64, n: NonZeroU64) -> RangeInclusive<u64> {

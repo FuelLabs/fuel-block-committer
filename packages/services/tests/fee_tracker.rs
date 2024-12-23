@@ -61,14 +61,14 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
             fee_thresholds: FeeThresholds {
-                always_acceptable_fee: (21_000 * 5000) + (6 * 131_072 * 5000) + 5000 + 1,
+                always_acceptable_fee: (21_000 * (5000 + 5000)) + (6 * 131_072 * 5000) + 1,
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 ..Default::default()
             }
         },
         0,
         true;
-        "Should send since short-term fee < always_acceptable_fee"
+        "Should send since short-term fee less than always_acceptable_fee"
     )]
 #[test_case(
         Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
@@ -234,9 +234,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Zero blobs: short-term reward is higher, don't send"
     )]
 #[test_case(
-        // Zero blobs don't care about higher short-term base_fee_per_blob_gas
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 },
-        Fees { base_fee_per_gas: 2000, reward: 7000, base_fee_per_blob_gas: 50_000_000 },
+        Fees { base_fee_per_gas: 2000, reward: 6000, base_fee_per_blob_gas: 50_000_000 },
         0,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
