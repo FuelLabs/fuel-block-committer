@@ -137,15 +137,8 @@ pub mod service {
             let l1_height = self.l1_adapter.current_height().await?;
             let l2_height = self.fuel_api.latest_height().await?;
 
-            let oldest_l2_block_in_fragments = fragments
-                .maximum_by_key(|b| b.oldest_block_in_bundle)
-                .oldest_block_in_bundle;
-
-            let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block_in_fragments);
-
-            self.metrics
-                .num_l2_blocks_behind
-                .set(num_l2_blocks_behind as i64);
+            let num_l2_blocks_behind = self.num_l2_blocks_behind(fragments, l2_height);
+            self.update_l2_blocks_behind_metric(num_l2_blocks_behind);
 
             self.decider
                 .should_send_blob_tx(
@@ -154,6 +147,18 @@ pub mod service {
                     l1_height,
                 )
                 .await
+        }
+
+        fn num_l2_blocks_behind(
+            &self,
+            fragments: &NonEmpty<BundleFragment>,
+            l2_height: u32,
+        ) -> u32 {
+            let oldest_l2_block_in_fragments = fragments
+                .minimum_by_key(|b| b.oldest_block_in_bundle)
+                .oldest_block_in_bundle;
+
+            l2_height.saturating_sub(oldest_l2_block_in_fragments)
         }
 
         async fn submit_fragments(
@@ -224,7 +229,23 @@ pub mod service {
                 .oldest_nonfinalized_fragments(starting_height, 6)
                 .await?;
 
-            Ok(NonEmpty::collect(existing_fragments))
+            let fragments = NonEmpty::collect(existing_fragments);
+
+            if let Some(fragments) = fragments.as_ref() {
+                // Tracking the metric here as well to get updates more often -- because
+                // submit_fragments might not be called
+                self.update_l2_blocks_behind_metric(
+                    self.num_l2_blocks_behind(fragments, latest_height),
+                );
+            }
+
+            Ok(fragments)
+        }
+
+        fn update_l2_blocks_behind_metric(&self, l2_blocks_behind: u32) {
+            self.metrics
+                .num_l2_blocks_behind
+                .set(l2_blocks_behind as i64);
         }
 
         async fn should_submit_fragments(&self, fragment_count: NonZeroUsize) -> Result<bool> {
@@ -256,6 +277,7 @@ pub mod service {
                     self.submit_fragments(fragments, None).await?;
                 }
             }
+
             Ok(())
         }
 
