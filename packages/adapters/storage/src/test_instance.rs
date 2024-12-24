@@ -200,6 +200,16 @@ impl services::state_listener::port::Storage for DbWithProcess {
     async fn has_pending_txs(&self) -> services::Result<bool> {
         self.db._has_pending_txs().await.map_err(Into::into)
     }
+
+    async fn earliest_submission_attempt(
+        &self,
+        nonce: u32,
+    ) -> services::Result<Option<DateTime<Utc>>> {
+        self.db
+            ._earliest_submission_attempt(nonce)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 impl block_importer::port::Storage for DbWithProcess {
