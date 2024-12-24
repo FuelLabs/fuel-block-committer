@@ -602,7 +602,7 @@ impl Postgres {
             .map(|height| {
                 let height = height
                     .latest_bundled_height
-                    .expect("end height is not NULLable");
+                    .expect("end height is not NULL-able");
                 u32::try_from(height).map_err(|_| {
                     crate::error::Error::Conversion(format!("invalid block height: {height}"))
                 })
