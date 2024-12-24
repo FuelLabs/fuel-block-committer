@@ -81,7 +81,7 @@ pub struct WsConnection {
     metrics: Metrics,
 }
 
-const MAX_BLOB_FEE_HORIZON: u32 = 10;
+const MAX_BLOB_FEE_HORIZON: u32 = 5;
 
 impl WsConnection {
     async fn get_next_blob_fee(&self, horizon: u32) -> Result<u128> {
