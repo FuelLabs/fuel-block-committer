@@ -277,9 +277,22 @@ pub mod service {
                     self.submit_fragments(fragments, None).await?;
                 }
             } else {
-                let oldest_bundled_height = self.storage.latest_bundled_height().await?;
+                // TODO: segfault test this
+                // if we have no fragments to submit, that means that we're up to date and new
+                // blocks haven't been bundled yet
+                let current_height_to_commit =
+                    if let Some(height) = self.storage.latest_bundled_height().await? {
+                        height.saturating_add(1)
+                    } else {
+                        self.fuel_api
+                            .latest_height()
+                            .await?
+                            .saturating_sub(self.config.lookback_window)
+                    };
 
-                // TODO: segfault
+                self.metrics
+                    .current_height_to_commit
+                    .set(current_height_to_commit as i64);
             }
 
             Ok(())
