@@ -79,6 +79,7 @@ where
     })
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct App {
     /// Port used by the started server
