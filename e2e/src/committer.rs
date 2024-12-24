@@ -306,7 +306,7 @@ impl CommitterProcess {
         limit: usize,
     ) -> anyhow::Result<Vec<BundleCost>> {
         let response = reqwest::get(format!(
-            "http://localhost:{}/v1/costs?from_height={}&limit={}",
+            "http://localhost:{}/v1/costs?variant=specific&value={}&limit={}",
             self.port, from_height, limit
         ))
         .await?
