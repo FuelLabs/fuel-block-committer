@@ -148,6 +148,7 @@ impl From<Percentage> for f64 {
 
 impl Percentage {
     pub const ZERO: Self = Percentage(0.);
+    // TODO: segfault, does PPM really make a difference?
     pub const PPM: u128 = 1_000_000;
 
     pub fn ppm(&self) -> u128 {
