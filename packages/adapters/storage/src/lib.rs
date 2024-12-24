@@ -38,6 +38,12 @@ impl services::state_listener::port::Storage for Postgres {
     async fn has_pending_txs(&self) -> Result<bool> {
         self._has_pending_txs().await.map_err(Into::into)
     }
+
+    async fn earliest_submission_attempt(&self, nonce: u32) -> Result<Option<DateTime<Utc>>> {
+        self._earliest_submission_attempt(nonce)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 impl services::cost_reporter::port::Storage for Postgres {
@@ -171,6 +177,10 @@ impl services::state_committer::port::Storage for Postgres {
     }
     async fn get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
         self._get_latest_pending_txs().await.map_err(Into::into)
+    }
+
+    async fn latest_bundled_height(&self) -> Result<Option<u32>> {
+        self._latest_bundled_height().await.map_err(Into::into)
     }
 }
 

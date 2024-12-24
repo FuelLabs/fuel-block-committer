@@ -1,13 +1,20 @@
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::{
+    num::{NonZeroU32, NonZeroUsize},
+    ops::RangeInclusive,
+    time::Duration,
+};
 
 use alloy::{
     consensus::BlobTransactionSidecar,
     eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
     primitives::U256,
+    rpc::types::FeeHistory,
 };
 use delegate::delegate;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::{izip, Itertools};
 use services::{
+    fee_tracker::port::l1::SequentialBlockFees,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty, NonNegative,
         TransactionResponse,
@@ -17,17 +24,42 @@ use services::{
 
 mod aws;
 mod error;
+mod fee_conversion;
 mod metrics;
 mod websocket;
 
 pub use alloy::primitives::Address;
 pub use aws::*;
 use fuel_block_committer_encoding::blob::{self, generate_sidecar};
+use static_assertions::const_assert;
 pub use websocket::{L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient};
 
 #[derive(Debug, Copy, Clone)]
 pub struct BlobEncoder;
 
+pub async fn make_pub_eth_client() -> WebsocketClient {
+    let signers = Signers::for_keys(crate::L1Keys {
+        main: crate::L1Key::Private(
+            "98d88144512cc5747fed20bdc81fb820c4785f7411bd65a88526f3b084dc931e".to_string(),
+        ),
+        blob: None,
+    })
+    .await
+    .unwrap();
+
+    crate::WebsocketClient::connect(
+        "wss://ethereum-rpc.publicnode.com".parse().unwrap(),
+        Default::default(),
+        signers,
+        10,
+        crate::TxConfig {
+            tx_max_fee: u128::MAX,
+            send_tx_request_timeout: Duration::MAX,
+        },
+    )
+    .await
+    .unwrap()
+}
 impl BlobEncoder {
     #[cfg(feature = "test-helpers")]
     pub const FRAGMENT_SIZE: usize = BYTES_PER_BLOB;
@@ -174,7 +206,44 @@ impl services::block_committer::port::l1::Api for WebsocketClient {
     }
 }
 
+impl services::fee_tracker::port::l1::Api for WebsocketClient {
+    async fn current_height(&self) -> Result<u64> {
+        self._get_block_number().await
+    }
+
+    async fn fees(&self, height_range: RangeInclusive<u64>) -> Result<SequentialBlockFees> {
+        const REWARD_PERCENTILE: f64 =
+            alloy::providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE;
+        // so that a alloy version bump doesn't surprise us
+        const_assert!(REWARD_PERCENTILE == 20.0,);
+
+        // There is a comment in alloy about not doing more than 1024 blocks at a time
+        const RPC_LIMIT: u64 = 1024;
+
+        let fees: Vec<FeeHistory> = stream::iter(fee_conversion::chunk_range_inclusive(
+            height_range,
+            RPC_LIMIT,
+        ))
+        .then(|range| self.fees(range, std::slice::from_ref(&REWARD_PERCENTILE)))
+        .try_collect()
+        .await?;
+
+        let mut unpacked_fees = vec![];
+        for fee in fees {
+            unpacked_fees.extend(fee_conversion::unpack_fee_history(fee)?);
+        }
+
+        unpacked_fees
+            .try_into()
+            .map_err(|e| services::Error::Other(format!("{e}")))
+    }
+}
+
 impl services::state_committer::port::l1::Api for WebsocketClient {
+    async fn current_height(&self) -> Result<u64> {
+        self._get_block_number().await
+    }
+
     delegate! {
         to (*self) {
             async fn submit_state_fragments(

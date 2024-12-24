@@ -135,6 +135,17 @@ pub mod service {
 
                 info!("blob tx {} finalized", hex::encode(tx.hash));
 
+                let earliest_submission_attempt =
+                    self.storage.earliest_submission_attempt(tx.nonce).await?;
+
+                self.metrics.last_finalization_interval.set(
+                    earliest_submission_attempt
+                        .map(|earliest_submission_attempt| {
+                            (now - earliest_submission_attempt).num_seconds()
+                        })
+                        .unwrap_or(0),
+                );
+
                 self.metrics
                     .last_eth_block_w_blob
                     .set(i64::try_from(tx_response.block_number()).unwrap_or(i64::MAX))
@@ -177,6 +188,7 @@ pub mod service {
     struct Metrics {
         last_eth_block_w_blob: IntGauge,
         last_finalization_time: IntGauge,
+        last_finalization_interval: IntGauge,
     }
 
     impl<L1, Db, Clock> RegistersMetrics for StateListener<L1, Db, Clock> {
@@ -184,6 +196,7 @@ pub mod service {
             vec![
                 Box::new(self.metrics.last_eth_block_w_blob.clone()),
                 Box::new(self.metrics.last_finalization_time.clone()),
+                Box::new(self.metrics.last_finalization_interval.clone()),
             ]
         }
     }
@@ -196,9 +209,18 @@ pub mod service {
             ))
             .expect("last_eth_block_w_blob metric to be correctly configured");
 
+            let last_finalization_interval = IntGauge::new(
+                "seconds_from_earliest_submission_to_finalization",
+                "The number of seconds from the earliest submission to finalization",
+            )
+            .expect(
+                "seconds_from_earliest_submission_to_finalization gauge to be correctly configured",
+            );
+
             Self {
                 last_eth_block_w_blob,
                 last_finalization_time,
+                last_finalization_interval,
             }
         }
     }
@@ -240,6 +262,7 @@ pub mod port {
             cost_per_tx: Vec<TransactionCostUpdate>,
         ) -> Result<()>;
         async fn has_pending_txs(&self) -> Result<bool>;
+        async fn earliest_submission_attempt(&self, nonce: u32) -> Result<Option<DateTime<Utc>>>;
     }
 
     pub trait Clock {

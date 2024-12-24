@@ -277,7 +277,8 @@ impl Postgres {
         sub.bundle_id,
         sub.data,
         sub.unused_bytes,
-        sub.total_bytes
+        sub.total_bytes,
+        sub.start_height
     FROM (
         SELECT DISTINCT ON (f.id)
             f.*,
@@ -323,11 +324,14 @@ impl Postgres {
         let fragments = sqlx::query_as!(
             tables::BundleFragment,
             r#"
-            SELECT f.*
-            FROM l1_fragments f
-            JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-            JOIN l1_blob_transaction t ON t.id = tf.transaction_id
-            WHERE t.hash = $1
+                SELECT
+                    f.*,
+                    b.start_height
+                FROM l1_fragments f
+                JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+                JOIN l1_blob_transaction t ON t.id = tf.transaction_id
+                JOIN bundles b ON b.id = f.bundle_id
+                WHERE t.hash = $1
         "#,
             tx_hash.as_slice()
         )
@@ -444,6 +448,27 @@ impl Postgres {
         .fetch_optional(&self.connection_pool)
         .await?
         .and_then(|response| response.last_fragment_time);
+
+        Ok(response)
+    }
+
+    pub(crate) async fn _earliest_submission_attempt(
+        &self,
+        nonce: u32,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let response = sqlx::query!(
+            r#"SELECT
+            MIN(l1_blob_transaction.created_at) AS earliest_tx_time
+        FROM
+            l1_blob_transaction
+        WHERE
+            l1_blob_transaction.nonce = $1;
+        "#,
+            nonce as i64
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .and_then(|response| response.earliest_tx_time);
 
         Ok(response)
     }
@@ -589,6 +614,21 @@ impl Postgres {
         .await?
         .map(TryFrom::try_from)
         .transpose()
+    }
+
+    pub(crate) async fn _latest_bundled_height(&self) -> Result<Option<u32>> {
+        sqlx::query!("SELECT MAX(end_height) AS latest_bundled_height FROM bundles")
+            .fetch_optional(&self.connection_pool)
+            .await?
+            .map(|height| {
+                let height = height
+                    .latest_bundled_height
+                    .expect("end height is not NULLable");
+                u32::try_from(height).map_err(|_| {
+                    crate::error::Error::Conversion(format!("invalid block height: {height}"))
+                })
+            })
+            .transpose()
     }
 
     pub(crate) async fn _update_tx_state(

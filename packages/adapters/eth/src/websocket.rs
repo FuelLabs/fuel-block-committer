@@ -1,10 +1,11 @@
-use std::{num::NonZeroU32, str::FromStr, time::Duration};
+use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr, time::Duration};
 
 use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
 use alloy::{
     consensus::SignableTransaction,
     network::TxSigner,
     primitives::{Address, ChainId, B256},
+    rpc::types::FeeHistory,
     signers::{local::PrivateKeySigner, Signature},
 };
 use serde::Deserialize;
@@ -223,6 +224,14 @@ impl WebsocketClient {
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
         Ok(self.inner.get_transaction_response(tx_hash).await?)
+    }
+
+    pub(crate) async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+        rewards_percentile: &[f64],
+    ) -> Result<FeeHistory> {
+        Ok(self.inner.fees(height_range, rewards_percentile).await?)
     }
 
     pub(crate) async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool> {

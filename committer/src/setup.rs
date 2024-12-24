@@ -9,6 +9,10 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
+    fee_tracker::{
+        port::cache::CachingApi,
+        service::{FeeThresholds, FeeTracker, SmaPeriods},
+    },
     state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
@@ -117,7 +121,9 @@ pub fn state_committer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
-) -> tokio::task::JoinHandle<()> {
+    registry: &Registry,
+    fee_tracker: FeeTracker<CachingApi<L1>>,
+) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
         l1,
         fuel,
@@ -127,17 +133,19 @@ pub fn state_committer(
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
             gas_bump_timeout: config.app.gas_bump_timeout,
-            tx_max_fee: config.app.tx_max_fee as u128,
         },
         SystemClock,
+        fee_tracker,
     );
 
-    schedule_polling(
+    state_committer.register_metrics(registry);
+
+    Ok(schedule_polling(
         config.app.tx_finalization_check_interval,
         state_committer,
         "State Committer",
         cancel_token,
-    )
+    ))
 }
 
 pub fn block_importer(
@@ -315,4 +323,42 @@ pub async fn shut_down(
 
     storage.close().await;
     Ok(())
+}
+
+pub fn fee_tracker(
+    l1: L1,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> Result<(FeeTracker<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
+    let fee_tracker = FeeTracker::new(
+        CachingApi::new(l1, 24 * 3600 / 12),
+        services::fee_tracker::service::Config {
+            sma_periods: SmaPeriods {
+                short: config.app.fee_algo.short_sma_blocks,
+                long: config.app.fee_algo.long_sma_blocks,
+            },
+            fee_thresholds: FeeThresholds {
+                max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
+                start_discount_percentage: config
+                    .app
+                    .fee_algo
+                    .start_discount_percentage
+                    .try_into()?,
+                end_premium_percentage: config.app.fee_algo.end_premium_percentage.try_into()?,
+                always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
+            },
+        },
+    );
+
+    fee_tracker.register_metrics(registry);
+
+    let handle = schedule_polling(
+        config.app.tx_finalization_check_interval,
+        fee_tracker.clone(),
+        "Fee Tracker",
+        cancel_token,
+    );
+
+    Ok((fee_tracker, handle))
 }

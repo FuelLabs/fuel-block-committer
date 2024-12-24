@@ -7,6 +7,7 @@ mod setup;
 use api::launch_api_server;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
+use services::fee_tracker::port::cache::CachingApi;
 use setup::last_finalization_metric;
 use tokio_util::sync::CancellationToken;
 
@@ -72,13 +73,22 @@ async fn main() -> Result<()> {
             &metrics_registry,
         );
 
+        let (fee_tracker, fee_tracker_handle) = setup::fee_tracker(
+            ethereum_rpc.clone(),
+            cancel_token.clone(),
+            &config,
+            &metrics_registry,
+        )?;
+
         let state_committer_handle = setup::state_committer(
             fuel_adapter.clone(),
             ethereum_rpc.clone(),
             storage.clone(),
             cancel_token.clone(),
             &config,
-        );
+            &metrics_registry,
+            fee_tracker,
+        )?;
 
         let state_importer_handle =
             setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
@@ -105,6 +115,7 @@ async fn main() -> Result<()> {
         handles.push(state_importer_handle);
         handles.push(block_bundler);
         handles.push(state_listener_handle);
+        handles.push(fee_tracker_handle);
         // Enable pruner once the issue is resolved
         //TODO: https://github.com/FuelLabs/fuel-block-committer/issues/173
         // handles.push(state_pruner_handle);

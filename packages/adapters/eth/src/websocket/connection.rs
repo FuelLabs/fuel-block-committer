@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     num::NonZeroU32,
+    ops::RangeInclusive,
     time::Duration,
 };
 
@@ -14,7 +15,7 @@ use alloy::{
     primitives::{Address, U256},
     providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
     pubsub::PubSubFrontend,
-    rpc::types::{TransactionReceipt, TransactionRequest},
+    rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
     sol,
 };
 use itertools::Itertools;
@@ -81,9 +82,12 @@ pub struct WsConnection {
     metrics: Metrics,
 }
 
+const MAX_BLOB_FEE_HORIZON: u32 = 5;
+
 impl WsConnection {
-    async fn get_next_blob_fee(&self, provider: &WsProvider) -> Result<u128> {
-        provider
+    async fn get_next_blob_fee(&self, horizon: u32) -> Result<u128> {
+        let mut next_block_blob_fee = self
+            .provider
             .get_block_by_number(BlockNumberOrTag::Latest, false)
             .await?
             .ok_or(Error::Network(
@@ -93,7 +97,13 @@ impl WsConnection {
             .next_block_blob_fee()
             .ok_or(Error::Network(
                 "next_block_blob_fee returned None".to_string(),
-            ))
+            ))?;
+
+        for _ in 0..horizon {
+            // multiply by 1.125 = multiply by 9, then divide by 8
+            next_block_blob_fee = next_block_blob_fee.saturating_mul(9).saturating_div(8);
+        }
+        Ok(next_block_blob_fee)
     }
 
     async fn get_bumped_fees(
@@ -101,7 +111,7 @@ impl WsConnection {
         previous_tx: &L1Tx,
         provider: &WsProvider,
     ) -> Result<(u128, u128, u128)> {
-        let next_blob_fee = self.get_next_blob_fee(provider).await?;
+        let next_blob_fee = self.get_next_blob_fee(MAX_BLOB_FEE_HORIZON).await?;
         let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
 
         let Eip1559Estimation {
@@ -212,6 +222,19 @@ impl EthApi for WsConnection {
         Ok(submission_tx)
     }
 
+    async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+        reward_percentiles: &[f64],
+    ) -> Result<FeeHistory> {
+        let max = *height_range.end();
+        let count = height_range.clone().count() as u64;
+        Ok(self
+            .provider
+            .get_fee_history(count, BlockNumberOrTag::Number(max), reward_percentiles)
+            .await?)
+    }
+
     async fn get_block_number(&self) -> Result<u64> {
         let response = self.provider.get_block_number().await?;
         Ok(response)
@@ -277,9 +300,14 @@ impl EthApi for WsConnection {
                     .with_blob_sidecar(sidecar)
                     .with_to(*blob_signer_address)
             }
-            _ => TransactionRequest::default()
-                .with_blob_sidecar(sidecar)
-                .with_to(*blob_signer_address),
+            _ => {
+                let blob_fee = self.get_next_blob_fee(MAX_BLOB_FEE_HORIZON).await?;
+
+                TransactionRequest::default()
+                    .with_blob_sidecar(sidecar)
+                    .with_max_fee_per_blob_gas(blob_fee)
+                    .with_to(*blob_signer_address)
+            }
         };
 
         let blob_tx = blob_provider.fill(blob_tx).await?;
