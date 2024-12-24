@@ -196,6 +196,7 @@ pub mod service {
             vec![
                 Box::new(self.metrics.last_eth_block_w_blob.clone()),
                 Box::new(self.metrics.last_finalization_time.clone()),
+                Box::new(self.metrics.last_finalization_interval.clone()),
             ]
         }
     }
