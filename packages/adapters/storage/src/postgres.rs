@@ -595,6 +595,21 @@ impl Postgres {
         .transpose()
     }
 
+    pub(crate) async fn _latest_bundled_height(&self) -> Result<Option<u32>> {
+        sqlx::query!("SELECT MAX(end_height) AS latest_bundled_height FROM bundles")
+            .fetch_optional(&self.connection_pool)
+            .await?
+            .map(|height| {
+                let height = height
+                    .latest_bundled_height
+                    .expect("end height is not NULLable");
+                u32::try_from(height).map_err(|_| {
+                    crate::error::Error::Conversion(format!("invalid block height: {height}"))
+                })
+            })
+            .transpose()
+    }
+
     pub(crate) async fn _update_tx_state(
         &self,
         hash: [u8; 32],

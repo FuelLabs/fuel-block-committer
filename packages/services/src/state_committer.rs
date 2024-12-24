@@ -46,25 +46,26 @@ pub mod service {
     }
 
     struct Metrics {
-        num_l2_blocks_behind: IntGauge,
+        current_height_to_commit: IntGauge,
     }
 
     impl Default for Metrics {
         fn default() -> Self {
-            let num_l2_blocks_behind = IntGauge::with_opts(Opts::new(
-                "num_l2_blocks_behind",
-                "How many L2 blocks have been produced since the starting height of the oldest bundle we're committing",
-            )).expect("metric config to be correct");
+            let current_height_to_commit = IntGauge::with_opts(Opts::new(
+                "current_height_to_commit",
+                "The starting l2 height of the bundle we're committing/will commit next",
+            ))
+            .expect("metric config to be correct");
 
             Self {
-                num_l2_blocks_behind,
+                current_height_to_commit,
             }
         }
     }
 
     impl<L1, FuelApi, Db, Clock, D> RegistersMetrics for StateCommitter<L1, FuelApi, Db, Clock, D> {
         fn metrics(&self) -> Vec<Box<dyn Collector>> {
-            vec![Box::new(self.metrics.num_l2_blocks_behind.clone())]
+            vec![Box::new(self.metrics.current_height_to_commit.clone())]
         }
     }
 
@@ -137,8 +138,10 @@ pub mod service {
             let l1_height = self.l1_adapter.current_height().await?;
             let l2_height = self.fuel_api.latest_height().await?;
 
-            let num_l2_blocks_behind = self.num_l2_blocks_behind(fragments, l2_height);
-            self.update_l2_blocks_behind_metric(num_l2_blocks_behind);
+            let oldest_l2_block = self.oldest_l2_block_in_fragments(fragments);
+            self.update_oldest_block_metric(oldest_l2_block);
+
+            let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block);
 
             self.decider
                 .should_send_blob_tx(
@@ -149,16 +152,10 @@ pub mod service {
                 .await
         }
 
-        fn num_l2_blocks_behind(
-            &self,
-            fragments: &NonEmpty<BundleFragment>,
-            l2_height: u32,
-        ) -> u32 {
-            let oldest_l2_block_in_fragments = fragments
+        fn oldest_l2_block_in_fragments(&self, fragments: &NonEmpty<BundleFragment>) -> u32 {
+            fragments
                 .minimum_by_key(|b| b.oldest_block_in_bundle)
-                .oldest_block_in_bundle;
-
-            l2_height.saturating_sub(oldest_l2_block_in_fragments)
+                .oldest_block_in_bundle
         }
 
         async fn submit_fragments(
@@ -230,18 +227,16 @@ pub mod service {
             if let Some(fragments) = fragments.as_ref() {
                 // Tracking the metric here as well to get updates more often -- because
                 // submit_fragments might not be called
-                self.update_l2_blocks_behind_metric(
-                    self.num_l2_blocks_behind(fragments, latest_height),
-                );
+                self.update_oldest_block_metric(self.oldest_l2_block_in_fragments(fragments));
             }
 
             Ok(fragments)
         }
 
-        fn update_l2_blocks_behind_metric(&self, l2_blocks_behind: u32) {
+        fn update_oldest_block_metric(&self, oldest_height: u32) {
             self.metrics
-                .num_l2_blocks_behind
-                .set(l2_blocks_behind as i64);
+                .current_height_to_commit
+                .set(oldest_height as i64);
         }
 
         async fn should_submit_fragments(
@@ -281,6 +276,10 @@ pub mod service {
                 if self.should_submit_fragments(&fragments).await? {
                     self.submit_fragments(fragments, None).await?;
                 }
+            } else {
+                let oldest_bundled_height = self.storage.latest_bundled_height().await?;
+
+                // TODO: segfault
             }
 
             Ok(())
@@ -415,7 +414,7 @@ pub mod port {
             starting_height: u32,
             limit: usize,
         ) -> Result<Vec<BundleFragment>>;
-
+        async fn latest_bundled_height(&self) -> Result<Option<u32>>;
         async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32])
             -> Result<Vec<BundleFragment>>;
         async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
