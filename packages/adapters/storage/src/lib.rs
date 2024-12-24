@@ -50,6 +50,10 @@ impl services::cost_reporter::port::Storage for Postgres {
             .await
             .map_err(Into::into)
     }
+
+    async fn get_latest_costs(&self, limit: usize) -> Result<Vec<BundleCost>> {
+        self._get_latest_costs(limit).await.map_err(Into::into)
+    }
 }
 
 impl services::status_reporter::port::Storage for Postgres {
@@ -1160,6 +1164,40 @@ mod tests {
         assert_eq!(finalized_costs[0].start_height, 21);
         assert_eq!(finalized_costs[1].start_height, 31);
         assert_eq!(finalized_costs[2].start_height, 41);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn get_latest_finalized_costs() -> Result<()> {
+        use services::cost_reporter::port::Storage;
+
+        // given
+        let storage = start_db().await;
+
+        for i in 0..5 {
+            let start_height = i * 10 + 1;
+            let end_height = start_height + 9;
+            let block_range = start_height..=end_height;
+
+            ensure_finalized_fragments_exist_in_the_db(
+                storage.clone(),
+                block_range,
+                1000u128,
+                5000u64,
+            )
+            .await;
+        }
+
+        // when
+        let finalized_costs = storage.get_latest_costs(1).await?;
+
+        // then
+        assert_eq!(finalized_costs.len(), 1);
+        let finalized_cost = &finalized_costs[0];
+
+        assert_eq!(finalized_cost.start_height, 41);
+        assert_eq!(finalized_cost.end_height, 50);
 
         Ok(())
     }
