@@ -1,11 +1,10 @@
-use services::fee_tracker::port::l1::testing::PreconfiguredFeeApi;
-use services::fee_tracker::port::l1::Api;
-use services::fee_tracker::service::FeeThresholds;
-use services::fee_tracker::service::FeeTracker;
-use services::fee_tracker::service::Percentage;
-use services::fee_tracker::service::SmaPeriods;
-use services::fee_tracker::{port::l1::Fees, service::Config};
-use services::state_committer::service::SendOrWaitDecider;
+use services::{
+    fee_tracker::{
+        port::l1::{testing::PreconfiguredFeeApi, Api, Fees},
+        service::{Config, FeeThresholds, FeeTracker, Percentage, SmaPeriods},
+    },
+    state_committer::service::SendOrWaitDecider,
+};
 use test_case::test_case;
 
 fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {

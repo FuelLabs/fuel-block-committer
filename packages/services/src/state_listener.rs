@@ -1,15 +1,16 @@
 pub mod service {
     use std::collections::HashSet;
 
-    use crate::{
-        types::{L1Tx, TransactionCostUpdate, TransactionState},
-        Runner,
-    };
     use metrics::{
         prometheus::{core::Collector, IntGauge, Opts},
         RegistersMetrics,
     };
     use tracing::info;
+
+    use crate::{
+        types::{L1Tx, TransactionCostUpdate, TransactionState},
+        Runner,
+    };
 
     pub struct StateListener<L1, Db, Clock> {
         l1_adapter: L1,

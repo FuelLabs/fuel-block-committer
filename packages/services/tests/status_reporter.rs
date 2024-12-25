@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use clock::TestClock;
 use rand::Rng;
-use services::status_reporter::service::{Status, StatusReport, StatusReporter};
-use services::types::{BlockSubmission, BlockSubmissionTx};
+use services::{
+    status_reporter::service::{Status, StatusReport, StatusReporter},
+    types::{BlockSubmission, BlockSubmissionTx},
+};
 use storage::PostgresProcess;
 
 #[tokio::test]

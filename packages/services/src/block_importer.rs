@@ -1,10 +1,11 @@
 pub mod service {
+    use futures::TryStreamExt;
+    use tracing::info;
+
     use crate::{
         types::{nonempty, CompressedFuelBlock, NonEmpty},
         Result, Runner,
     };
-    use futures::TryStreamExt;
-    use tracing::info;
 
     /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
     /// into local storage. It fetches blocks from the Fuel API

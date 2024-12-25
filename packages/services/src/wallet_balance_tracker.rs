@@ -1,16 +1,15 @@
 pub mod service {
     use std::collections::HashMap;
 
-    use crate::{
-        types::{Address, U256},
-        Result,
-    };
     use metrics::{
         prometheus::{core::Collector, IntGauge, Opts},
         RegistersMetrics,
     };
 
-    use crate::Runner;
+    use crate::{
+        types::{Address, U256},
+        Result, Runner,
+    };
 
     struct Balance {
         gauge: IntGauge,
@@ -99,7 +98,6 @@ mod tests {
 
     use std::str::FromStr;
 
-    use crate::types::Address;
     use alloy::primitives::U256;
     use metrics::{
         prometheus::{proto::Metric, Registry},
@@ -109,6 +107,7 @@ mod tests {
     use service::WalletBalanceTracker;
 
     use super::*;
+    use crate::types::Address;
 
     #[tokio::test]
     async fn updates_metrics() {

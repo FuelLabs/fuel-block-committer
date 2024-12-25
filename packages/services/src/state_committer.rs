@@ -1,16 +1,17 @@
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
-    use crate::{
-        types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
-        Result, Runner,
-    };
     use itertools::Itertools;
     use metrics::{
         prometheus::{core::Collector, IntGauge, Opts},
         RegistersMetrics,
     };
     use tracing::info;
+
+    use crate::{
+        types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
+        Result, Runner,
+    };
 
     // src/config.rs
     #[derive(Debug, Clone)]
@@ -400,8 +401,9 @@ pub mod port {
     }
 
     pub mod fuel {
-        use crate::Result;
         pub use fuel_core_client::client::types::block::Block as FuelBlock;
+
+        use crate::Result;
 
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]

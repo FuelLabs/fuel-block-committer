@@ -105,10 +105,10 @@ pub fn chunk_range_inclusive(
 
 #[cfg(test)]
 mod test {
+    use std::ops::RangeInclusive;
+
     use alloy::rpc::types::FeeHistory;
     use services::fee_tracker::port::l1::{BlockFees, Fees};
-
-    use std::ops::RangeInclusive;
 
     use crate::fee_conversion::{self};
 

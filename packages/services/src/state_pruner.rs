@@ -1,13 +1,13 @@
 pub mod service {
+    use std::time::Duration;
+
     use metrics::{
         prometheus::{core::Collector, IntGauge},
         RegistersMetrics,
     };
 
-    use crate::{Result, Runner};
-    use std::time::Duration;
-
     use super::create_int_gauge;
+    use crate::{Result, Runner};
 
     pub struct StatePruner<Db, Clock> {
         storage: Db,

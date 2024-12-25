@@ -1,3 +1,9 @@
+use std::{
+    borrow::Cow,
+    ops::RangeInclusive,
+    sync::{Arc, Weak},
+};
+
 use delegate::delegate;
 use services::{
     block_bundler, block_committer, block_importer,
@@ -8,11 +14,6 @@ use services::{
     },
 };
 use sqlx::Executor;
-use std::{
-    borrow::Cow,
-    ops::RangeInclusive,
-    sync::{Arc, Weak},
-};
 use testcontainers::{
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,

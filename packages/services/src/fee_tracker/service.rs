@@ -10,12 +10,11 @@ use metrics::{
 };
 use tracing::info;
 
-use crate::{state_committer::service::SendOrWaitDecider, Error, Result, Runner};
-
 use super::{
     fee_analytics::FeeAnalytics,
     port::l1::{Api, Fees},
 };
+use crate::{state_committer::service::SendOrWaitDecider, Error, Result, Runner};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -358,10 +357,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::fee_tracker::port::l1::testing::ConstantFeeApi;
+    use test_case::test_case;
 
     use super::*;
-    use test_case::test_case;
+    use crate::fee_tracker::port::l1::testing::ConstantFeeApi;
 
     #[test_case(
         // Test Case 1: No blocks behind, no discount or premium

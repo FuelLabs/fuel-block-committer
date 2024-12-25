@@ -1,8 +1,7 @@
 use std::{num::NonZeroU128, ops::RangeInclusive};
 
-use crate::Error;
-
 use super::port::l1::{Api, BlockFees, Fees, SequentialBlockFees};
+use crate::Error;
 
 #[derive(Debug, Clone)]
 pub struct FeeAnalytics<P> {
@@ -86,9 +85,8 @@ impl<P: Api> FeeAnalytics<P> {
 mod tests {
     use itertools::Itertools;
 
-    use crate::fee_tracker::port::l1::{testing, BlockFees};
-
     use super::*;
+    use crate::fee_tracker::port::l1::{testing, BlockFees};
 
     #[test]
     fn can_create_valid_sequential_fees() {

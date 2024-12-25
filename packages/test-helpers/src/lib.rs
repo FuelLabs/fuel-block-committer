@@ -8,19 +8,21 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
-use services::fee_tracker::port::l1::testing::{ConstantFeeApi, PreconfiguredFeeApi};
-use services::fee_tracker::port::l1::Fees;
-use services::fee_tracker::service::FeeTracker;
-use services::types::{
-    BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty,
+use services::{
+    block_committer::service::BlockCommitter,
+    block_importer::service::BlockImporter,
+    fee_tracker::{
+        port::l1::{
+            testing::{ConstantFeeApi, PreconfiguredFeeApi},
+            Fees,
+        },
+        service::FeeTracker,
+    },
+    state_listener::service::StateListener,
+    types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
+    BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
 };
 use storage::{DbWithProcess, PostgresProcess};
-
-use services::{block_committer::service::BlockCommitter, Runner};
-use services::{
-    block_importer::service::BlockImporter, state_listener::service::StateListener, BlockBundler,
-    BlockBundlerConfig, BundlerFactory, StateCommitter,
-};
 
 pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
     let size = size.into();

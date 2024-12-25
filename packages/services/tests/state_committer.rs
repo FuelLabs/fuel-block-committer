@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use services::{
     fee_tracker::{
         port::l1::Fees,
@@ -6,7 +8,6 @@ use services::{
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
-use std::time::Duration;
 use test_helpers::{noop_fee_tracker, preconfigured_fee_tracker};
 
 #[tokio::test]

@@ -1,5 +1,10 @@
 use std::{cmp::min, collections::VecDeque, fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
 
+use bytesize::ByteSize;
+use fuel_block_committer_encoding::bundle::{self, BundleV1};
+use itertools::Itertools;
+use rayon::prelude::*;
+
 use crate::{
     types::{
         storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty,
@@ -7,10 +12,6 @@ use crate::{
     },
     Result,
 };
-use bytesize::ByteSize;
-use fuel_block_committer_encoding::bundle::{self, BundleV1};
-use itertools::Itertools;
-use rayon::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Metadata {

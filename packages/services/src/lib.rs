@@ -12,8 +12,8 @@ pub mod types;
 pub mod wallet_balance_tracker;
 
 pub use block_bundler::{
-    bundler::Factory as BundlerFactory, service::BlockBundler,
-    service::Config as BlockBundlerConfig,
+    bundler::Factory as BundlerFactory,
+    service::{BlockBundler, Config as BlockBundlerConfig},
 };
 #[cfg(feature = "test-helpers")]
 pub use block_bundler::{

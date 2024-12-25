@@ -203,9 +203,8 @@ pub mod cache {
 
     use tokio::sync::RwLock;
 
-    use crate::Error;
-
     use super::l1::{Api, BlockFees, Fees, SequentialBlockFees};
+    use crate::Error;
 
     #[derive(Debug, Clone)]
     pub struct CachingApi<P> {

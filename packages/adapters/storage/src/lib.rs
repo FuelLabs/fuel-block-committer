@@ -455,8 +455,9 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_last_time_a_fragment_was_finalized() {
-        use services::state_committer::port::Storage;
-        use services::state_listener::port::Storage as ListenerStorage;
+        use services::{
+            state_committer::port::Storage, state_listener::port::Storage as ListenerStorage,
+        };
 
         // given
         let storage = start_db().await;
@@ -919,9 +920,10 @@ mod tests {
 
     #[tokio::test]
     async fn can_update_costs() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-        use services::state_committer::port::Storage as StateStorage;
-        use services::state_listener::port::Storage as ListenerStorage;
+        use services::{
+            cost_reporter::port::Storage, state_committer::port::Storage as StateStorage,
+            state_listener::port::Storage as ListenerStorage,
+        };
 
         // given
         let storage = start_db().await;
