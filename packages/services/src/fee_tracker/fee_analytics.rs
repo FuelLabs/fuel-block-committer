@@ -179,7 +179,6 @@ mod tests {
         );
     }
 
-    // TODO: segfault add more tests so that the in-order iteration invariant is properly tested
     #[test]
     fn produced_iterator_gives_correct_values() {
         // Given

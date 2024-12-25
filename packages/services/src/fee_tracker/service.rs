@@ -148,7 +148,6 @@ impl From<Percentage> for f64 {
 
 impl Percentage {
     pub const ZERO: Self = Percentage(0.);
-    // TODO: segfault, does PPM really make a difference?
     pub const PPM: u128 = 1_000_000;
 
     pub fn ppm(&self) -> u128 {
@@ -283,7 +282,6 @@ impl<P: Api> FeeTracker<P> {
             .saturating_div(Percentage::PPM)
     }
 
-    // TODO: Segfault maybe dont leak so much eth abstractions
     fn calculate_blob_tx_fee(num_blobs: u32, fees: &Fees) -> u128 {
         const DATA_GAS_PER_BLOB: u128 = 131_072u128;
         const INTRINSIC_GAS: u128 = 21_000u128;

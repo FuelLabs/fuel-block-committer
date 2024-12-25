@@ -56,7 +56,6 @@ pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     .take(number_of_blocks)
     .map(
         |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| {
-            // TODO: segfault add tests for detecting invalid 0s
             let convert_to_nonzero = |value: u128| {
                 NonZeroU128::try_from(value).map_err(|_| {
                     crate::error::Error::Other(

@@ -7,7 +7,6 @@ mod setup;
 use api::launch_api_server;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
-use services::fee_tracker::port::cache::CachingApi;
 use setup::last_finalization_metric;
 use tokio_util::sync::CancellationToken;
 
