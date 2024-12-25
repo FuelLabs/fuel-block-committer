@@ -297,6 +297,48 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn mean_is_at_least_one_when_totals_are_zero() {
+        // given
+        let block_fees = vec![
+            BlockFees {
+                height: 1,
+                fees: Fees {
+                    base_fee_per_gas: 1.try_into().unwrap(),
+                    reward: 1.try_into().unwrap(),
+                    base_fee_per_blob_gas: 1.try_into().unwrap(),
+                },
+            },
+            BlockFees {
+                height: 2,
+                fees: Fees {
+                    base_fee_per_gas: 1.try_into().unwrap(),
+                    reward: 1.try_into().unwrap(),
+                    base_fee_per_blob_gas: 1.try_into().unwrap(),
+                },
+            },
+        ];
+        let sequential_fees = SequentialBlockFees::try_from(block_fees).unwrap();
+        let mean = FeeAnalytics::<testing::PreconfiguredFeeApi>::mean(sequential_fees.clone());
+
+        // then
+        assert_eq!(
+            mean.base_fee_per_gas,
+            1.try_into().unwrap(),
+            "base_fee_per_gas should be set to 1 when total is 0"
+        );
+        assert_eq!(
+            mean.reward,
+            1.try_into().unwrap(),
+            "reward should be set to 1 when total is 0"
+        );
+        assert_eq!(
+            mean.base_fee_per_blob_gas,
+            1.try_into().unwrap(),
+            "base_fee_per_blob_gas should be set to 1 when total is 0"
+        );
+    }
+
     // fn calculate_tx_fee(fees: &Fees) -> u128 {
     //     21_000 * fees.base_fee_per_gas + fees.reward + 6 * fees.base_fee_per_blob_gas * 131_072
     // }

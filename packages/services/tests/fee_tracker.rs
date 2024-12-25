@@ -1,5 +1,8 @@
+use services::fee_tracker::port::l1::testing;
 use services::fee_tracker::port::l1::testing::PreconfiguredFeeApi;
 use services::fee_tracker::port::l1::Api;
+use services::fee_tracker::port::l1::BlockFees;
+use services::fee_tracker::port::l1::SequentialBlockFees;
 use services::fee_tracker::service::FeeThresholds;
 use services::fee_tracker::service::FeeTracker;
 use services::fee_tracker::service::Percentage;

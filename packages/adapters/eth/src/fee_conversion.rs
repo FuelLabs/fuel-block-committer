@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{num::NonZeroU128, ops::RangeInclusive};
 
 use alloy::rpc::types::FeeHistory;
 use itertools::{izip, Itertools};
@@ -47,7 +47,7 @@ pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
         })
         .try_collect()?;
 
-    let values = izip!(
+    izip!(
         (fees.oldest_block..),
         fees.base_fee_per_gas.into_iter(),
         fees.base_fee_per_blob_gas.into_iter(),
@@ -57,19 +57,25 @@ pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     .map(
         |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| {
             // TODO: segfault add tests for detecting invalid 0s
-            BlockFees {
+            let convert_to_nonzero = |value: u128| {
+                NonZeroU128::try_from(value).map_err(|_| {
+                    crate::error::Error::Other(
+                        "historical fee response returned a 0 fee, which we deem as invalid"
+                            .to_string(),
+                    )
+                })
+            };
+            Ok(BlockFees {
                 height,
                 fees: Fees {
-                    base_fee_per_gas: base_fee_per_gas.try_into().unwrap(),
-                    reward: reward.try_into().unwrap(),
-                    base_fee_per_blob_gas: base_fee_per_blob_gas.try_into().unwrap(),
+                    base_fee_per_gas: convert_to_nonzero(base_fee_per_gas)?,
+                    reward: convert_to_nonzero(reward)?,
+                    base_fee_per_blob_gas: convert_to_nonzero(base_fee_per_blob_gas)?,
                 },
-            }
+            })
         },
     )
-    .collect();
-
-    Ok(values)
+    .try_collect()
 }
 
 pub fn chunk_range_inclusive(
@@ -530,5 +536,50 @@ mod test {
             expected,
             "Expected BlockFees entries matching the full range chunk"
         );
+    }
+
+    #[test]
+    fn unpack_fee_history_invalid_zero_fees_or_rewards() {
+        // Test case where base_fee_per_gas contains a zero
+        let fees_with_zero_base_fee = FeeHistory {
+            oldest_block: 1000,
+            base_fee_per_gas: vec![100, 0, 200],
+            base_fee_per_blob_gas: vec![150, 250, 350],
+            reward: Some(vec![vec![10], vec![20]]),
+            ..Default::default()
+        };
+
+        let result = fee_conversion::unpack_fee_history(fees_with_zero_base_fee);
+        assert!(
+            result.is_err(),
+            "Expected error due to zero base_fee_per_gas"
+        );
+
+        // Test case where base_fee_per_blob_gas contains a zero
+        let fees_with_zero_blob_fee = FeeHistory {
+            oldest_block: 1001,
+            base_fee_per_gas: vec![100, 200, 300],
+            base_fee_per_blob_gas: vec![150, 0, 350],
+            reward: Some(vec![vec![10], vec![20]]),
+            ..Default::default()
+        };
+
+        let result = fee_conversion::unpack_fee_history(fees_with_zero_blob_fee);
+        assert!(
+            result.is_err(),
+            "Expected error due to zero base_fee_per_blob_gas"
+        );
+
+        // Test case where reward is zero
+        let fees_with_zero_reward = FeeHistory {
+            oldest_block: 1002,
+            base_fee_per_gas: vec![100, 200, 300],
+            base_fee_per_blob_gas: vec![150, 250, 350],
+            reward: Some(vec![vec![0], vec![20]]),
+            ..Default::default()
+        };
+
+        let result = fee_conversion::unpack_fee_history(fees_with_zero_reward);
+        assert!(result.is_err(), "Expected error due to zero reward");
     }
 }

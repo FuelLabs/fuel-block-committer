@@ -25,7 +25,7 @@ pub mod l1 {
 
     use itertools::Itertools;
 
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub struct SequentialBlockFees {
         fees: Vec<BlockFees>,
     }
