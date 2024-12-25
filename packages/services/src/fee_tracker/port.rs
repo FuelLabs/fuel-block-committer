@@ -1,9 +1,19 @@
 pub mod l1 {
-    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Fees {
-        pub base_fee_per_gas: u128,
-        pub reward: u128,
-        pub base_fee_per_blob_gas: u128,
+        pub base_fee_per_gas: NonZeroU128,
+        pub reward: NonZeroU128,
+        pub base_fee_per_blob_gas: NonZeroU128,
+    }
+
+    impl Default for Fees {
+        fn default() -> Self {
+            Fees {
+                base_fee_per_gas: 1.try_into().unwrap(),
+                reward: 1.try_into().unwrap(),
+                base_fee_per_blob_gas: 1.try_into().unwrap(),
+            }
+        }
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,7 +21,7 @@ pub mod l1 {
         pub height: u64,
         pub fees: Fees,
     }
-    use std::ops::RangeInclusive;
+    use std::{num::NonZeroU128, ops::RangeInclusive};
 
     use itertools::Itertools;
 
@@ -173,12 +183,13 @@ pub mod l1 {
         pub fn incrementing_fees(num_blocks: u64) -> BTreeMap<u64, Fees> {
             (0..num_blocks)
                 .map(|i| {
+                    let fee = (u128::from(i) + 1).try_into().unwrap();
                     (
                         i,
                         Fees {
-                            base_fee_per_gas: i as u128 + 1,
-                            reward: i as u128 + 1,
-                            base_fee_per_blob_gas: i as u128 + 1,
+                            base_fee_per_gas: fee,
+                            reward: fee,
+                            base_fee_per_blob_gas: fee,
                         },
                     )
                 })
@@ -305,19 +316,7 @@ pub mod cache {
                 .once()
                 .return_once(|range| {
                     Box::pin(async move {
-                        Ok(SequentialBlockFees::try_from(
-                            range
-                                .map(|h| BlockFees {
-                                    height: h,
-                                    fees: Fees {
-                                        base_fee_per_gas: h as u128,
-                                        reward: h as u128,
-                                        base_fee_per_blob_gas: h as u128,
-                                    },
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .unwrap())
+                        Ok(SequentialBlockFees::try_from(generate_sequential_fees(range)).unwrap())
                     })
                 });
 
@@ -343,19 +342,7 @@ pub mod cache {
                 .once()
                 .return_once(|range| {
                     Box::pin(async move {
-                        Ok(SequentialBlockFees::try_from(
-                            range
-                                .map(|h| BlockFees {
-                                    height: h,
-                                    fees: Fees {
-                                        base_fee_per_gas: h as u128,
-                                        reward: h as u128,
-                                        base_fee_per_blob_gas: h as u128,
-                                    },
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .unwrap())
+                        Ok(SequentialBlockFees::try_from(generate_sequential_fees(range)).unwrap())
                     })
                 })
                 .in_sequence(&mut sequence);
@@ -366,19 +353,7 @@ pub mod cache {
                 .once()
                 .return_once(|range| {
                     Box::pin(async move {
-                        Ok(SequentialBlockFees::try_from(
-                            range
-                                .map(|h| BlockFees {
-                                    height: h,
-                                    fees: Fees {
-                                        base_fee_per_gas: h as u128,
-                                        reward: h as u128,
-                                        base_fee_per_blob_gas: h as u128,
-                                    },
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                        .unwrap())
+                        Ok(SequentialBlockFees::try_from(generate_sequential_fees(range)).unwrap())
                     })
                 })
                 .in_sequence(&mut sequence);
@@ -447,13 +422,16 @@ pub mod cache {
         fn generate_sequential_fees(height_range: RangeInclusive<u64>) -> SequentialBlockFees {
             SequentialBlockFees::try_from(
                 height_range
-                    .map(|h| BlockFees {
-                        height: h,
-                        fees: Fees {
-                            base_fee_per_gas: h as u128,
-                            reward: h as u128,
-                            base_fee_per_blob_gas: h as u128,
-                        },
+                    .map(|h| {
+                        let fee = u128::from(h + 1).try_into().unwrap();
+                        BlockFees {
+                            height: h,
+                            fees: Fees {
+                                base_fee_per_gas: fee,
+                                reward: fee,
+                                base_fee_per_blob_gas: fee,
+                            },
+                        }
                     })
                     .collect::<Vec<_>>(),
             )

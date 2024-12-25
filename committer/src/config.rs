@@ -93,9 +93,9 @@ pub struct App {
     /// How often to check for finalized l1 txs
     #[serde(deserialize_with = "human_readable_duration")]
     pub tx_finalization_check_interval: Duration,
-    /// How often to check for l1 prices
+    /// How often to check for l1 fees
     #[serde(deserialize_with = "human_readable_duration")]
-    pub l1_prices_check_interval: Duration,
+    pub l1_fee_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
     /// Interval after which to bump a pending tx

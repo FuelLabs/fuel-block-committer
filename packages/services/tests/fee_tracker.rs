@@ -23,8 +23,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
 }
 
 #[test_case(
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
+        Fees { base_fee_per_gas: 5000.try_into().unwrap(), reward: 5000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap()},
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 3000.try_into().unwrap(), base_fee_per_blob_gas: 3000.try_into().unwrap()},
         6,
         Config {
             sma_periods: services::fee_tracker::service::SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -39,8 +39,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should send because all short-term fees are lower than long-term"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 3000.try_into().unwrap(), base_fee_per_blob_gas: 3000.try_into().unwrap()},
+        Fees { base_fee_per_gas: 5000.try_into().unwrap(), reward: 5000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
         6,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -55,8 +55,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should not send because all short-term fees are higher than long-term"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000 },
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 3000.try_into().unwrap(), base_fee_per_blob_gas: 3000.try_into().unwrap()},
+        Fees { base_fee_per_gas: 5000.try_into().unwrap(), reward: 5000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap()},
         6,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -71,8 +71,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should send since short-term fee less than always_acceptable_fee"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000 },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 10000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap()},
+        Fees { base_fee_per_gas: 1500.try_into().unwrap(), reward: 10000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap()},
         5,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -87,8 +87,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should send because short-term base_fee_per_gas is lower"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000 },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 10000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 2500.try_into().unwrap(), reward: 10000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap()},
         5,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -103,8 +103,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should not send because short-term base_fee_per_gas is higher"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 900 },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 3000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 3000.try_into().unwrap(), base_fee_per_blob_gas: 900.try_into().unwrap()},
         5,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -119,8 +119,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should send because short-term base_fee_per_blob_gas is lower"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1100 },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 3000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 3000.try_into().unwrap(), base_fee_per_blob_gas: 1100.try_into().unwrap()},
         5,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -135,8 +135,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should not send because short-term base_fee_per_blob_gas is higher"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000 },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 10000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap()},
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 9000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap()},
         5,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -151,8 +151,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should send because short-term reward is lower"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000 },
-        Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000 },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 10000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 11000.try_into().unwrap(), base_fee_per_blob_gas: 1000.try_into().unwrap() },
         5,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -168,8 +168,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
     )]
 #[test_case(
         // Multiple short-term fees are lower
-        Fees { base_fee_per_gas: 4000, reward: 8000, base_fee_per_blob_gas: 4000 },
-        Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500 },
+        Fees { base_fee_per_gas: 4000.try_into().unwrap(), reward: 8000.try_into().unwrap(), base_fee_per_blob_gas: 4000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 7000.try_into().unwrap(), base_fee_per_blob_gas: 3500.try_into().unwrap() },
         6,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -184,8 +184,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Should send because multiple short-term fees are lower"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000 },
+        Fees { base_fee_per_gas: 5000.try_into().unwrap(), reward: 5000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 5000.try_into().unwrap(), reward: 5000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
         6,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -201,8 +201,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
     )]
 #[test_case(
         // Zero blobs scenario: blob fee differences don't matter
-        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 },
-        Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000 },
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 6000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 2500.try_into().unwrap(), reward: 5500.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
         0,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -218,8 +218,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
     )]
 #[test_case(
         // Zero blobs but short-term reward is higher
-        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 },
-        Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000 },
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 6000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 7000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
         0,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -234,8 +234,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Zero blobs: short-term reward is higher, don't send"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000 },
-        Fees { base_fee_per_gas: 2000, reward: 6000, base_fee_per_blob_gas: 50_000_000 },
+        Fees { base_fee_per_gas: 3000.try_into().unwrap(), reward: 6000.try_into().unwrap(), base_fee_per_blob_gas: 5000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 2000.try_into().unwrap(), reward: 6000.try_into().unwrap(), base_fee_per_blob_gas: 50_000_000.try_into().unwrap() },
         0,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -252,8 +252,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
 // Initially not send, but as num_l2_blocks_behind increases, acceptance grows.
 #[test_case(
         // Initially short-term fee too high compared to long-term (strict scenario), no send at t=0
-    Fees { base_fee_per_gas: 6000, reward: 0, base_fee_per_blob_gas: 6000 },
-    Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
+    Fees { base_fee_per_gas: 6000.try_into().unwrap(), reward: 1.try_into().unwrap(), base_fee_per_blob_gas: 6000.try_into().unwrap() },
+    Fees { base_fee_per_gas: 7000.try_into().unwrap(), reward: 1.try_into().unwrap(), base_fee_per_blob_gas: 7000.try_into().unwrap() },
         1,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -270,8 +270,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
     )]
 #[test_case(
         // At max_l2_blocks_behind, send regardless
-        Fees { base_fee_per_gas: 6000, reward: 0, base_fee_per_blob_gas: 6000 },
-        Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
+        Fees { base_fee_per_gas: 6000.try_into().unwrap(), reward: 1.try_into().unwrap(), base_fee_per_blob_gas: 6000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 7000.try_into().unwrap(), reward: 1.try_into().unwrap(), base_fee_per_blob_gas: 7000.try_into().unwrap() },
         1,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
@@ -287,8 +287,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
         "Later: after max wait, send regardless"
     )]
 #[test_case(
-        Fees { base_fee_per_gas: 6000, reward: 0, base_fee_per_blob_gas: 6000 },
-        Fees { base_fee_per_gas: 7000, reward: 0, base_fee_per_blob_gas: 7000 },
+        Fees { base_fee_per_gas: 6000.try_into().unwrap(), reward: 1.try_into().unwrap(), base_fee_per_blob_gas: 6000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 7000.try_into().unwrap(), reward: 1.try_into().unwrap(), base_fee_per_blob_gas: 7000.try_into().unwrap() },
         1,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},
@@ -305,8 +305,8 @@ fn generate_fees(config: Config, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fe
     )]
 #[test_case(
         // Short-term fee is huge, but always_acceptable_fee is large, so send immediately
-        Fees { base_fee_per_gas: 100_000, reward: 0, base_fee_per_blob_gas: 100_000 },
-        Fees { base_fee_per_gas: 2_000_000, reward: 1_000_000, base_fee_per_blob_gas: 20_000_000 },
+        Fees { base_fee_per_gas: 100_000.try_into().unwrap(), reward: 1.try_into().unwrap(), base_fee_per_blob_gas: 100_000.try_into().unwrap() },
+        Fees { base_fee_per_gas: 2_000_000.try_into().unwrap(), reward: 1_000_000.try_into().unwrap(), base_fee_per_blob_gas: 20_000_000.try_into().unwrap() },
         1,
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6 .try_into().unwrap()},

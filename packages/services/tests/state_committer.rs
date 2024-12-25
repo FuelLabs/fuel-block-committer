@@ -347,49 +347,49 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         (
             0,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             1,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             2,
             Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
             },
         ),
         (
             3,
             Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
             },
         ),
         (
             4,
             Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
             },
         ),
         (
             5,
             Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
             },
         ),
     ];
@@ -456,49 +456,49 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         (
             0,
             Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
             },
         ),
         (
             1,
             Fees {
-                base_fee_per_gas: 3000,
-                reward: 3000,
-                base_fee_per_blob_gas: 3000,
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
             },
         ),
         (
             2,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             3,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             4,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             5,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
     ];
@@ -556,49 +556,49 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         (
             0,
             Fees {
-                base_fee_per_gas: 7000,
-                reward: 7000,
-                base_fee_per_blob_gas: 7000,
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
             },
         ),
         (
             1,
             Fees {
-                base_fee_per_gas: 7000,
-                reward: 7000,
-                base_fee_per_blob_gas: 7000,
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
             },
         ),
         (
             2,
             Fees {
-                base_fee_per_gas: 7000,
-                reward: 7000,
-                base_fee_per_blob_gas: 7000,
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
             },
         ),
         (
             3,
             Fees {
-                base_fee_per_gas: 7000,
-                reward: 7000,
-                base_fee_per_blob_gas: 7000,
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
             },
         ),
         (
             4,
             Fees {
-                base_fee_per_gas: 7000,
-                reward: 7000,
-                base_fee_per_blob_gas: 7000,
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
             },
         ),
         (
             5,
             Fees {
-                base_fee_per_gas: 7000,
-                reward: 7000,
-                base_fee_per_blob_gas: 7000,
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
             },
         ),
     ];
@@ -664,49 +664,49 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         (
             95,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             96,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             97,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             98,
             Fees {
-                base_fee_per_gas: 5000,
-                reward: 5000,
-                base_fee_per_blob_gas: 5000,
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
             },
         ),
         (
             99,
             Fees {
-                base_fee_per_gas: 5800,
-                reward: 5800,
-                base_fee_per_blob_gas: 5800,
+                base_fee_per_gas: 5800.try_into().unwrap(),
+                reward: 5800.try_into().unwrap(),
+                base_fee_per_blob_gas: 5800.try_into().unwrap(),
             },
         ),
         (
             100,
             Fees {
-                base_fee_per_gas: 5800,
-                reward: 5800,
-                base_fee_per_blob_gas: 5800,
+                base_fee_per_gas: 5800.try_into().unwrap(),
+                reward: 5800.try_into().unwrap(),
+                base_fee_per_blob_gas: 5800.try_into().unwrap(),
             },
         ),
     ];

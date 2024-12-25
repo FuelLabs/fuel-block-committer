@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{num::NonZeroU128, ops::RangeInclusive};
 
 use crate::Error;
 
@@ -49,17 +49,35 @@ impl<P: Api> FeeAnalytics<P> {
         let total = fees
             .into_iter()
             .map(|bf| bf.fees)
-            .fold(Fees::default(), |acc, f| Fees {
-                base_fee_per_gas: acc.base_fee_per_gas + f.base_fee_per_gas,
-                reward: acc.reward + f.reward,
-                base_fee_per_blob_gas: acc.base_fee_per_blob_gas + f.base_fee_per_blob_gas,
+            .fold(Fees::default(), |acc, f| {
+                let base_fee_per_gas = acc
+                    .base_fee_per_gas
+                    .saturating_add(f.base_fee_per_gas.get());
+                let reward = acc.reward.saturating_add(f.reward.get());
+                let base_fee_per_blob_gas = acc
+                    .base_fee_per_blob_gas
+                    .saturating_add(f.base_fee_per_blob_gas.get());
+
+                Fees {
+                    base_fee_per_gas,
+                    reward,
+                    base_fee_per_blob_gas,
+                }
             });
 
-        // TODO: segfault should we round to nearest here?
+        let divide_by_count = |value: NonZeroU128| {
+            let minimum_fee = NonZeroU128::try_from(1).unwrap();
+            value
+                .get()
+                .saturating_div(count)
+                .try_into()
+                .unwrap_or(minimum_fee)
+        };
+
         Fees {
-            base_fee_per_gas: total.base_fee_per_gas.saturating_div(count),
-            reward: total.reward.saturating_div(count),
-            base_fee_per_blob_gas: total.base_fee_per_blob_gas.saturating_div(count),
+            base_fee_per_gas: divide_by_count(total.base_fee_per_gas),
+            reward: divide_by_count(total.reward),
+            base_fee_per_blob_gas: divide_by_count(total.base_fee_per_blob_gas),
         }
     }
 }
@@ -79,17 +97,17 @@ mod tests {
             BlockFees {
                 height: 1,
                 fees: Fees {
-                    base_fee_per_gas: 100,
-                    reward: 50,
-                    base_fee_per_blob_gas: 10,
+                    base_fee_per_gas: 100.try_into().unwrap(),
+                    reward: 50.try_into().unwrap(),
+                    base_fee_per_blob_gas: 10.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 2,
                 fees: Fees {
-                    base_fee_per_gas: 110,
-                    reward: 55,
-                    base_fee_per_blob_gas: 15,
+                    base_fee_per_gas: 110.try_into().unwrap(),
+                    reward: 55.try_into().unwrap(),
+                    base_fee_per_blob_gas: 15.try_into().unwrap(),
                 },
             },
         ];
@@ -132,17 +150,17 @@ mod tests {
             BlockFees {
                 height: 1,
                 fees: Fees {
-                    base_fee_per_gas: 100,
-                    reward: 50,
-                    base_fee_per_blob_gas: 10,
+                    base_fee_per_gas: 100.try_into().unwrap(),
+                    reward: 50.try_into().unwrap(),
+                    base_fee_per_blob_gas: 10.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 3, // Non-sequential height
                 fees: Fees {
-                    base_fee_per_gas: 110,
-                    reward: 55,
-                    base_fee_per_blob_gas: 15,
+                    base_fee_per_gas: 110.try_into().unwrap(),
+                    reward: 55.try_into().unwrap(),
+                    base_fee_per_blob_gas: 15.try_into().unwrap(),
                 },
             },
         ];
@@ -171,17 +189,17 @@ mod tests {
             BlockFees {
                 height: 2,
                 fees: Fees {
-                    base_fee_per_gas: 110,
-                    reward: 55,
-                    base_fee_per_blob_gas: 15,
+                    base_fee_per_gas: 110.try_into().unwrap(),
+                    reward: 55.try_into().unwrap(),
+                    base_fee_per_blob_gas: 15.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 1,
                 fees: Fees {
-                    base_fee_per_gas: 100,
-                    reward: 50,
-                    base_fee_per_blob_gas: 10,
+                    base_fee_per_gas: 100.try_into().unwrap(),
+                    reward: 50.try_into().unwrap(),
+                    base_fee_per_blob_gas: 10.try_into().unwrap(),
                 },
             },
         ];
@@ -211,9 +229,9 @@ mod tests {
         let sma = fee_analytics.calculate_sma(4..=4).await.unwrap();
 
         // then
-        assert_eq!(sma.base_fee_per_gas, 5);
-        assert_eq!(sma.reward, 5);
-        assert_eq!(sma.base_fee_per_blob_gas, 5);
+        assert_eq!(sma.base_fee_per_gas, 6.try_into().unwrap());
+        assert_eq!(sma.reward, 6.try_into().unwrap());
+        assert_eq!(sma.base_fee_per_blob_gas, 6.try_into().unwrap());
     }
 
     #[tokio::test]
@@ -226,7 +244,7 @@ mod tests {
         let sma = fee_analytics.calculate_sma(0..=4).await.unwrap();
 
         // then
-        let mean = (5 + 4 + 3 + 2 + 1) / 5;
+        let mean = ((5 + 4 + 3 + 2 + 1) / 5).try_into().unwrap();
         assert_eq!(sma.base_fee_per_gas, mean);
         assert_eq!(sma.reward, mean);
         assert_eq!(sma.base_fee_per_blob_gas, mean);
@@ -268,9 +286,9 @@ mod tests {
         let expected_fee = BlockFees {
             height,
             fees: Fees {
-                base_fee_per_gas: 5,
-                reward: 5,
-                base_fee_per_blob_gas: 5,
+                base_fee_per_gas: 5.try_into().unwrap(),
+                reward: 5.try_into().unwrap(),
+                base_fee_per_blob_gas: 5.try_into().unwrap(),
             },
         };
         assert_eq!(

@@ -354,7 +354,7 @@ pub fn fee_tracker(
     fee_tracker.register_metrics(registry);
 
     let handle = schedule_polling(
-        config.app.tx_finalization_check_interval,
+        config.app.l1_fee_check_interval,
         fee_tracker.clone(),
         "Fee Tracker",
         cancel_token,

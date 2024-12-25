@@ -55,13 +55,16 @@ pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     )
     .take(number_of_blocks)
     .map(
-        |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| BlockFees {
-            height,
-            fees: Fees {
-                base_fee_per_gas,
-                reward,
-                base_fee_per_blob_gas,
-            },
+        |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| {
+            // TODO: segfault add tests for detecting invalid 0s
+            BlockFees {
+                height,
+                fees: Fees {
+                    base_fee_per_gas: base_fee_per_gas.try_into().unwrap(),
+                    reward: reward.try_into().unwrap(),
+                    base_fee_per_blob_gas: base_fee_per_blob_gas.try_into().unwrap(),
+                },
+            }
         },
     )
     .collect();
@@ -373,9 +376,9 @@ mod test {
         let expected = vec![BlockFees {
             height: 600,
             fees: Fees {
-                base_fee_per_gas: 100,
-                reward: 10,
-                base_fee_per_blob_gas: 150,
+                base_fee_per_gas: 100.try_into().unwrap(),
+                reward: 10.try_into().unwrap(),
+                base_fee_per_blob_gas: 150.try_into().unwrap(),
             },
         }];
         assert_eq!(
@@ -404,25 +407,25 @@ mod test {
             BlockFees {
                 height: 700,
                 fees: Fees {
-                    base_fee_per_gas: 100,
-                    reward: 10,
-                    base_fee_per_blob_gas: 150,
+                    base_fee_per_gas: 100.try_into().unwrap(),
+                    reward: 10.try_into().unwrap(),
+                    base_fee_per_blob_gas: 150.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 701,
                 fees: Fees {
-                    base_fee_per_gas: 200,
-                    reward: 20,
-                    base_fee_per_blob_gas: 250,
+                    base_fee_per_gas: 200.try_into().unwrap(),
+                    reward: 20.try_into().unwrap(),
+                    base_fee_per_blob_gas: 250.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 702,
                 fees: Fees {
-                    base_fee_per_gas: 300,
-                    reward: 30,
-                    base_fee_per_blob_gas: 350,
+                    base_fee_per_gas: 300.try_into().unwrap(),
+                    reward: 30.try_into().unwrap(),
+                    base_fee_per_blob_gas: 350.try_into().unwrap(),
                 },
             },
         ];
@@ -452,17 +455,17 @@ mod test {
             BlockFees {
                 height: u64::MAX - 2,
                 fees: Fees {
-                    base_fee_per_gas: u128::MAX - 2,
-                    reward: u128::MAX - 4,
-                    base_fee_per_blob_gas: u128::MAX - 3,
+                    base_fee_per_gas: (u128::MAX - 2).try_into().unwrap(),
+                    reward: (u128::MAX - 4).try_into().unwrap(),
+                    base_fee_per_blob_gas: (u128::MAX - 3).try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: u64::MAX - 1,
                 fees: Fees {
-                    base_fee_per_gas: u128::MAX - 1,
-                    reward: u128::MAX - 3,
-                    base_fee_per_blob_gas: u128::MAX - 2,
+                    base_fee_per_gas: (u128::MAX - 1).try_into().unwrap(),
+                    reward: (u128::MAX - 3).try_into().unwrap(),
+                    base_fee_per_blob_gas: (u128::MAX - 2).try_into().unwrap(),
                 },
             },
         ];
@@ -492,33 +495,33 @@ mod test {
             BlockFees {
                 height: 800,
                 fees: Fees {
-                    base_fee_per_gas: 500,
-                    reward: 50,
-                    base_fee_per_blob_gas: 550,
+                    base_fee_per_gas: 500.try_into().unwrap(),
+                    reward: 50.try_into().unwrap(),
+                    base_fee_per_blob_gas: 550.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 801,
                 fees: Fees {
-                    base_fee_per_gas: 600,
-                    reward: 60,
-                    base_fee_per_blob_gas: 650,
+                    base_fee_per_gas: 600.try_into().unwrap(),
+                    reward: 60.try_into().unwrap(),
+                    base_fee_per_blob_gas: 650.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 802,
                 fees: Fees {
-                    base_fee_per_gas: 700,
-                    reward: 70,
-                    base_fee_per_blob_gas: 750,
+                    base_fee_per_gas: 700.try_into().unwrap(),
+                    reward: 70.try_into().unwrap(),
+                    base_fee_per_blob_gas: 750.try_into().unwrap(),
                 },
             },
             BlockFees {
                 height: 803,
                 fees: Fees {
-                    base_fee_per_gas: 800,
-                    reward: 80,
-                    base_fee_per_blob_gas: 850,
+                    base_fee_per_gas: 800.try_into().unwrap(),
+                    reward: 80.try_into().unwrap(),
+                    base_fee_per_blob_gas: 850.try_into().unwrap(),
                 },
             },
         ];
