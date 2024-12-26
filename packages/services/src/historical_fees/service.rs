@@ -69,13 +69,12 @@ pub fn calculate_blob_tx_fee(num_blobs: u32, fees: &Fees) -> u128 {
     const DATA_GAS_PER_BLOB: u128 = 131_072u128;
     const INTRINSIC_GAS: u128 = 21_000u128;
 
-    let base_fee = INTRINSIC_GAS.saturating_mul(fees.base_fee_per_gas.get());
+    let base_fee = INTRINSIC_GAS.saturating_mul(fees.base_fee_per_gas);
     let blob_fee = fees
         .base_fee_per_blob_gas
-        .get()
         .saturating_mul(u128::from(num_blobs))
         .saturating_mul(DATA_GAS_PER_BLOB);
-    let reward_fee = fees.reward.get().saturating_mul(INTRINSIC_GAS);
+    let reward_fee = fees.reward.saturating_mul(INTRINSIC_GAS);
 
     base_fee.saturating_add(blob_fee).saturating_add(reward_fee)
 }
@@ -205,9 +204,9 @@ mod tests {
         let sma = sut.calculate_sma(4..=4).await.unwrap();
 
         // then
-        assert_eq!(sma.base_fee_per_gas, 6.try_into().unwrap());
-        assert_eq!(sma.reward, 6.try_into().unwrap());
-        assert_eq!(sma.base_fee_per_blob_gas, 6.try_into().unwrap());
+        assert_eq!(sma.base_fee_per_gas, 6);
+        assert_eq!(sma.reward, 6);
+        assert_eq!(sma.base_fee_per_blob_gas, 6);
     }
 
     #[tokio::test]
@@ -220,7 +219,7 @@ mod tests {
         let sma = sut.calculate_sma(0..=4).await.unwrap();
 
         // then
-        let mean = ((5 + 4 + 3 + 2 + 1) / 5).try_into().unwrap();
+        let mean = (5 + 4 + 3 + 2 + 1) / 5;
         assert_eq!(sma.base_fee_per_gas, mean);
         assert_eq!(sma.reward, mean);
         assert_eq!(sma.base_fee_per_blob_gas, mean);
@@ -262,9 +261,9 @@ mod tests {
         let expected_fee = BlockFees {
             height,
             fees: Fees {
-                base_fee_per_gas: 5.try_into().unwrap(),
-                reward: 5.try_into().unwrap(),
-                base_fee_per_blob_gas: 5.try_into().unwrap(),
+                base_fee_per_gas: 5,
+                reward: 5,
+                base_fee_per_blob_gas: 5,
             },
         };
         assert_eq!(

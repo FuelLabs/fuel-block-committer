@@ -1,9 +1,9 @@
 pub mod l1 {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     pub struct Fees {
-        pub base_fee_per_gas: NonZeroU128,
-        pub reward: NonZeroU128,
-        pub base_fee_per_blob_gas: NonZeroU128,
+        pub base_fee_per_gas: u128,
+        pub reward: u128,
+        pub base_fee_per_blob_gas: u128,
     }
 
     impl Default for Fees {
@@ -21,7 +21,7 @@ pub mod l1 {
         pub height: u64,
         pub fees: Fees,
     }
-    use std::{num::NonZeroU128, ops::RangeInclusive};
+    use std::ops::RangeInclusive;
 
     use itertools::Itertools;
     use serde::{Deserialize, Serialize};
@@ -31,6 +31,8 @@ pub mod l1 {
         fees: Vec<BlockFees>,
     }
 
+    // Doesn't detect that we use the contents in the Display impl
+    #[allow(dead_code)]
     #[derive(Debug)]
     pub struct InvalidSequence(String);
 
@@ -61,13 +63,11 @@ pub mod l1 {
                 .iter()
                 .map(|bf| bf.fees)
                 .fold(Fees::default(), |acc, f| {
-                    let base_fee_per_gas = acc
-                        .base_fee_per_gas
-                        .saturating_add(f.base_fee_per_gas.get());
-                    let reward = acc.reward.saturating_add(f.reward.get());
+                    let base_fee_per_gas = acc.base_fee_per_gas.saturating_add(f.base_fee_per_gas);
+                    let reward = acc.reward.saturating_add(f.reward);
                     let base_fee_per_blob_gas = acc
                         .base_fee_per_blob_gas
-                        .saturating_add(f.base_fee_per_blob_gas.get());
+                        .saturating_add(f.base_fee_per_blob_gas);
 
                     Fees {
                         base_fee_per_gas,
@@ -76,19 +76,10 @@ pub mod l1 {
                     }
                 });
 
-            let divide_by_count = |value: NonZeroU128| {
-                let minimum_fee = NonZeroU128::try_from(1).unwrap();
-                value
-                    .get()
-                    .saturating_div(count)
-                    .try_into()
-                    .unwrap_or(minimum_fee)
-            };
-
             Fees {
-                base_fee_per_gas: divide_by_count(total.base_fee_per_gas),
-                reward: divide_by_count(total.reward),
-                base_fee_per_blob_gas: divide_by_count(total.base_fee_per_blob_gas),
+                base_fee_per_gas: total.base_fee_per_gas.saturating_div(count),
+                reward: total.reward.saturating_div(count),
+                base_fee_per_blob_gas: total.base_fee_per_blob_gas.saturating_div(count),
             }
         }
         pub fn len(&self) -> usize {
@@ -222,7 +213,7 @@ pub mod l1 {
         pub fn incrementing_fees(num_blocks: u64) -> BTreeMap<u64, Fees> {
             (0..num_blocks)
                 .map(|i| {
-                    let fee = (u128::from(i) + 1).try_into().unwrap();
+                    let fee = u128::from(i) + 1;
                     (
                         i,
                         Fees {
@@ -394,18 +385,12 @@ pub mod l1 {
 
             // then
             assert_eq!(
-                mean.base_fee_per_gas,
-                1.try_into().unwrap(),
+                mean.base_fee_per_gas, 1,
                 "base_fee_per_gas should be set to 1 when total is 0"
             );
+            assert_eq!(mean.reward, 1, "reward should be set to 1 when total is 0");
             assert_eq!(
-                mean.reward,
-                1.try_into().unwrap(),
-                "reward should be set to 1 when total is 0"
-            );
-            assert_eq!(
-                mean.base_fee_per_blob_gas,
-                1.try_into().unwrap(),
+                mean.base_fee_per_blob_gas, 1,
                 "base_fee_per_blob_gas should be set to 1 when total is 0"
             );
         }
@@ -527,11 +512,7 @@ pub mod cache {
                 .expect_fees()
                 .with(eq(0..=4))
                 .once()
-                .return_once(|range| {
-                    Box::pin(async move {
-                        Ok(SequentialBlockFees::try_from(generate_sequential_fees(range)).unwrap())
-                    })
-                });
+                .return_once(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
 
             let provider = CachingApi::new(mock_provider, 5);
             let _ = provider.get_fees(0..=4).await.unwrap();
@@ -553,22 +534,14 @@ pub mod cache {
                 .expect_fees()
                 .with(eq(0..=2))
                 .once()
-                .return_once(|range| {
-                    Box::pin(async move {
-                        Ok(SequentialBlockFees::try_from(generate_sequential_fees(range)).unwrap())
-                    })
-                })
+                .return_once(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }))
                 .in_sequence(&mut sequence);
 
             mock_provider
                 .expect_fees()
                 .with(eq(3..=5))
                 .once()
-                .return_once(|range| {
-                    Box::pin(async move {
-                        Ok(SequentialBlockFees::try_from(generate_sequential_fees(range)).unwrap())
-                    })
-                })
+                .return_once(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }))
                 .in_sequence(&mut sequence);
 
             let provider = CachingApi::new(mock_provider, 5);
@@ -636,7 +609,7 @@ pub mod cache {
             SequentialBlockFees::try_from(
                 height_range
                     .map(|h| {
-                        let fee = u128::from(h + 1).try_into().unwrap();
+                        let fee = u128::from(h + 1);
                         BlockFees {
                             height: h,
                             fees: Fees {
