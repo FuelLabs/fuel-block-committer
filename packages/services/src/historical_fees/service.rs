@@ -1,7 +1,4 @@
-use std::{
-    num::NonZeroU64,
-    ops::RangeInclusive,
-};
+use std::{num::NonZeroU64, ops::RangeInclusive};
 
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
@@ -195,8 +192,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    
-
     use super::*;
     use crate::historical_fees::port::l1::{testing, BlockFees};
 
