@@ -10,9 +10,8 @@ use metrics::{
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
     historical_fees::{
-        fee_analytics::{FeeAnalytics},
         port::cache::CachingApi,
-        service::{FeeMetricsUpdater, SmaPeriods},
+        service::{HistoricalFees, SmaPeriods},
     },
     state_committer::{port::Storage, service::FeeThresholds},
     state_listener::service::StateListener,
@@ -123,7 +122,7 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-    historical_fees: FeeAnalytics<CachingApi<L1>>,
+    historical_fees: HistoricalFees<CachingApi<L1>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let algo_config = services::state_committer::service::AlgoConfig {
         sma_periods: SmaPeriods {
@@ -345,33 +344,24 @@ pub fn historical_fees(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-) -> Result<(FeeAnalytics<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
-    let algo_config = services::state_committer::service::AlgoConfig {
-        sma_periods: SmaPeriods {
-            short: config.app.fee_algo.short_sma_blocks,
-            long: config.app.fee_algo.long_sma_blocks,
-        },
-        fee_thresholds: FeeThresholds {
-            max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
-            start_discount_percentage: config.app.fee_algo.start_discount_percentage.try_into()?,
-            end_premium_percentage: config.app.fee_algo.end_premium_percentage.try_into()?,
-            always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
-        },
+) -> Result<(HistoricalFees<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
+    let sma_periods = SmaPeriods {
+        short: config.app.fee_algo.short_sma_blocks,
+        long: config.app.fee_algo.long_sma_blocks,
     };
 
     let api = CachingApi::new(l1, 24 * 3600 / 12);
-    let fee_analytics = FeeAnalytics::new(api);
 
-    let historical_fees = FeeMetricsUpdater::new(fee_analytics.clone(), algo_config.sma_periods);
+    let historical_fees = HistoricalFees::new(api);
 
     historical_fees.register_metrics(registry);
 
     let handle = schedule_polling(
         config.app.l1_fee_check_interval,
-        historical_fees,
+        historical_fees.fee_metrics_updater(sma_periods),
         "Fee Tracker",
         cancel_token,
     );
 
-    Ok((fee_analytics, handle))
+    Ok((historical_fees, handle))
 }

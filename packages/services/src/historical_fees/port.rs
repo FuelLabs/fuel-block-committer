@@ -53,6 +53,44 @@ pub mod l1 {
     // Cannot be empty
     #[allow(clippy::len_without_is_empty)]
     impl SequentialBlockFees {
+        pub fn mean(&self) -> Fees {
+            let count = self.len() as u128;
+
+            let total = self
+                .fees
+                .iter()
+                .map(|bf| bf.fees)
+                .fold(Fees::default(), |acc, f| {
+                    let base_fee_per_gas = acc
+                        .base_fee_per_gas
+                        .saturating_add(f.base_fee_per_gas.get());
+                    let reward = acc.reward.saturating_add(f.reward.get());
+                    let base_fee_per_blob_gas = acc
+                        .base_fee_per_blob_gas
+                        .saturating_add(f.base_fee_per_blob_gas.get());
+
+                    Fees {
+                        base_fee_per_gas,
+                        reward,
+                        base_fee_per_blob_gas,
+                    }
+                });
+
+            let divide_by_count = |value: NonZeroU128| {
+                let minimum_fee = NonZeroU128::try_from(1).unwrap();
+                value
+                    .get()
+                    .saturating_div(count)
+                    .try_into()
+                    .unwrap_or(minimum_fee)
+            };
+
+            Fees {
+                base_fee_per_gas: divide_by_count(total.base_fee_per_gas),
+                reward: divide_by_count(total.reward),
+                base_fee_per_blob_gas: divide_by_count(total.base_fee_per_blob_gas),
+            }
+        }
         pub fn len(&self) -> usize {
             self.fees.len()
         }
@@ -195,6 +233,181 @@ pub mod l1 {
                     )
                 })
                 .collect()
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn can_create_valid_sequential_fees() {
+            // Given
+            let block_fees = vec![
+                BlockFees {
+                    height: 1,
+                    fees: Fees {
+                        base_fee_per_gas: 100.try_into().unwrap(),
+                        reward: 50.try_into().unwrap(),
+                        base_fee_per_blob_gas: 10.try_into().unwrap(),
+                    },
+                },
+                BlockFees {
+                    height: 2,
+                    fees: Fees {
+                        base_fee_per_gas: 110.try_into().unwrap(),
+                        reward: 55.try_into().unwrap(),
+                        base_fee_per_blob_gas: 15.try_into().unwrap(),
+                    },
+                },
+            ];
+
+            // When
+            let result = SequentialBlockFees::try_from(block_fees.clone());
+
+            // Then
+            assert!(
+                result.is_ok(),
+                "Expected SequentialBlockFees creation to succeed"
+            );
+            let sequential_fees = result.unwrap();
+            assert_eq!(sequential_fees.len(), block_fees.len());
+        }
+
+        #[test]
+        fn sequential_fees_cannot_be_empty() {
+            // Given
+            let block_fees: Vec<BlockFees> = vec![];
+
+            // When
+            let result = SequentialBlockFees::try_from(block_fees);
+
+            // Then
+            assert!(
+                result.is_err(),
+                "Expected SequentialBlockFees creation to fail for empty input"
+            );
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "InvalidSequence(\"Input cannot be empty\")"
+            );
+        }
+
+        #[test]
+        fn fees_must_be_sequential() {
+            // Given
+            let block_fees = vec![
+                BlockFees {
+                    height: 1,
+                    fees: Fees {
+                        base_fee_per_gas: 100.try_into().unwrap(),
+                        reward: 50.try_into().unwrap(),
+                        base_fee_per_blob_gas: 10.try_into().unwrap(),
+                    },
+                },
+                BlockFees {
+                    height: 3, // Non-sequential height
+                    fees: Fees {
+                        base_fee_per_gas: 110.try_into().unwrap(),
+                        reward: 55.try_into().unwrap(),
+                        base_fee_per_blob_gas: 15.try_into().unwrap(),
+                    },
+                },
+            ];
+
+            // When
+            let result = SequentialBlockFees::try_from(block_fees);
+
+            // Then
+            assert!(
+                result.is_err(),
+                "Expected SequentialBlockFees creation to fail for non-sequential heights"
+            );
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "InvalidSequence(\"blocks are not sequential by height: [1, 3]\")"
+            );
+        }
+
+        #[test]
+        fn produced_iterator_gives_correct_values() {
+            // Given
+            // notice the heights are out of order so that we validate that the returned sequence is in
+            // order
+            let block_fees = vec![
+                BlockFees {
+                    height: 2,
+                    fees: Fees {
+                        base_fee_per_gas: 110.try_into().unwrap(),
+                        reward: 55.try_into().unwrap(),
+                        base_fee_per_blob_gas: 15.try_into().unwrap(),
+                    },
+                },
+                BlockFees {
+                    height: 1,
+                    fees: Fees {
+                        base_fee_per_gas: 100.try_into().unwrap(),
+                        reward: 50.try_into().unwrap(),
+                        base_fee_per_blob_gas: 10.try_into().unwrap(),
+                    },
+                },
+            ];
+            let sequential_fees = SequentialBlockFees::try_from(block_fees.clone()).unwrap();
+
+            // When
+            let iterated_fees: Vec<BlockFees> = sequential_fees.into_iter().collect();
+
+            // Then
+            let expectation = block_fees
+                .into_iter()
+                .sorted_by_key(|b| b.height)
+                .collect_vec();
+            assert_eq!(
+                iterated_fees, expectation,
+                "Expected iterator to yield the same block fees"
+            );
+        }
+
+        #[tokio::test]
+        async fn mean_is_at_least_one_when_totals_are_zero() {
+            // given
+            let block_fees = vec![
+                BlockFees {
+                    height: 1,
+                    fees: Fees {
+                        base_fee_per_gas: 1.try_into().unwrap(),
+                        reward: 1.try_into().unwrap(),
+                        base_fee_per_blob_gas: 1.try_into().unwrap(),
+                    },
+                },
+                BlockFees {
+                    height: 2,
+                    fees: Fees {
+                        base_fee_per_gas: 1.try_into().unwrap(),
+                        reward: 1.try_into().unwrap(),
+                        base_fee_per_blob_gas: 1.try_into().unwrap(),
+                    },
+                },
+            ];
+            let sequential_fees = SequentialBlockFees::try_from(block_fees).unwrap();
+            let mean = sequential_fees.mean();
+
+            // then
+            assert_eq!(
+                mean.base_fee_per_gas,
+                1.try_into().unwrap(),
+                "base_fee_per_gas should be set to 1 when total is 0"
+            );
+            assert_eq!(
+                mean.reward,
+                1.try_into().unwrap(),
+                "reward should be set to 1 when total is 0"
+            );
+            assert_eq!(
+                mean.base_fee_per_blob_gas,
+                1.try_into().unwrap(),
+                "base_fee_per_blob_gas should be set to 1 when total is 0"
+            );
         }
     }
 }

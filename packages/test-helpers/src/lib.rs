@@ -12,11 +12,11 @@ use services::{
     block_committer::service::BlockCommitter,
     block_importer::service::BlockImporter,
     historical_fees::{
-        fee_analytics::FeeAnalytics,
         port::l1::{
             testing::{ConstantFeeApi, PreconfiguredFeeApi},
             Fees,
         },
+        service::HistoricalFees,
     },
     state_listener::service::StateListener,
     types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
@@ -489,14 +489,14 @@ pub mod mocks {
     }
 }
 
-pub fn noop_fee_analytics() -> FeeAnalytics<ConstantFeeApi> {
-    FeeAnalytics::new(ConstantFeeApi::new(Fees::default()))
+pub fn noop_historical_fees() -> HistoricalFees<ConstantFeeApi> {
+    HistoricalFees::new(ConstantFeeApi::new(Fees::default()))
 }
 
 pub fn preconfigured_fee_analytics(
     fee_sequence: impl IntoIterator<Item = (u64, Fees)>,
-) -> FeeAnalytics<PreconfiguredFeeApi> {
-    FeeAnalytics::new(PreconfiguredFeeApi::new(fee_sequence))
+) -> HistoricalFees<PreconfiguredFeeApi> {
+    HistoricalFees::new(PreconfiguredFeeApi::new(fee_sequence))
 }
 
 pub struct Setup {
@@ -570,7 +570,7 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
-            noop_fee_analytics(),
+            noop_historical_fees(),
         )
         .run()
         .await
@@ -609,7 +609,7 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
-            noop_fee_analytics(),
+            noop_historical_fees(),
         );
         committer.run().await.unwrap();
 

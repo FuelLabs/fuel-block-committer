@@ -15,8 +15,8 @@ pub mod service {
 
     use crate::{
         historical_fees::{
-            fee_analytics::{self, FeeAnalytics},
-            service::SmaPeriods,
+            self,
+            service::{HistoricalFees, SmaPeriods},
         },
         types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
         Error, Result, Runner,
@@ -119,14 +119,14 @@ pub mod service {
     }
 
     pub struct SmaFeeAlgo<P> {
-        fee_analytics: FeeAnalytics<P>,
+        historical_fees: HistoricalFees<P>,
         config: AlgoConfig,
     }
 
     impl<P> SmaFeeAlgo<P> {
-        pub fn new(fee_analytics: FeeAnalytics<P>, config: AlgoConfig) -> Self {
+        pub fn new(historical_fees: HistoricalFees<P>, config: AlgoConfig) -> Self {
             Self {
-                fee_analytics,
+                historical_fees,
                 config,
             }
         }
@@ -212,7 +212,7 @@ pub mod service {
 
     impl<P> SmaFeeAlgo<P>
     where
-        P: crate::historical_fees::port::l1::Api + Send + Sync,
+        P: historical_fees::port::l1::Api + Send + Sync,
     {
         async fn should_send_blob_tx(
             &self,
@@ -230,24 +230,25 @@ pub mod service {
             let last_n_blocks = |n| Self::last_n_blocks(at_l1_height, n);
 
             let short_term_sma = self
-                .fee_analytics
+                .historical_fees
                 .calculate_sma(last_n_blocks(self.config.sma_periods.short))
                 .await?;
 
             let long_term_sma = self
-                .fee_analytics
+                .historical_fees
                 .calculate_sma(last_n_blocks(self.config.sma_periods.long))
                 .await?;
 
             let short_term_tx_fee =
-                fee_analytics::calculate_blob_tx_fee(num_blobs, &short_term_sma);
+                historical_fees::service::calculate_blob_tx_fee(num_blobs, &short_term_sma);
 
             if self.fee_always_acceptable(short_term_tx_fee) {
                 info!("Sending because: short term price {} is deemed always acceptable since it is <= {}", short_term_tx_fee, self.config.fee_thresholds.always_acceptable_fee);
                 return Ok(true);
             }
 
-            let long_term_tx_fee = fee_analytics::calculate_blob_tx_fee(num_blobs, &long_term_sma);
+            let long_term_tx_fee =
+                historical_fees::service::calculate_blob_tx_fee(num_blobs, &long_term_sma);
             let max_upper_tx_fee = Self::calculate_max_upper_fee(
                 &self.config.fee_thresholds,
                 long_term_tx_fee,
@@ -321,12 +322,12 @@ pub mod service {
             storage: Db,
             config: Config,
             clock: Clock,
-            fee_analytics: FeeAnalytics<FeeProvider>,
+            historical_fees: HistoricalFees<FeeProvider>,
         ) -> Self {
             let startup_time = clock.now();
 
             Self {
-                fee_algo: SmaFeeAlgo::new(fee_analytics, config.fee_algo),
+                fee_algo: SmaFeeAlgo::new(historical_fees, config.fee_algo),
                 l1_adapter,
                 fuel_api,
                 storage,
@@ -344,7 +345,7 @@ pub mod service {
         FuelApi: crate::state_committer::port::fuel::Api,
         Db: crate::state_committer::port::Storage,
         Clock: crate::state_committer::port::Clock,
-        FeeProvider: crate::historical_fees::port::l1::Api + Sync,
+        FeeProvider: historical_fees::port::l1::Api + Sync,
     {
         async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
             Ok(self
@@ -579,7 +580,7 @@ pub mod service {
         FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
         Db: crate::state_committer::port::Storage + Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock + Send + Sync,
-        FeeProvider: crate::historical_fees::port::l1::Api + Send + Sync,
+        FeeProvider: historical_fees::port::l1::Api + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {
             if self.storage.has_nonfinalized_txs().await? {
@@ -1023,9 +1024,9 @@ pub mod service {
             let fees = generate_fees(config.sma_periods, old_fees, new_fees);
             let api = PreconfiguredFeeApi::new(fees);
             let current_block_height = api.current_height().await.unwrap();
-            let fees_analytics = FeeAnalytics::new(api);
+            let historical_fees = HistoricalFees::new(api);
 
-            let sut = SmaFeeAlgo::new(fees_analytics, config);
+            let sut = SmaFeeAlgo::new(historical_fees, config);
 
             let should_send = sut
                 .should_send_blob_tx(num_blobs, num_l2_blocks_behind, current_block_height)
@@ -1054,8 +1055,8 @@ pub mod service {
             };
 
             // having no fees will make the validation in fee analytics fail
-            let fee_analytics = FeeAnalytics::new(PreconfiguredFeeApi::new(vec![]));
-            let sut = SmaFeeAlgo::new(fee_analytics, config);
+            let historical_fees = HistoricalFees::new(PreconfiguredFeeApi::new(vec![]));
+            let sut = SmaFeeAlgo::new(historical_fees, config);
 
             // when
             let should_send = sut
