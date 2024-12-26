@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use services::{
     historical_fees::{port::l1::Fees, service::SmaPeriods},
-    state_committer::service::{AlgoConfig, FeeThresholds},
+    state_committer::{AlgoConfig, FeeThresholds},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
@@ -394,7 +394,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         ),
     ];
 
-    let fee_algo = AlgoConfig {
+    let config = AlgoConfig {
         sma_periods: SmaPeriods {
             short: 2.try_into().unwrap(),
             long: 6.try_into().unwrap(),
@@ -432,7 +432,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
             lookback_window: 1000,
             fragment_accumulation_timeout: Duration::from_secs(60),
             fragments_to_accumulate: 6.try_into().unwrap(),
-            fee_algo,
+            fee_algo: config,
             ..Default::default()
         },
         setup.test_clock(),

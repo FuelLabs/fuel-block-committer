@@ -13,7 +13,7 @@ use services::{
         port::cache::CachingApi,
         service::{HistoricalFees, SmaPeriods},
     },
-    state_committer::{port::Storage, service::FeeThresholds},
+    state_committer::{port::Storage, FeeThresholds},
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
@@ -124,7 +124,7 @@ pub fn state_committer(
     registry: &Registry,
     historical_fees: HistoricalFees<CachingApi<L1>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let algo_config = services::state_committer::service::AlgoConfig {
+    let algo_config = services::state_committer::AlgoConfig {
         sma_periods: SmaPeriods {
             short: config.app.fee_algo.short_sma_blocks,
             long: config.app.fee_algo.long_sma_blocks,
