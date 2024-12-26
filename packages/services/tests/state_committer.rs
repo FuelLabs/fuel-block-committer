@@ -1,14 +1,12 @@
 use std::time::Duration;
 
 use services::{
-    fee_tracker::{
-        port::l1::Fees,
-        service::{Config as FeeTrackerConfig, FeeThresholds, SmaPeriods},
-    },
+    fee_metrics_updater::{port::l1::Fees, service::SmaPeriods},
+    state_committer::service::{AlgoConfig, FeeThresholds},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
-use test_helpers::{noop_fee_tracker, preconfigured_fee_tracker};
+use test_helpers::{noop_fee_analytics, preconfigured_fee_analytics};
 
 #[tokio::test]
 async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
@@ -42,7 +40,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        noop_fee_tracker(),
+        noop_fee_analytics(),
     );
 
     // when
@@ -86,7 +84,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        noop_fee_tracker(),
+        noop_fee_analytics(),
     );
 
     // Advance time beyond the timeout
@@ -122,7 +120,7 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
             ..Default::default()
         },
         test_clock.clone(),
-        noop_fee_tracker(),
+        noop_fee_analytics(),
     );
 
     // Advance time less than the timeout
@@ -168,7 +166,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        noop_fee_tracker(),
+        noop_fee_analytics(),
     );
 
     // when
@@ -215,7 +213,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        noop_fee_tracker(),
+        noop_fee_analytics(),
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -262,7 +260,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
             ..Default::default()
         },
         test_clock.clone(),
-        noop_fee_tracker(),
+        noop_fee_analytics(),
     );
 
     // Advance time beyond the timeout from startup
@@ -319,9 +317,10 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
             fragment_accumulation_timeout: Duration::from_secs(60),
             fragments_to_accumulate: 5.try_into().unwrap(),
             gas_bump_timeout: Duration::from_secs(60),
+            ..Default::default()
         },
         test_clock.clone(),
-        noop_fee_tracker(),
+        noop_fee_analytics(),
     );
 
     // Submit the initial fragments
@@ -395,7 +394,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         ),
     ];
 
-    let fee_tracker_config = services::fee_tracker::service::Config {
+    let fee_algo = AlgoConfig {
         sma_periods: SmaPeriods {
             short: 2.try_into().unwrap(),
             long: 6.try_into().unwrap(),
@@ -433,10 +432,11 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
             lookback_window: 1000,
             fragment_accumulation_timeout: Duration::from_secs(60),
             fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo,
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
+        preconfigured_fee_analytics(fee_sequence),
     );
 
     // When
@@ -504,7 +504,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         ),
     ];
 
-    let fee_tracker_config = FeeTrackerConfig {
+    let fee_algo = AlgoConfig {
         sma_periods: SmaPeriods {
             short: 2.try_into().unwrap(),
             long: 6.try_into().unwrap(),
@@ -533,10 +533,11 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
             lookback_window: 1000,
             fragment_accumulation_timeout: Duration::from_secs(60),
             fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo,
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
+        preconfigured_fee_analytics(fee_sequence),
     );
 
     // when
@@ -604,7 +605,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         ),
     ];
 
-    let fee_tracker_config = FeeTrackerConfig {
+    let fee_algo = AlgoConfig {
         sma_periods: SmaPeriods {
             short: 2.try_into().unwrap(),
             long: 6.try_into().unwrap(),
@@ -642,10 +643,11 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
             lookback_window: 1000,
             fragment_accumulation_timeout: Duration::from_secs(60),
             fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo,
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
+        preconfigured_fee_analytics(fee_sequence),
     );
 
     // when
@@ -712,7 +714,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         ),
     ];
 
-    let fee_tracker_config = services::fee_tracker::service::Config {
+    let fee_algo = AlgoConfig {
         sma_periods: SmaPeriods {
             short: 2.try_into().unwrap(),
             long: 5.try_into().unwrap(),
@@ -751,10 +753,11 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
             lookback_window: 1000,
             fragment_accumulation_timeout: Duration::from_secs(60),
             fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo,
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_tracker(fee_sequence, fee_tracker_config),
+        preconfigured_fee_analytics(fee_sequence),
     );
 
     // when

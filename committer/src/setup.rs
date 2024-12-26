@@ -9,11 +9,12 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_tracker::{
+    fee_metrics_updater::{
+        fee_analytics::{self, FeeAnalytics},
         port::cache::CachingApi,
-        service::{FeeThresholds, FeeTracker, SmaPeriods},
+        service::{FeeMetricsUpdater, SmaPeriods},
     },
-    state_committer::port::Storage,
+    state_committer::{port::Storage, service::FeeThresholds},
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
@@ -122,8 +123,21 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-    fee_tracker: FeeTracker<CachingApi<L1>>,
+    fee_metrics_updater: FeeAnalytics<CachingApi<L1>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
+    let algo_config = services::state_committer::service::AlgoConfig {
+        sma_periods: SmaPeriods {
+            short: config.app.fee_algo.short_sma_blocks,
+            long: config.app.fee_algo.long_sma_blocks,
+        },
+        fee_thresholds: FeeThresholds {
+            max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
+            start_discount_percentage: config.app.fee_algo.start_discount_percentage.try_into()?,
+            end_premium_percentage: config.app.fee_algo.end_premium_percentage.try_into()?,
+            always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
+        },
+    };
+
     let state_committer = services::StateCommitter::new(
         l1,
         fuel,
@@ -133,9 +147,10 @@ pub fn state_committer(
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
             gas_bump_timeout: config.app.gas_bump_timeout,
+            fee_algo: algo_config,
         },
         SystemClock,
-        fee_tracker,
+        fee_metrics_updater,
     );
 
     state_committer.register_metrics(registry);
@@ -325,40 +340,38 @@ pub async fn shut_down(
     Ok(())
 }
 
-pub fn fee_tracker(
+pub fn fee_metrics_updater(
     l1: L1,
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-) -> Result<(FeeTracker<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
-    let fee_tracker = FeeTracker::new(
-        CachingApi::new(l1, 24 * 3600 / 12),
-        services::fee_tracker::service::Config {
-            sma_periods: SmaPeriods {
-                short: config.app.fee_algo.short_sma_blocks,
-                long: config.app.fee_algo.long_sma_blocks,
-            },
-            fee_thresholds: FeeThresholds {
-                max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
-                start_discount_percentage: config
-                    .app
-                    .fee_algo
-                    .start_discount_percentage
-                    .try_into()?,
-                end_premium_percentage: config.app.fee_algo.end_premium_percentage.try_into()?,
-                always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
-            },
+) -> Result<(FeeAnalytics<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
+    let algo_config = services::state_committer::service::AlgoConfig {
+        sma_periods: SmaPeriods {
+            short: config.app.fee_algo.short_sma_blocks,
+            long: config.app.fee_algo.long_sma_blocks,
         },
-    );
+        fee_thresholds: FeeThresholds {
+            max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
+            start_discount_percentage: config.app.fee_algo.start_discount_percentage.try_into()?,
+            end_premium_percentage: config.app.fee_algo.end_premium_percentage.try_into()?,
+            always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
+        },
+    };
 
-    fee_tracker.register_metrics(registry);
+    let api = CachingApi::new(l1, 24 * 3600 / 12);
+    let fee_analytics = FeeAnalytics::new(api);
+
+    let fee_metrics_updater = FeeMetricsUpdater::new(fee_analytics.clone(), algo_config.sma_periods);
+
+    fee_metrics_updater.register_metrics(registry);
 
     let handle = schedule_polling(
         config.app.l1_fee_check_interval,
-        fee_tracker.clone(),
+        fee_metrics_updater,
         "Fee Tracker",
         cancel_token,
     );
 
-    Ok((fee_tracker, handle))
+    Ok((fee_analytics, handle))
 }

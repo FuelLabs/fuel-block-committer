@@ -11,13 +11,15 @@ use rand::{Rng, RngCore};
 use services::{
     block_committer::service::BlockCommitter,
     block_importer::service::BlockImporter,
-    fee_tracker::{
+    fee_metrics_updater::{
+        fee_analytics::FeeAnalytics,
         port::l1::{
             testing::{ConstantFeeApi, PreconfiguredFeeApi},
             Fees,
         },
-        service::FeeTracker,
+        service::{FeeMetricsUpdater, SmaPeriods},
     },
+    state_committer::service::SmaFeeAlgo,
     state_listener::service::StateListener,
     types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
     BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
@@ -489,15 +491,14 @@ pub mod mocks {
     }
 }
 
-pub fn noop_fee_tracker() -> FeeTracker<ConstantFeeApi> {
-    FeeTracker::new(ConstantFeeApi::new(Fees::default()), Default::default())
+pub fn noop_fee_analytics() -> FeeAnalytics<ConstantFeeApi> {
+    FeeAnalytics::new(ConstantFeeApi::new(Fees::default()))
 }
 
-pub fn preconfigured_fee_tracker(
+pub fn preconfigured_fee_analytics(
     fee_sequence: impl IntoIterator<Item = (u64, Fees)>,
-    config: services::fee_tracker::service::Config,
-) -> FeeTracker<PreconfiguredFeeApi> {
-    FeeTracker::new(PreconfiguredFeeApi::new(fee_sequence), config)
+) -> FeeAnalytics<PreconfiguredFeeApi> {
+    FeeAnalytics::new(PreconfiguredFeeApi::new(fee_sequence))
 }
 
 pub struct Setup {
@@ -571,7 +572,7 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
-            noop_fee_tracker(),
+            noop_fee_analytics(),
         )
         .run()
         .await
@@ -607,9 +608,10 @@ impl Setup {
                 fragment_accumulation_timeout: Duration::from_secs(0),
                 fragments_to_accumulate: 1.try_into().unwrap(),
                 gas_bump_timeout: Duration::from_secs(300),
+                ..Default::default()
             },
             self.test_clock.clone(),
-            noop_fee_tracker(),
+            noop_fee_analytics(),
         );
         committer.run().await.unwrap();
 

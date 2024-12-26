@@ -3,7 +3,7 @@ use std::{num::NonZeroU128, ops::RangeInclusive};
 use alloy::rpc::types::FeeHistory;
 use itertools::{izip, Itertools};
 use services::{
-    fee_tracker::port::l1::{BlockFees, Fees},
+    fee_metrics_updater::port::l1::{BlockFees, Fees},
     Result,
 };
 
@@ -108,7 +108,7 @@ mod test {
     use std::ops::RangeInclusive;
 
     use alloy::rpc::types::FeeHistory;
-    use services::fee_tracker::port::l1::{BlockFees, Fees};
+    use services::fee_metrics_updater::port::l1::{BlockFees, Fees};
 
     use crate::fee_conversion::{self};
 

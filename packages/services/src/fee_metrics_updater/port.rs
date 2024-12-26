@@ -1,5 +1,5 @@
 pub mod l1 {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     pub struct Fees {
         pub base_fee_per_gas: NonZeroU128,
         pub reward: NonZeroU128,
@@ -16,7 +16,7 @@ pub mod l1 {
         }
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     pub struct BlockFees {
         pub height: u64,
         pub fees: Fees,
@@ -24,6 +24,7 @@ pub mod l1 {
     use std::{num::NonZeroU128, ops::RangeInclusive};
 
     use itertools::Itertools;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, PartialEq, Eq, Clone)]
     pub struct SequentialBlockFees {
@@ -299,7 +300,7 @@ pub mod cache {
 
         use mockall::{predicate::eq, Sequence};
 
-        use crate::fee_tracker::port::{
+        use crate::fee_metrics_updater::port::{
             cache::CachingApi,
             l1::{BlockFees, Fees, MockApi, SequentialBlockFees},
         };

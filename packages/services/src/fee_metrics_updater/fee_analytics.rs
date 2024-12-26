@@ -3,6 +3,8 @@ use std::{num::NonZeroU128, ops::RangeInclusive};
 use super::port::l1::{Api, BlockFees, Fees, SequentialBlockFees};
 use crate::Error;
 
+// TODO: segfault, move this higher because it is used by both the state committer and the fee
+// tracker
 #[derive(Debug, Clone)]
 pub struct FeeAnalytics<P> {
     fees_provider: P,
@@ -81,12 +83,27 @@ impl<P: Api> FeeAnalytics<P> {
     }
 }
 
+pub fn calculate_blob_tx_fee(num_blobs: u32, fees: &Fees) -> u128 {
+    const DATA_GAS_PER_BLOB: u128 = 131_072u128;
+    const INTRINSIC_GAS: u128 = 21_000u128;
+
+    let base_fee = INTRINSIC_GAS.saturating_mul(fees.base_fee_per_gas.get());
+    let blob_fee = fees
+        .base_fee_per_blob_gas
+        .get()
+        .saturating_mul(u128::from(num_blobs))
+        .saturating_mul(DATA_GAS_PER_BLOB);
+    let reward_fee = fees.reward.get().saturating_mul(INTRINSIC_GAS);
+
+    base_fee.saturating_add(blob_fee).saturating_add(reward_fee)
+}
+
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
 
     use super::*;
-    use crate::fee_tracker::port::l1::{testing, BlockFees};
+    use crate::fee_metrics_updater::port::l1::{testing, BlockFees};
 
     #[test]
     fn can_create_valid_sequential_fees() {

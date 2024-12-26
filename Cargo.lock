@@ -2748,6 +2748,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fee_algo_simulation"
+version = "0.10.5"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+ "serde_json",
+ "services",
+ "tokio",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

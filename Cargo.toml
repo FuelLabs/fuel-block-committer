@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "committer",
-  "e2e",
+  "e2e", "fee_algo_simulation",
   "packages/adapters/clock",
   "packages/adapters/eth",
   "packages/adapters/fuel",
