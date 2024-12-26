@@ -1,20 +1,15 @@
-use std::{
-    cmp::min,
-    num::{NonZeroU32, NonZeroU64},
-    ops::RangeInclusive,
-};
+use std::{num::NonZeroU64, ops::RangeInclusive};
 
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
-use tracing::info;
 
 use super::{
     fee_analytics::{self, FeeAnalytics},
     port::l1::{Api, Fees},
 };
-use crate::{Error, Result, Runner};
+use crate::{Result, Runner};
 
 #[derive(Debug, Clone)]
 struct Metrics {
@@ -126,7 +121,7 @@ impl<P> FeeMetricsUpdater<P> {
 
 impl<P> Runner for FeeMetricsUpdater<P>
 where
-    P: crate::fee_metrics_updater::port::l1::Api + Send + Sync,
+    P: crate::historical_fees::port::l1::Api + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         self.update_metrics().await?;
@@ -136,8 +131,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use test_case::test_case;
+    
 
-    use super::*;
-    use crate::fee_metrics_updater::port::l1::testing::ConstantFeeApi;
+    
+    
 }

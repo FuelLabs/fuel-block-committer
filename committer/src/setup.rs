@@ -9,8 +9,8 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_metrics_updater::{
-        fee_analytics::{self, FeeAnalytics},
+    historical_fees::{
+        fee_analytics::{FeeAnalytics},
         port::cache::CachingApi,
         service::{FeeMetricsUpdater, SmaPeriods},
     },
@@ -123,7 +123,7 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-    fee_metrics_updater: FeeAnalytics<CachingApi<L1>>,
+    historical_fees: FeeAnalytics<CachingApi<L1>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let algo_config = services::state_committer::service::AlgoConfig {
         sma_periods: SmaPeriods {
@@ -150,7 +150,7 @@ pub fn state_committer(
             fee_algo: algo_config,
         },
         SystemClock,
-        fee_metrics_updater,
+        historical_fees,
     );
 
     state_committer.register_metrics(registry);
@@ -340,7 +340,7 @@ pub async fn shut_down(
     Ok(())
 }
 
-pub fn fee_metrics_updater(
+pub fn historical_fees(
     l1: L1,
     cancel_token: CancellationToken,
     config: &config::Config,
@@ -362,13 +362,13 @@ pub fn fee_metrics_updater(
     let api = CachingApi::new(l1, 24 * 3600 / 12);
     let fee_analytics = FeeAnalytics::new(api);
 
-    let fee_metrics_updater = FeeMetricsUpdater::new(fee_analytics.clone(), algo_config.sma_periods);
+    let historical_fees = FeeMetricsUpdater::new(fee_analytics.clone(), algo_config.sma_periods);
 
-    fee_metrics_updater.register_metrics(registry);
+    historical_fees.register_metrics(registry);
 
     let handle = schedule_polling(
         config.app.l1_fee_check_interval,
-        fee_metrics_updater,
+        historical_fees,
         "Fee Tracker",
         cancel_token,
     );

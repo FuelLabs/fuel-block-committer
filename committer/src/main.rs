@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
             &metrics_registry,
         );
 
-        let (fee_analytics, fee_metrics_updater_handle) = setup::fee_metrics_updater(
+        let (fee_analytics, historical_fees_handle) = setup::historical_fees(
             ethereum_rpc.clone(),
             cancel_token.clone(),
             &config,
@@ -114,7 +114,7 @@ async fn main() -> Result<()> {
         handles.push(state_importer_handle);
         handles.push(block_bundler);
         handles.push(state_listener_handle);
-        handles.push(fee_metrics_updater_handle);
+        handles.push(historical_fees_handle);
         // Enable pruner once the issue is resolved
         // TODO: https://github.com/FuelLabs/fuel-block-committer/issues/173
         // handles.push(state_pruner_handle);

@@ -14,7 +14,7 @@ use delegate::delegate;
 use futures::{stream, StreamExt, TryStreamExt};
 use itertools::{izip, Itertools};
 use services::{
-    fee_metrics_updater::port::l1::SequentialBlockFees,
+    historical_fees::port::l1::SequentialBlockFees,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty, NonNegative,
         TransactionResponse,
@@ -206,7 +206,7 @@ impl services::block_committer::port::l1::Api for WebsocketClient {
     }
 }
 
-impl services::fee_metrics_updater::port::l1::Api for WebsocketClient {
+impl services::historical_fees::port::l1::Api for WebsocketClient {
     async fn current_height(&self) -> Result<u64> {
         self._get_block_number().await
     }

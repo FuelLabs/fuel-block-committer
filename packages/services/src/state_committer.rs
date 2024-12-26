@@ -14,7 +14,7 @@ pub mod service {
     use tracing::info;
 
     use crate::{
-        fee_metrics_updater::{
+        historical_fees::{
             fee_analytics::{self, FeeAnalytics},
             service::SmaPeriods,
         },
@@ -212,7 +212,7 @@ pub mod service {
 
     impl<P> SmaFeeAlgo<P>
     where
-        P: crate::fee_metrics_updater::port::l1::Api + Send + Sync,
+        P: crate::historical_fees::port::l1::Api + Send + Sync,
     {
         async fn should_send_blob_tx(
             &self,
@@ -344,7 +344,7 @@ pub mod service {
         FuelApi: crate::state_committer::port::fuel::Api,
         Db: crate::state_committer::port::Storage,
         Clock: crate::state_committer::port::Clock,
-        FeeProvider: crate::fee_metrics_updater::port::l1::Api + Sync,
+        FeeProvider: crate::historical_fees::port::l1::Api + Sync,
     {
         async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
             Ok(self
@@ -579,7 +579,7 @@ pub mod service {
         FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
         Db: crate::state_committer::port::Storage + Clone + Send + Sync,
         Clock: crate::state_committer::port::Clock + Send + Sync,
-        FeeProvider: crate::fee_metrics_updater::port::l1::Api + Send + Sync,
+        FeeProvider: crate::historical_fees::port::l1::Api + Send + Sync,
     {
         async fn run(&mut self) -> Result<()> {
             if self.storage.has_nonfinalized_txs().await? {
@@ -594,8 +594,8 @@ pub mod service {
 
     #[cfg(test)]
     mod tests {
-        use crate::fee_metrics_updater::port::l1::testing::PreconfiguredFeeApi;
-        use crate::fee_metrics_updater::port::l1::{Api, Fees};
+        use crate::historical_fees::port::l1::testing::PreconfiguredFeeApi;
+        use crate::historical_fees::port::l1::{Api, Fees};
         use test_case::test_case;
 
         use super::*;
@@ -679,7 +679,7 @@ pub mod service {
             num_l2_blocks_behind: u32,
             expected_max_upper_fee: u128,
         ) {
-            use crate::fee_metrics_updater::port::l1::testing::ConstantFeeApi;
+            use crate::historical_fees::port::l1::testing::ConstantFeeApi;
 
             let max_upper_fee = SmaFeeAlgo::<ConstantFeeApi>::calculate_max_upper_fee(
                 &fee_thresholds,

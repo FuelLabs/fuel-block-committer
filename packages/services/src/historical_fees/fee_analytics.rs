@@ -103,7 +103,7 @@ mod tests {
     use itertools::Itertools;
 
     use super::*;
-    use crate::fee_metrics_updater::port::l1::{testing, BlockFees};
+    use crate::historical_fees::port::l1::{testing, BlockFees};
 
     #[test]
     fn can_create_valid_sequential_fees() {

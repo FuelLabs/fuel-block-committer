@@ -300,7 +300,7 @@ pub mod cache {
 
         use mockall::{predicate::eq, Sequence};
 
-        use crate::fee_metrics_updater::port::{
+        use crate::historical_fees::port::{
             cache::CachingApi,
             l1::{BlockFees, Fees, MockApi, SequentialBlockFees},
         };
