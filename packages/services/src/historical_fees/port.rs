@@ -420,6 +420,14 @@ pub mod cache {
                 cache_limit,
             }
         }
+
+        pub async fn import(&self, fees: impl IntoIterator<Item = (u64, Fees)>) {
+            self.cache.write().await.extend(fees);
+        }
+
+        pub async fn export(&self) -> impl IntoIterator<Item = (u64, Fees)> {
+            self.cache.read().await.clone()
+        }
     }
 
     impl<P: Api + Send + Sync> Api for CachingApi<P> {

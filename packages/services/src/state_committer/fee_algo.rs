@@ -39,6 +39,7 @@ impl Default for Config {
 #[derive(Debug, Clone, Copy)]
 pub struct FeeThresholds {
     pub max_l2_blocks_behind: NonZeroU32,
+    // TODO: segfault a better way to express this
     pub start_discount_percentage: Percentage,
     pub end_premium_percentage: Percentage,
     pub always_acceptable_fee: u128,

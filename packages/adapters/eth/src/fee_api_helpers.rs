@@ -1,13 +1,47 @@
-use std::ops::RangeInclusive;
+use std::{future::Future, ops::RangeInclusive};
 
 use alloy::rpc::types::FeeHistory;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::{izip, Itertools};
 use services::{
-    historical_fees::port::l1::{BlockFees, Fees},
+    historical_fees::port::l1::{BlockFees, Fees, SequentialBlockFees},
     Result,
 };
+use static_assertions::const_assert;
 
-pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
+pub async fn batch_requests<'a, 'b, Fut, F>(
+    height_range: RangeInclusive<u64>,
+    get_fees: F,
+) -> Result<SequentialBlockFees>
+where
+    'a: 'b,
+    F: Fn(RangeInclusive<u64>, &'a [f64]) -> Fut,
+    Fut: Future<Output = Result<FeeHistory>> + 'b,
+{
+    const REWARD_PERCENTILE: f64 =
+        alloy::providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE;
+    // so that a alloy version bump doesn't surprise us
+    const_assert!(REWARD_PERCENTILE == 20.0,);
+
+    // There is a comment in alloy about not doing more than 1024 blocks at a time
+    const RPC_LIMIT: u64 = 1024;
+
+    let fees: Vec<FeeHistory> = stream::iter(chunk_range_inclusive(height_range, RPC_LIMIT))
+        .then(|range| get_fees(range, std::slice::from_ref(&REWARD_PERCENTILE)))
+        .try_collect()
+        .await?;
+
+    let mut unpacked_fees = vec![];
+    for fee in fees {
+        unpacked_fees.extend(unpack_fee_history(fee)?);
+    }
+
+    unpacked_fees
+        .try_into()
+        .map_err(|e| services::Error::Other(format!("{e}")))
+}
+
+fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     let number_of_blocks = if fees.base_fee_per_gas.is_empty() {
         0
     } else {
@@ -102,7 +136,7 @@ mod test {
     use alloy::rpc::types::FeeHistory;
     use services::historical_fees::port::l1::{BlockFees, Fees};
 
-    use crate::fee_conversion::{self};
+    use crate::fee_api_helpers::{chunk_range_inclusive, unpack_fee_history};
 
     #[test]
     fn test_chunk_size_zero() {
@@ -111,7 +145,7 @@ mod test {
         let chunk_size = 0;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected: Vec<RangeInclusive<u64>> = vec![];
@@ -128,7 +162,7 @@ mod test {
         let chunk_size = 10;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![1..=5];
@@ -145,7 +179,7 @@ mod test {
         let chunk_size = 2;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![1..=2, 3..=4, 5..=6, 7..=8, 9..=10];
@@ -159,7 +193,7 @@ mod test {
         let chunk_size = 3;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![1..=3, 4..=6, 7..=9, 10..=10];
@@ -176,7 +210,7 @@ mod test {
         let chunk_size = 1;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![5..=5];
@@ -193,7 +227,7 @@ mod test {
         let chunk_size = 50;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![100..=100];
@@ -210,7 +244,7 @@ mod test {
         let chunk_size = 1;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![10..=10, 11..=11, 12..=12, 13..=13, 14..=14, 15..=15];
@@ -227,7 +261,7 @@ mod test {
         let chunk_size = 11;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![20..=30];
@@ -249,7 +283,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
         let expected: Vec<BlockFees> = vec![];
@@ -272,7 +306,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error = services::Error::Other(format!("missing rewards field: {:?}", fees));
@@ -295,7 +329,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error =
@@ -319,7 +353,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error =
@@ -343,7 +377,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error =
@@ -367,7 +401,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
         let expected = vec![BlockFees {
@@ -397,7 +431,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
         let expected = vec![
@@ -445,7 +479,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected = vec![
@@ -485,7 +519,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
         let expected = vec![

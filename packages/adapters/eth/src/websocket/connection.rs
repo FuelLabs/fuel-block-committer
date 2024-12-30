@@ -31,8 +31,8 @@ use url::Url;
 
 use super::{health_tracking_middleware::EthApi, Signers};
 use crate::{
+    blob_encoder::{self, BlobEncoder},
     error::{Error, Result},
-    BlobEncoder,
 };
 
 pub type WsProvider = alloy::providers::fillers::FillProvider<
@@ -276,7 +276,7 @@ impl EthApi for WsConnection {
         let num_fragments = min(fragments.len(), 6);
 
         let limited_fragments = fragments.into_iter().take(num_fragments);
-        let sidecar = BlobEncoder::sidecar_from_fragments(limited_fragments)?;
+        let sidecar = blob_encoder::BlobEncoder::sidecar_from_fragments(limited_fragments)?;
 
         let blob_tx = match previous_tx {
             Some(previous_tx) => {
@@ -485,6 +485,8 @@ mod tests {
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
     use services::{block_bundler::port::l1::FragmentEncoder, types::nonempty};
 
+    use crate::blob_encoder;
+
     use super::*;
 
     #[test]
@@ -539,8 +541,8 @@ mod tests {
         };
 
         let data = nonempty![1, 2, 3];
-        let fragments = BlobEncoder.encode(data, 1.into()).unwrap();
-        let sidecar = BlobEncoder::sidecar_from_fragments(fragments.clone()).unwrap();
+        let fragments = blob_encoder::BlobEncoder.encode(data, 1.into()).unwrap();
+        let sidecar = blob_encoder::BlobEncoder::sidecar_from_fragments(fragments.clone()).unwrap();
 
         // create a tx with the help of the provider to get gas fields, hash etc
         let tx = TransactionRequest::default()
@@ -617,7 +619,9 @@ mod tests {
         };
 
         let data = nonempty![1, 2, 3];
-        let fragment = BlobEncoder.encode(data, 1.try_into().unwrap()).unwrap();
+        let fragment = blob_encoder::BlobEncoder
+            .encode(data, 1.try_into().unwrap())
+            .unwrap();
 
         // when
         let result = connection.submit_state_fragments(fragment, None).await;
