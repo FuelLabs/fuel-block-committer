@@ -4,9 +4,8 @@ use alloy::{
     consensus::BlobTransactionSidecar,
     eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
 };
-use itertools::{izip, Itertools};
-
 use fuel_block_committer_encoding::blob;
+use itertools::{izip, Itertools};
 use services::{
     types::{Fragment, NonEmpty, NonNegative},
     Result,

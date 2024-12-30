@@ -1,15 +1,10 @@
 use std::ops::RangeInclusive;
 
-use alloy::providers::Provider as AlloyProvider;
-use alloy::providers::ProviderBuilder;
-
+use alloy::{
+    providers::{Provider as AlloyProvider, ProviderBuilder, RootProvider},
+    transports::http::{Client, Http},
+};
 use services::historical_fees::port::l1::SequentialBlockFees;
-
-use alloy::transports::http::Client;
-
-use alloy::transports::http::Http;
-
-use alloy::providers::RootProvider;
 
 use crate::fee_api_helpers::batch_requests;
 

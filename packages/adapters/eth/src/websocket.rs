@@ -9,7 +9,7 @@ use alloy::{
     signers::{local::PrivateKeySigner, Signature},
 };
 use delegate::delegate;
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
 use services::{
     historical_fees::port::l1::SequentialBlockFees,
@@ -19,17 +19,13 @@ use services::{
     },
     Result,
 };
-use static_assertions::const_assert;
 use url::Url;
 
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{
-    fee_api_helpers::{self, batch_requests},
-    http, AwsClient, AwsConfig,
-};
+use crate::{fee_api_helpers::batch_requests, AwsClient, AwsConfig};
 
 mod connection;
 mod health_tracking_middleware;

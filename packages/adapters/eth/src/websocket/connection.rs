@@ -31,7 +31,7 @@ use url::Url;
 
 use super::{health_tracking_middleware::EthApi, Signers};
 use crate::{
-    blob_encoder::{self, BlobEncoder},
+    blob_encoder::{self},
     error::{Error, Result},
 };
 
@@ -485,9 +485,8 @@ mod tests {
     use alloy::{node_bindings::Anvil, signers::local::PrivateKeySigner};
     use services::{block_bundler::port::l1::FragmentEncoder, types::nonempty};
 
-    use crate::blob_encoder;
-
     use super::*;
+    use crate::blob_encoder;
 
     #[test]
     fn calculates_correctly_the_commit_height() {
