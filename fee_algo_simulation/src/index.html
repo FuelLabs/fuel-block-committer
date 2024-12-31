@@ -3,11 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <title>Fee Simulator - Multiple Series + Shading</title>
+  <!-- Bootstrap CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-..."
+    crossorigin="anonymous"
+  />
+  <!-- Plotly JS -->
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
+    /* Custom Styles */
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
+      background-color: #f8f9fa; /* Light grey background */
     }
     #chart {
       width: 100%;
@@ -15,9 +25,6 @@
     }
     .stats {
       margin-top: 20px;
-    }
-    .stats div {
-      margin-bottom: 5px;
     }
     /* Responsive design */
     @media (max-width: 768px) {
@@ -34,71 +41,144 @@
   </style>
 </head>
 <body>
-  <h1>Fee Simulator - Multiple Series + Shading</h1>
+  <div class="container">
+    <h1 class="mb-4 text-center">Fee Simulator - Multiple Series + Shading</h1>
 
-  <div style="margin-bottom: 1em;">
-    <label for="endingHeight">Ending Height:</label>
-    <input type="number" id="endingHeight" value="21514918" />
+    <!-- Input Form -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <form id="feeForm">
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label for="endingHeight" class="form-label">Ending Height:</label>
+              <input type="number" class="form-control" id="endingHeight" value="21514918" />
+            </div>
+            <div class="col-md-4">
+              <label for="amountOfBlocks" class="form-label">Block Range:</label>
+              <input type="number" class="form-control" id="amountOfBlocks" value="300" />
+            </div>
+            <div class="col-md-4">
+              <label for="numBlobs" class="form-label">Number of Blobs:</label>
+              <input type="number" class="form-control" id="numBlobs" value="6" min="1" max="10" />
+            </div>
+          </div>
 
-    <label for="amountOfBlocks">Block Range:</label>
-    <input type="number" id="amountOfBlocks" value="300" />
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="short" class="form-label">Short SMA (blocks):</label>
+              <input type="number" class="form-control" id="short" value="25" />
+            </div>
+            <div class="col-md-6">
+              <label for="long" class="form-label">Long SMA (blocks):</label>
+              <input type="number" class="form-control" id="long" value="300" />
+            </div>
+          </div>
 
-    <br />
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="maxL2" class="form-label">Max L2 Blocks Behind:</label>
+              <input type="number" class="form-control" id="maxL2" value="28800" />
+              <div class="form-text">e.g., 8 hours worth</div>
+            </div>
+            <div class="col-md-6">
+              <label for="numL2BlocksBehind" class="form-label">Number of L2 Blocks Behind:</label>
+              <input type="number" class="form-control" id="l2Behind" value="0" />
+            </div>
+          </div>
 
-    <label for="short">Short SMA (blocks):</label>
-    <input type="number" id="short" value="25" />
-    <label for="long">Long SMA (blocks):</label>
-    <input type="number" id="long" value="300" />
-    <br />
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="startDiscount" class="form-label">Start Discount Percentage:</label>
+              <input type="number" step="0.01" class="form-control" id="startDiscount" value="0.10" />
+            </div>
+            <div class="col-md-6">
+              <label for="endPremium" class="form-label">End Premium Percentage:</label>
+              <input type="number" step="0.01" class="form-control" id="endPremium" value="0.20" />
+            </div>
+          </div>
 
-    <label for="maxL2">max_l2_blocks_behind:</label>
-    <input type="number" id="maxL2" value="28800" />  <!-- e.g. 8 hours worth -->
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="alwaysAcceptable" class="form-label">Always Acceptable Fee:</label>
+              <input type="number" class="form-control" id="alwaysAcceptable" value="1000000000000000" />
+              <div class="form-text">Value in Wei (e.g., 1 ETH = 1,000,000,000,000,000,000 Wei)</div>
+            </div>
+          </div>
 
-    <label for="startDiscount">start_discount_percentage:</label>
-    <input type="number" step="0.01" id="startDiscount" value="0.10" />
+          <!-- Preset Buttons -->
+          <div class="mb-3">
+            <button type="button" class="btn btn-primary me-2" onclick="setPreset(216000)">Last 1 Month (~216k blocks)</button>
+            <button type="button" class="btn btn-primary me-2" onclick="setPreset(50400)">Last 1 Week (~50.4k blocks)</button>
+            <button type="button" class="btn btn-primary me-2" onclick="setPreset(21600)">Last 3 Days (~21.6k blocks)</button>
+            <button type="button" class="btn btn-primary me-2" onclick="setPreset(7200)">Last 1 Day (~7.2k blocks)</button>
+            <button type="button" class="btn btn-primary me-2" onclick="setPreset(1500)">Last 5 Hours (~1.5k blocks)</button>
+            <button type="button" class="btn btn-secondary" onclick="resetFields()">Reset</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
-    <label for="endPremium">end_premium_percentage:</label>
-    <input type="number" step="0.01" id="endPremium" value="0.20" />
-    <br />
+    <!-- Chart Area -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <div id="chart"></div>
+      </div>
+    </div>
 
-    <label for="alwaysAcceptable">always_acceptable_fee:</label>
-    <input type="number" id="alwaysAcceptable" value="1000000000000000" />
-
-    <label for="numBlobs">Number of Blobs:</label>
-    <input type="number" id="numBlobs" value="6" min="1" max="10" />
-    <br />
-
-    <label for="l2Behind">num_l2_blocks_behind:</label>
-    <input type="number" id="l2Behind" value="0" />
-
-    <br />
-
-    <!-- Preset Buttons for Quick Selection -->
-    <button onclick="setPreset(216000)">Last 1 Month (~216k blocks)</button>
-    <button onclick="setPreset(50400)">Last 1 Week (~50.4k blocks)</button>
-    <button onclick="setPreset(21600)">Last 3 Days (~21.6k blocks)</button>
-    <button onclick="setPreset(7200)">Last 1 Day (~7.2k blocks)</button>
-    <button onclick="setPreset(1500)">Last 5 Hours (~1.5k blocks)</button>
-    <button onclick="resetFields()">Reset</button>
+    <!-- Statistics Section -->
+    <div class="card">
+      <div class="card-body stats">
+        <h2 class="card-title">Statistics</h2>
+        <div class="row">
+          <div class="col-md-4 mb-3">
+            <div class="alert alert-info" role="alert">
+              <strong>Percentage of Acceptable Blocks:</strong> <span id="percentageAcceptable">0%</span>
+            </div>
+          </div>
+          <div class="col-md-4 mb-3">
+            <div class="alert alert-warning" role="alert">
+              <strong>95th Percentile of Gap Sizes:</strong> <span id="percentile95GapSize">0 blocks</span>
+            </div>
+          </div>
+          <div class="col-md-4 mb-3">
+            <div class="alert alert-danger" role="alert">
+              <strong>Longest Unacceptable Streak:</strong> <span id="longestUnacceptableStreak">0 blocks</span>
+            </div>
+          </div>
+        </div>
+        <div id="loading" class="text-center">
+          <div class="spinner-border text-secondary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div id="chart"></div>
-
-  <div class="stats">
-    <h2>Statistics</h2>
-    <div><strong>Percentage of Acceptable Blocks:</strong> <span id="percentageAcceptable">0%</span></div>
-    <div><strong>95th Percentile of Gap Sizes:</strong> <span id="percentile95GapSize">0 blocks</span></div>
-    <div><strong>Longest Unacceptable Streak:</strong> <span id="longestUnacceptableStreak">0 blocks</span></div>
-    <div id="loading">Loading...</div>
-  </div>
+  <!-- Bootstrap JS and dependencies (Popper.js) -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-..."
+    crossorigin="anonymous"
+  ></script>
 
   <script>
+    /**
+     * Sets the block range to a preset value and fetches new data.
+     * @param {number} numBlocks - Number of blocks to set.
+     */
     function setPreset(numBlocks) {
       document.getElementById('amountOfBlocks').value = numBlocks;
       fetchAndPlot();
     }
 
+    /**
+     * Resets all input fields to their default values and fetches data.
+     */
     function resetFields() {
+      document.getElementById('feeForm').reset();
+      // Re-set default values if needed
       document.getElementById('endingHeight').value = "21514918";
       document.getElementById('amountOfBlocks').value = "300";
       document.getElementById('short').value = "25";
@@ -112,7 +192,11 @@
       fetchAndPlot();
     }
 
-    // Helper function to identify acceptable regions
+    /**
+     * Identifies acceptable regions based on block data.
+     * @param {Array} data - Array of FeeDataPoint objects.
+     * @returns {Array} - Array of regions with start and end block heights.
+     */
     function getAcceptableRegions(data) {
       let regions = [];
       let start = null;
@@ -138,6 +222,9 @@
       return regions;
     }
 
+    /**
+     * Fetches fee data from the server and plots it using Plotly.
+     */
     async function fetchAndPlot() {
       const endingHeight       = parseInt(document.getElementById('endingHeight').value, 10);
       const amountOfBlocks     = parseInt(document.getElementById('amountOfBlocks').value, 10);
@@ -161,6 +248,12 @@
       // Validate numBlobs
       if (numBlobs < 1 || numBlobs > 10) {
         alert('Number of Blobs must be between 1 and 10.');
+        return;
+      }
+
+      // Additional Validation for Percentages
+      if (startDiscount < 0 || startDiscount > 1 || endPremium < 0 || endPremium > 1) {
+        alert('Discount and premium percentages must be between 0 and 1.');
         return;
       }
 
@@ -227,7 +320,7 @@
               y0: 0,
               x1: x1,
               y1: 1,
-              fillcolor: 'rgba(0, 255, 0, 0.2)',
+              fillcolor: 'rgba(0, 255, 0, 0.2)', // Semi-transparent green
               line: {
                 width: 0,
               },
@@ -264,6 +357,7 @@
 
         const layout = {
           title: 'Fees vs. Block Time',
+          titlefont: { size: 20 },
           xaxis: { 
             title: 'Block Time (UTC)',
             type: 'date',
