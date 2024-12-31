@@ -86,6 +86,9 @@ struct FeeParams {
     end_premium_percentage: Option<f64>,
     always_acceptable_fee: Option<String>,
 
+    // Number of blobs per transaction
+    num_blobs: Option<u32>,
+
     // How many L2 blocks behind are we? If none is given, default 0
     num_l2_blocks_behind: Option<u32>,
 }
@@ -104,9 +107,27 @@ struct FeeDataPoint {
     acceptable: bool,
 }
 
+/// Statistics struct
+#[derive(Debug, Serialize)]
+struct FeeStats {
+    #[serde(rename = "percentageAcceptable")]
+    percentage_acceptable: f64, // Percentage of acceptable blocks
+    #[serde(rename = "percentile95GapSize")]
+    percentile_95_gap_size: u64, // 95th percentile of gap sizes in blocks
+    #[serde(rename = "longestUnacceptableStreak")]
+    longest_unacceptable_streak: u64, // Longest consecutive unacceptable blocks
+}
+
+/// Complete response struct
+#[derive(Debug, Serialize)]
+struct FeeResponse {
+    data: Vec<FeeDataPoint>,
+    stats: FeeStats,
+}
+
 /// GET /fees
 ///
-/// Returns JSON: each item is { blockHeight, currentFee, shortFee, longFee, acceptable }
+/// Returns JSON: { data: [...], stats: {...} }
 async fn get_fees(
     State(state): State<AppState>,
     Query(params): Query<FeeParams>,
@@ -123,14 +144,26 @@ async fn get_fees(
     let max_l2 = params.max_l2_blocks_behind.unwrap_or(8 * 3600);
     let start_discount = params.start_discount_percentage.unwrap_or(0.10);
     let end_premium = params.end_premium_percentage.unwrap_or(0.20);
-    let always_acceptable_fee = params
-        .always_acceptable_fee
-        .map(|v| v.parse().unwrap())
-        .unwrap_or(1_000_000_000_000_000);
+
+    let always_acceptable_fee = match params.always_acceptable_fee {
+        Some(v) => match v.parse::<u128>() {
+            Ok(val) => val,
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid always_acceptable_fee value",
+                )
+                    .into_response()
+            }
+        },
+        None => 1_000_000_000_000_000,
+    };
+
+    let num_blobs = params.num_blobs.unwrap_or(6); // default to 6 blobs
+
     let num_l2_blocks_behind = params.num_l2_blocks_behind.unwrap_or(0);
 
     // 2) Build an SmaFeeAlgo config from user’s inputs
-    //    Notice we reuse your “fee_algo::Config” (renamed FeeAlgoConfig in this file).
     let config = AlgoConfig {
         sma_periods: SmaPeriods {
             short: match NonZeroU64::new(short) {
@@ -176,28 +209,37 @@ async fn get_fees(
 
     for block_fees in seq_fees.into_iter() {
         let block_height = block_fees.height;
-        let current_fee = calculate_blob_tx_fee(6, &block_fees.fees);
+        let current_fee = calculate_blob_tx_fee(num_blobs, &block_fees.fees);
 
-        // fetch the shortTerm + longTerm SMA at exactly this height
-        let short_term_sma = state
+        // Fetch the shortTerm + longTerm SMA at exactly this height
+        let short_term_sma = match state
             .historical_fees
             .calculate_sma(last_n_blocks(block_height, config.sma_periods.short))
             .await
-            .unwrap();
+        {
+            Ok(f) => f,
+            Err(_) => Fees::default(),
+        };
 
-        let long_term_sma = state
+        let long_term_sma = match state
             .historical_fees
             .calculate_sma(last_n_blocks(block_height, config.sma_periods.long))
             .await
-            .unwrap();
+        {
+            Ok(f) => f,
+            Err(_) => Fees::default(),
+        };
 
-        let short_fee = calculate_blob_tx_fee(6, &short_term_sma);
-        let long_fee = calculate_blob_tx_fee(6, &long_term_sma);
+        let short_fee = calculate_blob_tx_fee(num_blobs, &short_term_sma);
+        let long_fee = calculate_blob_tx_fee(num_blobs, &long_term_sma);
 
-        let acceptable = sma_algo
-            .fees_acceptable(6, num_l2_blocks_behind, block_height)
+        let acceptable = match sma_algo
+            .fees_acceptable(num_blobs, num_l2_blocks_behind, block_height)
             .await
-            .unwrap();
+        {
+            Ok(decision) => decision,
+            Err(_) => false, // or handle error differently
+        };
 
         data.push(FeeDataPoint {
             block_height,
@@ -208,8 +250,56 @@ async fn get_fees(
         });
     }
 
+    // 6) Calculate statistics
+    let total_blocks = data.len() as f64;
+    let acceptable_blocks = data.iter().filter(|d| d.acceptable).count() as f64;
+    let percentage_acceptable = if total_blocks > 0.0 {
+        (acceptable_blocks / total_blocks) * 100.0
+    } else {
+        0.0
+    };
+
+    // 7) Calculate gap sizes (streaks of unacceptable blocks)
+    let mut gap_sizes = Vec::new();
+    let mut current_gap = 0;
+
+    for d in &data {
+        if !d.acceptable {
+            current_gap += 1;
+        } else if current_gap > 0 {
+            gap_sizes.push(current_gap);
+            current_gap = 0;
+        }
+    }
+
+    // Push the last gap if it ends with an unacceptable streak
+    if current_gap > 0 {
+        gap_sizes.push(current_gap);
+    }
+
+    // 8) Calculate the 95th percentile of gap sizes
+    let percentile_95_gap_size = if !gap_sizes.is_empty() {
+        let mut sorted_gaps = gap_sizes.clone();
+        sorted_gaps.sort_unstable();
+        let index = ((sorted_gaps.len() as f64) * 0.95).ceil() as usize - 1;
+        sorted_gaps[index.min(sorted_gaps.len() - 1)]
+    } else {
+        0
+    };
+
+    // 9) Find the longest unacceptable streak
+    let longest_unacceptable_streak = gap_sizes.iter().cloned().max().unwrap_or(0);
+
+    let stats = FeeStats {
+        percentage_acceptable,
+        percentile_95_gap_size,
+        longest_unacceptable_streak,
+    };
+
+    let response = FeeResponse { data, stats };
+
     // Return as JSON
-    Json(data).into_response()
+    Json(response).into_response()
 }
 
 /// Helper: compute [current_block - (n-1) .. current_block]
@@ -226,6 +316,28 @@ async fn index_html() -> Html<&'static str> {
   <meta charset="UTF-8" />
   <title>Fee Simulator - Multiple Series + Shading</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    #chart {
+      width: 100%;
+      height: 600px;
+    }
+    .stats {
+      margin-top: 20px;
+    }
+    .stats div {
+      margin-bottom: 5px;
+    }
+    /* Responsive design */
+    @media (max-width: 768px) {
+      #chart {
+        height: 400px;
+      }
+    }
+  </style>
 </head>
 <body>
   <h1>Fee Simulator - Multiple Series + Shading</h1>
@@ -258,6 +370,10 @@ async fn index_html() -> Html<&'static str> {
     <label for="alwaysAcceptable">always_acceptable_fee:</label>
     <input type="number" id="alwaysAcceptable" value="1000000000000000" />
 
+    <label for="numBlobs">Number of Blobs:</label>
+    <input type="number" id="numBlobs" value="6" min="1" max="10" />
+    <br />
+
     <label for="l2Behind">num_l2_blocks_behind:</label>
     <input type="number" id="l2Behind" value="0" />
 
@@ -271,7 +387,14 @@ async fn index_html() -> Html<&'static str> {
     <button onclick="setPreset(1500)">Last 5 Hours (~1.5k blocks)</button>
   </div>
 
-  <div id="chart" style="width:95%; height:600px;"></div>
+  <div id="chart"></div>
+
+  <div class="stats">
+    <h2>Statistics</h2>
+    <div><strong>Percentage of Acceptable Blocks:</strong> <span id="percentageAcceptable">0%</span></div>
+    <div><strong>95th Percentile of Gap Sizes:</strong> <span id="percentile95GapSize">0 blocks</span></div>
+    <div><strong>Longest Unacceptable Streak:</strong> <span id="longestUnacceptableStreak">0 blocks</span></div>
+  </div>
 
   <script>
     function setPreset(numBlocks) {
@@ -314,6 +437,7 @@ async fn index_html() -> Html<&'static str> {
       const startDiscount      = document.getElementById('startDiscount').value;
       const endPremium         = document.getElementById('endPremium').value;
       const alwaysAcceptable   = document.getElementById('alwaysAcceptable').value;
+      const numBlobs           = document.getElementById('numBlobs').value;
       const numL2BlocksBehind  = document.getElementById('l2Behind').value;
 
       // Construct query string
@@ -326,6 +450,7 @@ async fn index_html() -> Html<&'static str> {
         start_discount_percentage: startDiscount,
         end_premium_percentage: endPremium,
         always_acceptable_fee: alwaysAcceptable,
+        num_blobs: numBlobs,
         num_l2_blocks_behind: numL2BlocksBehind,
       }).toString();
 
@@ -335,17 +460,18 @@ async fn index_html() -> Html<&'static str> {
         if (!resp.ok) {
           throw new Error(`Error: ${resp.status}`);
         }
-        const data = await resp.json();
+        const response = await resp.json();
 
-        // data is an array of objects:
-        // {
-        //   blockHeight: number,
-        //   currentFee: string,       // Serialized as strings
-        //   shortFee: string,
-        //   longFee: string,
-        //   acceptable: boolean
-        // }
+        // Extract data and stats
+        const data = response.data;
+        const stats = response.stats;
 
+        // Update statistics in the UI
+        document.getElementById('percentageAcceptable').innerText = `${stats.percentageAcceptable.toFixed(2)}%`;
+        document.getElementById('percentile95GapSize').innerText = `${stats.percentile95GapSize} blocks`;
+        document.getElementById('longestUnacceptableStreak').innerText = `${stats.longestUnacceptableStreak} blocks`;
+
+        // Prepare data for plotting
         const x = data.map(d => d.blockHeight);
         const currentFees = data.map(d => parseFloat(d.currentFee));
         const shortFees   = data.map(d => parseFloat(d.shortFee));
@@ -401,7 +527,13 @@ async fn index_html() -> Html<&'static str> {
 
         Plotly.newPlot('chart', [traceCurrent, traceShort, traceLong], layout);
       } catch (err) {
-        alert(err);
+        // Display error message in the stats section
+        document.getElementById('percentageAcceptable').innerText = `Error: ${err.message}`;
+        document.getElementById('percentile95GapSize').innerText = `-`;
+        document.getElementById('longestUnacceptableStreak').innerText = `-`;
+        // Optionally, clear the chart
+        Plotly.purge('chart');
+        console.error(err);
       }
     }
 
@@ -419,7 +551,7 @@ async fn main() -> Result<()> {
     // 1) Create your ETH HTTP client
     let client = eth::HttpClient::new(URL).unwrap();
 
-    // 2) ~1 month = 216000 blocks (approx) if 12s per block
+    // 2) ~1 month = 259200 blocks (approx) if 12s per block
     let num_blocks_per_month = 30 * 24 * 3600 / 12; // 259200 blocks
 
     // 3) Build your CachingApi & import any existing cache
@@ -429,20 +561,20 @@ async fn main() -> Result<()> {
     // 4) Build your HistoricalFees
     let historical_fees = HistoricalFees::new(caching_api.clone());
 
-    // 6) Bundle everything into state
+    // 5) Bundle everything into state
     let state = AppState {
         caching_api: caching_api.clone(),
         historical_fees,
         num_blocks_per_month: num_blocks_per_month as u64,
     };
 
-    // 7) Axum router: serve front-end + fees endpoint
+    // 6) Axum router: serve front-end + fees endpoint
     let app = Router::new()
         .route("/", get(index_html))
         .route("/fees", get(get_fees))
         .with_state(state);
 
-    // 8) Run server
+    // 7) Run server
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Server listening on http://{}", addr);
 
