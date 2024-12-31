@@ -55,6 +55,10 @@ pub mod l1 {
     // Cannot be empty
     #[allow(clippy::len_without_is_empty)]
     impl SequentialBlockFees {
+        pub fn last(&self) -> &BlockFees {
+            self.fees.last().expect("not empty")
+        }
+
         pub fn mean(&self) -> Fees {
             let count = self.len() as u128;
 
@@ -413,6 +417,10 @@ pub mod cache {
     }
 
     impl<P> CachingApi<P> {
+        pub fn inner(&self) -> &P {
+            &self.fees_provider
+        }
+
         pub fn new(fees_provider: P, cache_limit: usize) -> Self {
             Self {
                 fees_provider,

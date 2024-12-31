@@ -3,6 +3,7 @@ use std::{
     num::{NonZeroU32, NonZeroU64},
     ops::RangeInclusive,
     path::PathBuf,
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -23,6 +24,7 @@ use services::{
         service::{calculate_blob_tx_fee, HistoricalFees, SmaPeriods},
     },
     state_committer::{AlgoConfig, FeeThresholds, Percentage, SmaFeeAlgo},
+    types::{DateTime, Utc},
 };
 use xdg::BaseDirectories;
 
@@ -98,12 +100,14 @@ struct FeeParams {
 struct FeeDataPoint {
     #[serde(rename = "blockHeight")]
     block_height: u64,
+    #[serde(rename = "blockTime")]
+    block_time: String, // ISO 8601 format
     #[serde(rename = "currentFee")]
-    current_fee: String, // Serialize u128 as String
+    current_fee: String, // ETH with 4 decimal places
     #[serde(rename = "shortFee")]
-    short_fee: String, // Serialize u128 as String
+    short_fee: String, // ETH with 4 decimal places
     #[serde(rename = "longFee")]
-    long_fee: String, // Serialize u128 as String
+    long_fee: String, // ETH with 4 decimal places
     acceptable: bool,
 }
 
@@ -204,53 +208,68 @@ async fn get_fees(
         return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch fees").into_response();
     };
 
-    // 5) Prepare data points
+    // 5) Fetch the last block's time
+    // Assuming CachingApi provides access to the underlying client
+    // You might need to adjust this based on your actual CachingApi implementation
+    let last_block_height = seq_fees.last().height;
+    let last_block_time = state
+        .caching_api
+        .inner()
+        .get_block_time(last_block_height)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // 6) Prepare data points
     let mut data = Vec::with_capacity(seq_fees.len());
 
     for block_fees in seq_fees.into_iter() {
         let block_height = block_fees.height;
-        let current_fee = calculate_blob_tx_fee(num_blobs, &block_fees.fees);
+        let current_fee_wei = calculate_blob_tx_fee(num_blobs, &block_fees.fees);
 
         // Fetch the shortTerm + longTerm SMA at exactly this height
-        let short_term_sma = match state
+        let short_term_sma = state
             .historical_fees
             .calculate_sma(last_n_blocks(block_height, config.sma_periods.short))
             .await
-        {
-            Ok(f) => f,
-            Err(_) => Fees::default(),
-        };
+            .unwrap();
 
-        let long_term_sma = match state
+        let long_term_sma = state
             .historical_fees
             .calculate_sma(last_n_blocks(block_height, config.sma_periods.long))
             .await
-        {
-            Ok(f) => f,
-            Err(_) => Fees::default(),
-        };
+            .unwrap();
 
-        let short_fee = calculate_blob_tx_fee(num_blobs, &short_term_sma);
-        let long_fee = calculate_blob_tx_fee(num_blobs, &long_term_sma);
+        let short_fee_wei = calculate_blob_tx_fee(num_blobs, &short_term_sma);
+        let long_fee_wei = calculate_blob_tx_fee(num_blobs, &long_term_sma);
 
-        let acceptable = match sma_algo
+        let acceptable = sma_algo
             .fees_acceptable(num_blobs, num_l2_blocks_behind, block_height)
             .await
-        {
-            Ok(decision) => decision,
-            Err(_) => false, // or handle error differently
-        };
+            .unwrap();
+
+        // Calculate the time for this block
+        let block_gap = last_block_height - block_height;
+
+        let block_time = last_block_time - Duration::from_secs(12 * block_gap);
+        let block_time_str = block_time.to_rfc3339(); // ISO 8601 format
+
+        // Convert fees from wei to ETH with 4 decimal places
+        let current_fee_eth = (current_fee_wei as f64) / 1e18;
+        let short_fee_eth = (short_fee_wei as f64) / 1e18;
+        let long_fee_eth = (long_fee_wei as f64) / 1e18;
 
         data.push(FeeDataPoint {
             block_height,
-            current_fee: current_fee.to_string(),
-            short_fee: short_fee.to_string(),
-            long_fee: long_fee.to_string(),
+            block_time: block_time_str,
+            current_fee: format!("{:.4}", current_fee_eth),
+            short_fee: format!("{:.4}", short_fee_eth),
+            long_fee: format!("{:.4}", long_fee_eth),
             acceptable,
         });
     }
 
-    // 6) Calculate statistics
+    // 7) Calculate statistics
     let total_blocks = data.len() as f64;
     let acceptable_blocks = data.iter().filter(|d| d.acceptable).count() as f64;
     let percentage_acceptable = if total_blocks > 0.0 {
@@ -259,7 +278,7 @@ async fn get_fees(
         0.0
     };
 
-    // 7) Calculate gap sizes (streaks of unacceptable blocks)
+    // 8) Calculate gap sizes (streaks of unacceptable blocks)
     let mut gap_sizes = Vec::new();
     let mut current_gap = 0;
 
@@ -277,7 +296,7 @@ async fn get_fees(
         gap_sizes.push(current_gap);
     }
 
-    // 8) Calculate the 95th percentile of gap sizes
+    // 9) Calculate the 95th percentile of gap sizes
     let percentile_95_gap_size = if !gap_sizes.is_empty() {
         let mut sorted_gaps = gap_sizes.clone();
         sorted_gaps.sort_unstable();
@@ -287,7 +306,7 @@ async fn get_fees(
         0
     };
 
-    // 9) Find the longest unacceptable streak
+    // 10) Find the longest unacceptable streak
     let longest_unacceptable_streak = gap_sizes.iter().cloned().max().unwrap_or(0);
 
     let stats = FeeStats {
@@ -385,6 +404,7 @@ async fn index_html() -> Html<&'static str> {
     <button onclick="setPreset(21600)">Last 3 Days (~21.6k blocks)</button>
     <button onclick="setPreset(7200)">Last 1 Day (~7.2k blocks)</button>
     <button onclick="setPreset(1500)">Last 5 Hours (~1.5k blocks)</button>
+    <button onclick="resetFields()">Reset</button>
   </div>
 
   <div id="chart"></div>
@@ -394,11 +414,26 @@ async fn index_html() -> Html<&'static str> {
     <div><strong>Percentage of Acceptable Blocks:</strong> <span id="percentageAcceptable">0%</span></div>
     <div><strong>95th Percentile of Gap Sizes:</strong> <span id="percentile95GapSize">0 blocks</span></div>
     <div><strong>Longest Unacceptable Streak:</strong> <span id="longestUnacceptableStreak">0 blocks</span></div>
+    <div id="loading" style="display: none;">Loading...</div>
   </div>
 
   <script>
     function setPreset(numBlocks) {
       document.getElementById('amountOfBlocks').value = numBlocks;
+      fetchAndPlot();
+    }
+
+    function resetFields() {
+      document.getElementById('endingHeight').value = "21514918";
+      document.getElementById('amountOfBlocks').value = "300";
+      document.getElementById('short').value = "25";
+      document.getElementById('long').value = "300";
+      document.getElementById('maxL2').value = "28800";
+      document.getElementById('startDiscount').value = "0.10";
+      document.getElementById('endPremium').value = "0.20";
+      document.getElementById('alwaysAcceptable').value = "1000000000000000";
+      document.getElementById('numBlobs').value = "6";
+      document.getElementById('l2Behind').value = "0";
       fetchAndPlot();
     }
 
@@ -429,16 +464,33 @@ async fn index_html() -> Html<&'static str> {
     }
 
     async function fetchAndPlot() {
-      const endingHeight       = document.getElementById('endingHeight').value;
-      const amountOfBlocks     = document.getElementById('amountOfBlocks').value;
-      const shortSma           = document.getElementById('short').value;
-      const longSma            = document.getElementById('long').value;
-      const maxL2              = document.getElementById('maxL2').value;
-      const startDiscount      = document.getElementById('startDiscount').value;
-      const endPremium         = document.getElementById('endPremium').value;
+      const endingHeight       = parseInt(document.getElementById('endingHeight').value, 10);
+      const amountOfBlocks     = parseInt(document.getElementById('amountOfBlocks').value, 10);
+      const shortSma           = parseInt(document.getElementById('short').value, 10);
+      const longSma            = parseInt(document.getElementById('long').value, 10);
+      const maxL2              = parseInt(document.getElementById('maxL2').value, 10);
+      const startDiscount      = parseFloat(document.getElementById('startDiscount').value);
+      const endPremium         = parseFloat(document.getElementById('endPremium').value);
       const alwaysAcceptable   = document.getElementById('alwaysAcceptable').value;
-      const numBlobs           = document.getElementById('numBlobs').value;
-      const numL2BlocksBehind  = document.getElementById('l2Behind').value;
+      const numBlobs           = parseInt(document.getElementById('numBlobs').value, 10);
+      const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
+
+      // Input Validation
+      if (isNaN(endingHeight) || isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
+          isNaN(maxL2) || isNaN(startDiscount) || isNaN(endPremium) ||
+          isNaN(numBlobs) || isNaN(numL2BlocksBehind)) {
+        alert('Please ensure all input fields are filled out correctly.');
+        return;
+      }
+
+      // Validate numBlobs
+      if (numBlobs < 1 || numBlobs > 10) {
+        alert('Number of Blobs must be between 1 and 10.');
+        return;
+      }
+
+      // Show loading indicator
+      document.getElementById('loading').style.display = 'block';
 
       // Construct query string
       const qs = new URLSearchParams({
@@ -472,10 +524,10 @@ async fn index_html() -> Html<&'static str> {
         document.getElementById('longestUnacceptableStreak').innerText = `${stats.longestUnacceptableStreak} blocks`;
 
         // Prepare data for plotting
-        const x = data.map(d => d.blockHeight);
-        const currentFees = data.map(d => parseFloat(d.currentFee));
-        const shortFees   = data.map(d => parseFloat(d.shortFee));
-        const longFees    = data.map(d => parseFloat(d.longFee));
+        const x = data.map(d => d.blockTime);
+        const currentFees = data.map(d => parseFloat(d.currentFee).toFixed(4));
+        const shortFees   = data.map(d => parseFloat(d.shortFee).toFixed(4));
+        const longFees    = data.map(d => parseFloat(d.longFee).toFixed(4));
 
         // Identify acceptable regions
         const acceptableRegions = getAcceptableRegions(data);
@@ -499,28 +551,38 @@ async fn index_html() -> Html<&'static str> {
           x, 
           y: currentFees,
           mode: 'lines',
-          name: 'Current Fee',
+          name: 'Current Fee (ETH)',
           line: {color: 'blue'},
+          hoverinfo: 'x+y',
         };
         const traceShort = {
           x,
           y: shortFees,
           mode: 'lines',
-          name: 'Short SMA Fee',
+          name: 'Short SMA Fee (ETH)',
           line: {color: 'red'},
+          hoverinfo: 'x+y',
         };
         const traceLong = {
           x,
           y: longFees,
           mode: 'lines',
-          name: 'Long SMA Fee',
+          name: 'Long SMA Fee (ETH)',
           line: {color: 'green'},
+          hoverinfo: 'x+y',
         };
 
         const layout = {
-          title: 'Fees vs. Block Height',
-          xaxis: { title: 'Block Height' },
-          yaxis: { title: 'Fee (wei)' },
+          title: 'Fees vs. Block Time',
+          xaxis: { 
+            title: 'Block Time (UTC)',
+            type: 'date',
+            tickformat: '%Y-%m-%d %H:%M:%S',
+          },
+          yaxis: { 
+            title: 'Fee (ETH)',
+            tickformat: '.4f',
+          },
           legend: { orientation: 'h', x: 0, y: 1.1 },
           shapes: shapes, // Add the shaded regions
         };
@@ -531,9 +593,12 @@ async fn index_html() -> Html<&'static str> {
         document.getElementById('percentageAcceptable').innerText = `Error: ${err.message}`;
         document.getElementById('percentile95GapSize').innerText = `-`;
         document.getElementById('longestUnacceptableStreak').innerText = `-`;
-        // Optionally, clear the chart
+        // Clear the chart
         Plotly.purge('chart');
         console.error(err);
+      } finally {
+        // Hide loading indicator
+        document.getElementById('loading').style.display = 'none';
       }
     }
 
