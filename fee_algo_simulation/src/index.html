@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Fee Simulator - Multiple Series + Shading</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    #chart {
+      width: 100%;
+      height: 600px;
+    }
+    .stats {
+      margin-top: 20px;
+    }
+    .stats div {
+      margin-bottom: 5px;
+    }
+    /* Responsive design */
+    @media (max-width: 768px) {
+      #chart {
+        height: 400px;
+      }
+    }
+    /* Loading indicator style */
+    #loading {
+      display: none;
+      font-weight: bold;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <h1>Fee Simulator - Multiple Series + Shading</h1>
+
+  <div style="margin-bottom: 1em;">
+    <label for="endingHeight">Ending Height:</label>
+    <input type="number" id="endingHeight" value="21514918" />
+
+    <label for="amountOfBlocks">Block Range:</label>
+    <input type="number" id="amountOfBlocks" value="300" />
+
+    <br />
+
+    <label for="short">Short SMA (blocks):</label>
+    <input type="number" id="short" value="25" />
+    <label for="long">Long SMA (blocks):</label>
+    <input type="number" id="long" value="300" />
+    <br />
+
+    <label for="maxL2">max_l2_blocks_behind:</label>
+    <input type="number" id="maxL2" value="28800" />  <!-- e.g. 8 hours worth -->
+
+    <label for="startDiscount">start_discount_percentage:</label>
+    <input type="number" step="0.01" id="startDiscount" value="0.10" />
+
+    <label for="endPremium">end_premium_percentage:</label>
+    <input type="number" step="0.01" id="endPremium" value="0.20" />
+    <br />
+
+    <label for="alwaysAcceptable">always_acceptable_fee:</label>
+    <input type="number" id="alwaysAcceptable" value="1000000000000000" />
+
+    <label for="numBlobs">Number of Blobs:</label>
+    <input type="number" id="numBlobs" value="6" min="1" max="10" />
+    <br />
+
+    <label for="l2Behind">num_l2_blocks_behind:</label>
+    <input type="number" id="l2Behind" value="0" />
+
+    <br />
+
+    <!-- Preset Buttons for Quick Selection -->
+    <button onclick="setPreset(216000)">Last 1 Month (~216k blocks)</button>
+    <button onclick="setPreset(50400)">Last 1 Week (~50.4k blocks)</button>
+    <button onclick="setPreset(21600)">Last 3 Days (~21.6k blocks)</button>
+    <button onclick="setPreset(7200)">Last 1 Day (~7.2k blocks)</button>
+    <button onclick="setPreset(1500)">Last 5 Hours (~1.5k blocks)</button>
+    <button onclick="resetFields()">Reset</button>
+  </div>
+
+  <div id="chart"></div>
+
+  <div class="stats">
+    <h2>Statistics</h2>
+    <div><strong>Percentage of Acceptable Blocks:</strong> <span id="percentageAcceptable">0%</span></div>
+    <div><strong>95th Percentile of Gap Sizes:</strong> <span id="percentile95GapSize">0 blocks</span></div>
+    <div><strong>Longest Unacceptable Streak:</strong> <span id="longestUnacceptableStreak">0 blocks</span></div>
+    <div id="loading">Loading...</div>
+  </div>
+
+  <script>
+    function setPreset(numBlocks) {
+      document.getElementById('amountOfBlocks').value = numBlocks;
+      fetchAndPlot();
+    }
+
+    function resetFields() {
+      document.getElementById('endingHeight').value = "21514918";
+      document.getElementById('amountOfBlocks').value = "300";
+      document.getElementById('short').value = "25";
+      document.getElementById('long').value = "300";
+      document.getElementById('maxL2').value = "28800";
+      document.getElementById('startDiscount').value = "0.10";
+      document.getElementById('endPremium').value = "0.20";
+      document.getElementById('alwaysAcceptable').value = "1000000000000000";
+      document.getElementById('numBlobs').value = "6";
+      document.getElementById('l2Behind').value = "0";
+      fetchAndPlot();
+    }
+
+    // Helper function to identify acceptable regions
+    function getAcceptableRegions(data) {
+      let regions = [];
+      let start = null;
+
+      for (let i = 0; i < data.length; i++) {
+        if (data[i].acceptable) {
+          if (start === null) {
+            start = data[i].blockHeight;
+          }
+        } else {
+          if (start !== null) {
+            regions.push({ start: start, end: data[i - 1].blockHeight });
+            start = null;
+          }
+        }
+      }
+
+      // Handle case where the last data point is acceptable
+      if (start !== null) {
+        regions.push({ start: start, end: data[data.length - 1].blockHeight });
+      }
+
+      return regions;
+    }
+
+    async function fetchAndPlot() {
+      const endingHeight       = parseInt(document.getElementById('endingHeight').value, 10);
+      const amountOfBlocks     = parseInt(document.getElementById('amountOfBlocks').value, 10);
+      const shortSma           = parseInt(document.getElementById('short').value, 10);
+      const longSma            = parseInt(document.getElementById('long').value, 10);
+      const maxL2              = parseInt(document.getElementById('maxL2').value, 10);
+      const startDiscount      = parseFloat(document.getElementById('startDiscount').value);
+      const endPremium         = parseFloat(document.getElementById('endPremium').value);
+      const alwaysAcceptable   = document.getElementById('alwaysAcceptable').value;
+      const numBlobs           = parseInt(document.getElementById('numBlobs').value, 10);
+      const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
+
+      // Input Validation
+      if (isNaN(endingHeight) || isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
+          isNaN(maxL2) || isNaN(startDiscount) || isNaN(endPremium) ||
+          isNaN(numBlobs) || isNaN(numL2BlocksBehind)) {
+        alert('Please ensure all input fields are filled out correctly.');
+        return;
+      }
+
+      // Validate numBlobs
+      if (numBlobs < 1 || numBlobs > 10) {
+        alert('Number of Blobs must be between 1 and 10.');
+        return;
+      }
+
+      // Show loading indicator
+      document.getElementById('loading').style.display = 'block';
+
+      // Construct query string
+      const qs = new URLSearchParams({
+        ending_height: endingHeight,
+        amount_of_blocks: amountOfBlocks,
+        short: shortSma,
+        long: longSma,
+        max_l2_blocks_behind: maxL2,
+        start_discount_percentage: startDiscount,
+        end_premium_percentage: endPremium,
+        always_acceptable_fee: alwaysAcceptable,
+        num_blobs: numBlobs,
+        num_l2_blocks_behind: numL2BlocksBehind,
+      }).toString();
+
+      const url = '/fees?' + qs;
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          throw new Error(`Error: ${resp.status}`);
+        }
+        const response = await resp.json();
+
+        // Extract data and stats
+        const data = response.data;
+        const stats = response.stats;
+
+        // Update statistics in the UI
+        document.getElementById('percentageAcceptable').innerText = `${stats.percentageAcceptable.toFixed(2)}%`;
+        document.getElementById('percentile95GapSize').innerText = `${stats.percentile95GapSize} blocks`;
+        document.getElementById('longestUnacceptableStreak').innerText = `${stats.longestUnacceptableStreak} blocks`;
+
+        // Prepare data for plotting
+        const x = data.map(d => d.blockTime);
+        const currentFees = data.map(d => parseFloat(d.currentFee).toFixed(4));
+        const shortFees   = data.map(d => parseFloat(d.shortFee).toFixed(4));
+        const longFees    = data.map(d => parseFloat(d.longFee).toFixed(4));
+
+        // Identify acceptable regions
+        const acceptableRegions = getAcceptableRegions(data);
+
+        // Map block heights to block times for shapes
+        const shapes = acceptableRegions.map(region => {
+          // Find the blockTime for the start block
+          const startBlock = data.find(d => d.blockHeight === region.start);
+          // Find the blockTime for the end block
+          const endBlock = data.find(d => d.blockHeight === region.end);
+          // Extract blockTime strings
+          const x0 = startBlock ? startBlock.blockTime : null;
+          const x1 = endBlock ? endBlock.blockTime : null;
+
+          // Only add shapes if both x0 and x1 are found
+          if (x0 && x1) {
+            return {
+              type: 'rect',
+              xref: 'x',
+              yref: 'paper',
+              x0: x0,
+              y0: 0,
+              x1: x1,
+              y1: 1,
+              fillcolor: 'rgba(0, 255, 0, 0.2)',
+              line: {
+                width: 0,
+              },
+            };
+          } else {
+            return null;
+          }
+        }).filter(shape => shape !== null); // Remove null entries
+
+        const traceCurrent = {
+          x, 
+          y: currentFees,
+          mode: 'lines',
+          name: 'Current Fee (ETH)',
+          line: {color: 'blue'},
+          hoverinfo: 'x+y',
+        };
+        const traceShort = {
+          x,
+          y: shortFees,
+          mode: 'lines',
+          name: 'Short SMA Fee (ETH)',
+          line: {color: 'red'},
+          hoverinfo: 'x+y',
+        };
+        const traceLong = {
+          x,
+          y: longFees,
+          mode: 'lines',
+          name: 'Long SMA Fee (ETH)',
+          line: {color: 'green'},
+          hoverinfo: 'x+y',
+        };
+
+        const layout = {
+          title: 'Fees vs. Block Time',
+          xaxis: { 
+            title: 'Block Time (UTC)',
+            type: 'date',
+            tickformat: '%Y-%m-%d %H:%M:%S',
+          },
+          yaxis: { 
+            title: 'Fee (ETH)',
+            tickformat: '.4f',
+          },
+          legend: { orientation: 'h', x: 0, y: 1.1 },
+          shapes: shapes, // Add the shaded regions with correct block times
+        };
+
+        Plotly.newPlot('chart', [traceCurrent, traceShort, traceLong], layout);
+      } catch (err) {
+        // Display error message in the stats section
+        document.getElementById('percentageAcceptable').innerText = `Error: ${err.message}`;
+        document.getElementById('percentile95GapSize').innerText = `-`;
+        document.getElementById('longestUnacceptableStreak').innerText = `-`;
+        // Clear the chart
+        Plotly.purge('chart');
+        console.error(err);
+        alert('Failed to fetch data. Please check your inputs and try again.');
+      } finally {
+        // Hide loading indicator
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    // Immediately plot once on page load
+    fetchAndPlot();
+  </script>
+</body>
+</html>

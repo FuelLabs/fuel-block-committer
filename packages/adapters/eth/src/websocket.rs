@@ -9,7 +9,6 @@ use alloy::{
     signers::{local::PrivateKeySigner, Signature},
 };
 use delegate::delegate;
-use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
 use services::{
     historical_fees::port::l1::SequentialBlockFees,

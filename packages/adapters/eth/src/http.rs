@@ -1,4 +1,4 @@
-use std::{ops::RangeInclusive, time};
+use std::ops::RangeInclusive;
 
 use alloy::{
     providers::{Provider as AlloyProvider, ProviderBuilder, RootProvider},
