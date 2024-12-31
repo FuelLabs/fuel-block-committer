@@ -1,10 +1,13 @@
-use std::ops::RangeInclusive;
+use std::{ops::RangeInclusive, time};
 
 use alloy::{
     providers::{Provider as AlloyProvider, ProviderBuilder, RootProvider},
     transports::http::{Client, Http},
 };
-use services::historical_fees::port::l1::SequentialBlockFees;
+use services::{
+    historical_fees::port::l1::SequentialBlockFees,
+    types::{DateTime, Utc},
+};
 
 use crate::fee_api_helpers::batch_requests;
 
@@ -24,6 +27,24 @@ impl Provider {
     }
 }
 
+impl Provider {
+    pub async fn get_block_time(&self, block_num: u64) -> crate::Result<Option<DateTime<Utc>>> {
+        let block = self
+            .provider
+            .get_block_by_number(alloy::eips::BlockNumberOrTag::Number(block_num), false)
+            .await
+            .map_err(|e| {
+                crate::error::Error::Other(format!("failed to get block by number: {e}"))
+            })?;
+
+        let time = block.and_then(|block| {
+            let timestamp = block.header.timestamp;
+            DateTime::<Utc>::from_timestamp(timestamp as i64, 0)
+        });
+
+        Ok(time)
+    }
+}
 impl services::historical_fees::port::l1::Api for Provider {
     async fn fees(&self, height_range: RangeInclusive<u64>) -> crate::Result<SequentialBlockFees> {
         batch_requests(height_range, |sub_range, percentiles| async move {
