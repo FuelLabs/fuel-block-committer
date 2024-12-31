@@ -356,6 +356,12 @@ async fn index_html() -> Html<&'static str> {
         height: 400px;
       }
     }
+    /* Loading indicator style */
+    #loading {
+      display: none;
+      font-weight: bold;
+      color: #555;
+    }
   </style>
 </head>
 <body>
@@ -414,7 +420,7 @@ async fn index_html() -> Html<&'static str> {
     <div><strong>Percentage of Acceptable Blocks:</strong> <span id="percentageAcceptable">0%</span></div>
     <div><strong>95th Percentile of Gap Sizes:</strong> <span id="percentile95GapSize">0 blocks</span></div>
     <div><strong>Longest Unacceptable Streak:</strong> <span id="longestUnacceptableStreak">0 blocks</span></div>
-    <div id="loading" style="display: none;">Loading...</div>
+    <div id="loading">Loading...</div>
   </div>
 
   <script>
@@ -532,20 +538,35 @@ async fn index_html() -> Html<&'static str> {
         // Identify acceptable regions
         const acceptableRegions = getAcceptableRegions(data);
 
-        // Define Plotly shapes for shading
-        const shapes = acceptableRegions.map(region => ({
-          type: 'rect',
-          xref: 'x',
-          yref: 'paper',
-          x0: region.start,
-          y0: 0,
-          x1: region.end,
-          y1: 1,
-          fillcolor: 'rgba(0, 255, 0, 0.2)',
-          line: {
-            width: 0,
-          },
-        }));
+        // Map block heights to block times for shapes
+        const shapes = acceptableRegions.map(region => {
+          // Find the blockTime for the start block
+          const startBlock = data.find(d => d.blockHeight === region.start);
+          // Find the blockTime for the end block
+          const endBlock = data.find(d => d.blockHeight === region.end);
+          // Extract blockTime strings
+          const x0 = startBlock ? startBlock.blockTime : null;
+          const x1 = endBlock ? endBlock.blockTime : null;
+
+          // Only add shapes if both x0 and x1 are found
+          if (x0 && x1) {
+            return {
+              type: 'rect',
+              xref: 'x',
+              yref: 'paper',
+              x0: x0,
+              y0: 0,
+              x1: x1,
+              y1: 1,
+              fillcolor: 'rgba(0, 255, 0, 0.2)',
+              line: {
+                width: 0,
+              },
+            };
+          } else {
+            return null;
+          }
+        }).filter(shape => shape !== null); // Remove null entries
 
         const traceCurrent = {
           x, 
@@ -584,7 +605,7 @@ async fn index_html() -> Html<&'static str> {
             tickformat: '.4f',
           },
           legend: { orientation: 'h', x: 0, y: 1.1 },
-          shapes: shapes, // Add the shaded regions
+          shapes: shapes, // Add the shaded regions with correct block times
         };
 
         Plotly.newPlot('chart', [traceCurrent, traceShort, traceLong], layout);
@@ -596,6 +617,7 @@ async fn index_html() -> Html<&'static str> {
         // Clear the chart
         Plotly.purge('chart');
         console.error(err);
+        alert('Failed to fetch data. Please check your inputs and try again.');
       } finally {
         // Hide loading indicator
         document.getElementById('loading').style.display = 'none';
@@ -606,8 +628,7 @@ async fn index_html() -> Html<&'static str> {
     fetchAndPlot();
   </script>
 </body>
-</html>
-"#,
+</html>"#,
     )
 }
 
