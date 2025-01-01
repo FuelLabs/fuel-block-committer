@@ -721,8 +721,9 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
-            start_discount_percentage: 0.20.try_into().unwrap(),
-            end_premium_percentage: 0.20.try_into().unwrap(),
+            multiplier_range: services::state_committer::FeeMultiplierRange::new_unchecked(
+                0.80, 1.20,
+            ),
             always_acceptable_fee: 0,
         },
     };

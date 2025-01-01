@@ -12,6 +12,7 @@ use axum::Json;
 use services::historical_fees::port::l1::Api;
 use services::historical_fees::service::calculate_blob_tx_fee;
 
+use services::state_committer::FeeMultiplierRange;
 use tracing::{error, info};
 
 /// Handler for the `/fees` endpoint.
@@ -67,18 +68,7 @@ pub async fn get_fees(
                 Some(nz) => nz,
                 None => NonZeroU32::new(1).unwrap(),
             },
-            start_discount_percentage: match services::state_committer::Percentage::try_from(
-                start_discount,
-            ) {
-                Ok(p) => p,
-                Err(_) => services::state_committer::Percentage::ZERO,
-            },
-            end_premium_percentage: match services::state_committer::Percentage::try_from(
-                end_premium,
-            ) {
-                Ok(p) => p,
-                Err(_) => services::state_committer::Percentage::ZERO,
-            },
+            multiplier_range: FeeMultiplierRange::new(start_discount, end_premium).unwrap(),
             always_acceptable_fee,
         },
     };

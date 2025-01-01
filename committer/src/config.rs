@@ -131,11 +131,11 @@ pub struct FeeAlgoConfig {
     /// Maximum number of unposted L2 blocks before sending a transaction regardless of fees
     pub max_l2_blocks_behind: NonZeroU32,
 
-    /// Starting discount percentage applied we try to achieve if we're 0 l2 blocks behind
-    pub start_discount_percentage: f64,
+    /// Starting multiplier applied when we're 0 l2 blocks behind
+    pub start_max_fee_multiplier: f64,
 
-    /// Premium percentage we're willing to pay if we're max_l2_blocks_behind - 1 blocks behind
-    pub end_premium_percentage: f64,
+    /// Ending multiplier applied if we're max_l2_blocks_behind - 1 blocks behind
+    pub end_max_fee_multiplier: f64,
 
     /// A fee that is always acceptable regardless of other conditions
     pub always_acceptable_fee: u64,

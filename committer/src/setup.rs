@@ -13,7 +13,7 @@ use services::{
         port::cache::CachingApi,
         service::{HistoricalFees, SmaPeriods},
     },
-    state_committer::{port::Storage, FeeThresholds},
+    state_committer::{port::Storage, FeeMultiplierRange, FeeThresholds},
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
@@ -131,8 +131,10 @@ pub fn state_committer(
         },
         fee_thresholds: FeeThresholds {
             max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
-            start_discount_percentage: config.app.fee_algo.start_discount_percentage.try_into()?,
-            end_premium_percentage: config.app.fee_algo.end_premium_percentage.try_into()?,
+            multiplier_range: FeeMultiplierRange::new(
+                config.app.fee_algo.start_max_fee_multiplier,
+                config.app.fee_algo.end_max_fee_multiplier,
+            )?,
             always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
         },
     };
