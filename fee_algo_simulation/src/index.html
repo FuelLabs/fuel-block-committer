@@ -51,7 +51,7 @@
           <div class="row mb-3">
             <div class="col-md-4">
               <label for="endingHeight" class="form-label">Ending Height:</label>
-              <input type="number" class="form-control" id="endingHeight" value="21514918" />
+              <input type="number" class="form-control" id="endingHeight" placeholder="Leave empty for latest height" />
             </div>
             <div class="col-md-4">
               <label for="amountOfBlocks" class="form-label">Block Range:</label>
@@ -181,7 +181,7 @@
     function resetFields() {
       document.getElementById('feeForm').reset();
       // Re-set default values if needed
-      document.getElementById('endingHeight').value = "21514918";
+      document.getElementById('endingHeight').value = "";
       document.getElementById('amountOfBlocks').value = "300";
       document.getElementById('short').value = "25";
       document.getElementById('long').value = "300";
@@ -228,7 +228,8 @@
      * Fetches fee data from the server and plots it using Plotly.
      */
     async function fetchAndPlot() {
-      const endingHeight       = parseInt(document.getElementById('endingHeight').value, 10);
+      const endingHeightInput = document.getElementById('endingHeight');
+      const endingHeightValue = endingHeightInput.value ? parseInt(endingHeightInput.value, 10) : null;
       const amountOfBlocks     = parseInt(document.getElementById('amountOfBlocks').value, 10);
       const shortSma           = parseInt(document.getElementById('short').value, 10);
       const longSma            = parseInt(document.getElementById('long').value, 10);
@@ -240,7 +241,7 @@
       const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
 
       // Input Validation
-      if (isNaN(endingHeight) || isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
+      if (isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
           isNaN(maxL2) || isNaN(startMultiplier) || isNaN(endMultiplier) ||
           isNaN(numBlobs) || isNaN(numL2BlocksBehind)) {
         alert('Please ensure all input fields are filled out correctly.');
@@ -263,8 +264,7 @@
       document.getElementById('loading').style.display = 'block';
 
       // Construct query string with updated multiplier parameters
-      const qs = new URLSearchParams({
-        ending_height: endingHeight,
+      const params = {
         amount_of_blocks: amountOfBlocks,
         short: shortSma,
         long: longSma,
@@ -274,7 +274,14 @@
         always_acceptable_fee: alwaysAcceptable,
         num_blobs: numBlobs,
         num_l2_blocks_behind: numL2BlocksBehind,
-      }).toString();
+      };
+
+      // Only include ending_height if it is provided
+      if (endingHeightValue !== null && !isNaN(endingHeightValue)) {
+        params.ending_height = endingHeightValue;
+      }
+
+      const qs = new URLSearchParams(params).toString();
 
       const url = '/fees?' + qs;
       try {
@@ -288,6 +295,14 @@
         const data = response.data;
         const stats = response.stats;
 
+        // Populate the endingHeight field with the latest block height if it was initially empty
+        if (endingHeightValue === null) {
+          const maxBlockHeight = data.reduce((max, d) => d.blockHeight > max ? d.blockHeight : max, 0);
+          if (maxBlockHeight > 0) {
+            endingHeightInput.value = maxBlockHeight;
+          }
+        }
+
         // Update statistics in the UI
         document.getElementById('percentageAcceptable').innerText = `${stats.percentageAcceptable.toFixed(2)}%`;
         document.getElementById('percentile95GapSize').innerText = `${stats.percentile95GapSize} blocks`;
@@ -295,9 +310,9 @@
 
         // Prepare data for plotting
         const x = data.map(d => d.blockTime);
-        const currentFees = data.map(d => parseFloat(d.currentFee).toFixed(4));
-        const shortFees   = data.map(d => parseFloat(d.shortFee).toFixed(4));
-        const longFees    = data.map(d => parseFloat(d.longFee).toFixed(4));
+        const currentFees = data.map(d => parseFloat(d.currentFee).toFixed(6));
+        const shortFees   = data.map(d => parseFloat(d.shortFee).toFixed(6));
+        const longFees    = data.map(d => parseFloat(d.longFee).toFixed(6));
 
         // Identify acceptable regions
         const acceptableRegions = getAcceptableRegions(data);
@@ -367,7 +382,7 @@
           },
           yaxis: { 
             title: 'Fee (ETH)',
-            tickformat: '.4f',
+            tickformat: '.6f',
           },
           legend: { orientation: 'h', x: 0, y: 1.1 },
           shapes: shapes, // Add the shaded regions with correct block times

@@ -21,7 +21,11 @@ pub async fn get_fees(
     Query(params): Query<FeeParams>,
 ) -> impl IntoResponse {
     // Resolve user inputs or use defaults
-    let ending_height = params.ending_height.unwrap_or(21_514_918);
+    let ending_height = if let Some(val) = params.ending_height {
+        val
+    } else {
+        state.caching_api.current_height().await.unwrap()
+    };
     let amount_of_blocks = params
         .amount_of_blocks
         .unwrap_or(state.num_blocks_per_month);
