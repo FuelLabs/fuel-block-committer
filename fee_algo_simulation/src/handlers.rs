@@ -30,8 +30,8 @@ pub async fn get_fees(
     let long = params.long.unwrap_or(300); // default long
 
     let max_l2 = params.max_l2_blocks_behind.unwrap_or(8 * 3600);
-    let start_discount = params.start_discount_percentage.unwrap_or(0.10);
-    let end_premium = params.end_premium_percentage.unwrap_or(0.20);
+    let start_max_fee_multiplier = params.start_max_fee_multiplier.unwrap_or(0.80);
+    let end_max_fee_multiplier = params.end_max_fee_multiplier.unwrap_or(1.20);
 
     let always_acceptable_fee = match params.always_acceptable_fee {
         Some(v) => match v.parse::<u128>() {
@@ -68,7 +68,11 @@ pub async fn get_fees(
                 Some(nz) => nz,
                 None => NonZeroU32::new(1).unwrap(),
             },
-            multiplier_range: FeeMultiplierRange::new(start_discount, end_premium).unwrap(),
+            multiplier_range: FeeMultiplierRange::new(
+                start_max_fee_multiplier,
+                end_max_fee_multiplier,
+            )
+            .unwrap(),
             always_acceptable_fee,
         },
     };

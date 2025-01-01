@@ -88,12 +88,14 @@
 
           <div class="row mb-3">
             <div class="col-md-6">
-              <label for="startDiscount" class="form-label">Start Discount Percentage:</label>
-              <input type="number" step="0.01" class="form-control" id="startDiscount" value="0.10" />
+              <label for="startMultiplier" class="form-label">Start Max Fee Multiplier:</label>
+              <input type="number" step="0.000001" class="form-control" id="startMultiplier" value="0.800000" />
+              <div class="form-text">Multiplier applied to long-term SMA fee at start (e.g., 0.8 = 80%)</div>
             </div>
             <div class="col-md-6">
-              <label for="endPremium" class="form-label">End Premium Percentage:</label>
-              <input type="number" step="0.01" class="form-control" id="endPremium" value="0.20" />
+              <label for="endMultiplier" class="form-label">End Max Fee Multiplier:</label>
+              <input type="number" step="0.000001" class="form-control" id="endMultiplier" value="1.200000" />
+              <div class="form-text">Multiplier applied to long-term SMA fee at end (e.g., 1.05 = 105%)</div>
             </div>
           </div>
 
@@ -184,8 +186,8 @@
       document.getElementById('short').value = "25";
       document.getElementById('long').value = "300";
       document.getElementById('maxL2').value = "28800";
-      document.getElementById('startDiscount').value = "0.10";
-      document.getElementById('endPremium').value = "0.20";
+      document.getElementById('startMultiplier').value = "0.800000";
+      document.getElementById('endMultiplier').value = "1.200000";
       document.getElementById('alwaysAcceptable').value = "1000000000000000";
       document.getElementById('numBlobs').value = "6";
       document.getElementById('l2Behind').value = "0";
@@ -231,15 +233,15 @@
       const shortSma           = parseInt(document.getElementById('short').value, 10);
       const longSma            = parseInt(document.getElementById('long').value, 10);
       const maxL2              = parseInt(document.getElementById('maxL2').value, 10);
-      const startDiscount      = parseFloat(document.getElementById('startDiscount').value);
-      const endPremium         = parseFloat(document.getElementById('endPremium').value);
+      const startMultiplier    = parseFloat(document.getElementById('startMultiplier').value);
+      const endMultiplier      = parseFloat(document.getElementById('endMultiplier').value);
       const alwaysAcceptable   = document.getElementById('alwaysAcceptable').value;
       const numBlobs           = parseInt(document.getElementById('numBlobs').value, 10);
       const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
 
       // Input Validation
       if (isNaN(endingHeight) || isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
-          isNaN(maxL2) || isNaN(startDiscount) || isNaN(endPremium) ||
+          isNaN(maxL2) || isNaN(startMultiplier) || isNaN(endMultiplier) ||
           isNaN(numBlobs) || isNaN(numL2BlocksBehind)) {
         alert('Please ensure all input fields are filled out correctly.');
         return;
@@ -251,24 +253,24 @@
         return;
       }
 
-      // Additional Validation for Percentages
-      if (startDiscount < 0 || startDiscount > 1 || endPremium < 0 || endPremium > 1) {
-        alert('Discount and premium percentages must be between 0 and 1.');
+      // Additional Validation for Multipliers
+      if (startMultiplier <= 0 || endMultiplier <= 0) {
+        alert('Multipliers must be greater than 0.');
         return;
       }
 
       // Show loading indicator
       document.getElementById('loading').style.display = 'block';
 
-      // Construct query string
+      // Construct query string with updated multiplier parameters
       const qs = new URLSearchParams({
         ending_height: endingHeight,
         amount_of_blocks: amountOfBlocks,
         short: shortSma,
         long: longSma,
         max_l2_blocks_behind: maxL2,
-        start_discount_percentage: startDiscount,
-        end_premium_percentage: endPremium,
+        start_max_fee_multiplier: startMultiplier,
+        end_max_fee_multiplier: endMultiplier,
         always_acceptable_fee: alwaysAcceptable,
         num_blobs: numBlobs,
         num_l2_blocks_behind: numL2BlocksBehind,

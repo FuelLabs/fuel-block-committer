@@ -20,8 +20,8 @@ pub struct FeeParams {
     pub short: Option<u64>,
     pub long: Option<u64>,
     pub max_l2_blocks_behind: Option<u32>,
-    pub start_discount_percentage: Option<f64>,
-    pub end_premium_percentage: Option<f64>,
+    pub start_max_fee_multiplier: Option<f64>,
+    pub end_max_fee_multiplier: Option<f64>,
     pub always_acceptable_fee: Option<String>,
 
     // Number of blobs per transaction
