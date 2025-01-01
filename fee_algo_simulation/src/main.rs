@@ -13,8 +13,6 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing subscriber for logging
-    // as a deny filter (DEBUG, but remove noisy logs)
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?

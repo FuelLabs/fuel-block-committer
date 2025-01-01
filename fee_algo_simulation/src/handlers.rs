@@ -9,9 +9,7 @@ use services::historical_fees::service::calculate_blob_tx_fee;
 use services::state_committer::FeeMultiplierRange;
 use tracing::{error, info};
 
-use std::fs;
 use std::num::{NonZeroU32, NonZeroU64};
-use std::path::Path;
 use std::time::Duration;
 
 /// Handler for the root `/` endpoint, serving the HTML page.
