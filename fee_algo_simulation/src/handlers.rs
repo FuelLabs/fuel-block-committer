@@ -1,30 +1,40 @@
-use std::num::{NonZeroU32, NonZeroU64};
-use std::time::Duration;
-
 use super::models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats};
 use super::state::AppState;
 use super::utils::last_n_blocks;
+use actix_web::{web, HttpResponse, Responder};
 
-use axum::extract::{Query, State};
-use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse};
-use axum::Json;
 use services::historical_fees::port::l1::Api;
 use services::historical_fees::service::calculate_blob_tx_fee;
 
 use services::state_committer::FeeMultiplierRange;
 use tracing::{error, info};
 
+use std::fs;
+use std::num::{NonZeroU32, NonZeroU64};
+use std::path::Path;
+use std::time::Duration;
+
+/// Handler for the root `/` endpoint, serving the HTML page.
+pub async fn index_html() -> impl Responder {
+    let contents = include_str!("index.html");
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(contents)
+}
+
 /// Handler for the `/fees` endpoint.
-pub async fn get_fees(
-    State(state): State<AppState>,
-    Query(params): Query<FeeParams>,
-) -> impl IntoResponse {
+pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>) -> impl Responder {
     // Resolve user inputs or use defaults
     let ending_height = if let Some(val) = params.ending_height {
         val
     } else {
-        state.caching_api.current_height().await.unwrap()
+        match state.caching_api.current_height().await {
+            Ok(height) => height,
+            Err(e) => {
+                error!("Failed to get current height: {:?}", e);
+                return HttpResponse::InternalServerError().body("Failed to get current height");
+            }
+        }
     };
     let amount_of_blocks = params.amount_of_blocks;
 
@@ -38,11 +48,7 @@ pub async fn get_fees(
     let always_acceptable_fee = match params.always_acceptable_fee.parse() {
         Ok(val) => val,
         Err(_) => {
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid always_acceptable_fee value",
-            )
-                .into_response()
+            return HttpResponse::BadRequest().body("Invalid always_acceptable_fee value");
         }
     };
 
@@ -67,11 +73,16 @@ pub async fn get_fees(
                 Some(nz) => nz,
                 None => NonZeroU32::new(1).unwrap(),
             },
-            multiplier_range: FeeMultiplierRange::new(
+            multiplier_range: match FeeMultiplierRange::new(
                 start_max_fee_multiplier,
                 end_max_fee_multiplier,
-            )
-            .unwrap(),
+            ) {
+                Ok(range) => range,
+                Err(e) => {
+                    error!("Invalid fee multiplier range: {:?}", e);
+                    return HttpResponse::BadRequest().body("Invalid fee multiplier range");
+                }
+            },
             always_acceptable_fee,
         },
     };
@@ -87,12 +98,12 @@ pub async fn get_fees(
     let fees_res = state.caching_api.fees(range).await;
     let seq_fees = match fees_res {
         Ok(fees) => fees,
-        Err(_) => {
+        Err(e) => {
             error!(
-                "Failed to fetch fees for range {}-{}",
-                start_height, ending_height
+                "Failed to fetch fees for range {}-{}: {:?}",
+                start_height, ending_height, e
             );
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch fees").into_response();
+            return HttpResponse::InternalServerError().body("Failed to fetch fees");
         }
     };
 
@@ -110,19 +121,13 @@ pub async fn get_fees(
                 "Failed to retrieve the last block's time for block height {}",
                 last_block_height
             );
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to retrieve the last block's time",
-            )
-                .into_response();
+            return HttpResponse::InternalServerError()
+                .body("Failed to retrieve the last block's time");
         }
         Err(e) => {
             error!("Error while fetching the last block's time: {:?}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Error while fetching the last block's time",
-            )
-                .into_response();
+            return HttpResponse::InternalServerError()
+                .body("Error while fetching the last block's time");
         }
     };
 
@@ -185,8 +190,8 @@ pub async fn get_fees(
 
         // Calculate the time for this block
         let block_gap = last_block_height - block_height;
-        let block_time = last_block_time - Duration::from_secs(12 * block_gap);
-        let block_time_str = block_time.to_rfc3339(); // ISO 8601 format
+        let block_time = last_block_time - Duration::from_secs(12 * block_gap as u64); // Assuming 12 seconds per block
+        let block_time_str = block_time.to_rfc3339();
 
         // Convert fees from wei to ETH with 4 decimal places
         let current_fee_eth = (current_fee_wei as f64) / 1e18;
@@ -209,13 +214,7 @@ pub async fn get_fees(
     let response = FeeResponse { data, stats };
 
     // Return as JSON
-    Json(response).into_response()
-}
-
-/// Handler for the root `/` endpoint, serving the HTML page.
-pub async fn index_html() -> Html<&'static str> {
-    // The HTML content is stored in `index.html` and included at compile time.
-    Html(include_str!("./index.html"))
+    HttpResponse::Ok().json(response)
 }
 
 /// Calculates statistics from the fee data.
