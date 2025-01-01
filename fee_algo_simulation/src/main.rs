@@ -3,6 +3,8 @@ use std::net::SocketAddr;
 use anyhow::Result;
 use axum::{routing::get, Router};
 use services::historical_fees::service::HistoricalFees;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 mod handlers;
 mod models;
@@ -12,7 +14,16 @@ mod utils;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing subscriber for logging
-    tracing_subscriber::fmt::init();
+    // as a deny filter (DEBUG, but remove noisy logs)
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env()?
+        .add_directive("services::state_committer::fee_algo=off".parse()?);
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .compact()
+        .init();
 
     // Initialize the HTTP client for Ethereum RPC
     let client = eth::HttpClient::new(models::URL).unwrap();
@@ -33,7 +44,6 @@ async fn main() -> Result<()> {
     let state = state::AppState {
         caching_api: caching_api.clone(),
         historical_fees,
-        num_blocks_per_month: num_blocks_per_month as u64,
     };
 
     // Set up Axum router with routes and shared state
@@ -51,7 +61,15 @@ async fn main() -> Result<()> {
         .await
         .unwrap();
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen to ctrl-c");
+        })
+        .await
+        .unwrap();
+
     // Save cache on shutdown
     utils::save_cache(caching_api.export().await)?;
 

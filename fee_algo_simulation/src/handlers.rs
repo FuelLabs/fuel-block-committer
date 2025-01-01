@@ -26,34 +26,29 @@ pub async fn get_fees(
     } else {
         state.caching_api.current_height().await.unwrap()
     };
-    let amount_of_blocks = params
-        .amount_of_blocks
-        .unwrap_or(state.num_blocks_per_month);
+    let amount_of_blocks = params.amount_of_blocks;
 
-    let short = params.short.unwrap_or(25); // default short
-    let long = params.long.unwrap_or(300); // default long
+    let short = params.short;
+    let long = params.long;
 
-    let max_l2 = params.max_l2_blocks_behind.unwrap_or(8 * 3600);
-    let start_max_fee_multiplier = params.start_max_fee_multiplier.unwrap_or(0.80);
-    let end_max_fee_multiplier = params.end_max_fee_multiplier.unwrap_or(1.20);
+    let max_l2 = params.max_l2_blocks_behind;
+    let start_max_fee_multiplier = params.start_max_fee_multiplier;
+    let end_max_fee_multiplier = params.end_max_fee_multiplier;
 
-    let always_acceptable_fee = match params.always_acceptable_fee {
-        Some(v) => match v.parse::<u128>() {
-            Ok(val) => val,
-            Err(_) => {
-                return (
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "Invalid always_acceptable_fee value",
-                )
-                    .into_response()
-            }
-        },
-        None => 1_000_000_000_000_000,
+    let always_acceptable_fee = match params.always_acceptable_fee.parse() {
+        Ok(val) => val,
+        Err(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "Invalid always_acceptable_fee value",
+            )
+                .into_response()
+        }
     };
 
-    let num_blobs = params.num_blobs.unwrap_or(6); // default to 6 blobs
+    let num_blobs = params.num_blobs;
 
-    let num_l2_blocks_behind = params.num_l2_blocks_behind.unwrap_or(0);
+    let num_l2_blocks_behind = params.num_l2_blocks_behind;
 
     // Build SmaFeeAlgo config from user’s inputs
     let config = services::state_committer::AlgoConfig {

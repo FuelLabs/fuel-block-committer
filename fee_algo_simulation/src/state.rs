@@ -6,5 +6,4 @@ use services::historical_fees::port::cache::CachingApi;
 pub struct AppState {
     pub caching_api: CachingApi<eth::HttpClient>,
     pub historical_fees: HistoricalFees<CachingApi<eth::HttpClient>>,
-    pub num_blocks_per_month: u64,
 }

@@ -14,21 +14,15 @@ pub struct SavedFees {
 #[derive(Debug, Deserialize)]
 pub struct FeeParams {
     pub ending_height: Option<u64>,
-    pub amount_of_blocks: Option<u64>,
-
-    // Fee Algo settings
-    pub short: Option<u64>,
-    pub long: Option<u64>,
-    pub max_l2_blocks_behind: Option<u32>,
-    pub start_max_fee_multiplier: Option<f64>,
-    pub end_max_fee_multiplier: Option<f64>,
-    pub always_acceptable_fee: Option<String>,
-
-    // Number of blobs per transaction
-    pub num_blobs: Option<u32>,
-
-    // How many L2 blocks behind are we? If none is given, default 0
-    pub num_l2_blocks_behind: Option<u32>,
+    pub amount_of_blocks: u64,
+    pub short: u64,
+    pub long: u64,
+    pub max_l2_blocks_behind: u32,
+    pub start_max_fee_multiplier: f64,
+    pub end_max_fee_multiplier: f64,
+    pub always_acceptable_fee: String,
+    pub num_blobs: u32,
+    pub num_l2_blocks_behind: u32,
 }
 
 /// Response struct for each fee data point.

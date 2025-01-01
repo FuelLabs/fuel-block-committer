@@ -8,6 +8,7 @@ use services::{
     historical_fees::port::l1::SequentialBlockFees,
     types::{DateTime, Utc},
 };
+use tracing::info;
 
 use crate::fee_api_helpers::batch_requests;
 
@@ -47,6 +48,7 @@ impl Provider {
 }
 impl services::historical_fees::port::l1::Api for Provider {
     async fn fees(&self, height_range: RangeInclusive<u64>) -> crate::Result<SequentialBlockFees> {
+        info!("Fetching fees for range: {:?}", height_range);
         batch_requests(height_range, |sub_range, percentiles| async move {
             let last_block = *sub_range.end();
             let block_count = sub_range.count() as u64;

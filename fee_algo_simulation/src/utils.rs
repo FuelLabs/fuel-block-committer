@@ -2,6 +2,7 @@ use super::models::SavedFees;
 use anyhow::Result;
 use services::historical_fees::port::cache::CachingApi;
 use std::{ops::RangeInclusive, path::PathBuf};
+use tracing::{error, info};
 use xdg::BaseDirectories;
 
 /// Path to the fee cache file.
@@ -16,10 +17,20 @@ pub fn fee_file() -> PathBuf {
 
 /// Load fees from the cache file.
 pub fn load_cache() -> Vec<(u64, services::historical_fees::port::l1::Fees)> {
-    let Ok(contents) = std::fs::read_to_string(fee_file()) else {
-        return vec![];
+    let contents = match std::fs::read_to_string(fee_file()) {
+        Ok(contents) => contents,
+        Err(e) => {
+            error!("Failed to read fee cache file: {e}");
+            return vec![];
+        }
     };
-    let fees: SavedFees = serde_json::from_str(&contents).unwrap_or_default();
+
+    let fees: SavedFees = serde_json::from_str(&contents)
+        .inspect_err(|e| error!("error while deserializing json cache!: {e}"))
+        .unwrap_or_default();
+
+    info!("loaded from cache: {} fees", fees.fees.len());
+
     fees.fees.into_iter().map(|f| (f.height, f.fees)).collect()
 }
 
@@ -34,6 +45,7 @@ pub fn save_cache(
             .collect(),
     };
     std::fs::write(fee_file(), serde_json::to_string(&fees)?)?;
+    info!("saved to cache: {} fees", fees.fees.len());
     Ok(())
 }
 

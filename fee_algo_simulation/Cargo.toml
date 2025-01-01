@@ -19,7 +19,12 @@ itertools = { workspace = true, features = ["use_std"] }
 axum = { version = "0.7" }
 eth = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
+tracing-subscriber = { workspace = true, features = [
+  "fmt",
+  "json",
+  "std",
+  "env-filter",
+] }
 # TODO: segfault features
 tokio = { workspace = true, features = [
   "macros",
