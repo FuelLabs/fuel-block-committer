@@ -12,9 +12,9 @@ use services::{
     block_committer::service::BlockCommitter,
     block_importer::service::BlockImporter,
     fee_metrics_tracker::port::l1::{
-            testing::{ConstantFeeApi, PreconfiguredFeeApi},
-            Fees,
-        },
+        testing::{ConstantFeeApi, PreconfiguredFeeApi},
+        Fees,
+    },
     state_listener::service::StateListener,
     types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
     BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
