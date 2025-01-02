@@ -266,15 +266,19 @@ pub struct Internal {
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
     pub cost_request_limit: usize,
+    pub l1_blocks_cached_for_historical_fees: usize,
 }
 
 impl Default for Internal {
     fn default() -> Self {
+        const ETH_BLOCK_TIME: usize = 12;
+        const ETH_BLOCKS_PER_DAY: usize = 24 * 3600 / ETH_BLOCK_TIME;
         Self {
             fuel_errors_before_unhealthy: 3,
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
             cost_request_limit: 1000,
+            l1_blocks_cached_for_historical_fees: ETH_BLOCKS_PER_DAY,
         }
     }
 }

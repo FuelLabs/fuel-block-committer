@@ -11,7 +11,7 @@ use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
     historical_fees::{
         port::cache::CachingApi,
-        service::{HistoricalFees, SmaPeriods},
+        service::HistoricalFees,
     },
     state_committer::port::Storage,
     state_listener::service::StateListener,
@@ -330,14 +330,10 @@ pub fn historical_fees(
     l1: L1,
     cancel_token: CancellationToken,
     config: &config::Config,
+    internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(HistoricalFees<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
-    let sma_periods = SmaPeriods {
-        short: config.app.fee_algo.short_sma_blocks,
-        long: config.app.fee_algo.long_sma_blocks,
-    };
-
-    let api = CachingApi::new(l1, 24 * 3600 / 12);
+    let api = CachingApi::new(l1, internal_config.l1_blocks_cached_for_historical_fees);
 
     let historical_fees = HistoricalFees::new(api);
 
@@ -345,7 +341,7 @@ pub fn historical_fees(
 
     let handle = schedule_polling(
         config.app.l1_fee_check_interval,
-        historical_fees.fee_metrics_updater(sma_periods),
+        historical_fees.fee_metrics_updater(config.fee_algo_config().sma_periods),
         "Fee Tracker",
         cancel_token,
     );
