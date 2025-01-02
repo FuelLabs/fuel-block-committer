@@ -1,5 +1,7 @@
 # fuel-block-committer
 
+The Fuel Block Committer is a standalone service dedicated to uploading Fuel Block metadata to Ethereum.
+
 ## Table of Contents
 
 - [Building](#building)
@@ -21,7 +23,7 @@
 Building the project doesn't require any special steps beyond the standard Cargo build process.
 
 ```shell
-cargo build --release
+cargo build
 ```
 
 ## Testing
