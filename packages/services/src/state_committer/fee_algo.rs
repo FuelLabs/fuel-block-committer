@@ -6,10 +6,7 @@ use std::{
 use tracing::info;
 
 use crate::{
-    historical_fees::{
-        self,
-        service::{HistoricalFees, SmaPeriods},
-    },
+    fee_metrics_tracker::{self, service::SmaPeriods},
     Error, Result,
 };
 
@@ -149,14 +146,14 @@ impl Default for FeeThresholds {
 
 #[derive(Clone)]
 pub struct SmaFeeAlgo<P> {
-    historical_fees: HistoricalFees<P>,
+    fee_provider: P,
     config: Config,
 }
 
 impl<P> SmaFeeAlgo<P> {
-    pub fn new(historical_fees: HistoricalFees<P>, config: Config) -> Self {
+    pub fn new(fee_provider: P, config: Config) -> Self {
         Self {
-            historical_fees,
+            fee_provider,
             config,
         }
     }
@@ -223,7 +220,7 @@ fn from_ppm(val: u128) -> u128 {
 
 impl<P> SmaFeeAlgo<P>
 where
-    P: historical_fees::port::l1::Api + Send + Sync,
+    P: fee_metrics_tracker::port::l1::Api + Send + Sync,
 {
     pub async fn fees_acceptable(
         &self,
@@ -244,17 +241,19 @@ where
         let last_n_blocks = |n| last_n_blocks(at_l1_height, n);
 
         let short_term_sma = self
-            .historical_fees
-            .calculate_sma(last_n_blocks(self.config.sma_periods.short))
-            .await?;
+            .fee_provider
+            .fees(last_n_blocks(self.config.sma_periods.short))
+            .await?
+            .mean();
 
         let long_term_sma = self
-            .historical_fees
-            .calculate_sma(last_n_blocks(self.config.sma_periods.long))
-            .await?;
+            .fee_provider
+            .fees(last_n_blocks(self.config.sma_periods.long))
+            .await?
+            .mean();
 
         let short_term_tx_fee =
-            historical_fees::service::calculate_blob_tx_fee(num_blobs, &short_term_sma);
+            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &short_term_sma);
 
         if self.fee_always_acceptable(short_term_tx_fee) {
             info!(
@@ -265,7 +264,7 @@ where
         }
 
         let long_term_tx_fee =
-            historical_fees::service::calculate_blob_tx_fee(num_blobs, &long_term_sma);
+            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &long_term_sma);
         let max_upper_tx_fee = calculate_max_upper_fee(
             &self.config.fee_thresholds,
             long_term_tx_fee,
@@ -298,9 +297,9 @@ mod test {
 
     use super::Config;
     use crate::{
-        historical_fees::{
+        fee_metrics_tracker::{
             port::l1::{testing::PreconfiguredFeeApi, Api, Fees},
-            service::{HistoricalFees, SmaPeriods},
+            service::SmaPeriods,
         },
         state_committer::{
             fee_algo::{calculate_max_upper_fee, FeeMultiplierRange, SmaFeeAlgo},
@@ -703,9 +702,8 @@ mod test {
         let fees = generate_fees(config.sma_periods, old_fees, new_fees);
         let api = PreconfiguredFeeApi::new(fees);
         let current_block_height = api.current_height().await.unwrap();
-        let historical_fees = HistoricalFees::new(api);
 
-        let sut = SmaFeeAlgo::new(historical_fees, config);
+        let sut = SmaFeeAlgo::new(api, config);
 
         let should_send = sut
             .fees_acceptable(num_blobs, num_l2_blocks_behind, current_block_height)

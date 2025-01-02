@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use services::{
-    historical_fees::{port::l1::Fees, service::SmaPeriods},
+    fee_metrics_tracker::{port::l1::Fees, service::SmaPeriods},
     state_committer::{AlgoConfig, FeeThresholds},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
-use test_helpers::{noop_historical_fees, preconfigured_fee_analytics};
+use test_helpers::{noop_fees, preconfigured_fees};
 
 #[tokio::test]
 async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
@@ -40,7 +40,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // when
@@ -84,7 +84,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // Advance time beyond the timeout
@@ -120,7 +120,7 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
             ..Default::default()
         },
         test_clock.clone(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // Advance time less than the timeout
@@ -166,7 +166,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // when
@@ -213,7 +213,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -260,7 +260,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
             ..Default::default()
         },
         test_clock.clone(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // Advance time beyond the timeout from startup
@@ -320,7 +320,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // Submit the initial fragments
@@ -436,7 +436,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_analytics(fee_sequence),
+        preconfigured_fees(fee_sequence),
     );
 
     // When
@@ -537,7 +537,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_analytics(fee_sequence),
+        preconfigured_fees(fee_sequence),
     );
 
     // when
@@ -647,7 +647,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_analytics(fee_sequence),
+        preconfigured_fees(fee_sequence),
     );
 
     // when
@@ -758,7 +758,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
             ..Default::default()
         },
         setup.test_clock(),
-        preconfigured_fee_analytics(fee_sequence),
+        preconfigured_fees(fee_sequence),
     );
 
     // when

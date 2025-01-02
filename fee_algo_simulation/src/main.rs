@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 use actix_web::web::{self, Data};
 use anyhow::Result;
-use services::historical_fees::service::HistoricalFees;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -35,13 +34,9 @@ async fn main() -> Result<()> {
         .await?;
     caching_api.import(utils::load_cache()).await;
 
-    // Build HistoricalFees service
-    let historical_fees = HistoricalFees::new(caching_api.clone());
-
     // Bundle everything into shared application state
     let state = state::AppState {
-        caching_api: caching_api.clone(),
-        historical_fees,
+        fee_api: caching_api.clone(),
     };
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));

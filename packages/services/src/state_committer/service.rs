@@ -9,7 +9,7 @@ use tracing::info;
 
 use super::{fee_algo::SmaFeeAlgo, AlgoConfig};
 use crate::{
-    historical_fees::{self, service::HistoricalFees},
+    fee_metrics_tracker::{self},
     types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
     Result, Runner,
 };
@@ -85,12 +85,12 @@ where
         storage: Db,
         config: Config,
         clock: Clock,
-        historical_fees: HistoricalFees<FeeProvider>,
+        fee_provider: FeeProvider,
     ) -> Self {
         let startup_time = clock.now();
 
         Self {
-            fee_algo: SmaFeeAlgo::new(historical_fees, config.fee_algo),
+            fee_algo: SmaFeeAlgo::new(fee_provider, config.fee_algo),
             l1_adapter,
             fuel_api,
             storage,
@@ -108,7 +108,7 @@ where
     FuelApi: crate::state_committer::port::fuel::Api,
     Db: crate::state_committer::port::Storage,
     Clock: crate::state_committer::port::Clock,
-    FeeProvider: historical_fees::port::l1::Api + Sync,
+    FeeProvider: fee_metrics_tracker::port::l1::Api + Sync,
 {
     async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
         Ok(self
@@ -340,7 +340,7 @@ where
     FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
     Db: crate::state_committer::port::Storage + Clone + Send + Sync,
     Clock: crate::state_committer::port::Clock + Send + Sync,
-    FeeProvider: historical_fees::port::l1::Api + Send + Sync,
+    FeeProvider: fee_metrics_tracker::port::l1::Api + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         if self.storage.has_nonfinalized_txs().await? {
@@ -355,11 +355,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use historical_fees::service::SmaPeriods;
+    use fee_metrics_tracker::service::SmaPeriods;
 
     use super::*;
     use crate::{
-        historical_fees::port::l1::testing::PreconfiguredFeeApi, state_committer::FeeThresholds,
+        fee_metrics_tracker::port::l1::testing::PreconfiguredFeeApi, state_committer::FeeThresholds,
     };
 
     #[tokio::test]
@@ -378,8 +378,8 @@ mod tests {
         };
 
         // having no fees will make the validation in fee analytics fail
-        let historical_fees = HistoricalFees::new(PreconfiguredFeeApi::new(vec![]));
-        let sut = SmaFeeAlgo::new(historical_fees, config);
+        let api = PreconfiguredFeeApi::new(vec![]);
+        let sut = SmaFeeAlgo::new(api, config);
 
         // when
         let should_send = sut

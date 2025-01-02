@@ -5,7 +5,7 @@ use alloy::{
     transports::http::{Client, Http},
 };
 use services::{
-    historical_fees::port::l1::SequentialBlockFees,
+    fee_metrics_tracker::port::l1::SequentialBlockFees,
     types::{DateTime, Utc},
 };
 use tracing::info;
@@ -46,7 +46,7 @@ impl Provider {
         Ok(time)
     }
 }
-impl services::historical_fees::port::l1::Api for Provider {
+impl services::fee_metrics_tracker::port::l1::Api for Provider {
     async fn fees(&self, height_range: RangeInclusive<u64>) -> crate::Result<SequentialBlockFees> {
         info!("Fetching fees for range: {:?}", height_range);
         batch_requests(height_range, |sub_range, percentiles| async move {

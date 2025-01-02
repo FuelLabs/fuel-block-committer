@@ -52,6 +52,12 @@ pub mod l1 {
         }
     }
 
+    impl FromIterator<BlockFees> for Result<SequentialBlockFees, InvalidSequence> {
+        fn from_iter<T: IntoIterator<Item = BlockFees>>(iter: T) -> Self {
+            SequentialBlockFees::try_from(iter.into_iter().collect::<Vec<_>>())
+        }
+    }
+
     // Cannot be empty
     #[allow(clippy::len_without_is_empty)]
     impl SequentialBlockFees {
@@ -214,20 +220,22 @@ pub mod l1 {
             }
         }
 
-        pub fn incrementing_fees(num_blocks: u64) -> BTreeMap<u64, Fees> {
-            (0..num_blocks)
+        pub fn incrementing_fees(num_blocks: u64) -> SequentialBlockFees {
+            let fees = (0..num_blocks)
                 .map(|i| {
                     let fee = u128::from(i) + 1;
-                    (
-                        i,
-                        Fees {
+                    BlockFees {
+                        height: i,
+                        fees: Fees {
                             base_fee_per_gas: fee,
                             reward: fee,
                             base_fee_per_blob_gas: fee,
                         },
-                    )
+                    }
                 })
-                .collect()
+                .collect::<Result<_, _>>();
+
+            fees.unwrap()
         }
     }
 
@@ -398,6 +406,20 @@ pub mod l1 {
                 "base_fee_per_blob_gas should be set to 1 when total is 0"
             );
         }
+
+        #[tokio::test]
+        async fn calculates_sma_correctly() {
+            // given
+            let sut = testing::incrementing_fees(5);
+
+            // when
+            let sma = sut.mean();
+
+            // then
+            assert_eq!(sma.base_fee_per_gas, 6);
+            assert_eq!(sma.reward, 6);
+            assert_eq!(sma.base_fee_per_blob_gas, 6);
+        }
     }
 }
 
@@ -519,7 +541,7 @@ pub mod cache {
 
         use mockall::{predicate::eq, Sequence};
 
-        use crate::historical_fees::port::{
+        use crate::fee_metrics_tracker::port::{
             cache::CachingApi,
             l1::{BlockFees, Fees, MockApi, SequentialBlockFees},
         };

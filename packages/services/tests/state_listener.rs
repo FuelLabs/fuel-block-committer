@@ -10,7 +10,7 @@ use services::{
 use test_case::test_case;
 use test_helpers::{
     mocks::{self, l1::TxStatus},
-    noop_historical_fees,
+    noop_fees,
 };
 
 #[tokio::test]
@@ -456,7 +456,7 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // Orig tx
@@ -560,7 +560,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
             ..Default::default()
         },
         test_clock.clone(),
-        noop_historical_fees(),
+        noop_fees(),
     );
 
     // Orig tx

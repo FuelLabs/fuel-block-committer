@@ -11,13 +11,10 @@ use rand::{Rng, RngCore};
 use services::{
     block_committer::service::BlockCommitter,
     block_importer::service::BlockImporter,
-    historical_fees::{
-        port::l1::{
+    fee_metrics_tracker::port::l1::{
             testing::{ConstantFeeApi, PreconfiguredFeeApi},
             Fees,
         },
-        service::HistoricalFees,
-    },
     state_listener::service::StateListener,
     types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
     BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
@@ -489,14 +486,14 @@ pub mod mocks {
     }
 }
 
-pub fn noop_historical_fees() -> HistoricalFees<ConstantFeeApi> {
-    HistoricalFees::new(ConstantFeeApi::new(Fees::default()))
+pub fn noop_fees() -> ConstantFeeApi {
+    ConstantFeeApi::new(Fees::default())
 }
 
-pub fn preconfigured_fee_analytics(
+pub fn preconfigured_fees(
     fee_sequence: impl IntoIterator<Item = (u64, Fees)>,
-) -> HistoricalFees<PreconfiguredFeeApi> {
-    HistoricalFees::new(PreconfiguredFeeApi::new(fee_sequence))
+) -> PreconfiguredFeeApi {
+    PreconfiguredFeeApi::new(fee_sequence)
 }
 
 pub struct Setup {
@@ -570,7 +567,7 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
-            noop_historical_fees(),
+            noop_fees(),
         )
         .run()
         .await
@@ -609,7 +606,7 @@ impl Setup {
                 ..Default::default()
             },
             self.test_clock.clone(),
-            noop_historical_fees(),
+            noop_fees(),
         );
         committer.run().await.unwrap();
 

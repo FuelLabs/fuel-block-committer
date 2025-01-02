@@ -11,7 +11,7 @@ use alloy::{
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
-    historical_fees::port::l1::SequentialBlockFees,
+    fee_metrics_tracker::port::l1::SequentialBlockFees,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
         TransactionResponse, U256,
@@ -84,7 +84,7 @@ impl services::block_committer::port::l1::Api for WebsocketClient {
     }
 }
 
-impl services::historical_fees::port::l1::Api for WebsocketClient {
+impl services::fee_metrics_tracker::port::l1::Api for WebsocketClient {
     async fn current_height(&self) -> Result<u64> {
         self._get_block_number().await
     }

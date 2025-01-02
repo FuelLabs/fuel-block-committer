@@ -1,6 +1,6 @@
 use super::models::SavedFees;
 use anyhow::Result;
-use services::historical_fees::port::cache::CachingApi;
+use services::fee_metrics_tracker::port::cache::CachingApi;
 use std::{ops::RangeInclusive, path::PathBuf};
 use tracing::{error, info};
 use xdg::BaseDirectories;
@@ -16,7 +16,7 @@ pub fn fee_file() -> PathBuf {
 }
 
 /// Load fees from the cache file.
-pub fn load_cache() -> Vec<(u64, services::historical_fees::port::l1::Fees)> {
+pub fn load_cache() -> Vec<(u64, services::fee_metrics_tracker::port::l1::Fees)> {
     let contents = match std::fs::read_to_string(fee_file()) {
         Ok(contents) => contents,
         Err(e) => {
@@ -36,12 +36,17 @@ pub fn load_cache() -> Vec<(u64, services::historical_fees::port::l1::Fees)> {
 
 /// Save fees to the cache file.
 pub fn save_cache(
-    cache: impl IntoIterator<Item = (u64, services::historical_fees::port::l1::Fees)>,
+    cache: impl IntoIterator<Item = (u64, services::fee_metrics_tracker::port::l1::Fees)>,
 ) -> anyhow::Result<()> {
     let fees = SavedFees {
         fees: cache
             .into_iter()
-            .map(|(height, fees)| services::historical_fees::port::l1::BlockFees { height, fees })
+            .map(
+                |(height, fees)| services::fee_metrics_tracker::port::l1::BlockFees {
+                    height,
+                    fees,
+                },
+            )
             .collect(),
     };
     std::fs::write(fee_file(), serde_json::to_string(&fees)?)?;

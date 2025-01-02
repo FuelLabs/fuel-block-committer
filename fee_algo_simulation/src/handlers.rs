@@ -2,17 +2,16 @@ use super::models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats};
 use super::state::AppState;
 use super::utils::last_n_blocks;
 use actix_web::http::StatusCode;
-use actix_web::{body, web, HttpResponse, HttpResponseBuilder, Responder};
+use actix_web::{web, HttpResponse, HttpResponseBuilder, Responder};
 
 use futures::{stream, StreamExt};
 use itertools::Itertools;
-use services::historical_fees::port::l1::Api;
-use services::historical_fees::service::calculate_blob_tx_fee;
+use services::fee_metrics_tracker::port::l1::Api;
+use services::fee_metrics_tracker::service::calculate_blob_tx_fee;
 
-use services::state_committer::{AlgoConfig, FeeMultiplierRange, SmaFeeAlgo};
+use services::state_committer::{AlgoConfig, SmaFeeAlgo};
 use tracing::{error, info};
 
-use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
 /// Handler for the root `/` endpoint, serving the HTML page.
@@ -46,7 +45,7 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
         val
     } else {
         ok_or_bail!(
-            state.caching_api.current_height().await,
+            state.fee_api.current_height().await,
             StatusCode::INTERNAL_SERVER_ERROR
         )
     };
@@ -57,10 +56,10 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
         StatusCode::BAD_REQUEST
     );
 
-    let sma_algo = SmaFeeAlgo::new(state.historical_fees.clone(), config);
+    let sma_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
 
     let seq_fees = ok_or_bail!(
-        state.caching_api.fees(start_height..=ending_height).await,
+        state.fee_api.fees(start_height..=ending_height).await,
         StatusCode::INTERNAL_SERVER_ERROR
     );
 
@@ -68,7 +67,7 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
 
     let last_block_time = {
         let resp = state
-            .caching_api
+            .fee_api
             .inner()
             .get_block_time(last_block_height)
             .await;
@@ -92,17 +91,19 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
 
                 let short_fee_wei = {
                     let short_term_sma = state
-                        .historical_fees
-                        .calculate_sma(last_n_blocks(block_height, config.sma_periods.short))
-                        .await?;
+                        .fee_api
+                        .fees(last_n_blocks(block_height, config.sma_periods.short))
+                        .await?
+                        .mean();
                     calculate_blob_tx_fee(params.num_blobs, &short_term_sma)
                 };
 
                 let long_fee_wei = {
                     let long_term_sma = state
-                        .historical_fees
-                        .calculate_sma(last_n_blocks(block_height, config.sma_periods.long))
-                        .await?;
+                        .fee_api
+                        .fees(last_n_blocks(block_height, config.sma_periods.long))
+                        .await?
+                        .mean();
                     calculate_blob_tx_fee(params.num_blobs, &long_term_sma)
                 };
 

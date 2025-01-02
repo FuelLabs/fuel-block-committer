@@ -9,10 +9,7 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    historical_fees::{
-        port::cache::CachingApi,
-        service::HistoricalFees,
-    },
+    fee_metrics_tracker::{port::cache::CachingApi, service::FeeMetricsTracker},
     state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
@@ -122,7 +119,7 @@ pub fn state_committer(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-    historical_fees: HistoricalFees<CachingApi<L1>>,
+    fee_api: CachingApi<L1>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
         l1,
@@ -136,7 +133,7 @@ pub fn state_committer(
             fee_algo: config.fee_algo_config(),
         },
         SystemClock,
-        historical_fees,
+        fee_api,
     );
 
     state_committer.register_metrics(registry);
@@ -326,25 +323,22 @@ pub async fn shut_down(
     Ok(())
 }
 
-pub fn historical_fees(
-    l1: L1,
+pub fn fee_metrics_tracker(
+    api: CachingApi<L1>,
     cancel_token: CancellationToken,
     config: &config::Config,
-    internal_config: &config::Internal,
     registry: &Registry,
-) -> Result<(HistoricalFees<CachingApi<L1>>, tokio::task::JoinHandle<()>)> {
-    let api = CachingApi::new(l1, internal_config.l1_blocks_cached_for_historical_fees);
+) -> Result<tokio::task::JoinHandle<()>> {
+    let fee_metrics_tracker = FeeMetricsTracker::new(api, config.fee_algo_config().sma_periods);
 
-    let historical_fees = HistoricalFees::new(api);
-
-    historical_fees.register_metrics(registry);
+    fee_metrics_tracker.register_metrics(registry);
 
     let handle = schedule_polling(
         config.app.l1_fee_check_interval,
-        historical_fees.fee_metrics_updater(config.fee_algo_config().sma_periods),
+        fee_metrics_tracker,
         "Fee Tracker",
         cancel_token,
     );
 
-    Ok((historical_fees, handle))
+    Ok(handle)
 }

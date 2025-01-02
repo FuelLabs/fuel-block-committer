@@ -10,7 +10,7 @@ use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use services::{
-    historical_fees::service::SmaPeriods,
+    fee_metrics_tracker::service::SmaPeriods,
     state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds},
 };
 use storage::DbConfig;
@@ -266,7 +266,7 @@ pub struct Internal {
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
     pub cost_request_limit: usize,
-    pub l1_blocks_cached_for_historical_fees: usize,
+    pub l1_blocks_cached_for_fee_metrics_tracker: usize,
 }
 
 impl Default for Internal {
@@ -278,7 +278,7 @@ impl Default for Internal {
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
             cost_request_limit: 1000,
-            l1_blocks_cached_for_historical_fees: ETH_BLOCKS_PER_DAY,
+            l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
         }
     }
 }
