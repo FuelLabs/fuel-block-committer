@@ -9,6 +9,10 @@ use clap::{command, Parser};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
+use services::{
+    historical_fees::service::SmaPeriods,
+    state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds},
+};
 use storage::DbConfig;
 use url::Url;
 
@@ -20,6 +24,11 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn fee_algo_config(&self) -> AlgoConfig {
+        self.validated_fee_algo_config()
+            .expect("already validated via `validate` in main")
+    }
+
     pub fn validate(&self) -> crate::errors::Result<()> {
         let keys = &self.eth.l1_keys;
         if keys
@@ -45,7 +54,32 @@ impl Config {
             ));
         }
 
+        if let Err(e) = self.validated_fee_algo_config() {
+            return Err(crate::errors::Error::Other(format!(
+                "Invalid fee algo config: {e}",
+            )));
+        }
+
         Ok(())
+    }
+
+    fn validated_fee_algo_config(&self) -> crate::errors::Result<AlgoConfig> {
+        let config = self;
+        let algo_config = services::state_committer::AlgoConfig {
+            sma_periods: SmaPeriods {
+                short: config.app.fee_algo.short_sma_blocks,
+                long: config.app.fee_algo.long_sma_blocks,
+            },
+            fee_thresholds: FeeThresholds {
+                max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
+                multiplier_range: FeeMultiplierRange::new(
+                    config.app.fee_algo.start_max_fee_multiplier,
+                    config.app.fee_algo.end_max_fee_multiplier,
+                )?,
+                always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
+            },
+        };
+        Ok(algo_config)
     }
 }
 
