@@ -505,17 +505,16 @@ pub mod cache {
                 }
             }
 
-            let fees: Vec<_> = {
-                let cache = self.cache.read().await;
-                height_range
-                    .filter_map(|h| {
-                        cache.get(&h).map(|f| BlockFees {
-                            height: h,
-                            fees: *f,
-                        })
-                    })
-                    .collect()
-            };
+            let fees: Vec<_> = self
+                .cache
+                .read()
+                .await
+                .range(height_range)
+                .map(|(height, fees)| BlockFees {
+                    height: *height,
+                    fees: *fees,
+                })
+                .collect();
 
             self.shrink_cache().await;
 
