@@ -147,6 +147,7 @@ impl Default for FeeThresholds {
     }
 }
 
+#[derive(Clone)]
 pub struct SmaFeeAlgo<P> {
     historical_fees: HistoricalFees<P>,
     config: Config,

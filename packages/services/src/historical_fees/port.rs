@@ -501,6 +501,11 @@ pub mod cache {
         }
 
         async fn shrink_cache(&self) {
+            // First check with a read lock to lessen contention
+            if self.cache.read().await.len() > self.cache_limit {
+                return;
+            }
+
             let mut cache = self.cache.write().await;
             while cache.len() > self.cache_limit {
                 cache.pop_first();

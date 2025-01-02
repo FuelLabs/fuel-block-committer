@@ -4,6 +4,8 @@ use super::utils::last_n_blocks;
 use actix_web::http::StatusCode;
 use actix_web::{body, web, HttpResponse, HttpResponseBuilder, Responder};
 
+use futures::{stream, StreamExt};
+use itertools::Itertools;
 use services::historical_fees::port::l1::Api;
 use services::historical_fees::service::calculate_blob_tx_fee;
 
@@ -78,60 +80,64 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
     info!("Last block time: {}", last_block_time);
 
     // Prepare data points
-    let mut data = Vec::with_capacity(seq_fees.len());
+    let data: Vec<anyhow::Result<_>> = stream::iter(seq_fees)
+        .map(|block_fees| {
+            let params = params.clone();
+            let state = state.clone();
+            let sma_algo = sma_algo.clone();
 
-    for block_fees in seq_fees.into_iter() {
-        let block_height = block_fees.height;
-        let current_fee_wei = calculate_blob_tx_fee(params.num_blobs, &block_fees.fees);
+            async move {
+                let block_height = block_fees.height;
+                let current_fee_wei = calculate_blob_tx_fee(params.num_blobs, &block_fees.fees);
 
-        let short_fee_wei = {
-            let short_term_sma = ok_or_bail!(
-                state
-                    .historical_fees
-                    .calculate_sma(last_n_blocks(block_height, config.sma_periods.short))
-                    .await,
-                StatusCode::INTERNAL_SERVER_ERROR
-            );
-            calculate_blob_tx_fee(params.num_blobs, &short_term_sma)
-        };
+                let short_fee_wei = {
+                    let short_term_sma = state
+                        .historical_fees
+                        .calculate_sma(last_n_blocks(block_height, config.sma_periods.short))
+                        .await?;
+                    calculate_blob_tx_fee(params.num_blobs, &short_term_sma)
+                };
 
-        let long_fee_wei = {
-            let long_term_sma = ok_or_bail!(
-                state
-                    .historical_fees
-                    .calculate_sma(last_n_blocks(block_height, config.sma_periods.long))
-                    .await,
-                StatusCode::INTERNAL_SERVER_ERROR
-            );
-            calculate_blob_tx_fee(params.num_blobs, &long_term_sma)
-        };
+                let long_fee_wei = {
+                    let long_term_sma = state
+                        .historical_fees
+                        .calculate_sma(last_n_blocks(block_height, config.sma_periods.long))
+                        .await?;
+                    calculate_blob_tx_fee(params.num_blobs, &long_term_sma)
+                };
 
-        let acceptable = ok_or_bail!(
-            sma_algo
-                .fees_acceptable(params.num_blobs, params.num_l2_blocks_behind, block_height)
-                .await,
-            StatusCode::INTERNAL_SERVER_ERROR
-        );
+                let acceptable = sma_algo
+                    .fees_acceptable(params.num_blobs, params.num_l2_blocks_behind, block_height)
+                    .await?;
 
-        // Calculate the time for this block
-        let block_gap = last_block_height - block_height;
-        let block_time = last_block_time - Duration::from_secs(12 * block_gap as u64); // Assuming 12 seconds per block
-        let block_time_str = block_time.to_rfc3339();
+                // Calculate the time for this block
+                let block_gap = last_block_height - block_height;
+                let block_time = last_block_time - Duration::from_secs(12 * block_gap as u64); // Assuming 12 seconds per block
+                let block_time_str = block_time.to_rfc3339();
 
-        // Convert fees from wei to ETH with 4 decimal places
-        let current_fee_eth = (current_fee_wei as f64) / 1e18;
-        let short_fee_eth = (short_fee_wei as f64) / 1e18;
-        let long_fee_eth = (long_fee_wei as f64) / 1e18;
+                // Convert fees from wei to ETH with 4 decimal places
+                let current_fee_eth = (current_fee_wei as f64) / 1e18;
+                let short_fee_eth = (short_fee_wei as f64) / 1e18;
+                let long_fee_eth = (long_fee_wei as f64) / 1e18;
 
-        data.push(FeeDataPoint {
-            block_height,
-            block_time: block_time_str,
-            current_fee: format!("{:.4}", current_fee_eth),
-            short_fee: format!("{:.4}", short_fee_eth),
-            long_fee: format!("{:.4}", long_fee_eth),
-            acceptable,
-        });
-    }
+                anyhow::Result::Ok(FeeDataPoint {
+                    block_height,
+                    block_time: block_time_str,
+                    current_fee: format!("{:.4}", current_fee_eth),
+                    short_fee: format!("{:.4}", short_fee_eth),
+                    long_fee: format!("{:.4}", long_fee_eth),
+                    acceptable,
+                })
+            }
+        })
+        .buffered(100)
+        .collect::<Vec<_>>()
+        .await;
+
+    let data: Vec<FeeDataPoint> = ok_or_bail!(
+        data.into_iter().try_collect(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
 
     // Calculate statistics
     let stats = calculate_statistics(&data);

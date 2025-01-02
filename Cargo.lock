@@ -2754,6 +2754,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "eth",
+ "futures",
  "itertools 0.13.0",
  "serde",
  "serde_json",
