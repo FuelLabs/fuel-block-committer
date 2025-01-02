@@ -1,12 +1,13 @@
 use super::models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats};
 use super::state::AppState;
 use super::utils::last_n_blocks;
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::http::StatusCode;
+use actix_web::{body, web, HttpResponse, HttpResponseBuilder, Responder};
 
 use services::historical_fees::port::l1::Api;
 use services::historical_fees::service::calculate_blob_tx_fee;
 
-use services::state_committer::FeeMultiplierRange;
+use services::state_committer::{AlgoConfig, FeeMultiplierRange, SmaFeeAlgo};
 use tracing::{error, info};
 
 use std::num::{NonZeroU32, NonZeroU64};
@@ -20,113 +21,58 @@ pub async fn index_html() -> impl Responder {
         .body(contents)
 }
 
+macro_rules! ok_or_bail {
+    ($e:expr, $http_code: expr) => {
+        match $e {
+            Ok(val) => val,
+            Err(e) => {
+                error!("Error: {:?}", e);
+
+                return HttpResponseBuilder::new($http_code)
+                    .status($http_code)
+                    .body(e.to_string());
+            }
+        }
+    };
+    () => {};
+}
+
 /// Handler for the `/fees` endpoint.
 pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>) -> impl Responder {
     // Resolve user inputs or use defaults
     let ending_height = if let Some(val) = params.ending_height {
         val
     } else {
-        match state.caching_api.current_height().await {
-            Ok(height) => height,
-            Err(e) => {
-                error!("Failed to get current height: {:?}", e);
-                return HttpResponse::InternalServerError().body("Failed to get current height");
-            }
-        }
+        ok_or_bail!(
+            state.caching_api.current_height().await,
+            StatusCode::INTERNAL_SERVER_ERROR
+        )
     };
-    let amount_of_blocks = params.amount_of_blocks;
+    let start_height = ending_height.saturating_sub(params.amount_of_blocks);
 
-    let short = params.short;
-    let long = params.long;
+    let config = ok_or_bail!(
+        AlgoConfig::try_from(params.clone().into_inner()),
+        StatusCode::BAD_REQUEST
+    );
 
-    let max_l2 = params.max_l2_blocks_behind;
-    let start_max_fee_multiplier = params.start_max_fee_multiplier;
-    let end_max_fee_multiplier = params.end_max_fee_multiplier;
+    let sma_algo = SmaFeeAlgo::new(state.historical_fees.clone(), config);
 
-    let always_acceptable_fee = match params.always_acceptable_fee.parse() {
-        Ok(val) => val,
-        Err(_) => {
-            return HttpResponse::BadRequest().body("Invalid always_acceptable_fee value");
-        }
-    };
+    let seq_fees = ok_or_bail!(
+        state.caching_api.fees(start_height..=ending_height).await,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
 
-    let num_blobs = params.num_blobs;
-
-    let num_l2_blocks_behind = params.num_l2_blocks_behind;
-
-    // Build SmaFeeAlgo config from user’s inputs
-    let config = services::state_committer::AlgoConfig {
-        sma_periods: services::historical_fees::service::SmaPeriods {
-            short: match NonZeroU64::new(short) {
-                Some(nz) => nz,
-                None => NonZeroU64::new(1).unwrap(),
-            },
-            long: match NonZeroU64::new(long) {
-                Some(nz) => nz,
-                None => NonZeroU64::new(1).unwrap(),
-            },
-        },
-        fee_thresholds: services::state_committer::FeeThresholds {
-            max_l2_blocks_behind: match NonZeroU32::new(max_l2) {
-                Some(nz) => nz,
-                None => NonZeroU32::new(1).unwrap(),
-            },
-            multiplier_range: match FeeMultiplierRange::new(
-                start_max_fee_multiplier,
-                end_max_fee_multiplier,
-            ) {
-                Ok(range) => range,
-                Err(e) => {
-                    error!("Invalid fee multiplier range: {:?}", e);
-                    return HttpResponse::BadRequest().body("Invalid fee multiplier range");
-                }
-            },
-            always_acceptable_fee,
-        },
-    };
-
-    let sma_algo =
-        services::state_committer::SmaFeeAlgo::new(state.historical_fees.clone(), config);
-
-    // Determine which blocks to fetch
-    let start_height = ending_height.saturating_sub(amount_of_blocks);
-    let range = start_height..=ending_height;
-
-    // Fetch fees from the caching API
-    let fees_res = state.caching_api.fees(range).await;
-    let seq_fees = match fees_res {
-        Ok(fees) => fees,
-        Err(e) => {
-            error!(
-                "Failed to fetch fees for range {}-{}: {:?}",
-                start_height, ending_height, e
-            );
-            return HttpResponse::InternalServerError().body("Failed to fetch fees");
-        }
-    };
-
-    // Fetch the last block's time
     let last_block_height = seq_fees.last().height;
-    let last_block_time = match state
-        .caching_api
-        .inner()
-        .get_block_time(last_block_height)
-        .await
-    {
-        Ok(Some(t)) => t, // Assuming `t` is a UNIX timestamp in seconds
-        Ok(None) => {
-            error!(
-                "Failed to retrieve the last block's time for block height {}",
-                last_block_height
-            );
-            return HttpResponse::InternalServerError()
-                .body("Failed to retrieve the last block's time");
-        }
-        Err(e) => {
-            error!("Error while fetching the last block's time: {:?}", e);
-            return HttpResponse::InternalServerError()
-                .body("Error while fetching the last block's time");
-        }
+
+    let last_block_time = {
+        let resp = state
+            .caching_api
+            .inner()
+            .get_block_time(last_block_height)
+            .await;
+
+        ok_or_bail!(resp, StatusCode::INTERNAL_SERVER_ERROR)
+            .expect("to always be able to fetch the latest block")
     };
 
     info!("Last block time: {}", last_block_time);
@@ -136,55 +82,36 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
 
     for block_fees in seq_fees.into_iter() {
         let block_height = block_fees.height;
-        let current_fee_wei = calculate_blob_tx_fee(num_blobs, &block_fees.fees);
+        let current_fee_wei = calculate_blob_tx_fee(params.num_blobs, &block_fees.fees);
 
-        // Fetch the shortTerm + longTerm SMA at exactly this height
-        let short_term_sma = match state
-            .historical_fees
-            .calculate_sma(last_n_blocks(block_height, config.sma_periods.short))
-            .await
-        {
-            Ok(f) => f,
-            Err(e) => {
-                error!(
-                    "Error calculating short-term SMA for block {}: {:?}",
-                    block_height, e
-                );
-                services::historical_fees::port::l1::Fees::default()
-            }
+        let short_fee_wei = {
+            let short_term_sma = ok_or_bail!(
+                state
+                    .historical_fees
+                    .calculate_sma(last_n_blocks(block_height, config.sma_periods.short))
+                    .await,
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+            calculate_blob_tx_fee(params.num_blobs, &short_term_sma)
         };
 
-        let long_term_sma = match state
-            .historical_fees
-            .calculate_sma(last_n_blocks(block_height, config.sma_periods.long))
-            .await
-        {
-            Ok(f) => f,
-            Err(e) => {
-                error!(
-                    "Error calculating long-term SMA for block {}: {:?}",
-                    block_height, e
-                );
-                services::historical_fees::port::l1::Fees::default()
-            }
+        let long_fee_wei = {
+            let long_term_sma = ok_or_bail!(
+                state
+                    .historical_fees
+                    .calculate_sma(last_n_blocks(block_height, config.sma_periods.long))
+                    .await,
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+            calculate_blob_tx_fee(params.num_blobs, &long_term_sma)
         };
 
-        let short_fee_wei = calculate_blob_tx_fee(num_blobs, &short_term_sma);
-        let long_fee_wei = calculate_blob_tx_fee(num_blobs, &long_term_sma);
-
-        let acceptable = match sma_algo
-            .fees_acceptable(num_blobs, num_l2_blocks_behind, block_height)
-            .await
-        {
-            Ok(decision) => decision,
-            Err(e) => {
-                error!(
-                    "Error determining fee acceptability for block {}: {:?}",
-                    block_height, e
-                );
-                false // or handle error differently
-            }
-        };
+        let acceptable = ok_or_bail!(
+            sma_algo
+                .fees_acceptable(params.num_blobs, params.num_l2_blocks_behind, block_height)
+                .await,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
 
         // Calculate the time for this block
         let block_gap = last_block_height - block_height;

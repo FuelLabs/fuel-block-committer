@@ -1,5 +1,11 @@
+use std::num::{NonZeroU32, NonZeroU64};
+
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use services::historical_fees::port::l1::BlockFees;
+use services::{
+    historical_fees::{port::l1::BlockFees, service::SmaPeriods},
+    state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds},
+};
 
 /// Ethereum RPC URL.
 pub const URL: &str = "https://eth.llamarpc.com";
@@ -11,7 +17,7 @@ pub struct SavedFees {
 }
 
 /// Query parameters for the `/fees` endpoint.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct FeeParams {
     pub ending_height: Option<u64>,
     pub amount_of_blocks: u64,
@@ -23,6 +29,37 @@ pub struct FeeParams {
     pub always_acceptable_fee: String,
     pub num_blobs: u32,
     pub num_l2_blocks_behind: u32,
+}
+
+impl TryFrom<FeeParams> for AlgoConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(value: FeeParams) -> Result<Self, Self::Error> {
+        let always_acceptable_fee = value
+            .always_acceptable_fee
+            .parse()
+            .context("invalid always_acceptable_fee value")?;
+
+        let short = NonZeroU64::new(value.short).context("short sma period must be non-zero")?;
+        let long = NonZeroU64::new(value.long).context("long sma period must be non-zero")?;
+
+        let sma_periods = SmaPeriods { short, long };
+
+        let max_l2_blocks_behind = NonZeroU32::new(value.max_l2_blocks_behind)
+            .context("max_l2_blocks_behind must be non-zero")?;
+
+        let multiplier_range =
+            FeeMultiplierRange::new(value.start_max_fee_multiplier, value.end_max_fee_multiplier)?;
+
+        Ok(AlgoConfig {
+            sma_periods,
+            fee_thresholds: FeeThresholds {
+                max_l2_blocks_behind,
+                multiplier_range,
+                always_acceptable_fee,
+            },
+        })
+    }
 }
 
 /// Response struct for each fee data point.
