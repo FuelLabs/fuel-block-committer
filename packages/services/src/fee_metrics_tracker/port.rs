@@ -426,15 +426,16 @@ pub mod l1 {
 pub mod cache {
     use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc};
 
-    use tokio::sync::RwLock;
+    use tokio::sync::Mutex;
 
     use super::l1::{Api, BlockFees, Fees, SequentialBlockFees};
-    use crate::Error;
+    use crate::{Error, Result};
 
     #[derive(Debug, Clone)]
     pub struct CachingApi<P> {
         fees_provider: P,
-        cache: Arc<RwLock<BTreeMap<u64, Fees>>>,
+        // preferred over RwLock because of simplicity
+        cache: Arc<Mutex<BTreeMap<u64, Fees>>>,
         cache_limit: usize,
     }
 
@@ -446,88 +447,106 @@ pub mod cache {
         pub fn new(fees_provider: P, cache_limit: usize) -> Self {
             Self {
                 fees_provider,
-                cache: Arc::new(RwLock::new(BTreeMap::new())),
+                cache: Arc::new(Mutex::new(BTreeMap::new())),
                 cache_limit,
             }
         }
 
         pub async fn import(&self, fees: impl IntoIterator<Item = (u64, Fees)>) {
-            self.cache.write().await.extend(fees);
+            self.cache.lock().await.extend(fees);
         }
 
         pub async fn export(&self) -> impl IntoIterator<Item = (u64, Fees)> {
-            self.cache.read().await.clone()
+            self.cache.lock().await.clone()
         }
     }
 
     impl<P: Api + Send + Sync> Api for CachingApi<P> {
-        async fn fees(
-            &self,
-            height_range: RangeInclusive<u64>,
-        ) -> crate::Result<SequentialBlockFees> {
+        async fn fees(&self, height_range: RangeInclusive<u64>) -> Result<SequentialBlockFees> {
             self.get_fees(height_range).await
         }
 
-        async fn current_height(&self) -> crate::Result<u64> {
+        async fn current_height(&self) -> Result<u64> {
             self.fees_provider.current_height().await
         }
     }
 
     impl<P: Api> CachingApi<P> {
+        async fn download_missing_fees(
+            &self,
+            available_fees: &[BlockFees],
+            height_range: RangeInclusive<u64>,
+        ) -> Result<Vec<BlockFees>> {
+            let mut missing_ranges = vec![];
+            {
+                let present_heights = available_fees.iter().map(|bf| bf.height);
+                let mut expected_heights = height_range.clone();
+
+                let mut last_present_height = None;
+                for actual_height in present_heights {
+                    last_present_height = Some(actual_height);
+
+                    let next_expected = expected_heights
+                        .next()
+                        .expect("can never have less values than `present_heights`");
+
+                    if actual_height != next_expected {
+                        missing_ranges.push(next_expected..=actual_height.saturating_sub(1));
+                    }
+                }
+
+                if let Some(height) = last_present_height {
+                    if height != *height_range.end() {
+                        missing_ranges.push(height..=*height_range.end())
+                    }
+                } else {
+                    missing_ranges.push(height_range.clone());
+                }
+            }
+
+            let mut fees = vec![];
+            for range in missing_ranges {
+                let new_fees = self.fees_provider.fees(range.clone()).await?;
+                fees.extend(new_fees);
+            }
+
+            Ok(fees)
+        }
+
         pub async fn get_fees(
             &self,
             height_range: RangeInclusive<u64>,
-        ) -> crate::Result<SequentialBlockFees> {
-            let mut missing_heights = vec![];
+        ) -> Result<SequentialBlockFees> {
+            let mut cache_guard = self.cache.lock().await;
+            let mut fees = Self::read_cached_fees(&cache_guard, height_range.clone()).await;
+            let missing_fees = self.download_missing_fees(&fees, height_range).await?;
 
-            // Mind the scope to release the read lock
-            {
-                let cache = self.cache.read().await;
-                for height in height_range.clone() {
-                    if !cache.contains_key(&height) {
-                        missing_heights.push(height);
-                    }
-                }
-            }
+            self.update_cache(&mut cache_guard, missing_fees.clone())
+                .await;
+            drop(cache_guard);
 
-            if !missing_heights.is_empty() {
-                let fetched_fees = self
-                    .fees_provider
-                    .fees(
-                        *missing_heights.first().expect("not empty")
-                            ..=*missing_heights.last().expect("not empty"),
-                    )
-                    .await?;
+            fees.extend(missing_fees);
+            fees.sort_by_key(|f| f.height);
 
-                let mut cache = self.cache.write().await;
-                for block_fee in fetched_fees {
-                    cache.insert(block_fee.height, block_fee.fees);
-                }
-            }
+            SequentialBlockFees::try_from(fees).map_err(|e| Error::Other(e.to_string()))
+        }
 
-            let fees: Vec<_> = self
-                .cache
-                .read()
-                .await
+        async fn read_cached_fees(
+            cache: &BTreeMap<u64, Fees>,
+            height_range: RangeInclusive<u64>,
+        ) -> Vec<BlockFees> {
+            cache
                 .range(height_range)
                 .map(|(height, fees)| BlockFees {
                     height: *height,
                     fees: *fees,
                 })
-                .collect();
-
-            self.shrink_cache().await;
-
-            SequentialBlockFees::try_from(fees).map_err(|e| Error::Other(e.to_string()))
+                .collect()
         }
 
-        async fn shrink_cache(&self) {
-            // First check with a read lock to lessen contention
-            if self.cache.read().await.len() > self.cache_limit {
-                return;
-            }
+        async fn update_cache(&self, cache: &mut BTreeMap<u64, Fees>, fees: Vec<BlockFees>) {
+            cache.extend(fees.into_iter().map(|bf| (bf.height, bf.fees)));
 
-            let mut cache = self.cache.write().await;
             while cache.len() > self.cache_limit {
                 cache.pop_first();
             }
