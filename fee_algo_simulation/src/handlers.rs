@@ -1,11 +1,20 @@
 use std::time::Duration;
 
 use actix_web::{http::StatusCode, web, HttpResponse, HttpResponseBuilder, Responder};
+use anyhow::Result;
+use eth::HttpClient;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use services::{
-    fee_metrics_tracker::{port::l1::Api, service::calculate_blob_tx_fee},
+    fee_metrics_tracker::{
+        port::{
+            cache::CachingApi,
+            l1::{Api, SequentialBlockFees},
+        },
+        service::calculate_blob_tx_fee,
+    },
     state_committer::{AlgoConfig, SmaFeeAlgo},
+    types::{DateTime, Utc},
 };
 use tracing::{error, info};
 
@@ -57,8 +66,6 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
         StatusCode::BAD_REQUEST
     );
 
-    let sma_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
-
     let seq_fees = ok_or_bail!(
         state.fee_api.fees(start_height..=ending_height).await,
         StatusCode::INTERNAL_SERVER_ERROR
@@ -80,64 +87,17 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
     info!("Last block time: {}", last_block_time);
 
     // Prepare data points
-    let data: Vec<anyhow::Result<_>> = stream::iter(seq_fees)
-        .map(|block_fees| {
-            let params = params.clone();
-            let state = state.clone();
-            let sma_algo = sma_algo.clone();
 
-            async move {
-                let block_height = block_fees.height;
-                let current_fee_wei = calculate_blob_tx_fee(params.num_blobs, &block_fees.fees);
-
-                let short_fee_wei = {
-                    let short_term_sma = state
-                        .fee_api
-                        .fees(last_n_blocks(block_height, config.sma_periods.short))
-                        .await?
-                        .mean();
-                    calculate_blob_tx_fee(params.num_blobs, &short_term_sma)
-                };
-
-                let long_fee_wei = {
-                    let long_term_sma = state
-                        .fee_api
-                        .fees(last_n_blocks(block_height, config.sma_periods.long))
-                        .await?
-                        .mean();
-                    calculate_blob_tx_fee(params.num_blobs, &long_term_sma)
-                };
-
-                let acceptable = sma_algo
-                    .fees_acceptable(params.num_blobs, params.num_l2_blocks_behind, block_height)
-                    .await?;
-
-                // Calculate the time for this block
-                let block_gap = last_block_height - block_height;
-                let block_time = last_block_time - Duration::from_secs(12 * block_gap as u64); // Assuming 12 seconds per block
-                let block_time_str = block_time.to_rfc3339();
-
-                // Convert fees from wei to ETH with 4 decimal places
-                let current_fee_eth = (current_fee_wei as f64) / 1e18;
-                let short_fee_eth = (short_fee_wei as f64) / 1e18;
-                let long_fee_eth = (long_fee_wei as f64) / 1e18;
-
-                anyhow::Result::Ok(FeeDataPoint {
-                    block_height,
-                    block_time: block_time_str,
-                    current_fee: format!("{:.4}", current_fee_eth),
-                    short_fee: format!("{:.4}", short_fee_eth),
-                    long_fee: format!("{:.4}", long_fee_eth),
-                    acceptable,
-                })
-            }
-        })
-        .buffered(100)
-        .collect::<Vec<_>>()
-        .await;
-
-    let data: Vec<FeeDataPoint> = ok_or_bail!(
-        data.into_iter().try_collect(),
+    let data = ok_or_bail!(
+        calc_data(
+            seq_fees,
+            params.0,
+            config,
+            state.fee_api.clone(),
+            last_block_height,
+            last_block_time
+        )
+        .await,
         StatusCode::INTERNAL_SERVER_ERROR
     );
 
@@ -148,6 +108,51 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
 
     // Return as JSON
     HttpResponse::Ok().json(response)
+}
+
+async fn calc_data(
+    seq_fees: SequentialBlockFees,
+    params: FeeParams,
+    config: AlgoConfig,
+    fee_api: CachingApi<HttpClient>,
+    last_block_height: u64,
+    last_block_time: DateTime<Utc>,
+) -> Result<Vec<FeeDataPoint>> {
+    let sma_algo = SmaFeeAlgo::new(fee_api.clone(), config);
+
+    let mut data = vec![];
+
+    for services::fee_metrics_tracker::port::l1::BlockFees { height, fees } in seq_fees {
+        let current_fee_wei = calculate_blob_tx_fee(params.num_blobs, &fees);
+
+        let fetch_tx_fee = |n: std::num::NonZeroU64| {
+            let fee_api = fee_api.clone();
+            async move {
+                let fees = fee_api.fees(last_n_blocks(height, n)).await?.mean();
+                anyhow::Result::<_>::Ok(calculate_blob_tx_fee(params.num_blobs, &fees))
+            }
+        };
+
+        let short_fee_wei = fetch_tx_fee(config.sma_periods.short).await?;
+        let long_fee_wei = fetch_tx_fee(config.sma_periods.long).await?;
+        let acceptable = sma_algo
+            .fees_acceptable(params.num_blobs, params.num_l2_blocks_behind, height)
+            .await?;
+
+        let block_gap = last_block_height - height;
+        let block_time = last_block_time - Duration::from_secs(12 * block_gap);
+
+        let convert = |wei| format!("{:.4}", (wei as f64) / 1e18);
+        data.push(FeeDataPoint {
+            block_height: height,
+            block_time: block_time.to_rfc3339(),
+            current_fee: convert(current_fee_wei),
+            short_fee: convert(short_fee_wei),
+            long_fee: convert(long_fee_wei),
+            acceptable,
+        })
+    }
+    Ok(data)
 }
 
 /// Calculates statistics from the fee data.
