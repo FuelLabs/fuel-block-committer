@@ -1,10 +1,8 @@
 use std::time::Duration;
 
-use actix_web::{http::StatusCode, web, HttpResponse, HttpResponseBuilder, Responder};
+use actix_web::{web, HttpResponse, Responder};
 use anyhow::Result;
 use eth::HttpClient;
-use futures::{stream, StreamExt};
-use itertools::Itertools;
 use services::{
     fee_metrics_tracker::{
         port::{
@@ -23,8 +21,29 @@ use super::{
     state::AppState,
     utils::last_n_blocks,
 };
+use actix_web::ResponseError;
+use thiserror::Error;
 
-/// Handler for the root `/` endpoint, serving the HTML page.
+#[derive(Error, Debug)]
+pub enum FeeError {
+    #[error("Internal Server Error: {0}")]
+    InternalError(String),
+
+    #[error("Bad Request: {0}")]
+    BadRequest(String),
+}
+
+impl ResponseError for FeeError {
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            FeeError::InternalError(message) => {
+                HttpResponse::InternalServerError().body(message.clone())
+            }
+            FeeError::BadRequest(message) => HttpResponse::BadRequest().body(message.clone()),
+        }
+    }
+}
+
 pub async fn index_html() -> impl Responder {
     let contents = include_str!("index.html");
     HttpResponse::Ok()
@@ -32,119 +51,139 @@ pub async fn index_html() -> impl Responder {
         .body(contents)
 }
 
-macro_rules! ok_or_bail {
-    ($e:expr, $http_code: expr) => {
-        match $e {
-            Ok(val) => val,
-            Err(e) => {
-                error!("Error: {:?}", e);
-
-                return HttpResponseBuilder::new($http_code)
-                    .status($http_code)
-                    .body(e.to_string());
-            }
-        }
-    };
-    () => {};
-}
-
-/// Handler for the `/fees` endpoint.
-pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>) -> impl Responder {
-    // Resolve user inputs or use defaults
-    let ending_height = if let Some(val) = params.ending_height {
-        val
-    } else {
-        ok_or_bail!(
-            state.fee_api.current_height().await,
-            StatusCode::INTERNAL_SERVER_ERROR
-        )
-    };
-    let start_height = ending_height.saturating_sub(params.amount_of_blocks);
-
-    let config = ok_or_bail!(
-        AlgoConfig::try_from(params.clone().into_inner()),
-        StatusCode::BAD_REQUEST
-    );
-
-    let seq_fees = ok_or_bail!(
-        state.fee_api.fees(start_height..=ending_height).await,
-        StatusCode::INTERNAL_SERVER_ERROR
-    );
-
-    let last_block_height = seq_fees.last().height;
-
-    let last_block_time = {
-        let resp = state
-            .fee_api
-            .inner()
-            .get_block_time(last_block_height)
-            .await;
-
-        ok_or_bail!(resp, StatusCode::INTERNAL_SERVER_ERROR)
-            .expect("to always be able to fetch the latest block")
-    };
-
-    info!("Last block time: {}", last_block_time);
-
-    // Prepare data points
-
-    let data = ok_or_bail!(
-        calc_data(
-            seq_fees,
-            params.0,
-            config,
-            state.fee_api.clone(),
-            last_block_height,
-            last_block_time
-        )
-        .await,
-        StatusCode::INTERNAL_SERVER_ERROR
-    );
-
-    // Calculate statistics
-    let stats = calculate_statistics(&data);
-
-    let response = FeeResponse { data, stats };
-
-    // Return as JSON
-    HttpResponse::Ok().json(response)
-}
-
-async fn calc_data(
-    seq_fees: SequentialBlockFees,
+struct FeeHandler {
+    state: web::Data<AppState>,
     params: FeeParams,
     config: AlgoConfig,
-    fee_api: CachingApi<HttpClient>,
+    seq_fees: SequentialBlockFees,
     last_block_height: u64,
     last_block_time: DateTime<Utc>,
-) -> Result<Vec<FeeDataPoint>> {
-    let sma_algo = SmaFeeAlgo::new(fee_api.clone(), config);
+    sma_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
+}
 
-    let mut data = vec![];
+impl FeeHandler {
+    async fn new(state: web::Data<AppState>, params: FeeParams) -> Result<Self, FeeError> {
+        let ending_height = Self::resolve_ending_height(&state, &params).await?;
+        let start_height = ending_height.saturating_sub(params.amount_of_blocks);
+        let config = Self::parse_config(&params)?;
+        let seq_fees = Self::fetch_sequential_fees(&state, start_height, ending_height).await?;
+        let last_block = Self::get_last_block_info(&state, &seq_fees).await?;
+        let sma_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
 
-    for services::fee_metrics_tracker::port::l1::BlockFees { height, fees } in seq_fees {
-        let current_fee_wei = calculate_blob_tx_fee(params.num_blobs, &fees);
+        Ok(Self {
+            state,
+            params,
+            config,
+            seq_fees,
+            last_block_height: last_block.0,
+            last_block_time: last_block.1,
+            sma_algo,
+        })
+    }
 
-        let fetch_tx_fee = |n: std::num::NonZeroU64| {
-            let fee_api = fee_api.clone();
-            async move {
-                let fees = fee_api.fees(last_n_blocks(height, n)).await?.mean();
-                anyhow::Result::<_>::Ok(calculate_blob_tx_fee(params.num_blobs, &fees))
-            }
-        };
+    async fn get_fees_response(&self) -> Result<FeeResponse, FeeError> {
+        let data = self.calculate_fee_data().await?;
+        let stats = self.calculate_statistics(&data);
+        Ok(FeeResponse { data, stats })
+    }
 
-        let short_fee_wei = fetch_tx_fee(config.sma_periods.short).await?;
-        let long_fee_wei = fetch_tx_fee(config.sma_periods.long).await?;
-        let acceptable = sma_algo
-            .fees_acceptable(params.num_blobs, params.num_l2_blocks_behind, height)
+    async fn resolve_ending_height(
+        state: &web::Data<AppState>,
+        params: &FeeParams,
+    ) -> Result<u64, FeeError> {
+        if let Some(val) = params.ending_height {
+            Ok(val)
+        } else {
+            state.fee_api.current_height().await.map_err(|e| {
+                error!("Error fetching current height: {:?}", e);
+                FeeError::InternalError("Failed to fetch current height".into())
+            })
+        }
+    }
+
+    fn parse_config(params: &FeeParams) -> Result<AlgoConfig, FeeError> {
+        AlgoConfig::try_from(params.clone()).map_err(|e| {
+            error!("Error parsing config: {:?}", e);
+            FeeError::BadRequest("Invalid configuration parameters".into())
+        })
+    }
+
+    async fn fetch_sequential_fees(
+        state: &web::Data<AppState>,
+        start: u64,
+        end: u64,
+    ) -> Result<SequentialBlockFees, FeeError> {
+        state.fee_api.fees(start..=end).await.map_err(|e| {
+            error!("Error fetching sequential fees: {:?}", e);
+            FeeError::InternalError("Failed to fetch sequential fees".into())
+        })
+    }
+
+    async fn get_last_block_info(
+        state: &web::Data<AppState>,
+        seq_fees: &SequentialBlockFees,
+    ) -> Result<(u64, DateTime<Utc>), FeeError> {
+        let last_block = seq_fees.last();
+        let last_block_time = state
+            .fee_api
+            .inner()
+            .get_block_time(last_block.height)
+            .await
+            .map_err(|e| {
+                error!("Error fetching last block time: {:?}", e);
+                FeeError::InternalError("Failed to fetch last block time".into())
+            })?
+            .ok_or_else(|| {
+                error!("Last block time not found");
+                FeeError::InternalError("Last block time not found".into())
+            })?;
+        info!("Last block time: {}", last_block_time);
+        Ok((last_block.height, last_block_time))
+    }
+
+    async fn calculate_fee_data(&self) -> Result<Vec<FeeDataPoint>, FeeError> {
+        let mut data = Vec::with_capacity(self.seq_fees.len());
+
+        for block_fee in self.seq_fees.iter() {
+            let fee_data = self.process_block_fee(block_fee).await?;
+            data.push(fee_data);
+        }
+
+        Ok(data)
+    }
+
+    async fn process_block_fee(
+        &self,
+        block_fee: &services::fee_metrics_tracker::port::l1::BlockFees,
+    ) -> Result<FeeDataPoint, FeeError> {
+        let current_fee_wei = calculate_blob_tx_fee(self.params.num_blobs, &block_fee.fees);
+        let short_fee_wei = self
+            .fetch_fee(block_fee.height, self.config.sma_periods.short)
+            .await?;
+        let long_fee_wei = self
+            .fetch_fee(block_fee.height, self.config.sma_periods.long)
             .await?;
 
-        let block_gap = last_block_height - height;
-        let block_time = last_block_time - Duration::from_secs(12 * block_gap);
+        let acceptable = self
+            .sma_algo
+            .fees_acceptable(
+                self.params.num_blobs,
+                self.params.num_l2_blocks_behind,
+                block_fee.height,
+            )
+            .await
+            .map_err(|e| {
+                error!("Error determining fee acceptability: {:?}", e);
+                FeeError::InternalError("Failed to determine fee acceptability".into())
+            })?;
+
+        let block_gap = self.last_block_height - block_fee.height;
+        let block_time = self.last_block_time - Duration::from_secs(12 * block_gap);
 
         let convert = |wei| format!("{:.4}", (wei as f64) / 1e18);
-        data.push(FeeDataPoint {
-            block_height: height,
+
+        Ok(FeeDataPoint {
+            block_height: block_fee.height,
             block_time: block_time.to_rfc3339(),
             current_fee: convert(current_fee_wei),
             short_fee: convert(short_fee_wei),
@@ -152,53 +191,86 @@ async fn calc_data(
             acceptable,
         })
     }
-    Ok(data)
-}
 
-/// Calculates statistics from the fee data.
-fn calculate_statistics(data: &Vec<FeeDataPoint>) -> FeeStats {
-    let total_blocks = data.len() as f64;
-    let acceptable_blocks = data.iter().filter(|d| d.acceptable).count() as f64;
-    let percentage_acceptable = if total_blocks > 0.0 {
-        (acceptable_blocks / total_blocks) * 100.0
-    } else {
-        0.0
-    };
+    async fn fetch_fee(
+        &self,
+        current_height: u64,
+        period: std::num::NonZeroU64,
+    ) -> Result<u128, FeeError> {
+        let fees = self
+            .state
+            .fee_api
+            .fees(last_n_blocks(current_height, period))
+            .await
+            .map_err(|e| {
+                error!("Error fetching fees for period: {:?}", e);
+                FeeError::InternalError("Failed to fetch fees".into())
+            })?
+            .mean();
+        Ok(calculate_blob_tx_fee(self.params.num_blobs, &fees))
+    }
 
-    // Calculate gap sizes (streaks of unacceptable blocks)
-    let mut gap_sizes = Vec::new();
-    let mut current_gap = 0;
+    fn calculate_statistics(&self, data: &[FeeDataPoint]) -> FeeStats {
+        let total_blocks = data.len() as f64;
+        let acceptable_blocks = data.iter().filter(|d| d.acceptable).count() as f64;
+        let percentage_acceptable = if total_blocks > 0.0 {
+            (acceptable_blocks / total_blocks) * 100.0
+        } else {
+            0.0
+        };
 
-    for d in data {
-        if !d.acceptable {
-            current_gap += 1;
-        } else if current_gap > 0 {
-            gap_sizes.push(current_gap);
-            current_gap = 0;
+        let gap_sizes = self.compute_gap_sizes(data);
+        let percentile_95_gap_size = Self::calculate_percentile(&gap_sizes, 0.95);
+        let longest_unacceptable_streak = gap_sizes.into_iter().max().unwrap_or(0);
+
+        FeeStats {
+            percentage_acceptable,
+            percentile_95_gap_size,
+            longest_unacceptable_streak,
         }
     }
 
-    // Push the last gap if it ends with an unacceptable streak
-    if current_gap > 0 {
-        gap_sizes.push(current_gap);
+    fn compute_gap_sizes(&self, data: &[FeeDataPoint]) -> Vec<u64> {
+        let mut gap_sizes = Vec::new();
+        let mut current_gap = 0;
+
+        for d in data {
+            if !d.acceptable {
+                current_gap += 1;
+            } else if current_gap > 0 {
+                gap_sizes.push(current_gap);
+                current_gap = 0;
+            }
+        }
+
+        if current_gap > 0 {
+            gap_sizes.push(current_gap);
+        }
+
+        gap_sizes
     }
 
-    // Calculate the 95th percentile of gap sizes
-    let percentile_95_gap_size = if !gap_sizes.is_empty() {
-        let mut sorted_gaps = gap_sizes.clone();
+    fn calculate_percentile(gaps: &[u64], percentile: f64) -> u64 {
+        if gaps.is_empty() {
+            return 0;
+        }
+
+        let mut sorted_gaps = gaps.to_vec();
         sorted_gaps.sort_unstable();
-        let index = ((sorted_gaps.len() as f64) * 0.95).ceil() as usize - 1;
+
+        let index = ((sorted_gaps.len() as f64) * percentile).ceil() as usize - 1;
         sorted_gaps[index.min(sorted_gaps.len() - 1)]
-    } else {
-        0
+    }
+}
+
+pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>) -> impl Responder {
+    let handler = match FeeHandler::new(state.clone(), params.into_inner()).await {
+        Ok(h) => h,
+        Err(e) => return e.error_response(),
     };
 
-    // Find the longest unacceptable streak
-    let longest_unacceptable_streak = gap_sizes.iter().cloned().max().unwrap_or(0);
-
-    FeeStats {
-        percentage_acceptable,
-        percentile_95_gap_size,
-        longest_unacceptable_streak,
+    match handler.get_fees_response().await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => e.error_response(),
     }
 }

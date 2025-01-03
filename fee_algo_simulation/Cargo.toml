@@ -11,6 +11,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 futures = { workspace = true }
+thiserror = { workspace = true }
 actix-web = { workspace = true }
 anyhow = { workspace = true }
 eth = { workspace = true }

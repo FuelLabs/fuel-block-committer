@@ -61,6 +61,10 @@ pub mod l1 {
     // Cannot be empty
     #[allow(clippy::len_without_is_empty)]
     impl SequentialBlockFees {
+        pub fn iter(&self) -> impl Iterator<Item = &BlockFees> {
+            self.fees.iter()
+        }
+
         pub fn last(&self) -> &BlockFees {
             self.fees.last().expect("not empty")
         }
