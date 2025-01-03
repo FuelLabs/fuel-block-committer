@@ -244,12 +244,12 @@ pub mod l1 {
         use std::ops::RangeInclusive;
         use std::sync::Arc;
 
-        use mockall::{mock, predicate::*};
+        use mockall::predicate::*;
         use tokio::sync::Barrier;
 
         use crate::fee_metrics_tracker::port::{
             cache::CachingApi,
-            l1::{Api, BlockFees, Fees, MockApi, SequentialBlockFees},
+            l1::{BlockFees, Fees, MockApi, SequentialBlockFees},
         };
 
         /// Helper function to generate sequential fees for a given range
@@ -324,7 +324,7 @@ pub mod l1 {
 
             // Act
             let first_call = provider.get_fees(0..=2).await.unwrap();
-            let second_call = provider.get_fees(2..=5).await.unwrap();
+            let second_call = provider.get_fees(0..=5).await.unwrap();
 
             // Assert
             // First call fetches 0..=2
@@ -532,7 +532,7 @@ pub mod l1 {
 
             // Act
             let first_call = provider.get_fees(0..=4).await.unwrap();
-            let second_call = provider.get_fees(3..=7).await.unwrap();
+            let second_call = provider.get_fees(0..=7).await.unwrap();
 
             // Assert
             let expected_first = generate_sequential_fees(0..=4);
