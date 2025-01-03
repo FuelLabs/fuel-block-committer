@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT MAX(end_height) AS latest_bundled_height FROM bundles",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "latest_bundled_height",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ca516d5a6f16e7877c129ec68edfb8eb4358479355cc4fe0a85ad1ea8d6bd014"
+}

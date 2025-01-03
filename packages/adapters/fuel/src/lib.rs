@@ -9,7 +9,6 @@ mod metrics;
 
 pub use client::*;
 use delegate::delegate;
-
 use services::Result;
 
 impl services::block_importer::port::fuel::Api for client::HttpClient {

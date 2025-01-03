@@ -1,13 +1,12 @@
 pub mod service {
     use std::num::NonZeroU32;
 
-    use crate::{
-        types::{fuel::FuelBlock, BlockSubmission, NonNegative, TransactionState},
-        Error, Result,
-    };
     use tracing::info;
 
-    use crate::Runner;
+    use crate::{
+        types::{fuel::FuelBlock, BlockSubmission, NonNegative, TransactionState},
+        Error, Result, Runner,
+    };
 
     pub struct BlockCommitter<L1, Db, Fuel, Clock> {
         l1_adapter: L1,
@@ -240,8 +239,9 @@ pub mod port {
     }
 
     pub mod fuel {
-        use crate::Result;
         pub use fuel_core_client::client::types::block::Block as FuelBlock;
+
+        use crate::Result;
 
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]

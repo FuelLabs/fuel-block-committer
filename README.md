@@ -2,6 +2,22 @@
 
 The Fuel Block Committer is a standalone service dedicated to uploading Fuel Block metadata to Ethereum.
 
+## Table of Contents
+
+- [Building](#building)
+- [Testing](#testing)
+- [Schema Visualization](#schema-visualization)
+  - [Generating Schema Diagrams](#generating-schema-diagrams)
+- [Configuration](#configuration)
+  - [Environment Variables](#environment-variables)
+    - [Ethereum (ETH) Configuration](#ethereum-eth-configuration)
+    - [Fuel Configuration](#fuel-configuration)
+    - [Database (DB) Configuration](#database-db-configuration)
+    - [Application (App) Configuration](#application-app-configuration)
+    - [Bundle Configuration](#bundle-configuration)
+  - [Configuration Validation](#configuration-validation)
+- [Running the Fee Algo Simulator](#running-the-fee-algo-simulator)
+
 ## Building
 
 Building the project doesn't require any special steps beyond the standard Cargo build process.
@@ -15,8 +31,8 @@ cargo build
 To run the end-to-end (e2e) tests, you need to have the following installed and available in your `PATH`:
 
 - [Foundry](https://github.com/foundry-rs/foundry)
-- [fuel-core](https://github.com/FuelLabs/fuelup) (can be installed via [fuelup](https://github.com/FuelLabs/fuelup))
-- fuel-block-committer
+- [Fuel Core](https://github.com/FuelLabs/fuelup) (can be installed via [fuelup](https://github.com/FuelLabs/fuelup))
+- `fuel-block-committer` binary
 
 You can also use `run_tests.sh`, which takes care of building the `fuel-block-committer` binary and making it available on `PATH` prior to running the e2e tests.
 
@@ -51,7 +67,7 @@ The Fuel Block Committer is configured primarily through environment variables.
 
 - **`COMMITTER__ETH__L1_KEYS__MAIN`**
 
-  - **Description:** The Ethereum key authorized by the L1 fuel chain state contract to post block commitments.
+  - **Description:** The Ethereum key authorized by the L1 Fuel chain state contract to post block commitments.
   - **Format:** `Kms(<KEY_ARN>)` or `Private(<PRIVATE_KEY>)`
   - **Example:** `Kms(arn:aws:kms:us-east-1:123456789012:key/abcd-1234)`
 
@@ -78,7 +94,8 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Example:** `http://localhost:4000/graphql`
 
 - **`COMMITTER__FUEL__NUM_BUFFERED_REQUESTS`**
-  - **Description:** Number of concurrent http requests towards the fuel node.
+
+  - **Description:** Number of concurrent HTTP requests towards the Fuel node.
   - **Type:** Positive integer
   - **Example:** `5`
 
@@ -117,6 +134,7 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Example:** `10`
 
 - **`COMMITTER__APP__DB__USE_SSL`**
+
   - **Description:** Whether to use SSL when connecting to the PostgreSQL server.
   - **Type:** `bool`
   - **Values:** `true` or `false`
@@ -137,7 +155,7 @@ The Fuel Block Committer is configured primarily through environment variables.
 
 - **`COMMITTER__APP__BLOCK_CHECK_INTERVAL`**
 
-  - **Description:** How often to check for new fuel blocks.
+  - **Description:** How often to check for new Fuel blocks.
   - **Format:** Human-readable duration (e.g., `5s`, `1m`)
   - **Example:** `5s`
 
@@ -146,6 +164,12 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Description:** How often to check for finalized L1 transactions.
   - **Format:** Human-readable duration
   - **Example:** `5s`
+
+- **`COMMITTER__APP__L1_FEE_CHECK_INTERVAL`**
+
+  - **Description:** How often to check for L1 fees.
+  - **Format:** Human-readable duration
+  - **Example:** `10s`
 
 - **`COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX`**
 
@@ -166,22 +190,70 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Example:** `4000000000000000`
 
 - **`COMMITTER__APP__SEND_TX_REQUEST_TIMEOUT`**
+
   - **Description:** Duration for timeout when sending transaction requests.
   - **Format:** Human-readable duration
   - **Example:** `10s`
+
+- **`COMMITTER__APP__STATE_PRUNER_RETENTION`**
+
+  - **Description:** Retention duration for state pruner.
+  - **Format:** Human-readable duration
+  - **Example:** `1h`
+
+- **`COMMITTER__APP__STATE_PRUNER_RUN_INTERVAL`**
+
+  - **Description:** How often to run the state pruner.
+  - **Format:** Human-readable duration
+  - **Example:** `30m`
+
+- **`COMMITTER__APP__FEE_ALGO_SHORT_SMA_BLOCKS`**
+
+  - **Description:** Short-term period for the fee algo in block numbers.
+  - **Type:** Positive integer (`NonZeroU64`)
+  - **Example:** `25`
+
+- **`COMMITTER__APP__FEE_ALGO_LONG_SMA_BLOCKS`**
+
+  - **Description:** Long-term period for the fee algo in block numbers.
+  - **Type:** Positive integer (`NonZeroU64`)
+  - **Example:** `300`
+
+- **`COMMITTER__APP__FEE_ALGO_MAX_L2_BLOCKS_BEHIND`**
+
+  - **Description:** Maximum number of unposted L2 blocks before sending a transaction regardless of fees.
+  - **Type:** Positive integer (`NonZeroU32`)
+  - **Example:** `28800`
+
+- **`COMMITTER__APP__FEE_ALGO_START_MAX_FEE_MULTIPLIER`**
+
+  - **Description:** Starting multiplier applied when we're 0 L2 blocks behind.
+  - **Type:** `f64`
+  - **Example:** `0.800000`
+
+- **`COMMITTER__APP__FEE_ALGO_END_MAX_FEE_MULTIPLIER`**
+
+  - **Description:** Ending multiplier applied if we're `max_l2_blocks_behind - 1` blocks behind.
+  - **Type:** `f64`
+  - **Example:** `1.200000`
+
+- **`COMMITTER__APP__FEE_ALGO_ALWAYS_ACCEPTABLE_FEE`**
+  - **Description:** A fee that is always acceptable regardless of other conditions.
+  - **Type:** `u64`
+  - **Example:** `1000000000000000`
 
 #### Bundle Configuration
 
 - **`COMMITTER__APP__BUNDLE__ACCUMULATION_TIMEOUT`**
 
-  - **Description:** Duration to wait for additional fuel blocks before initiating the bundling process.
+  - **Description:** Duration to wait for additional Fuel blocks before initiating the bundling process.
   - **Format:** Human-readable duration
   - **Example:** `30s`
 
 - **`COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE`**
 
-  - **Description:** Number of fuel blocks to accumulate before initiating the bundling process.
-  - **Type:** Positive integer
+  - **Description:** Number of Fuel blocks to accumulate before initiating the bundling process.
+  - **Type:** Positive integer (`NonZeroUsize`)
   - **Example:** `5`
 
 - **`COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT`**
@@ -189,12 +261,6 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Description:** Maximum duration allocated for determining the optimal bundle size.
   - **Format:** Human-readable duration
   - **Example:** `60s`
-
-- **`COMMITTER__APP__BUNDLE__COMPRESSION_LEVEL`**
-
-  - **Description:** Compression level used for compressing block data before submission.
-  - **Values:** `"disabled"`, `"min"`, `"level1"`..`"level9"`, `"max"`
-  - **Example:** `"min"`
 
 - **`COMMITTER__APP__BUNDLE__OPTIMIZATION_STEP`**
 
@@ -215,9 +281,16 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Example:** `30s`
 
 - **`COMMITTER__APP__BUNDLE__NEW_BUNDLE_CHECK_INTERVAL`**
+
   - **Description:** Duration to wait before checking if a new bundle can be made.
   - **Format:** Human-readable duration
   - **Example:** `15s`
+
+- **`COMMITTER__APP__BUNDLE__COMPRESSION_LEVEL`**
+
+  - **Description:** Compression level used for compressing block data before submission.
+  - **Values:** `"disabled"`, `"min"`, `"level1"`..`"level9"`, `"max"`
+  - **Example:** `"min"`
 
 ### Configuration Validation
 
@@ -226,5 +299,18 @@ The committer performs validation on the provided configuration to ensure consis
 - **Wallet Keys:** The main wallet key and blob pool wallet key must be different.
 - **Fragments to Accumulate:** Must be less than or equal to 6.
 - **Block Height Lookback:** Must be greater than or equal to the number of blocks to accumulate.
+- **Fee Multiplier Range:** Must have valid start and end multipliers.
 
 If any validation fails, the committer will return an error, preventing it from running with invalid settings.
+
+## Running the Fee Algo Simulator
+
+The **Fee Algo Simulator** is a separate binary designed to simulate and analyze fee algorithms using data from eth mainnet.
+
+### Running the Simulator
+
+To run the Fee Algo Simulator, execute the following command:
+
+```shell
+cargo run --release --bin fee_algo_simulation
+```

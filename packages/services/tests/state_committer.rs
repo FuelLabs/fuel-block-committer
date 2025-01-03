@@ -1,8 +1,12 @@
+use std::time::Duration;
+
 use services::{
+    fee_metrics_tracker::{port::l1::Fees, service::SmaPeriods},
+    state_committer::{AlgoConfig, FeeThresholds},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
-use std::time::Duration;
+use test_helpers::{noop_fees, preconfigured_fees};
 
 #[tokio::test]
 async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
@@ -12,7 +16,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
     let fragments = setup.insert_fragments(0, 4).await;
 
     let tx_hash = [0; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -20,6 +24,9 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
     )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
@@ -33,6 +40,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
+        noop_fees(),
     );
 
     // when
@@ -52,7 +60,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
     let fragments = setup.insert_fragments(0, 5).await; // Only 5 fragments, less than required
 
     let tx_hash = [1; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -61,6 +69,9 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
         },
     )]);
 
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
@@ -73,6 +84,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        noop_fees(),
     );
 
     // Advance time beyond the timeout
@@ -108,6 +120,7 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
             ..Default::default()
         },
         test_clock.clone(),
+        noop_fees(),
     );
 
     // Advance time less than the timeout
@@ -129,7 +142,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
     let fragments = setup.insert_fragments(0, 5).await;
 
     let tx_hash = [3; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -137,6 +150,9 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
     )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
@@ -150,6 +166,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
             ..Default::default()
         },
         setup.test_clock(),
+        noop_fees(),
     );
 
     // when
@@ -172,7 +189,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
     let fragments_to_submit = setup.insert_fragments(1, 2).await;
 
     let tx_hash = [4; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments_to_submit).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -180,6 +197,9 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
     )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(1) }));
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(1);
     let mut state_committer = StateCommitter::new(
@@ -193,6 +213,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        noop_fees(),
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -215,7 +236,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
     let fragments = setup.insert_fragments(0, 5).await; // Only 5 fragments, less than required
 
     let tx_hash = [5; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
         L1Tx {
             hash: tx_hash,
@@ -225,6 +246,9 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
     )]);
 
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(1) }));
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
         fuel_mock,
@@ -236,6 +260,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
             ..Default::default()
         },
         test_clock.clone(),
+        noop_fees(),
     );
 
     // Advance time beyond the timeout from startup
@@ -259,7 +284,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
 
     let tx_hash_1 = [6; 32];
     let tx_hash_2 = [7; 32];
-    let l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
             L1Tx {
@@ -278,6 +303,10 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
         ),
     ]);
 
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
+
     let fuel_mock = test_helpers::mocks::fuel::latest_height_is(0);
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
@@ -291,6 +320,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        noop_fees(),
     );
 
     // Submit the initial fragments
@@ -305,5 +335,436 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
 
     // then
     // Mocks validate that the fragments have been sent again
+    Ok(())
+}
+
+#[tokio::test]
+async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
+    // Given
+    let setup = test_helpers::Setup::init().await;
+
+    let fee_sequence = vec![
+        (
+            0,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            1,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            2,
+            Fees {
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
+            },
+        ),
+        (
+            3,
+            Fees {
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
+            },
+        ),
+        (
+            4,
+            Fees {
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
+            },
+        ),
+        (
+            5,
+            Fees {
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
+            },
+        ),
+    ];
+
+    let config = AlgoConfig {
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 6.try_into().unwrap(),
+        },
+        fee_thresholds: FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            always_acceptable_fee: 0,
+            ..Default::default()
+        },
+    };
+
+    // Insert enough fragments to meet the accumulation threshold
+    let fragments = setup.insert_fragments(0, 6).await;
+
+    // Expect a state submission
+    let tx_hash = [0; 32];
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+        Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
+    )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(5) }));
+
+    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(6);
+    let mut state_committer = StateCommitter::new(
+        l1_mock_submit,
+        fuel_mock,
+        setup.db(),
+        StateCommitterConfig {
+            lookback_window: 1000,
+            fragment_accumulation_timeout: Duration::from_secs(60),
+            fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo: config,
+            ..Default::default()
+        },
+        setup.test_clock(),
+        preconfigured_fees(fee_sequence),
+    );
+
+    // When
+    state_committer.run().await?;
+
+    // Then
+    // Mocks validate that the fragments have been sent
+    Ok(())
+}
+
+#[tokio::test]
+async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+
+    // Define fee sequence: last 2 blocks have higher fees than the long-term average
+    let fee_sequence = vec![
+        (
+            0,
+            Fees {
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
+            },
+        ),
+        (
+            1,
+            Fees {
+                base_fee_per_gas: 3000.try_into().unwrap(),
+                reward: 3000.try_into().unwrap(),
+                base_fee_per_blob_gas: 3000.try_into().unwrap(),
+            },
+        ),
+        (
+            2,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            3,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            4,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            5,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+    ];
+
+    let fee_algo = AlgoConfig {
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 6.try_into().unwrap(),
+        },
+        fee_thresholds: FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            always_acceptable_fee: 0,
+            ..Default::default()
+        },
+    };
+
+    // Insert enough fragments to meet the accumulation threshold
+    let _fragments = setup.insert_fragments(0, 6).await;
+
+    let mut l1_mock = test_helpers::mocks::l1::expects_state_submissions([]);
+    l1_mock
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(5) }));
+
+    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(6);
+    let mut state_committer = StateCommitter::new(
+        l1_mock,
+        fuel_mock,
+        setup.db(),
+        StateCommitterConfig {
+            lookback_window: 1000,
+            fragment_accumulation_timeout: Duration::from_secs(60),
+            fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo,
+            ..Default::default()
+        },
+        setup.test_clock(),
+        preconfigured_fees(fee_sequence),
+    );
+
+    // when
+    state_committer.run().await?;
+
+    // then
+    // Mocks validate that no fragments have been sent
+    Ok(())
+}
+
+#[tokio::test]
+async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+
+    // Define fee sequence with high fees to ensure that without the behind condition, it wouldn't send
+    let fee_sequence = vec![
+        (
+            0,
+            Fees {
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
+            },
+        ),
+        (
+            1,
+            Fees {
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
+            },
+        ),
+        (
+            2,
+            Fees {
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
+            },
+        ),
+        (
+            3,
+            Fees {
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
+            },
+        ),
+        (
+            4,
+            Fees {
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
+            },
+        ),
+        (
+            5,
+            Fees {
+                base_fee_per_gas: 7000.try_into().unwrap(),
+                reward: 7000.try_into().unwrap(),
+                base_fee_per_blob_gas: 7000.try_into().unwrap(),
+            },
+        ),
+    ];
+
+    let fee_algo = AlgoConfig {
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 6.try_into().unwrap(),
+        },
+        fee_thresholds: FeeThresholds {
+            max_l2_blocks_behind: 50.try_into().unwrap(),
+            always_acceptable_fee: 0,
+            ..Default::default()
+        },
+    };
+
+    // Insert enough fragments to meet the accumulation threshold
+    let fragments = setup.insert_fragments(0, 6).await;
+
+    // Expect a state submission despite high fees because blocks behind exceed max
+    let tx_hash = [0; 32];
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+        Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
+    )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(5) }));
+
+    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(50); // L2 height is 50, behind by 50
+    let mut state_committer = StateCommitter::new(
+        l1_mock_submit,
+        fuel_mock,
+        setup.db(),
+        StateCommitterConfig {
+            lookback_window: 1000,
+            fragment_accumulation_timeout: Duration::from_secs(60),
+            fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo,
+            ..Default::default()
+        },
+        setup.test_clock(),
+        preconfigured_fees(fee_sequence),
+    );
+
+    // when
+    state_committer.run().await?;
+
+    // then
+    // Mocks validate that the fragments have been sent despite high fees
+    Ok(())
+}
+
+#[tokio::test]
+async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_tolerance() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+
+    let fee_sequence = vec![
+        (
+            95,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            96,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            97,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            98,
+            Fees {
+                base_fee_per_gas: 5000.try_into().unwrap(),
+                reward: 5000.try_into().unwrap(),
+                base_fee_per_blob_gas: 5000.try_into().unwrap(),
+            },
+        ),
+        (
+            99,
+            Fees {
+                base_fee_per_gas: 5800.try_into().unwrap(),
+                reward: 5800.try_into().unwrap(),
+                base_fee_per_blob_gas: 5800.try_into().unwrap(),
+            },
+        ),
+        (
+            100,
+            Fees {
+                base_fee_per_gas: 5800.try_into().unwrap(),
+                reward: 5800.try_into().unwrap(),
+                base_fee_per_blob_gas: 5800.try_into().unwrap(),
+            },
+        ),
+    ];
+
+    let fee_algo = AlgoConfig {
+        sma_periods: SmaPeriods {
+            short: 2.try_into().unwrap(),
+            long: 5.try_into().unwrap(),
+        },
+        fee_thresholds: FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            multiplier_range: services::state_committer::FeeMultiplierRange::new_unchecked(
+                0.80, 1.20,
+            ),
+            always_acceptable_fee: 0,
+        },
+    };
+
+    let fragments = setup.insert_fragments(0, 6).await;
+
+    // Expect a state submission due to nearing max blocks behind and increased tolerance
+    let tx_hash = [0; 32];
+    let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
+        Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
+        L1Tx {
+            hash: tx_hash,
+            nonce: 0,
+            ..Default::default()
+        },
+    )]);
+    l1_mock_submit
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(100) }));
+
+    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(80);
+
+    let mut state_committer = StateCommitter::new(
+        l1_mock_submit,
+        fuel_mock,
+        setup.db(),
+        StateCommitterConfig {
+            lookback_window: 1000,
+            fragment_accumulation_timeout: Duration::from_secs(60),
+            fragments_to_accumulate: 6.try_into().unwrap(),
+            fee_algo,
+            ..Default::default()
+        },
+        setup.test_clock(),
+        preconfigured_fees(fee_sequence),
+    );
+
+    // when
+    state_committer.run().await?;
+
+    // then
+    // Mocks validate that the fragments have been sent due to increased tolerance from nearing max blocks behind
     Ok(())
 }

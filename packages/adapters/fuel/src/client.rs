@@ -12,11 +12,13 @@ use futures::{stream, Stream, StreamExt};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use services::types::{CompressedFuelBlock, NonEmpty};
+use services::{
+    types::{CompressedFuelBlock, NonEmpty},
+    Error, Result,
+};
 use url::Url;
 
 use crate::metrics::Metrics;
-use services::{Error, Result};
 
 #[derive(Clone)]
 pub struct HttpClient {

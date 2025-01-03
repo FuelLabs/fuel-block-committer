@@ -3,17 +3,18 @@ pub mod bundler;
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
-    use super::bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
-    use crate::{
-        types::{DateTime, Utc},
-        Error, Result, Runner,
-    };
     use metrics::{
         custom_exponential_buckets,
         prometheus::{histogram_opts, linear_buckets, Histogram, IntGauge},
         RegistersMetrics,
     };
     use tracing::info;
+
+    use super::bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
+    use crate::{
+        types::{DateTime, Utc},
+        Error, Result, Runner,
+    };
 
     #[derive(Debug, Clone, Copy)]
     pub struct Config {
@@ -332,13 +333,13 @@ pub mod port {
 pub mod test_helpers {
     use std::num::NonZeroUsize;
 
-    use crate::types::{storage::SequentialFuelBlocks, NonNegative};
     use tokio::sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,
     };
 
     use super::bundler::{Bundle, BundleProposal, BundlerFactory};
+    use crate::types::{storage::SequentialFuelBlocks, NonNegative};
 
     pub struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,

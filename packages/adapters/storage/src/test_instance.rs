@@ -1,3 +1,9 @@
+use std::{
+    borrow::Cow,
+    ops::RangeInclusive,
+    sync::{Arc, Weak},
+};
+
 use delegate::delegate;
 use services::{
     block_bundler, block_committer, block_importer,
@@ -8,11 +14,6 @@ use services::{
     },
 };
 use sqlx::Executor;
-use std::{
-    borrow::Cow,
-    ops::RangeInclusive,
-    sync::{Arc, Weak},
-};
 use testcontainers::{
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
@@ -327,6 +328,10 @@ impl services::state_committer::port::Storage for DbWithProcess {
     }
     async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::L1Tx>> {
         self.db._get_latest_pending_txs().await.map_err(Into::into)
+    }
+
+    async fn latest_bundled_height(&self) -> services::Result<Option<u32>> {
+        self.db._latest_bundled_height().await.map_err(Into::into)
     }
 }
 

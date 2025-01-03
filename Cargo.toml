@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "committer",
   "e2e",
+  "fee_algo_simulation",
   "packages/adapters/clock",
   "packages/adapters/eth",
   "packages/adapters/fuel",
@@ -38,6 +39,7 @@ actix-web = { version = "4", default-features = false }
 bitvec = { version = "1.0", default-features = false }
 bytesize = { version = "1.3", default-features = false }
 alloy = { version = "0.3.6", default-features = false }
+xdg = { version = "2.5", default-features = false }
 proptest = { version = "1.0", default-features = false }
 rayon = { version = "1.10", default-features = false }
 num_cpus = { version = "1.16", default-features = false }
