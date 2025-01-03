@@ -231,7 +231,7 @@
       const startMultiplier    = parseFloat(document.getElementById('startMultiplier').value);
       const endMultiplier      = parseFloat(document.getElementById('endMultiplier').value);
       const alwaysAcceptable   = document.getElementById('alwaysAcceptable').value;
-      const numBlobs           = parseInt(document.getElementById('numBlobs').value, 10);
+      const numBlobs           = parseInt(document.getElementById('numBlobs').value, 6);
       const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
 
       // Input Validation
@@ -243,8 +243,8 @@
       }
 
       // Validate numBlobs
-      if (numBlobs < 1 || numBlobs > 10) {
-        alert('Number of Blobs must be between 1 and 10.');
+      if (numBlobs < 1 || numBlobs > 6) {
+        alert('Number of Blobs must be between 1 and 6.');
         return;
       }
 
