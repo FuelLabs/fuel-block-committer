@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use actix_web::web::{self, Data};
 use anyhow::Result;
+use services::fee_metrics_tracker::port::cache::CachingApi;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -26,9 +27,7 @@ async fn main() -> Result<()> {
 
     let num_blocks_per_month = 30 * 24 * 3600 / 12; // 259200 blocks
 
-    let caching_api = utils::CachingApiBuilder::new(client, num_blocks_per_month * 2)
-        .build()
-        .await?;
+    let caching_api = CachingApi::new(client, num_blocks_per_month * 2);
     caching_api.import(utils::load_cache()).await;
 
     let state = state::AppState {

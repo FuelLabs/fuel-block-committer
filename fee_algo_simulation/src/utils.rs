@@ -1,7 +1,5 @@
 use std::{ops::RangeInclusive, path::PathBuf};
 
-use anyhow::Result;
-use services::fee_metrics_tracker::port::cache::CachingApi;
 use tracing::{error, info};
 use xdg::BaseDirectories;
 
@@ -17,7 +15,6 @@ pub fn fee_file() -> PathBuf {
     }
 }
 
-/// Load fees from the cache file.
 pub fn load_cache() -> Vec<(u64, services::fee_metrics_tracker::port::l1::Fees)> {
     let contents = match std::fs::read_to_string(fee_file()) {
         Ok(contents) => contents,
@@ -36,7 +33,6 @@ pub fn load_cache() -> Vec<(u64, services::fee_metrics_tracker::port::l1::Fees)>
     fees.fees.into_iter().map(|f| (f.height, f.fees)).collect()
 }
 
-/// Save fees to the cache file.
 pub fn save_cache(
     cache: impl IntoIterator<Item = (u64, services::fee_metrics_tracker::port::l1::Fees)>,
 ) -> anyhow::Result<()> {
@@ -56,24 +52,6 @@ pub fn save_cache(
     Ok(())
 }
 
-/// Helper to create and configure CachingApi.
-pub struct CachingApiBuilder {
-    client: eth::HttpClient,
-    cache_size: usize,
-}
-
-impl CachingApiBuilder {
-    pub fn new(client: eth::HttpClient, cache_size: usize) -> Self {
-        Self { client, cache_size }
-    }
-
-    pub async fn build(self) -> Result<CachingApi<eth::HttpClient>> {
-        let caching_api = CachingApi::new(self.client, self.cache_size);
-        Ok(caching_api)
-    }
-}
-
-/// Helper to calculate the last N blocks as a range.
 pub fn last_n_blocks(current_block: u64, n: std::num::NonZeroU64) -> RangeInclusive<u64> {
     current_block.saturating_sub(n.get().saturating_sub(1))..=current_block
 }
