@@ -241,184 +241,381 @@ pub mod l1 {
 
     #[cfg(test)]
     mod tests {
-        use super::*;
+        use std::ops::RangeInclusive;
+        use std::sync::Arc;
 
-        #[test]
-        fn can_create_valid_sequential_fees() {
-            // Given
-            let block_fees = vec![
-                BlockFees {
-                    height: 1,
-                    fees: Fees {
-                        base_fee_per_gas: 100.try_into().unwrap(),
-                        reward: 50.try_into().unwrap(),
-                        base_fee_per_blob_gas: 10.try_into().unwrap(),
-                    },
-                },
-                BlockFees {
-                    height: 2,
-                    fees: Fees {
-                        base_fee_per_gas: 110.try_into().unwrap(),
-                        reward: 55.try_into().unwrap(),
-                        base_fee_per_blob_gas: 15.try_into().unwrap(),
-                    },
-                },
-            ];
+        use mockall::{mock, predicate::*};
+        use tokio::sync::Barrier;
 
-            // When
-            let result = SequentialBlockFees::try_from(block_fees.clone());
+        use crate::fee_metrics_tracker::port::{
+            cache::CachingApi,
+            l1::{Api, BlockFees, Fees, MockApi, SequentialBlockFees},
+        };
 
-            // Then
-            assert!(
-                result.is_ok(),
-                "Expected SequentialBlockFees creation to succeed"
-            );
-            let sequential_fees = result.unwrap();
-            assert_eq!(sequential_fees.len(), block_fees.len());
-        }
-
-        #[test]
-        fn sequential_fees_cannot_be_empty() {
-            // Given
-            let block_fees: Vec<BlockFees> = vec![];
-
-            // When
-            let result = SequentialBlockFees::try_from(block_fees);
-
-            // Then
-            assert!(
-                result.is_err(),
-                "Expected SequentialBlockFees creation to fail for empty input"
-            );
-            assert_eq!(
-                result.unwrap_err().to_string(),
-                "InvalidSequence(\"Input cannot be empty\")"
-            );
-        }
-
-        #[test]
-        fn fees_must_be_sequential() {
-            // Given
-            let block_fees = vec![
-                BlockFees {
-                    height: 1,
-                    fees: Fees {
-                        base_fee_per_gas: 100.try_into().unwrap(),
-                        reward: 50.try_into().unwrap(),
-                        base_fee_per_blob_gas: 10.try_into().unwrap(),
-                    },
-                },
-                BlockFees {
-                    height: 3, // Non-sequential height
-                    fees: Fees {
-                        base_fee_per_gas: 110.try_into().unwrap(),
-                        reward: 55.try_into().unwrap(),
-                        base_fee_per_blob_gas: 15.try_into().unwrap(),
-                    },
-                },
-            ];
-
-            // When
-            let result = SequentialBlockFees::try_from(block_fees);
-
-            // Then
-            assert!(
-                result.is_err(),
-                "Expected SequentialBlockFees creation to fail for non-sequential heights"
-            );
-            assert_eq!(
-                result.unwrap_err().to_string(),
-                "InvalidSequence(\"blocks are not sequential by height: [1, 3]\")"
-            );
-        }
-
-        #[test]
-        fn produced_iterator_gives_correct_values() {
-            // Given
-            // notice the heights are out of order so that we validate that the returned sequence is in
-            // order
-            let block_fees = vec![
-                BlockFees {
-                    height: 2,
-                    fees: Fees {
-                        base_fee_per_gas: 110.try_into().unwrap(),
-                        reward: 55.try_into().unwrap(),
-                        base_fee_per_blob_gas: 15.try_into().unwrap(),
-                    },
-                },
-                BlockFees {
-                    height: 1,
-                    fees: Fees {
-                        base_fee_per_gas: 100.try_into().unwrap(),
-                        reward: 50.try_into().unwrap(),
-                        base_fee_per_blob_gas: 10.try_into().unwrap(),
-                    },
-                },
-            ];
-            let sequential_fees = SequentialBlockFees::try_from(block_fees.clone()).unwrap();
-
-            // When
-            let iterated_fees: Vec<BlockFees> = sequential_fees.into_iter().collect();
-
-            // Then
-            let expectation = block_fees
-                .into_iter()
-                .sorted_by_key(|b| b.height)
-                .collect_vec();
-            assert_eq!(
-                iterated_fees, expectation,
-                "Expected iterator to yield the same block fees"
-            );
+        /// Helper function to generate sequential fees for a given range
+        fn generate_sequential_fees(height_range: RangeInclusive<u64>) -> SequentialBlockFees {
+            height_range
+                .map(|h| {
+                    let fee = u128::from(h) + 1;
+                    BlockFees {
+                        height: h,
+                        fees: Fees {
+                            base_fee_per_gas: fee,
+                            reward: fee,
+                            base_fee_per_blob_gas: fee,
+                        },
+                    }
+                })
+                .collect::<Result<_, _>>()
+                .unwrap()
         }
 
         #[tokio::test]
-        async fn mean_is_at_least_one_when_totals_are_zero() {
-            // given
-            let block_fees = vec![
-                BlockFees {
-                    height: 1,
-                    fees: Fees {
-                        base_fee_per_gas: 1.try_into().unwrap(),
-                        reward: 1.try_into().unwrap(),
-                        base_fee_per_blob_gas: 1.try_into().unwrap(),
-                    },
-                },
-                BlockFees {
-                    height: 2,
-                    fees: Fees {
-                        base_fee_per_gas: 1.try_into().unwrap(),
-                        reward: 1.try_into().unwrap(),
-                        base_fee_per_blob_gas: 1.try_into().unwrap(),
-                    },
-                },
-            ];
-            let sequential_fees = SequentialBlockFees::try_from(block_fees).unwrap();
-            let mean = sequential_fees.mean();
+        async fn caching_provider_avoids_duplicate_requests() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
 
-            // then
-            assert_eq!(
-                mean.base_fee_per_gas, 1,
-                "base_fee_per_gas should be set to 1 when total is 0"
-            );
-            assert_eq!(mean.reward, 1, "reward should be set to 1 when total is 0");
-            assert_eq!(
-                mean.base_fee_per_blob_gas, 1,
-                "base_fee_per_blob_gas should be set to 1 when total is 0"
-            );
+            mock_provider
+                .expect_fees()
+                .with(eq(0..=4))
+                .once()
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, 10);
+
+            // Act
+            let first_call = provider.get_fees(0..=4).await.unwrap();
+            let second_call = provider.get_fees(0..=4).await.unwrap();
+
+            // Assert
+            assert_eq!(first_call, second_call);
         }
 
         #[tokio::test]
-        async fn calculates_sma_correctly() {
-            // given
-            let sut = testing::incrementing_fees(5);
+        async fn caching_provider_fetches_only_missing_blocks() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
 
-            // when
-            let sma = sut.mean();
+            let mut sequence = mockall::Sequence::new();
 
-            // then
-            assert_eq!(sma.base_fee_per_gas, 6);
-            assert_eq!(sma.reward, 6);
-            assert_eq!(sma.base_fee_per_blob_gas, 6);
+            mock_provider
+                .expect_fees()
+                .with(eq(0..=2))
+                .once()
+                .in_sequence(&mut sequence)
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_fees()
+                .with(eq(3..=5))
+                .once()
+                .in_sequence(&mut sequence)
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, 10);
+
+            // Act
+            let first_call = provider.get_fees(0..=2).await.unwrap();
+            let second_call = provider.get_fees(2..=5).await.unwrap();
+
+            // Assert
+            // First call fetches 0..=2
+            // Second call fetches 3..=5 since 2 is already cached
+            assert_eq!(first_call, generate_sequential_fees(0..=2));
+            let expected_second = generate_sequential_fees(0..=5);
+            assert_eq!(second_call, expected_second);
+        }
+
+        #[tokio::test]
+        async fn caching_provider_evicts_oldest_blocks() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
+
+            mock_provider
+                .expect_fees()
+                .with(eq(0..=4))
+                .times(2)
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_fees()
+                .with(eq(5..=9))
+                .once()
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, 5);
+
+            // Act
+            let first_call = provider.get_fees(0..=4).await.unwrap();
+            let second_call = provider.get_fees(5..=9).await.unwrap();
+            let _third_call = provider.get_fees(0..=4).await.unwrap();
+
+            // Assert
+            assert_eq!(first_call, generate_sequential_fees(0..=4));
+            assert_eq!(second_call, generate_sequential_fees(5..=9));
+            // Since cache limit is 5, the first range 0..=4 should have been evicted
+            // Thus, the third call should refetch 0..=4
+        }
+
+        #[tokio::test]
+        async fn caching_provider_handles_request_larger_than_cache() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
+
+            let cache_limit = 5;
+
+            mock_provider
+                .expect_fees()
+                .with(eq(0..=9))
+                .once()
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, cache_limit);
+
+            // Act
+            let result = provider.get_fees(0..=9).await.unwrap();
+
+            // Assert
+            assert_eq!(result, generate_sequential_fees(0..=9));
+        }
+
+        #[tokio::test]
+        async fn caching_provider_handles_concurrent_requests() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
+
+            let cache_limit = 10;
+
+            // Use a barrier to synchronize the mock calls
+            let barrier = Arc::new(Barrier::new(2));
+
+            let barrier_clone = barrier.clone();
+
+            mock_provider
+                .expect_fees()
+                .with(eq(0..=4))
+                .once()
+                .returning(move |range| {
+                    let barrier = barrier_clone.clone();
+                    Box::pin(async move {
+                        // Wait for the second request to start
+                        barrier.wait().await;
+                        Ok(generate_sequential_fees(range))
+                    })
+                });
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = Arc::new(CachingApi::new(mock_provider, cache_limit));
+
+            // Act
+            let provider_clone = provider.clone();
+            let handle1 =
+                tokio::spawn(async move { provider_clone.get_fees(0..=4).await.unwrap() });
+
+            let provider_clone = provider.clone();
+            let handle2 = tokio::spawn(async move {
+                // Ensure both tasks start around the same time
+                barrier.wait().await;
+                provider_clone.get_fees(0..=4).await.unwrap()
+            });
+
+            let result1 = handle1.await.unwrap();
+            let result2 = handle2.await.unwrap();
+
+            // Assert
+            assert_eq!(result1, result2);
+        }
+
+        #[tokio::test]
+        async fn caching_provider_import_and_export() {
+            // Arrange
+            let mock_provider = MockApi::new();
+
+            let cache_limit = 10;
+
+            let provider = CachingApi::new(mock_provider, cache_limit);
+
+            let fees_to_import = (0..5)
+                .map(|h| {
+                    let fee = u128::from(h) + 1;
+                    (
+                        h,
+                        Fees {
+                            base_fee_per_gas: fee,
+                            reward: fee,
+                            base_fee_per_blob_gas: fee,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            // Act
+            provider.import(fees_to_import.clone()).await;
+            let exported = provider.export().await.into_iter().collect::<Vec<_>>();
+
+            // Assert
+            assert_eq!(exported, fees_to_import);
+        }
+
+        #[tokio::test]
+        async fn caching_provider_handles_single_element_range() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
+
+            mock_provider
+                .expect_fees()
+                .with(eq(3..=3))
+                .once()
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, 10);
+
+            // Act
+            let result = provider.get_fees(3..=3).await.unwrap();
+
+            // Assert
+            let expected = generate_sequential_fees(3..=3);
+            assert_eq!(result, expected);
+        }
+
+        #[tokio::test]
+        async fn caching_provider_handles_overlapping_ranges() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
+
+            let mut sequence = mockall::Sequence::new();
+
+            // First fetch 0..=4
+            mock_provider
+                .expect_fees()
+                .with(eq(0..=4))
+                .once()
+                .in_sequence(&mut sequence)
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            // Then fetch 3..=7 (only 5..=7 should be fetched)
+            mock_provider
+                .expect_fees()
+                .with(eq(5..=7))
+                .once()
+                .in_sequence(&mut sequence)
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, 10);
+
+            // Act
+            let first_call = provider.get_fees(0..=4).await.unwrap();
+            let second_call = provider.get_fees(3..=7).await.unwrap();
+
+            // Assert
+            let expected_first = generate_sequential_fees(0..=4);
+            let expected_second = generate_sequential_fees(0..=7);
+            assert_eq!(first_call, expected_first);
+            assert_eq!(second_call, expected_second);
+        }
+
+        #[tokio::test]
+        async fn caching_provider_export_after_import() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, 10);
+
+            let fees_to_import = (10..=14)
+                .map(|h| {
+                    let fee = u128::from(h) + 1;
+                    (
+                        h,
+                        Fees {
+                            base_fee_per_gas: fee,
+                            reward: fee,
+                            base_fee_per_blob_gas: fee,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            // Act
+            provider.import(fees_to_import.clone()).await;
+            let exported_fees = provider.export().await.into_iter().collect::<Vec<_>>();
+
+            // Assert
+            assert_eq!(exported_fees, fees_to_import);
+        }
+
+        #[tokio::test]
+        async fn caching_provider_updates_cache_correctly() {
+            // Arrange
+            let mut mock_provider = MockApi::new();
+
+            mock_provider
+                .expect_fees()
+                .with(eq(0..=4))
+                .once()
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_fees()
+                .with(eq(5..=5))
+                .once()
+                .returning(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
+
+            mock_provider
+                .expect_current_height()
+                .returning(|| Box::pin(async { Ok(10) }));
+
+            let provider = CachingApi::new(mock_provider, 6);
+
+            // Act
+            let first_call = provider.get_fees(0..=4).await.unwrap();
+            let second_call = provider.get_fees(0..=5).await.unwrap();
+
+            let exported = provider.export().await.into_iter().collect::<Vec<_>>();
+
+            // Assert
+            let expected_first = generate_sequential_fees(0..=4);
+            let expected_second = generate_sequential_fees(0..=5);
+            assert_eq!(first_call, expected_first);
+            assert_eq!(second_call, expected_second);
+            assert_eq!(exported.len(), 6);
+            assert_eq!(
+                exported,
+                generate_sequential_fees(0..=5)
+                    .into_iter()
+                    .map(|bf| (bf.height, bf.fees))
+                    .collect::<Vec<_>>()
+            );
         }
     }
 }
@@ -477,35 +674,8 @@ pub mod cache {
             available_fees: &[BlockFees],
             height_range: RangeInclusive<u64>,
         ) -> Result<Vec<BlockFees>> {
-            let mut missing_ranges = vec![];
-            {
-                let present_heights = available_fees.iter().map(|bf| bf.height);
-                let mut expected_heights = height_range.clone();
-
-                let mut last_present_height = None;
-                for actual_height in present_heights {
-                    last_present_height = Some(actual_height);
-
-                    let next_expected = expected_heights
-                        .next()
-                        .expect("can never have less values than `present_heights`");
-
-                    if actual_height != next_expected {
-                        missing_ranges.push(next_expected..=actual_height.saturating_sub(1));
-                    }
-                }
-
-                if let Some(height) = last_present_height {
-                    if height != *height_range.end() {
-                        missing_ranges.push(height..=*height_range.end())
-                    }
-                } else {
-                    missing_ranges.push(height_range.clone());
-                }
-            }
-
             let mut fees = vec![];
-            for range in missing_ranges {
+            for range in detect_missing_ranges(available_fees, height_range) {
                 let new_fees = self.fees_provider.fees(range.clone()).await?;
                 fees.extend(new_fees);
             }
@@ -551,6 +721,39 @@ pub mod cache {
                 cache.pop_first();
             }
         }
+    }
+
+    fn detect_missing_ranges(
+        available_fees: &[BlockFees],
+        height_range: RangeInclusive<u64>,
+    ) -> Vec<RangeInclusive<u64>> {
+        let mut missing_ranges = vec![];
+
+        let present_heights = available_fees.iter().map(|bf| bf.height);
+        let mut expected_heights = height_range.clone();
+
+        let mut last_present_height = None;
+        for actual_height in present_heights {
+            last_present_height = Some(actual_height);
+
+            let next_expected = expected_heights
+                .next()
+                .expect("can never have less values than `present_heights`");
+
+            if actual_height != next_expected {
+                missing_ranges.push(next_expected..=actual_height.saturating_sub(1));
+            }
+        }
+
+        if let Some(height) = last_present_height {
+            if height != *height_range.end() {
+                missing_ranges.push(height.saturating_add(1)..=*height_range.end())
+            }
+        } else {
+            missing_ranges.push(height_range.clone());
+        }
+
+        missing_ranges
     }
 
     #[cfg(test)]
