@@ -241,8 +241,7 @@ pub mod l1 {
 
     #[cfg(test)]
     mod tests {
-        use std::ops::RangeInclusive;
-        use std::sync::Arc;
+        use std::{ops::RangeInclusive, sync::Arc};
 
         use mockall::predicate::*;
         use tokio::sync::Barrier;

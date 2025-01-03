@@ -1,9 +1,11 @@
-use super::models::SavedFees;
+use std::{ops::RangeInclusive, path::PathBuf};
+
 use anyhow::Result;
 use services::fee_metrics_tracker::port::cache::CachingApi;
-use std::{ops::RangeInclusive, path::PathBuf};
 use tracing::{error, info};
 use xdg::BaseDirectories;
+
+use super::models::SavedFees;
 
 /// Path to the fee cache file.
 pub fn fee_file() -> PathBuf {

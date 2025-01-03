@@ -1,18 +1,19 @@
-use super::models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats};
-use super::state::AppState;
-use super::utils::last_n_blocks;
-use actix_web::http::StatusCode;
-use actix_web::{web, HttpResponse, HttpResponseBuilder, Responder};
+use std::time::Duration;
 
+use actix_web::{http::StatusCode, web, HttpResponse, HttpResponseBuilder, Responder};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
-use services::fee_metrics_tracker::port::l1::Api;
-use services::fee_metrics_tracker::service::calculate_blob_tx_fee;
-
-use services::state_committer::{AlgoConfig, SmaFeeAlgo};
+use services::{
+    fee_metrics_tracker::{port::l1::Api, service::calculate_blob_tx_fee},
+    state_committer::{AlgoConfig, SmaFeeAlgo},
+};
 use tracing::{error, info};
 
-use std::time::Duration;
+use super::{
+    models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats},
+    state::AppState,
+    utils::last_n_blocks,
+};
 
 /// Handler for the root `/` endpoint, serving the HTML page.
 pub async fn index_html() -> impl Responder {
