@@ -727,30 +727,36 @@ pub mod cache {
         available_fees: &[BlockFees],
         height_range: RangeInclusive<u64>,
     ) -> Vec<RangeInclusive<u64>> {
-        let mut missing_ranges = vec![];
-
-        let present_heights = available_fees.iter().map(|bf| bf.height);
-        let mut expected_heights = height_range.clone();
-
-        let mut last_present_height = None;
-        for actual_height in present_heights {
-            last_present_height = Some(actual_height);
-
-            let next_expected = expected_heights
-                .next()
-                .expect("can never have less values than `present_heights`");
-
-            if actual_height != next_expected {
-                missing_ranges.push(next_expected..=actual_height.saturating_sub(1));
-            }
+        if available_fees.is_empty() {
+            return vec![height_range];
         }
 
-        if let Some(height) = last_present_height {
-            if height != *height_range.end() {
-                missing_ranges.push(height.saturating_add(1)..=*height_range.end())
+        let (last_height, mut missing_ranges) = available_fees.iter().map(|bf| bf.height).fold(
+            (None, Vec::new()),
+            |(prev, mut acc), current| {
+                match prev {
+                    Some(prev_h) => {
+                        if current > prev_h + 1 {
+                            // Found a gap between prev_h and current
+                            acc.push((prev_h + 1)..=current.saturating_sub(1));
+                        }
+                    }
+                    None => {
+                        if current > *height_range.start() {
+                            // Missing range before the first available height
+                            acc.push(*height_range.start()..=current.saturating_sub(1));
+                        }
+                    }
+                }
+                (Some(current), acc)
+            },
+        );
+
+        // Check for a missing range after the last available height
+        if let Some(last_h) = last_height {
+            if last_h < *height_range.end() {
+                missing_ranges.push((last_h + 1)..=*height_range.end());
             }
-        } else {
-            missing_ranges.push(height_range.clone());
         }
 
         missing_ranges
