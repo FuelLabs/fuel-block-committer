@@ -22,19 +22,15 @@ async fn main() -> Result<()> {
         .compact()
         .init();
 
-    // Initialize the HTTP client for Ethereum RPC
     let client = eth::HttpClient::new(models::URL).unwrap();
 
-    // Calculate the number of blocks per month (~259200 blocks)
     let num_blocks_per_month = 30 * 24 * 3600 / 12; // 259200 blocks
 
-    // Build the CachingApi and import any existing cache
     let caching_api = utils::CachingApiBuilder::new(client, num_blocks_per_month * 2)
         .build()
         .await?;
     caching_api.import(utils::load_cache()).await;
 
-    // Bundle everything into shared application state
     let state = state::AppState {
         fee_api: caching_api.clone(),
     };
@@ -49,12 +45,10 @@ async fn main() -> Result<()> {
     })
     .bind(addr)?;
 
-    // Define the server address
     eprintln!("Server listening on http://{}", addr);
 
     server.run().await?;
 
-    // Save cache on shutdown
     utils::save_cache(caching_api.export().await)?;
 
     Ok(())
