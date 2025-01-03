@@ -7,7 +7,6 @@ use services::{
     state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds},
 };
 
-/// Ethereum RPC URL.
 pub const URL: &str = "https://eth.llamarpc.com";
 
 /// Structure for saving fees to cache.
@@ -83,7 +82,6 @@ pub struct FeeDataPoint {
     pub acceptable: bool,
 }
 
-/// Statistics struct.
 #[derive(Debug, Serialize)]
 pub struct FeeStats {
     #[serde(rename = "percentageAcceptable")]
