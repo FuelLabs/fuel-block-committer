@@ -66,7 +66,7 @@ impl FeeHandler {
         let ending_height = Self::resolve_ending_height(&state, &params).await?;
         let start_height = ending_height.saturating_sub(params.amount_of_blocks);
         let config = Self::parse_config(&params)?;
-        let seq_fees = Self::fetch_sequential_fees(&state, start_height, ending_height).await?;
+        let seq_fees = Self::fetch_fees(&state, start_height, ending_height).await?;
         let last_block = Self::get_last_block_info(&state, &seq_fees).await?;
         let sma_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
 
@@ -108,7 +108,7 @@ impl FeeHandler {
         })
     }
 
-    async fn fetch_sequential_fees(
+    async fn fetch_fees(
         state: &web::Data<AppState>,
         start: u64,
         end: u64,
