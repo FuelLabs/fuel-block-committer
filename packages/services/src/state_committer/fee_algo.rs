@@ -262,105 +262,36 @@ const fn from_ppm(val: u128) -> u128 {
 
 #[cfg(test)]
 mod tests {
-    pub use test_case::test_case;
-
     use super::{Config, SmaPeriods};
-    use crate::{
-        fees::{testing::PreconfiguredFeeApi, Api, Fees},
-        state_committer::{
-            fee_algo::{calculate_max_upper_fee, FeeMultiplierRange, SmaFeeAlgo},
-            FeeThresholds,
-        },
-    };
 
-    #[test_case(
-        FeeThresholds {
-            max_l2_blocks_behind: 100.try_into().unwrap(),
-            always_acceptable_fee: 0,
-            ..Default::default()
-        },
-        1000,
-        0,
-        1000;
-        "No blocks behind, multiplier should be 100%"
-    )]
-    #[test_case(
-        FeeThresholds {
-            max_l2_blocks_behind: 100.try_into().unwrap(),
-            multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.05),
-            always_acceptable_fee: 0,
-        },
-        2000,
-        50,
-        2050;
-        "Half blocks behind with multiplier increase"
-    )]
-    #[test_case(
-        FeeThresholds {
-            max_l2_blocks_behind: 100.try_into().unwrap(),
-            multiplier_range: FeeMultiplierRange::new_unchecked(0.95, 1.0),
-            always_acceptable_fee: 0,
-        },
-        800,
-        50,
-        780;
-        "Start multiplier less than 1, no premium"
-    )]
-    #[test_case(
-        FeeThresholds {
-            max_l2_blocks_behind: 100.try_into().unwrap(),
-            multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.3),
-            always_acceptable_fee: 0,
-        },
-        1000,
-        50,
-        1150; // 1.0 + (1.3 - 1.0) * (50/100) = 1.15 -> 1000 * 1.15 = 1150
-        "End multiplier greater than 1, with premium"
-    )]
-    #[test_case(
-        FeeThresholds {
-            max_l2_blocks_behind: 100.try_into().unwrap(),
-            multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.2),
-            always_acceptable_fee: 0,
-        },
-        10_000,
-        99,
-        11_980;
-        "High fee with premium"
-    )]
-    fn test_calculate_max_upper_fee(
-        fee_thresholds: FeeThresholds,
-        fee: u128,
-        num_l2_blocks_behind: u32,
-        expected_max_upper_fee: u128,
-    ) {
-        let max_upper_fee = calculate_max_upper_fee(&fee_thresholds, fee, num_l2_blocks_behind);
+    mod decision_making {
+        pub use test_case::test_case;
 
-        assert_eq!(
-            max_upper_fee, expected_max_upper_fee,
-            "Expected max_upper_fee to be {}, but got {}",
-            expected_max_upper_fee, max_upper_fee
-        );
-    }
+        use super::{Config, SmaPeriods};
+        use crate::{
+            fees::{testing::PreconfiguredFeeApi, Api, Fees},
+            state_committer::{
+                fee_algo::{FeeMultiplierRange, SmaFeeAlgo},
+                FeeThresholds,
+            },
+        };
 
-    fn generate_fees(sma_periods: SmaPeriods, old_fees: Fees, new_fees: Fees) -> Vec<(u64, Fees)> {
-        let older_fees = std::iter::repeat_n(
-            old_fees,
-            (sma_periods.long.get() - sma_periods.short.get()) as usize,
-        );
-        let newer_fees = std::iter::repeat_n(new_fees, sma_periods.short.get() as usize);
+        struct Setup {
+            old_fees: Fees,
+            new_fees: Fees,
+            num_blobs: u32,
+            num_l2_blocks_behind: u32,
+            should_send: bool,
+        }
 
-        older_fees
-            .chain(newer_fees)
-            .enumerate()
-            .map(|(i, f)| (i as u64, f))
-            .collect()
-    }
-
-    #[test_case(
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000},
-        6,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
+            new_fees: Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000},
+            num_blobs: 6,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -368,15 +299,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             },
-        },
-        0,
-        true;
+        };
         "Should send because all short-term fees are lower than long-term"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000},
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-        6,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000},
+            new_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
+            num_blobs: 6,
+            num_l2_blocks_behind: 0,
+            should_send: false,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -384,15 +317,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             },
-        },
-        0,
-        false;
+        };
         "Should not send because all short-term fees are higher than long-term"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000},
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-        6,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 3000, reward: 3000, base_fee_per_blob_gas: 3000},
+            new_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
+            num_blobs: 6,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -400,15 +335,17 @@ mod tests {
                 max_l2_blocks_behind: 100.try_into().unwrap(),
                 ..Default::default()
             }
-        },
-        0,
-        true;
+        };
         "Should send since short-term fee less than always_acceptable_fee"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
-        Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000},
-        5,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
+            new_fees: Fees { base_fee_per_gas: 1500, reward: 10000, base_fee_per_blob_gas: 1000},
+            num_blobs: 5,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -416,15 +353,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        true;
+        };
         "Should send because short-term base_fee_per_gas is lower"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
-        Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000},
-        5,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
+            new_fees: Fees { base_fee_per_gas: 2500, reward: 10000, base_fee_per_blob_gas: 1000},
+            num_blobs: 5,
+            num_l2_blocks_behind: 0,
+            should_send: false,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -432,15 +371,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        false;
+        };
         "Should not send because short-term base_fee_per_gas is higher"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000},
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 900},
-        5,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000},
+            new_fees: Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 900},
+            num_blobs: 5,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -448,15 +389,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        true;
+        };
         "Should send because short-term base_fee_per_blob_gas is lower"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000},
-        Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1100},
-        5,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1000},
+            new_fees: Fees { base_fee_per_gas: 2000, reward: 3000, base_fee_per_blob_gas: 1100},
+            num_blobs: 5,
+            num_l2_blocks_behind: 0,
+            should_send: false,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -464,15 +407,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        false;
+        };
         "Should not send because short-term base_fee_per_blob_gas is higher"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
-        Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000},
-        5,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
+            new_fees: Fees { base_fee_per_gas: 2000, reward: 9000, base_fee_per_blob_gas: 1000},
+            num_blobs: 5,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -480,15 +425,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        true;
+        };
         "Should send because short-term reward is lower"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
-        Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000},
-        5,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 2000, reward: 10000, base_fee_per_blob_gas: 1000},
+            new_fees: Fees { base_fee_per_gas: 2000, reward: 11000, base_fee_per_blob_gas: 1000},
+            num_blobs: 5,
+            num_l2_blocks_behind: 0,
+            should_send: false,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -496,15 +443,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        false;
+        };
         "Should not send because short-term reward is higher"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 4000, reward: 8000, base_fee_per_blob_gas: 4000},
-        Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500},
-        6,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 4000, reward: 8000, base_fee_per_blob_gas: 4000},
+            new_fees: Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500},
+            num_blobs: 6,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -512,15 +461,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        true;
+        };
         "Should send because multiple short-term fees are lower"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-        Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-        6,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
+            new_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
+            num_blobs: 6,
+            num_l2_blocks_behind: 0,
+            should_send: false,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -528,15 +479,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        false;
+        };
         "Should not send because all fees are identical and no tolerance"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
-        Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000},
-        0,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
+            new_fees: Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000},
+            num_blobs: 0,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -544,15 +497,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        true;
+        };
         "Zero blobs: short-term base_fee_per_gas and reward are lower, send"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
-        Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000},
-        0,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
+            new_fees: Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000},
+            num_blobs: 0,
+            num_l2_blocks_behind: 0,
+            should_send: false,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -560,15 +515,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        false;
+        };
         "Zero blobs: short-term reward is higher, don't send"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
-        Fees { base_fee_per_gas: 2000, reward: 6000, base_fee_per_blob_gas: 50_000_000},
-        0,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
+            new_fees: Fees { base_fee_per_gas: 2000, reward: 6000, base_fee_per_blob_gas: 50_000_000},
+            num_blobs: 0,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -576,15 +533,17 @@ mod tests {
                 always_acceptable_fee: 0,
                 ..Default::default()
             }
-        },
-        0,
-        true;
+        };
         "Zero blobs: ignore blob fee, short-term base_fee_per_gas is lower, send"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
-        Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
-        1,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
+            new_fees: Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
+            num_blobs: 1,
+            num_l2_blocks_behind: 0,
+            should_send: false,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -592,15 +551,17 @@ mod tests {
                 multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.2),
                 always_acceptable_fee: 0,
             },
-        },
-        0,
-        false;
+        };
         "Early: short-term expensive, not send"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
-        Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
-        1,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
+            new_fees: Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
+            num_blobs: 1,
+            num_l2_blocks_behind: 100,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -608,15 +569,17 @@ mod tests {
                 multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.2),
                 always_acceptable_fee: 0,
             }
-        },
-        100,
-        true;
+        };
         "Later: after max wait, send regardless"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
-        Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
-        1,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
+            new_fees: Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
+            num_blobs: 1,
+            num_l2_blocks_behind: 80,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -624,15 +587,17 @@ mod tests {
                 multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.2),
                 always_acceptable_fee: 0,
             },
-        },
-        80,
-        true;
+        };
         "Mid-wait: increased tolerance allows acceptance"
     )]
-    #[test_case(
-        Fees { base_fee_per_gas: 100_000, reward: 1, base_fee_per_blob_gas: 100_000},
-        Fees { base_fee_per_gas: 2_000_000, reward: 1_000_000, base_fee_per_blob_gas: 20_000_000},
-        1,
+        #[test_case(
+        Setup {
+            old_fees: Fees { base_fee_per_gas: 100_000, reward: 1, base_fee_per_blob_gas: 100_000},
+            new_fees: Fees { base_fee_per_gas: 2_000_000, reward: 1_000_000, base_fee_per_blob_gas: 20_000_000},
+            num_blobs: 1,
+            num_l2_blocks_behind: 0,
+            should_send: true,
+        },
         Config {
             sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
             fee_thresholds: FeeThresholds {
@@ -640,34 +605,149 @@ mod tests {
                 multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.2),
                 always_acceptable_fee: 2_700_000_000_000,
             },
-        },
-        0,
-        true;
+        };
         "Always acceptable fee triggers immediate send"
     )]
-    #[tokio::test]
-    async fn parameterized_send_or_wait_tests(
-        old_fees: Fees,
-        new_fees: Fees,
-        num_blobs: u32,
-        config: Config,
-        num_l2_blocks_behind: u32,
-        expected_decision: bool,
-    ) {
-        let fees = generate_fees(config.sma_periods, old_fees, new_fees);
-        let api = PreconfiguredFeeApi::new(fees);
-        let current_block_height = api.current_height().await.unwrap();
+        #[tokio::test]
+        async fn parameterized_send_or_wait_tests(
+            Setup {
+                old_fees,
+                new_fees,
+                num_blobs,
+                num_l2_blocks_behind,
+                should_send,
+            }: Setup,
+            config: Config,
+        ) {
+            let fees = generate_fees(config.sma_periods, old_fees, new_fees);
+            let api = PreconfiguredFeeApi::new(fees);
+            let current_block_height = api.current_height().await.unwrap();
 
-        let sut = SmaFeeAlgo::new(api, config);
+            let sut = SmaFeeAlgo::new(api, config);
 
-        let should_send = sut
-            .fees_acceptable(num_blobs, num_l2_blocks_behind, current_block_height)
-            .await
-            .unwrap();
+            let decision = sut
+                .fees_acceptable(num_blobs, num_l2_blocks_behind, current_block_height)
+                .await
+                .unwrap();
 
-        assert_eq!(
-            should_send, expected_decision,
-            "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {expected_decision}, got: {should_send}",
+            assert_eq!(
+            decision, should_send,
+            "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {expected_decision}, got: {decision}",
         );
+        }
+
+        fn generate_fees(
+            sma_periods: SmaPeriods,
+            old_fees: Fees,
+            new_fees: Fees,
+        ) -> Vec<(u64, Fees)> {
+            let older_fees = std::iter::repeat_n(
+                old_fees,
+                (sma_periods.long.get() - sma_periods.short.get()) as usize,
+            );
+            let newer_fees = std::iter::repeat_n(new_fees, sma_periods.short.get() as usize);
+
+            older_fees
+                .chain(newer_fees)
+                .enumerate()
+                .map(|(i, f)| (i as u64, f))
+                .collect()
+        }
+    }
+
+    mod upper_fee {
+        pub use test_case::test_case;
+
+        use crate::state_committer::{
+            fee_algo::{calculate_max_upper_fee, FeeMultiplierRange},
+            FeeThresholds,
+        };
+        struct Setup {
+            fee: u128,
+            num_l2_blocks_behind: u32,
+            expected_max_upper_fee: u128,
+        }
+
+        #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            always_acceptable_fee: 0,
+            ..Default::default()
+        },
+        Setup {
+            fee: 1000,
+            num_l2_blocks_behind: 0,
+            expected_max_upper_fee: 1000
+        };
+        "No blocks behind, multiplier should be 1.0"
+    )]
+        #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.05),
+            always_acceptable_fee: 0,
+        },
+        Setup {
+            fee: 2000,
+            num_l2_blocks_behind: 50,
+            expected_max_upper_fee: 2050
+        };
+        "Half blocks behind with multiplier increase"
+    )]
+        #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            multiplier_range: FeeMultiplierRange::new_unchecked(0.95, 1.0),
+            always_acceptable_fee: 0,
+        },
+        Setup {
+            fee: 800,
+            num_l2_blocks_behind: 50,
+            expected_max_upper_fee: 780
+        };
+        "Start multiplier less than 1, no premium"
+    )]
+        #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.3),
+            always_acceptable_fee: 0,
+        },
+        Setup {
+            fee: 1000,
+            num_l2_blocks_behind: 50,
+            expected_max_upper_fee: 1150
+        }; // 1.0 + (1.3 - 1.0) * (50/100) = 1.15 -> 1000 * 1.15 = 1150
+        "End multiplier greater than 1, with premium"
+    )]
+        #[test_case(
+        FeeThresholds {
+            max_l2_blocks_behind: 100.try_into().unwrap(),
+            multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.2),
+            always_acceptable_fee: 0,
+        },
+        Setup {
+            fee: 10_000,
+            num_l2_blocks_behind: 99,
+            expected_max_upper_fee: 11_980
+        };
+        "High fee with premium"
+    )]
+        fn test_calculate_max_upper_fee(
+            fee_thresholds: FeeThresholds,
+            Setup {
+                fee,
+                num_l2_blocks_behind,
+                expected_max_upper_fee,
+            }: Setup,
+        ) {
+            let max_upper_fee = calculate_max_upper_fee(&fee_thresholds, fee, num_l2_blocks_behind);
+
+            assert_eq!(
+                max_upper_fee, expected_max_upper_fee,
+                "Expected max_upper_fee to be {}, but got {}",
+                expected_max_upper_fee, max_upper_fee
+            );
+        }
     }
 }
