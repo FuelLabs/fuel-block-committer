@@ -5,7 +5,7 @@ use metrics::{
     RegistersMetrics,
 };
 
-use super::port::l1::{Api, BlockFees, Fees};
+use super::port::l1::{Api, Fees, FeesAtHeight};
 use crate::{Error, Result, Runner};
 
 #[derive(Debug, Clone)]
@@ -94,7 +94,7 @@ impl<P: Api> FeeMetricsTracker<P> {
         Ok(fees.mean())
     }
 
-    pub async fn latest_fees(&self) -> crate::Result<BlockFees> {
+    pub async fn latest_fees(&self) -> crate::Result<FeesAtHeight> {
         let height = self.fee_provider.current_height().await?;
 
         let fee = self

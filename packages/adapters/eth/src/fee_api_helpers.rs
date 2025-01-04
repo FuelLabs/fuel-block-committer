@@ -4,7 +4,7 @@ use alloy::rpc::types::FeeHistory;
 use futures::{stream, StreamExt, TryStreamExt};
 use itertools::{izip, Itertools};
 use services::{
-    fee_metrics_tracker::port::l1::{BlockFees, Fees, SequentialBlockFees},
+    fee_metrics_tracker::port::l1::{Fees, FeesAtHeight, SequentialBlockFees},
     Result,
 };
 use static_assertions::const_assert;
@@ -38,7 +38,7 @@ where
         .map_err(|e| services::Error::Other(format!("{e}")))
 }
 
-fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
+fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<FeesAtHeight>> {
     let number_of_blocks = if fees.base_fee_per_gas.is_empty() {
         0
     } else {
@@ -86,7 +86,7 @@ fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     )
     .take(number_of_blocks)
     .map(
-        |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| BlockFees {
+        |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| FeesAtHeight {
             height,
             fees: Fees {
                 base_fee_per_gas,
@@ -130,7 +130,7 @@ mod test {
     use std::ops::RangeInclusive;
 
     use alloy::rpc::types::FeeHistory;
-    use services::fee_metrics_tracker::port::l1::{BlockFees, Fees};
+    use services::fee_metrics_tracker::port::l1::{Fees, FeesAtHeight};
 
     use crate::fee_api_helpers::{chunk_range_inclusive, unpack_fee_history};
 
@@ -282,7 +282,7 @@ mod test {
         let result = unpack_fee_history(fees);
 
         // then
-        let expected: Vec<BlockFees> = vec![];
+        let expected: Vec<FeesAtHeight> = vec![];
         assert_eq!(
             result.unwrap(),
             expected,
@@ -400,7 +400,7 @@ mod test {
         let result = unpack_fee_history(fees);
 
         // then
-        let expected = vec![BlockFees {
+        let expected = vec![FeesAtHeight {
             height: 600,
             fees: Fees {
                 base_fee_per_gas: 100.try_into().unwrap(),
@@ -431,7 +431,7 @@ mod test {
 
         // then
         let expected = vec![
-            BlockFees {
+            FeesAtHeight {
                 height: 700,
                 fees: Fees {
                     base_fee_per_gas: 100.try_into().unwrap(),
@@ -439,7 +439,7 @@ mod test {
                     base_fee_per_blob_gas: 150.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 701,
                 fees: Fees {
                     base_fee_per_gas: 200.try_into().unwrap(),
@@ -447,7 +447,7 @@ mod test {
                     base_fee_per_blob_gas: 250.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 702,
                 fees: Fees {
                     base_fee_per_gas: 300.try_into().unwrap(),
@@ -479,7 +479,7 @@ mod test {
 
         // then
         let expected = vec![
-            BlockFees {
+            FeesAtHeight {
                 height: u64::MAX - 2,
                 fees: Fees {
                     base_fee_per_gas: u128::MAX - 2,
@@ -487,7 +487,7 @@ mod test {
                     base_fee_per_blob_gas: u128::MAX - 3,
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: u64::MAX - 1,
                 fees: Fees {
                     base_fee_per_gas: u128::MAX - 1,
@@ -519,7 +519,7 @@ mod test {
 
         // then
         let expected = vec![
-            BlockFees {
+            FeesAtHeight {
                 height: 800,
                 fees: Fees {
                     base_fee_per_gas: 500.try_into().unwrap(),
@@ -527,7 +527,7 @@ mod test {
                     base_fee_per_blob_gas: 550.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 801,
                 fees: Fees {
                     base_fee_per_gas: 600.try_into().unwrap(),
@@ -535,7 +535,7 @@ mod test {
                     base_fee_per_blob_gas: 650.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 802,
                 fees: Fees {
                     base_fee_per_gas: 700.try_into().unwrap(),
@@ -543,7 +543,7 @@ mod test {
                     base_fee_per_blob_gas: 750.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 803,
                 fees: Fees {
                     base_fee_per_gas: 800.try_into().unwrap(),

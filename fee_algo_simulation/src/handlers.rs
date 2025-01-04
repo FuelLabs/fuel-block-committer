@@ -151,7 +151,7 @@ impl FeeHandler {
 
     async fn process_block_fee(
         &self,
-        block_fee: &services::fee_metrics_tracker::port::l1::BlockFees,
+        block_fee: &services::fee_metrics_tracker::port::l1::FeesAtHeight,
     ) -> Result<FeeDataPoint, FeeError> {
         let current_fee_wei = calculate_blob_tx_fee(self.params.num_blobs, &block_fee.fees);
         let short_fee_wei = self

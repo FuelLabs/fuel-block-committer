@@ -17,7 +17,7 @@ pub mod l1 {
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct BlockFees {
+    pub struct FeesAtHeight {
         pub height: u64,
         pub fees: Fees,
     }
@@ -28,7 +28,7 @@ pub mod l1 {
 
     #[derive(Debug, PartialEq, Eq, Clone)]
     pub struct SequentialBlockFees {
-        fees: Vec<BlockFees>,
+        fees: Vec<FeesAtHeight>,
     }
 
     // Doesn't detect that we use the contents in the Display impl
@@ -45,15 +45,15 @@ pub mod l1 {
     }
 
     impl IntoIterator for SequentialBlockFees {
-        type Item = BlockFees;
-        type IntoIter = std::vec::IntoIter<BlockFees>;
+        type Item = FeesAtHeight;
+        type IntoIter = std::vec::IntoIter<FeesAtHeight>;
         fn into_iter(self) -> Self::IntoIter {
             self.fees.into_iter()
         }
     }
 
-    impl FromIterator<BlockFees> for Result<SequentialBlockFees, InvalidSequence> {
-        fn from_iter<T: IntoIterator<Item = BlockFees>>(iter: T) -> Self {
+    impl FromIterator<FeesAtHeight> for Result<SequentialBlockFees, InvalidSequence> {
+        fn from_iter<T: IntoIterator<Item = FeesAtHeight>>(iter: T) -> Self {
             SequentialBlockFees::try_from(iter.into_iter().collect::<Vec<_>>())
         }
     }
@@ -61,11 +61,11 @@ pub mod l1 {
     // Cannot be empty
     #[allow(clippy::len_without_is_empty)]
     impl SequentialBlockFees {
-        pub fn iter(&self) -> impl Iterator<Item = &BlockFees> {
+        pub fn iter(&self) -> impl Iterator<Item = &FeesAtHeight> {
             self.fees.iter()
         }
 
-        pub fn last(&self) -> &BlockFees {
+        pub fn last(&self) -> &FeesAtHeight {
             self.fees.last().expect("not empty")
         }
 
@@ -107,9 +107,9 @@ pub mod l1 {
             start..=end
         }
     }
-    impl TryFrom<Vec<BlockFees>> for SequentialBlockFees {
+    impl TryFrom<Vec<FeesAtHeight>> for SequentialBlockFees {
         type Error = InvalidSequence;
-        fn try_from(mut fees: Vec<BlockFees>) -> Result<Self, Self::Error> {
+        fn try_from(mut fees: Vec<FeesAtHeight>) -> Result<Self, Self::Error> {
             if fees.is_empty() {
                 return Err(InvalidSequence("Input cannot be empty".to_string()));
             }
@@ -150,7 +150,7 @@ pub mod l1 {
 
         use itertools::Itertools;
 
-        use super::{Api, BlockFees, Fees, SequentialBlockFees};
+        use super::{Api, Fees, FeesAtHeight, SequentialBlockFees};
 
         #[derive(Debug, Clone, Copy)]
         pub struct ConstantFeeApi {
@@ -170,7 +170,7 @@ pub mod l1 {
             ) -> crate::Result<SequentialBlockFees> {
                 let fees = height_range
                     .into_iter()
-                    .map(|height| BlockFees {
+                    .map(|height| FeesAtHeight {
                         height,
                         fees: self.fees,
                     })
@@ -207,7 +207,7 @@ pub mod l1 {
                     .iter()
                     .skip_while(|(height, _)| !height_range.contains(height))
                     .take_while(|(height, _)| height_range.contains(height))
-                    .map(|(height, fees)| BlockFees {
+                    .map(|(height, fees)| FeesAtHeight {
                         height: *height,
                         fees: *fees,
                     })
@@ -229,7 +229,7 @@ pub mod l1 {
             let fees = (0..num_blocks)
                 .map(|i| {
                     let fee = u128::from(i) + 1;
-                    BlockFees {
+                    FeesAtHeight {
                         height: i,
                         fees: Fees {
                             base_fee_per_gas: fee,

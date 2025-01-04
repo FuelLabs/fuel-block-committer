@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use super::port::l1::{Api, BlockFees, Fees, SequentialBlockFees};
+use super::port::l1::{Api, Fees, FeesAtHeight, SequentialBlockFees};
 use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
@@ -48,9 +48,9 @@ impl<P: Api + Send + Sync> Api for CachingApi<P> {
 impl<P: Api> CachingApi<P> {
     async fn download_missing_fees(
         &self,
-        available_fees: &[BlockFees],
+        available_fees: &[FeesAtHeight],
         height_range: RangeInclusive<u64>,
-    ) -> Result<Vec<BlockFees>> {
+    ) -> Result<Vec<FeesAtHeight>> {
         let mut fees = vec![];
         for range in detect_missing_ranges(available_fees, height_range) {
             let new_fees = self.fees_provider.fees(range.clone()).await?;
@@ -77,17 +77,17 @@ impl<P: Api> CachingApi<P> {
     fn read_cached_fees(
         cache: &BTreeMap<u64, Fees>,
         height_range: RangeInclusive<u64>,
-    ) -> Vec<BlockFees> {
+    ) -> Vec<FeesAtHeight> {
         cache
             .range(height_range)
-            .map(|(height, fees)| BlockFees {
+            .map(|(height, fees)| FeesAtHeight {
                 height: *height,
                 fees: *fees,
             })
             .collect()
     }
 
-    fn update_cache(&self, cache: &mut BTreeMap<u64, Fees>, fees: Vec<BlockFees>) {
+    fn update_cache(&self, cache: &mut BTreeMap<u64, Fees>, fees: Vec<FeesAtHeight>) {
         cache.extend(fees.into_iter().map(|bf| (bf.height, bf.fees)));
 
         while cache.len() > self.cache_limit {
@@ -97,7 +97,7 @@ impl<P: Api> CachingApi<P> {
 }
 
 fn detect_missing_ranges(
-    available_fees: &[BlockFees],
+    available_fees: &[FeesAtHeight],
     height_range: RangeInclusive<u64>,
 ) -> Vec<RangeInclusive<u64>> {
     if available_fees.is_empty() {
@@ -143,7 +143,7 @@ mod tests {
 
     use crate::fee_metrics_tracker::{
         cache::CachingApi,
-        port::l1::{BlockFees, Fees, MockApi, SequentialBlockFees},
+        port::l1::{Fees, FeesAtHeight, MockApi, SequentialBlockFees},
     };
 
     #[tokio::test]
@@ -343,7 +343,7 @@ mod tests {
             height_range
                 .map(|h| {
                     let fee = u128::from(h + 1);
-                    BlockFees {
+                    FeesAtHeight {
                         height: h,
                         fees: Fees {
                             base_fee_per_gas: fee,

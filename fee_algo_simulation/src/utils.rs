@@ -40,7 +40,7 @@ pub fn save_cache(
         fees: cache
             .into_iter()
             .map(
-                |(height, fees)| services::fee_metrics_tracker::port::l1::BlockFees {
+                |(height, fees)| services::fee_metrics_tracker::port::l1::FeesAtHeight {
                     height,
                     fees,
                 },

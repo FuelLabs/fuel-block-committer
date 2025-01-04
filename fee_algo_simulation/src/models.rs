@@ -3,7 +3,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use services::{
-    fee_metrics_tracker::{port::l1::BlockFees, service::SmaPeriods},
+    fee_metrics_tracker::{port::l1::FeesAtHeight, service::SmaPeriods},
     state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds},
 };
 
@@ -12,7 +12,7 @@ pub const URL: &str = "https://eth.llamarpc.com";
 /// Structure for saving fees to cache.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SavedFees {
-    pub fees: Vec<BlockFees>,
+    pub fees: Vec<FeesAtHeight>,
 }
 
 /// Query parameters for the `/fees` endpoint.
