@@ -246,6 +246,7 @@ mod tests {
         // when
         let result = provider.get_fees(0..=9).await.unwrap();
 
+        // then
         assert_eq!(result, generate_sequential_fees(0..=9));
     }
 
