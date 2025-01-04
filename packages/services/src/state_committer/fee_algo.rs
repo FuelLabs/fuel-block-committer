@@ -10,6 +10,79 @@ use crate::{
     Error, Result,
 };
 
+impl<P> SmaFeeAlgo<P>
+where
+    P: crate::fees::Api + Send + Sync,
+{
+    pub async fn fees_acceptable(
+        &self,
+        num_blobs: u32,
+        num_l2_blocks_behind: u32,
+        at_l1_height: u64,
+    ) -> Result<bool> {
+        if self.too_far_behind(num_l2_blocks_behind) {
+            info!(
+                "Sending because we've fallen behind by {} which is more than the configured maximum of {}",
+                num_l2_blocks_behind, self.config.fee_thresholds.max_l2_blocks_behind
+            );
+            return Ok(true);
+        }
+
+        // opted out of validating that num_blobs <= 6, it's not this fn's problem if the caller
+        // wants to send more than 6 blobs
+        let last_n_blocks = |n| last_n_blocks(at_l1_height, n);
+
+        let short_term_sma = self
+            .fee_provider
+            .fees(last_n_blocks(self.config.sma_periods.short))
+            .await?
+            .mean();
+
+        let long_term_sma = self
+            .fee_provider
+            .fees(last_n_blocks(self.config.sma_periods.long))
+            .await?
+            .mean();
+
+        let short_term_tx_fee =
+            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &short_term_sma);
+
+        if self.fee_always_acceptable(short_term_tx_fee) {
+            info!(
+                "Sending because: short term price {short_term_tx_fee} is deemed always acceptable since it is <= {}",
+                self.config.fee_thresholds.always_acceptable_fee
+            );
+            return Ok(true);
+        }
+
+        let long_term_tx_fee =
+            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &long_term_sma);
+        let max_upper_tx_fee = calculate_max_upper_fee(
+            &self.config.fee_thresholds,
+            long_term_tx_fee,
+            num_l2_blocks_behind,
+        );
+
+        info!( "short_term_tx_fee: {short_term_tx_fee}, long_term_tx_fee: {long_term_tx_fee}, max_upper_tx_fee: {max_upper_tx_fee}");
+
+        let should_send = short_term_tx_fee < max_upper_tx_fee;
+
+        if should_send {
+            info!(
+                "Sending because short term price {} is lower than the max upper fee {}",
+                short_term_tx_fee, max_upper_tx_fee
+            );
+        } else {
+            info!(
+                "Not sending because short term price {} is higher than the max upper fee {}",
+                short_term_tx_fee, max_upper_tx_fee
+            );
+        }
+
+        Ok(should_send)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     pub sma_periods: SmaPeriods,
@@ -185,79 +258,6 @@ const fn to_ppm(val: f64) -> u128 {
 
 const fn from_ppm(val: u128) -> u128 {
     val.saturating_div(1_000_000)
-}
-
-impl<P> SmaFeeAlgo<P>
-where
-    P: crate::fees::Api + Send + Sync,
-{
-    pub async fn fees_acceptable(
-        &self,
-        num_blobs: u32,
-        num_l2_blocks_behind: u32,
-        at_l1_height: u64,
-    ) -> Result<bool> {
-        if self.too_far_behind(num_l2_blocks_behind) {
-            info!(
-                "Sending because we've fallen behind by {} which is more than the configured maximum of {}",
-                num_l2_blocks_behind, self.config.fee_thresholds.max_l2_blocks_behind
-            );
-            return Ok(true);
-        }
-
-        // opted out of validating that num_blobs <= 6, it's not this fn's problem if the caller
-        // wants to send more than 6 blobs
-        let last_n_blocks = |n| last_n_blocks(at_l1_height, n);
-
-        let short_term_sma = self
-            .fee_provider
-            .fees(last_n_blocks(self.config.sma_periods.short))
-            .await?
-            .mean();
-
-        let long_term_sma = self
-            .fee_provider
-            .fees(last_n_blocks(self.config.sma_periods.long))
-            .await?
-            .mean();
-
-        let short_term_tx_fee =
-            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &short_term_sma);
-
-        if self.fee_always_acceptable(short_term_tx_fee) {
-            info!(
-                "Sending because: short term price {short_term_tx_fee} is deemed always acceptable since it is <= {}",
-                self.config.fee_thresholds.always_acceptable_fee
-            );
-            return Ok(true);
-        }
-
-        let long_term_tx_fee =
-            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &long_term_sma);
-        let max_upper_tx_fee = calculate_max_upper_fee(
-            &self.config.fee_thresholds,
-            long_term_tx_fee,
-            num_l2_blocks_behind,
-        );
-
-        info!( "short_term_tx_fee: {short_term_tx_fee}, long_term_tx_fee: {long_term_tx_fee}, max_upper_tx_fee: {max_upper_tx_fee}");
-
-        let should_send = short_term_tx_fee < max_upper_tx_fee;
-
-        if should_send {
-            info!(
-                "Sending because short term price {} is lower than the max upper fee {}",
-                short_term_tx_fee, max_upper_tx_fee
-            );
-        } else {
-            info!(
-                "Not sending because short term price {} is higher than the max upper fee {}",
-                short_term_tx_fee, max_upper_tx_fee
-            );
-        }
-
-        Ok(should_send)
-    }
 }
 
 #[cfg(test)]
