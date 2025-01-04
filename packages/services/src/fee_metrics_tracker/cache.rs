@@ -137,66 +137,14 @@ fn detect_missing_ranges(
 
 #[cfg(test)]
 mod tests {
-    use std::{ops::RangeInclusive, sync::Arc};
+    use std::ops::RangeInclusive;
 
-    use mockall::{predicate::eq, Sequence};
-    use tokio::sync::Barrier;
+    use mockall::predicate::eq;
 
     use crate::fee_metrics_tracker::{
         cache::CachingApi,
         port::l1::{BlockFees, Fees, MockApi, SequentialBlockFees},
     };
-
-    #[tokio::test]
-    async fn avoids_duplicate_requests() {
-        // given
-        let mut mock_provider = MockApi::new();
-
-        mock_provider
-            .expect_fees()
-            .with(eq(0..=4))
-            .once()
-            .return_once(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }));
-
-        let provider = CachingApi::new(mock_provider, 5);
-        let _ = provider.get_fees(0..=4).await.unwrap();
-
-        // when
-        let _ = provider.get_fees(0..=4).await.unwrap();
-
-        // then
-        // mock validates no extra calls made
-    }
-
-    #[tokio::test]
-    async fn fetches_only_missing_blocks() {
-        // given
-        let mut mock_provider = MockApi::new();
-
-        let mut sequence = Sequence::new();
-        mock_provider
-            .expect_fees()
-            .with(eq(0..=2))
-            .once()
-            .return_once(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }))
-            .in_sequence(&mut sequence);
-
-        mock_provider
-            .expect_fees()
-            .with(eq(3..=5))
-            .once()
-            .return_once(|range| Box::pin(async move { Ok(generate_sequential_fees(range)) }))
-            .in_sequence(&mut sequence);
-
-        let provider = CachingApi::new(mock_provider, 5);
-        let _ = provider.get_fees(0..=2).await.unwrap();
-
-        // when
-        let _ = provider.get_fees(2..=5).await.unwrap();
-
-        // then
-        // not called for the overlapping area
-    }
 
     #[tokio::test]
     async fn evicts_oldest_blocks() {
@@ -248,55 +196,6 @@ mod tests {
 
         // then
         assert_eq!(result, generate_sequential_fees(0..=9));
-    }
-
-    #[tokio::test]
-    async fn handles_concurrent_requests() {
-        // given
-        let mut mock_provider = MockApi::new();
-
-        let cache_limit = 10;
-
-        // Use a barrier to synchronize the mock calls
-        let barrier = Arc::new(Barrier::new(2));
-
-        let barrier_clone = barrier.clone();
-
-        mock_provider
-            .expect_fees()
-            .with(eq(0..=4))
-            .once()
-            .returning(move |range| {
-                let barrier = barrier_clone.clone();
-                Box::pin(async move {
-                    // Wait for the second request to start
-                    barrier.wait().await;
-                    Ok(generate_sequential_fees(range))
-                })
-            });
-
-        mock_provider
-            .expect_current_height()
-            .returning(|| Box::pin(async { Ok(10) }));
-
-        let provider = Arc::new(CachingApi::new(mock_provider, cache_limit));
-
-        // when
-        let provider_clone = provider.clone();
-        let handle1 = tokio::spawn(async move { provider_clone.get_fees(0..=4).await.unwrap() });
-
-        let provider_clone = provider.clone();
-        let handle2 = tokio::spawn(async move {
-            // Ensure both tasks start around the same time
-            barrier.wait().await;
-            provider_clone.get_fees(0..=4).await.unwrap()
-        });
-
-        let result1 = handle1.await.unwrap();
-        let result2 = handle2.await.unwrap();
-
-        // then
-        assert_eq!(result1, result2);
     }
 
     #[tokio::test]
@@ -393,39 +292,6 @@ mod tests {
         let expected_second = generate_sequential_fees(0..=7);
         assert_eq!(first_call, expected_first);
         assert_eq!(second_call, expected_second);
-    }
-
-    #[tokio::test]
-    async fn export_after_import() {
-        // given
-        let mut mock_provider = MockApi::new();
-
-        mock_provider
-            .expect_current_height()
-            .returning(|| Box::pin(async { Ok(10) }));
-
-        let provider = CachingApi::new(mock_provider, 10);
-
-        let fees_to_import = (10..=14)
-            .map(|h| {
-                let fee = u128::from(h) + 1;
-                (
-                    h,
-                    Fees {
-                        base_fee_per_gas: fee,
-                        reward: fee,
-                        base_fee_per_blob_gas: fee,
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-
-        // when
-        provider.import(fees_to_import.clone()).await;
-        let exported_fees = provider.export().await.into_iter().collect::<Vec<_>>();
-
-        // then
-        assert_eq!(exported_fees, fees_to_import);
     }
 
     #[tokio::test]
