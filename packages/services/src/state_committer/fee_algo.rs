@@ -6,7 +6,7 @@ use std::{
 use tracing::info;
 
 use crate::{
-    fee_metrics_tracker::{self, service::SmaPeriods},
+    fee_metrics_tracker::{self},
     Error, Result,
 };
 
@@ -96,6 +96,12 @@ pub struct FeeThresholds {
     pub max_l2_blocks_behind: NonZeroU32,
     pub multiplier_range: FeeMultiplierRange,
     pub always_acceptable_fee: u128,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SmaPeriods {
+    pub short: NonZeroU64,
+    pub long: NonZeroU64,
 }
 
 #[cfg(feature = "test-helpers")]
@@ -258,11 +264,10 @@ where
 mod test {
     pub use test_case::test_case;
 
-    use super::Config;
+    use super::{Config, SmaPeriods};
     use crate::{
         fee_metrics_tracker::{
             port::l1::{Api, Fees},
-            service::SmaPeriods,
             testing::PreconfiguredFeeApi,
         },
         state_committer::{

@@ -6,7 +6,7 @@ use metrics::{
 };
 
 use super::port::l1::{Api, Fees, FeesAtHeight};
-use crate::{Error, Result, Runner};
+use crate::{state_committer::SmaPeriods, Error, Result, Runner};
 
 #[derive(Debug, Clone)]
 struct FeeMetrics {
@@ -17,28 +17,28 @@ struct FeeMetrics {
 
 impl Default for FeeMetrics {
     fn default() -> Self {
-        let current_blob_tx_fee = IntGauge::with_opts(Opts::new(
+        let current = IntGauge::with_opts(Opts::new(
             "current_blob_tx_fee",
             "The current fee for a transaction with 6 blobs",
         ))
         .expect("metric config to be correct");
 
-        let short_term_blob_tx_fee = IntGauge::with_opts(Opts::new(
+        let short = IntGauge::with_opts(Opts::new(
             "short_term_blob_tx_fee",
             "The short term fee for a transaction with 6 blobs",
         ))
         .expect("metric config to be correct");
 
-        let long_term_blob_tx_fee = IntGauge::with_opts(Opts::new(
+        let long = IntGauge::with_opts(Opts::new(
             "long_term_blob_tx_fee",
             "The long term fee for a transaction with 6 blobs",
         ))
         .expect("metric config to be correct");
 
         Self {
-            current: current_blob_tx_fee,
-            short: short_term_blob_tx_fee,
-            long: long_term_blob_tx_fee,
+            current,
+            short,
+            long,
         }
     }
 }
@@ -58,12 +58,6 @@ pub struct FeeMetricsTracker<P> {
     fee_provider: P,
     sma_periods: SmaPeriods,
     metrics: FeeMetrics,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct SmaPeriods {
-    pub short: NonZeroU64,
-    pub long: NonZeroU64,
 }
 
 pub fn calculate_blob_tx_fee(num_blobs: u32, fees: &Fees) -> u128 {

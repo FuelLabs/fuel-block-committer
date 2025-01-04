@@ -3,8 +3,8 @@ use std::num::{NonZeroU32, NonZeroU64};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use services::{
-    fee_metrics_tracker::{port::l1::FeesAtHeight, service::SmaPeriods},
-    state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds},
+    fee_metrics_tracker::port::l1::FeesAtHeight,
+    state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods},
 };
 
 pub const URL: &str = "https://eth.llamarpc.com";

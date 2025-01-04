@@ -9,10 +9,7 @@ use clap::{command, Parser};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
-use services::{
-    fee_metrics_tracker::service::SmaPeriods,
-    state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds},
-};
+use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
 use storage::DbConfig;
 use url::Url;
 
