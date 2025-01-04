@@ -44,8 +44,6 @@ tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 test-helpers = { workspace = true }
 rand = { workspace = true, features = ["small_rng", "std", "std_rng"] }
-csv = "1.3"
-proptest = { workspace = true, features = ["default"] }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand"]
