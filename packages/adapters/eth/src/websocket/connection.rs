@@ -219,7 +219,7 @@ impl EthApi for WsConnection {
         reward_percentiles: &[f64],
     ) -> Result<FeeHistory> {
         let max = *height_range.end();
-        let count = height_range.clone().count() as u64;
+        let count = height_range.count() as u64;
         Ok(self
             .provider
             .get_fee_history(count, BlockNumberOrTag::Number(max), reward_percentiles)
