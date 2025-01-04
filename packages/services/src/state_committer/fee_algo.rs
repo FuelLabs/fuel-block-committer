@@ -274,7 +274,6 @@ mod tests {
     };
 
     #[test_case(
-        // Test Case 1: No blocks behind, no multiplier adjustments
         FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
             always_acceptable_fee: 0,
@@ -319,7 +318,6 @@ mod tests {
         "End multiplier greater than 1, with premium"
     )]
     #[test_case(
-        // Test Case 8: High fee with premium
         FeeThresholds {
             max_l2_blocks_behind: 100.try_into().unwrap(),
             multiplier_range: FeeMultiplierRange::new_unchecked(1.0, 1.2),
@@ -371,7 +369,7 @@ mod tests {
                 ..Default::default()
             },
         },
-        0, // not behind at all
+        0,
         true;
         "Should send because all short-term fees are lower than long-term"
     )]
@@ -504,7 +502,6 @@ mod tests {
         "Should not send because short-term reward is higher"
     )]
     #[test_case(
-        // Multiple short-term fees are lower
         Fees { base_fee_per_gas: 4000, reward: 8000, base_fee_per_blob_gas: 4000},
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 3500},
         6,
@@ -537,7 +534,6 @@ mod tests {
         "Should not send because all fees are identical and no tolerance"
     )]
     #[test_case(
-        // Zero blobs scenario: blob fee differences don't matter
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
         Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000},
         0,
@@ -554,7 +550,6 @@ mod tests {
         "Zero blobs: short-term base_fee_per_gas and reward are lower, send"
     )]
     #[test_case(
-        // Zero blobs but short-term reward is higher
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
         Fees { base_fee_per_gas: 3000, reward: 7000, base_fee_per_blob_gas: 5000},
         0,
@@ -571,7 +566,6 @@ mod tests {
         "Zero blobs: short-term reward is higher, don't send"
     )]
     #[test_case(
-        // Zero blobs: ignore blob fee, short-term base_fee_per_gas is lower, send
         Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
         Fees { base_fee_per_gas: 2000, reward: 6000, base_fee_per_blob_gas: 50_000_000},
         0,
@@ -587,9 +581,7 @@ mod tests {
         true;
         "Zero blobs: ignore blob fee, short-term base_fee_per_gas is lower, send"
     )]
-    // Initially not send, but as num_l2_blocks_behind increases, acceptance grows.
     #[test_case(
-        // Initially short-term fee too high compared to long-term (strict scenario), no send at t=0
         Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
         Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
         1,
@@ -606,7 +598,6 @@ mod tests {
         "Early: short-term expensive, not send"
     )]
     #[test_case(
-        // At max_l2_blocks_behind, send regardless
         Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
         Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
         1,
@@ -623,7 +614,6 @@ mod tests {
         "Later: after max wait, send regardless"
     )]
     #[test_case(
-        // Mid-wait: increased tolerance allows acceptance
         Fees { base_fee_per_gas: 6000, reward: 1, base_fee_per_blob_gas: 6000},
         Fees { base_fee_per_gas: 7000, reward: 1, base_fee_per_blob_gas: 7000},
         1,
@@ -640,7 +630,6 @@ mod tests {
         "Mid-wait: increased tolerance allows acceptance"
     )]
     #[test_case(
-        // Short-term fee is huge, but always_acceptable_fee is large, so send immediately
         Fees { base_fee_per_gas: 100_000, reward: 1, base_fee_per_blob_gas: 100_000},
         Fees { base_fee_per_gas: 2_000_000, reward: 1_000_000, base_fee_per_blob_gas: 20_000_000},
         1,
