@@ -354,12 +354,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use fee_metrics_tracker::service::SmaPeriods;
+    use fee_metrics_tracker::{service::SmaPeriods, testing::PreconfiguredFeeApi};
 
     use super::*;
-    use crate::{
-        fee_metrics_tracker::port::l1::testing::PreconfiguredFeeApi, state_committer::FeeThresholds,
-    };
+    use crate::state_committer::FeeThresholds;
 
     #[tokio::test]
     async fn test_send_when_too_far_behind_and_fee_provider_fails() {

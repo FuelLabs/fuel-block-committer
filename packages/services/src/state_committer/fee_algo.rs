@@ -261,8 +261,9 @@ mod test {
     use super::Config;
     use crate::{
         fee_metrics_tracker::{
-            port::l1::{testing::PreconfiguredFeeApi, Api, Fees},
+            port::l1::{Api, Fees},
             service::SmaPeriods,
+            testing::PreconfiguredFeeApi,
         },
         state_committer::{
             fee_algo::{calculate_max_upper_fee, FeeMultiplierRange, SmaFeeAlgo},
