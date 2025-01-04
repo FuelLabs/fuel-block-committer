@@ -113,7 +113,7 @@ impl services::block_bundler::port::l1::FragmentEncoder for BlobEncoder {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use alloy::eips::eip4844::DATA_GAS_PER_BLOB;
     use fuel_block_committer_encoding::blob;
     use services::block_bundler::port::l1::FragmentEncoder;

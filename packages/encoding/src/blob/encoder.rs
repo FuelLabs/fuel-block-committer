@@ -48,7 +48,7 @@ impl Encoder {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     #[test]
     fn can_handle_zero_input() {
         // given

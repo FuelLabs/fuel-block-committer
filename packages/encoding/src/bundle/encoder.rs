@@ -149,7 +149,7 @@ impl CompressionLevel {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::bundle::{CompressionLevel, Encoder};
 
     #[test]

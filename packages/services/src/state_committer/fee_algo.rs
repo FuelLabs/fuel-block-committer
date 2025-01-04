@@ -261,7 +261,7 @@ const fn from_ppm(val: u128) -> u128 {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     pub use test_case::test_case;
 
     use super::{Config, SmaPeriods};

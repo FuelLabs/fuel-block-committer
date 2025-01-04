@@ -40,7 +40,7 @@ impl Decoder {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::bundle::{Bundle, BundleV1, Encoder};
 
     #[test]

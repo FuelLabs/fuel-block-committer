@@ -126,7 +126,7 @@ pub fn chunk_range_inclusive(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::ops::RangeInclusive;
 
     use alloy::rpc::types::FeeHistory;

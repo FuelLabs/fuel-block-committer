@@ -7,9 +7,8 @@ pub mod service {
     };
 
     use crate::{
-        fees::{Api, Fees, FeesAtHeight},
-        state_committer::SmaPeriods,
-        Error, Result, Runner,
+        fees::{Api, Fees},
+        state_committer::SmaPeriods, Result, Runner,
     };
 
     #[derive(Debug, Clone)]
