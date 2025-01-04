@@ -1,9 +1,7 @@
-use std::iter::repeat;
-use std::time::Duration;
+use std::{iter::repeat, time::Duration};
 
 use itertools::Itertools;
-use metrics::prometheus;
-use metrics::RegistersMetrics;
+use metrics::{prometheus, RegistersMetrics};
 use services::{
     fees::Fees,
     state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
