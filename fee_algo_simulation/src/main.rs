@@ -13,6 +13,7 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // TODO: segfault test out how this behaves when there is no data
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?

@@ -266,7 +266,6 @@ where
                 self.submit_fragments(fragments, None).await?;
             }
         } else {
-            // TODO: segfault test this
             // if we have no fragments to submit, that means that we're up to date and new
             // blocks haven't been bundled yet
             let current_height_to_commit =

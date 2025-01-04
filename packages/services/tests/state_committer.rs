@@ -1,12 +1,14 @@
 use std::time::Duration;
 
+use metrics::prometheus;
+use metrics::RegistersMetrics;
 use services::{
     fees::Fees,
     state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
-use test_helpers::{noop_fees, preconfigured_fees};
+use test_helpers::{mocks, noop_fees, preconfigured_fees};
 
 #[tokio::test]
 async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
@@ -766,5 +768,117 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
 
     // then
     // Mocks validate that the fragments have been sent due to increased tolerance from nearing max blocks behind
+    Ok(())
+}
+
+#[tokio::test]
+async fn updates_current_height_to_commit_metric_with_latest_bundled_height() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let test_clock = setup.test_clock();
+
+    setup.commit_block_bundle([0; 32], 0, 100).await;
+
+    let l1_mock_submit = mocks::l1::expects_state_submissions(vec![]);
+
+    let fuel_mock = mocks::fuel::latest_height_is(150);
+
+    let registry = prometheus::Registry::new();
+
+    let mut state_committer = StateCommitter::new(
+        l1_mock_submit,
+        fuel_mock,
+        setup.db(),
+        StateCommitterConfig {
+            lookback_window: 1000,
+            fragment_accumulation_timeout: Duration::from_secs(60),
+            fragments_to_accumulate: 10.try_into().unwrap(),
+            ..Default::default()
+        },
+        test_clock.clone(),
+        noop_fees(),
+    );
+
+    state_committer.register_metrics(&registry);
+
+    // when
+    state_committer.run().await?;
+
+    // then
+    let gathered_metrics = registry.gather();
+    let metric = gathered_metrics
+        .iter()
+        .find(|m| m.get_name() == "current_height_to_commit")
+        .expect("Metric `current_height_to_commit` should be present");
+
+    // Extract the gauge value
+    let metric_value = metric
+        .get_metric()
+        .iter()
+        .next()
+        .and_then(|m| m.get_gauge().get_value().into())
+        .expect("Metric `current_height_to_commit` should have a value");
+
+    assert_eq!(
+        metric_value, 101.0,
+        "current_height_to_commit should be set to latest_bundled_height + 1 (100 + 1 = 101)"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn updates_current_height_to_commit_metric_without_latest_bundled_height() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let test_clock = setup.test_clock();
+
+    // Do NOT commit any block, leaving `latest_bundled_height` as None
+
+    let l1_mock_submit = mocks::l1::expects_state_submissions(vec![]);
+
+    let fuel_mock = mocks::fuel::latest_height_is(150);
+
+    let registry = prometheus::Registry::new();
+
+    let mut state_committer = StateCommitter::new(
+        l1_mock_submit,
+        fuel_mock,
+        setup.db(),
+        StateCommitterConfig {
+            lookback_window: 100,
+            fragment_accumulation_timeout: Duration::from_secs(60),
+            fragments_to_accumulate: 10.try_into().unwrap(),
+            ..Default::default()
+        },
+        test_clock.clone(),
+        noop_fees(),
+    );
+
+    state_committer.register_metrics(&registry);
+
+    // when
+    state_committer.run().await?;
+
+    // then
+    let gathered_metrics = registry.gather();
+    let metric = gathered_metrics
+        .iter()
+        .find(|m| m.get_name() == "current_height_to_commit")
+        .expect("Metric `current_height_to_commit` should be present");
+
+    // Extract the gauge value
+    let metric_value = metric
+        .get_metric()
+        .iter()
+        .next()
+        .and_then(|m| m.get_gauge().get_value().into())
+        .expect("Metric `current_height_to_commit` should have a value");
+
+    assert_eq!(
+        metric_value, 50.,
+        "current_height_to_commit should be set to latest_height - lookback_window (150 - 100 = 0)"
+    );
+
     Ok(())
 }

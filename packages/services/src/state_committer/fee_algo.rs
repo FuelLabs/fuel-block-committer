@@ -632,7 +632,7 @@ mod tests {
 
             assert_eq!(
             decision, should_send,
-            "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {expected_decision}, got: {decision}",
+            "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {should_send}, got: {decision}",
         );
         }
 
