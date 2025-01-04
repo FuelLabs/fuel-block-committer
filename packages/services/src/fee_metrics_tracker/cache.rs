@@ -2,9 +2,8 @@ use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{Error, Result};
-
 use super::port::l1::{Api, BlockFees, Fees, SequentialBlockFees};
+use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct CachingApi<P> {

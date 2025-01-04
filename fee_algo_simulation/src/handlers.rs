@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpResponse, Responder, ResponseError};
 use anyhow::Result;
 use eth::HttpClient;
 use services::{
@@ -12,6 +12,7 @@ use services::{
     state_committer::{AlgoConfig, SmaFeeAlgo},
     types::{DateTime, Utc},
 };
+use thiserror::Error;
 use tracing::{error, info};
 
 use super::{
@@ -19,8 +20,6 @@ use super::{
     state::AppState,
     utils::last_n_blocks,
 };
-use actix_web::ResponseError;
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum FeeError {
