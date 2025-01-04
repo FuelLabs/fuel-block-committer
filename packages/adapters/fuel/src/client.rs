@@ -29,7 +29,6 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    #[must_use]
     pub fn new(
         url: &Url,
         unhealthy_after_n_errors: usize,
@@ -166,7 +165,6 @@ impl HttpClient {
         }
     }
 
-    #[must_use]
     pub fn connection_health_checker(&self) -> HealthChecker {
         self.health_tracker.tracker()
     }

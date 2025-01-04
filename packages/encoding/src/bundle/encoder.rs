@@ -130,7 +130,6 @@ impl FromStr for CompressionLevel {
 
 #[allow(dead_code)]
 impl CompressionLevel {
-    #[must_use]
     pub fn levels() -> Vec<Self> {
         vec![
             Self::Disabled,

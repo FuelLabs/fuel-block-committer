@@ -13,7 +13,7 @@ use crate::{
     Result,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
@@ -29,6 +29,8 @@ impl Metadata {
         self.block_heights.clone().count()
     }
 
+    // This is for metrics anyway, precission loss is ok
+    #[allow(clippy::cast_precision_loss)]
     pub fn compression_ratio(&self) -> f64 {
         self.uncompressed_data_size.get() as f64 / self.compressed_data_size.get() as f64
     }
@@ -56,7 +58,7 @@ impl Display for Metadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleProposal {
     pub fragments: NonEmpty<Fragment>,
     pub metadata: Metadata,

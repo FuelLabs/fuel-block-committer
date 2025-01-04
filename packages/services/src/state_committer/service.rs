@@ -33,7 +33,7 @@ impl Default for Config {
             fragment_accumulation_timeout: Duration::from_secs(0),
             fragments_to_accumulate: 1.try_into().unwrap(),
             gas_bump_timeout: Duration::from_secs(300),
-            fee_algo: Default::default(),
+            fee_algo: AlgoConfig::default(),
         }
     }
 }
@@ -97,7 +97,7 @@ where
             config,
             clock,
             startup_time,
-            metrics: Default::default(),
+            metrics: Metrics::default(),
         }
     }
 }
@@ -123,7 +123,7 @@ where
         let elapsed = self.clock.now() - reference_time;
         let std_elapsed = elapsed
             .to_std()
-            .map_err(|e| crate::Error::Other(format!("Failed to convert time: {}", e)))?;
+            .map_err(|e| crate::Error::Other(format!("Failed to convert time: {e}")))?;
         Ok(std_elapsed >= self.config.fragment_accumulation_timeout)
     }
 
@@ -131,7 +131,7 @@ where
         let l1_height = self.l1_adapter.current_height().await?;
         let l2_height = self.fuel_api.latest_height().await?;
 
-        let oldest_l2_block = self.oldest_l2_block_in_fragments(fragments);
+        let oldest_l2_block = Self::oldest_l2_block_in_fragments(fragments);
         self.update_oldest_block_metric(oldest_l2_block);
 
         let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block);
@@ -145,7 +145,7 @@ where
             .await
     }
 
-    fn oldest_l2_block_in_fragments(&self, fragments: &NonEmpty<BundleFragment>) -> u32 {
+    fn oldest_l2_block_in_fragments(fragments: &NonEmpty<BundleFragment>) -> u32 {
         fragments
             .minimum_by_key(|b| b.oldest_block_in_bundle)
             .oldest_block_in_bundle
@@ -220,7 +220,7 @@ where
         if let Some(fragments) = fragments.as_ref() {
             // Tracking the metric here as well to get updates more often -- because
             // submit_fragments might not be called
-            self.update_oldest_block_metric(self.oldest_l2_block_in_fragments(fragments));
+            self.update_oldest_block_metric(Self::oldest_l2_block_in_fragments(fragments));
         }
 
         Ok(fragments)
@@ -229,7 +229,7 @@ where
     fn update_oldest_block_metric(&self, oldest_height: u32) {
         self.metrics
             .current_height_to_commit
-            .set(oldest_height as i64);
+            .set(oldest_height.into());
     }
 
     async fn should_submit_fragments(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
@@ -282,7 +282,7 @@ where
 
             self.metrics
                 .current_height_to_commit
-                .set(current_height_to_commit as i64);
+                .set(current_height_to_commit.into());
         }
 
         Ok(())
@@ -300,13 +300,12 @@ where
     ) -> Result<NonEmpty<BundleFragment>> {
         let fragments = self.storage.fragments_submitted_by_tx(tx_hash).await?;
 
-        match NonEmpty::collect(fragments) {
-            Some(fragments) => Ok(fragments),
-            None => Err(crate::Error::Other(format!(
+        NonEmpty::collect(fragments).ok_or_else(|| {
+            crate::Error::Other(format!(
                 "no fragments found for previously submitted tx {}",
                 hex::encode(tx_hash)
-            ))),
-        }
+            ))
+        })
     }
 
     async fn resubmit_fragments_if_stalled(&self) -> Result<()> {
@@ -344,9 +343,9 @@ where
 {
     async fn run(&mut self) -> Result<()> {
         if self.storage.has_nonfinalized_txs().await? {
-            self.resubmit_fragments_if_stalled().await?
+            self.resubmit_fragments_if_stalled().await?;
         } else {
-            self.submit_fragments_if_ready().await?
+            self.submit_fragments_if_ready().await?;
         };
 
         Ok(())

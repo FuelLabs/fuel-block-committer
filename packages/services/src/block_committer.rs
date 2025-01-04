@@ -221,7 +221,7 @@ pub mod port {
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
-        pub trait Contract: Send + Sync {
+        pub trait Contract: Sync {
             async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
             fn commit_interval(&self) -> NonZeroU32;
         }
@@ -246,7 +246,7 @@ pub mod port {
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
-        pub trait Api: Send + Sync {
+        pub trait Api: Sync {
             async fn latest_block(&self) -> Result<FuelBlock>;
             async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>>;
         }
@@ -254,7 +254,7 @@ pub mod port {
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
-    pub trait Storage: Send + Sync {
+    pub trait Storage: Sync {
         async fn record_block_submission(
             &self,
             submission_tx: BlockSubmissionTx,

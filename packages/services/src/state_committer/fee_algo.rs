@@ -75,7 +75,7 @@ impl FeeMultiplierRange {
     }
 
     #[cfg(feature = "test-helpers")]
-    pub fn new_unchecked(starting_multiplier: f64, ending_multiplier: f64) -> Self {
+    pub const fn new_unchecked(starting_multiplier: f64, ending_multiplier: f64) -> Self {
         Self {
             starting_multiplier,
             ending_multiplier,
@@ -98,47 +98,12 @@ pub struct FeeThresholds {
     pub always_acceptable_fee: u128,
 }
 
-#[derive(Default, Copy, Clone, Debug, PartialEq)]
-pub struct Percentage(f64);
-
-impl TryFrom<f64> for Percentage {
-    type Error = Error;
-
-    fn try_from(value: f64) -> std::result::Result<Self, Self::Error> {
-        if value < 0. {
-            return Err(Error::Other(format!("Invalid percentage value {value}")));
-        }
-
-        Ok(Self(value))
-    }
-}
-
-impl From<Percentage> for f64 {
-    fn from(value: Percentage) -> Self {
-        value.0
-    }
-}
-
-impl Percentage {
-    pub const ZERO: Self = Percentage(0.);
-    pub const HUNDRED: Self = Percentage(1.);
-    pub const PPM: u128 = 1_000_000;
-
-    pub fn ppm(&self) -> u128 {
-        (self.0 * 1_000_000.) as u128
-    }
-
-    pub fn get(&self) -> f64 {
-        self.0
-    }
-}
-
 #[cfg(feature = "test-helpers")]
 impl Default for FeeThresholds {
     fn default() -> Self {
         Self {
             max_l2_blocks_behind: NonZeroU32::new(u32::MAX).unwrap(),
-            multiplier_range: Default::default(),
+            multiplier_range: FeeMultiplierRange::default(),
             always_acceptable_fee: u128::MAX,
         }
     }
@@ -151,23 +116,23 @@ pub struct SmaFeeAlgo<P> {
 }
 
 impl<P> SmaFeeAlgo<P> {
-    pub fn new(fee_provider: P, config: Config) -> Self {
+    pub const fn new(fee_provider: P, config: Config) -> Self {
         Self {
             fee_provider,
             config,
         }
     }
 
-    fn too_far_behind(&self, num_l2_blocks_behind: u32) -> bool {
+    const fn too_far_behind(&self, num_l2_blocks_behind: u32) -> bool {
         num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind.get()
     }
 
-    fn fee_always_acceptable(&self, short_term_tx_fee: u128) -> bool {
+    const fn fee_always_acceptable(&self, short_term_tx_fee: u128) -> bool {
         short_term_tx_fee <= self.config.fee_thresholds.always_acceptable_fee
     }
 }
 
-fn last_n_blocks(current_block: u64, n: NonZeroU64) -> RangeInclusive<u64> {
+const fn last_n_blocks(current_block: u64, n: NonZeroU64) -> RangeInclusive<u64> {
     current_block.saturating_sub(n.get().saturating_sub(1))..=current_block
 }
 
@@ -181,9 +146,7 @@ fn calculate_max_upper_fee(
 
     debug_assert!(
         blocks_behind <= max_blocks_behind,
-        "blocks_behind ({}) should not exceed max_blocks_behind ({}), it should have been handled earlier",
-        blocks_behind,
-        max_blocks_behind
+        "blocks_behind ({blocks_behind}) should not exceed max_blocks_behind ({max_blocks_behind}), it should have been handled earlier",
     );
 
     let multiplier_ppm = {
@@ -210,11 +173,11 @@ fn calculate_max_upper_fee(
     max_fee
 }
 
-fn to_ppm(val: f64) -> u128 {
+const fn to_ppm(val: f64) -> u128 {
     (val * 1_000_000.) as u128
 }
 
-fn from_ppm(val: u128) -> u128 {
+const fn from_ppm(val: u128) -> u128 {
     val.saturating_div(1_000_000)
 }
 

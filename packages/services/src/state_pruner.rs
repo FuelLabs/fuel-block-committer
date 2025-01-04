@@ -188,7 +188,7 @@ pub mod port {
         Result,
     };
 
-    #[derive(Debug, Clone, PartialEq, PartialOrd)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
     pub struct TableSizes {
         pub blob_transactions: u32,
         pub fragments: u32,
@@ -202,7 +202,7 @@ pub mod port {
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
-    pub trait Storage: Send + Sync {
+    pub trait Storage: Sync {
         async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()>;
         async fn table_sizes(&self) -> Result<TableSizes>;
     }

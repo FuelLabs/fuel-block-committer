@@ -8,7 +8,7 @@ pub mod l1 {
 
     impl Default for Fees {
         fn default() -> Self {
-            Fees {
+            Self {
                 base_fee_per_gas: 1.try_into().unwrap(),
                 reward: 1.try_into().unwrap(),
                 base_fee_per_blob_gas: 1.try_into().unwrap(),
@@ -96,6 +96,7 @@ pub mod l1 {
                 base_fee_per_blob_gas: total.base_fee_per_blob_gas.saturating_div(count),
             }
         }
+
         pub fn len(&self) -> usize {
             self.fees.len()
         }
@@ -157,7 +158,7 @@ pub mod l1 {
         }
 
         impl ConstantFeeApi {
-            pub fn new(fees: Fees) -> Self {
+            pub const fn new(fees: Fees) -> Self {
                 Self { fees }
             }
         }
@@ -640,7 +641,7 @@ pub mod cache {
     }
 
     impl<P> CachingApi<P> {
-        pub fn inner(&self) -> &P {
+        pub const fn inner(&self) -> &P {
             &self.fees_provider
         }
 
@@ -691,11 +692,10 @@ pub mod cache {
             height_range: RangeInclusive<u64>,
         ) -> Result<SequentialBlockFees> {
             let mut cache_guard = self.cache.lock().await;
-            let mut fees = Self::read_cached_fees(&cache_guard, height_range.clone()).await;
+            let mut fees = Self::read_cached_fees(&cache_guard, height_range.clone());
             let missing_fees = self.download_missing_fees(&fees, height_range).await?;
 
-            self.update_cache(&mut cache_guard, missing_fees.clone())
-                .await;
+            self.update_cache(&mut cache_guard, missing_fees.clone());
             drop(cache_guard);
 
             fees.extend(missing_fees);
@@ -704,7 +704,7 @@ pub mod cache {
             SequentialBlockFees::try_from(fees).map_err(|e| Error::Other(e.to_string()))
         }
 
-        async fn read_cached_fees(
+        fn read_cached_fees(
             cache: &BTreeMap<u64, Fees>,
             height_range: RangeInclusive<u64>,
         ) -> Vec<BlockFees> {
@@ -717,7 +717,7 @@ pub mod cache {
                 .collect()
         }
 
-        async fn update_cache(&self, cache: &mut BTreeMap<u64, Fees>, fees: Vec<BlockFees>) {
+        fn update_cache(&self, cache: &mut BTreeMap<u64, Fees>, fees: Vec<BlockFees>) {
             cache.extend(fees.into_iter().map(|bf| (bf.height, bf.fees)));
 
             while cache.len() > self.cache_limit {

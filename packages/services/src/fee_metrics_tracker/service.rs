@@ -9,13 +9,13 @@ use super::port::l1::{Api, BlockFees, Fees};
 use crate::{Error, Result, Runner};
 
 #[derive(Debug, Clone)]
-struct Metrics {
-    current_blob_tx_fee: IntGauge,
-    short_term_blob_tx_fee: IntGauge,
-    long_term_blob_tx_fee: IntGauge,
+struct FeeMetrics {
+    current: IntGauge,
+    short: IntGauge,
+    long: IntGauge,
 }
 
-impl Default for Metrics {
+impl Default for FeeMetrics {
     fn default() -> Self {
         let current_blob_tx_fee = IntGauge::with_opts(Opts::new(
             "current_blob_tx_fee",
@@ -36,9 +36,9 @@ impl Default for Metrics {
         .expect("metric config to be correct");
 
         Self {
-            current_blob_tx_fee,
-            short_term_blob_tx_fee,
-            long_term_blob_tx_fee,
+            current: current_blob_tx_fee,
+            short: short_term_blob_tx_fee,
+            long: long_term_blob_tx_fee,
         }
     }
 }
@@ -46,9 +46,9 @@ impl Default for Metrics {
 impl<P> RegistersMetrics for FeeMetricsTracker<P> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![
-            Box::new(self.metrics.current_blob_tx_fee.clone()),
-            Box::new(self.metrics.short_term_blob_tx_fee.clone()),
-            Box::new(self.metrics.long_term_blob_tx_fee.clone()),
+            Box::new(self.metrics.current.clone()),
+            Box::new(self.metrics.short.clone()),
+            Box::new(self.metrics.long.clone()),
         ]
     }
 }
@@ -57,7 +57,7 @@ impl<P> RegistersMetrics for FeeMetricsTracker<P> {
 pub struct FeeMetricsTracker<P> {
     fee_provider: P,
     sma_periods: SmaPeriods,
-    metrics: Metrics,
+    metrics: FeeMetrics,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -109,7 +109,7 @@ impl<P: Api> FeeMetricsTracker<P> {
     }
 }
 
-fn last_n_blocks(current_block: u64, n: NonZeroU64) -> RangeInclusive<u64> {
+const fn last_n_blocks(current_block: u64, n: NonZeroU64) -> RangeInclusive<u64> {
     current_block.saturating_sub(n.get().saturating_sub(1))..=current_block
 }
 
@@ -118,7 +118,7 @@ impl<P> FeeMetricsTracker<P> {
         Self {
             fee_provider,
             sma_periods,
-            metrics: Metrics::default(),
+            metrics: FeeMetrics::default(),
         }
     }
 }
@@ -150,13 +150,9 @@ impl<P: Api> FeeMetricsTracker<P> {
         let calc_fee =
             |fees: &Fees| i64::try_from(calculate_blob_tx_fee(6, fees)).unwrap_or(i64::MAX);
 
-        self.metrics.current_blob_tx_fee.set(calc_fee(&latest_fees));
-        self.metrics
-            .short_term_blob_tx_fee
-            .set(calc_fee(&short_term_sma));
-        self.metrics
-            .long_term_blob_tx_fee
-            .set(calc_fee(&long_term_sma));
+        self.metrics.current.set(calc_fee(&latest_fees));
+        self.metrics.short.set(calc_fee(&short_term_sma));
+        self.metrics.long.set(calc_fee(&long_term_sma));
 
         Ok(())
     }

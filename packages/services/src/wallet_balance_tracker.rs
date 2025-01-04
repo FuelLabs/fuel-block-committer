@@ -28,7 +28,7 @@ pub mod service {
         pub fn new(api: Api) -> Self {
             Self {
                 api,
-                tracking: Default::default(),
+                tracking: HashMap::default(),
             }
         }
 
@@ -100,7 +100,10 @@ mod tests {
 
     use alloy::primitives::U256;
     use metrics::{
-        prometheus::{proto::Metric, Registry},
+        prometheus::{
+            proto::{Metric, MetricFamily},
+            Registry,
+        },
         RegistersMetrics,
     };
     use mockall::predicate::eq;
@@ -143,7 +146,7 @@ mod tests {
             let eth_balance_metric = metrics
                 .iter()
                 .filter(|metric_group| metric_group.get_name() == "wallet_balance")
-                .flat_map(|metric_group| metric_group.get_metric())
+                .flat_map(MetricFamily::get_metric)
                 .filter(|metric| {
                     metric.get_label().iter().any(|label| {
                         label.get_name() == "usage" && (label.get_value() == expected_label_value)

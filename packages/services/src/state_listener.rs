@@ -138,7 +138,7 @@ pub mod service {
 
                 self.metrics
                     .last_eth_block_w_blob
-                    .set(i64::try_from(tx_response.block_number()).unwrap_or(i64::MAX))
+                    .set(i64::try_from(tx_response.block_number()).unwrap_or(i64::MAX));
             }
 
             selective_change.retain(|(_, nonce, _)| !skip_nonces.contains(nonce));
@@ -232,7 +232,7 @@ pub mod port {
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
-    pub trait Storage: Send + Sync {
+    pub trait Storage: Sync {
         async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
         async fn update_tx_states_and_costs(
             &self,

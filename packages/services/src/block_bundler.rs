@@ -160,7 +160,7 @@ pub mod service {
                 )
                 .await?
             {
-                let still_time_to_accumulate_more = self.still_time_to_accumulate_more().await?;
+                let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
                 if blocks.len() < self.config.num_blocks_to_accumulate
                     && still_time_to_accumulate_more
                 {
@@ -231,7 +231,7 @@ pub mod service {
             bundler.finish().await
         }
 
-        async fn still_time_to_accumulate_more(&self) -> Result<bool> {
+        fn still_time_to_accumulate_more(&self) -> Result<bool> {
             let elapsed = self.elapsed(self.last_time_bundled)?;
 
             Ok(elapsed < self.config.block_accumulation_time_limit)
@@ -282,7 +282,7 @@ pub mod port {
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
-        pub trait Api: Send + Sync {
+        pub trait Api: Sync {
             async fn latest_height(&self) -> crate::Result<u32>;
         }
     }
@@ -309,7 +309,7 @@ pub mod port {
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
-    pub trait Storage: Send + Sync {
+    pub trait Storage: Sync {
         async fn lowest_sequence_of_unbundled_blocks(
             &self,
             starting_height: u32,

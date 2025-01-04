@@ -282,7 +282,6 @@ impl WebsocketClient {
         })
     }
 
-    #[must_use]
     pub fn connection_health_checker(&self) -> HealthChecker {
         self.inner.connection_health_checker()
     }

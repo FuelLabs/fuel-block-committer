@@ -23,7 +23,7 @@ pub use block_bundler::{
 pub use state_committer::service::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
 
-#[derive(thiserror::Error, Debug, PartialEq)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("{0}")]
     Other(String),
@@ -50,6 +50,6 @@ impl From<String> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[trait_variant::make(Send)]
-pub trait Runner: Send + Sync {
+pub trait Runner: Sync {
     async fn run(&mut self) -> Result<()>;
 }

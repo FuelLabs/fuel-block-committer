@@ -15,7 +15,7 @@ pub mod l1 {
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
-    pub trait Contract: Send + Sync {
+    pub trait Contract: Sync {
         async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     }
 
@@ -40,14 +40,14 @@ pub mod fuel {
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
-    pub trait Api: Send + Sync {
+    pub trait Api: Sync {
         async fn latest_height(&self) -> Result<u32>;
     }
 }
 
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
-pub trait Storage: Send + Sync {
+pub trait Storage: Sync {
     async fn has_nonfinalized_txs(&self) -> Result<bool>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn record_pending_tx(
@@ -72,6 +72,6 @@ pub trait Clock {
         self.now()
             .signed_duration_since(since)
             .to_std()
-            .map_err(|e| Error::Other(format!("failed to convert time: {}", e)))
+            .map_err(|e| Error::Other(format!("failed to convert time: {e}")))
     }
 }
