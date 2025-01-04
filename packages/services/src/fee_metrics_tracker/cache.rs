@@ -252,7 +252,7 @@ mod tests {
 
     #[tokio::test]
     async fn handles_concurrent_requests() {
-        // Arrange
+        // given
         let mut mock_provider = MockApi::new();
 
         let cache_limit = 10;
@@ -281,7 +281,7 @@ mod tests {
 
         let provider = Arc::new(CachingApi::new(mock_provider, cache_limit));
 
-        // Act
+        // when
         let provider_clone = provider.clone();
         let handle1 = tokio::spawn(async move { provider_clone.get_fees(0..=4).await.unwrap() });
 
@@ -295,13 +295,13 @@ mod tests {
         let result1 = handle1.await.unwrap();
         let result2 = handle2.await.unwrap();
 
-        // Assert
+        // then
         assert_eq!(result1, result2);
     }
 
     #[tokio::test]
     async fn import_and_export() {
-        // Arrange
+        // given
         let mock_provider = MockApi::new();
 
         let cache_limit = 10;
@@ -322,17 +322,17 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        // Act
+        // when
         provider.import(fees_to_import.clone()).await;
         let exported = provider.export().await.into_iter().collect::<Vec<_>>();
 
-        // Assert
+        // then
         assert_eq!(exported, fees_to_import);
     }
 
     #[tokio::test]
     async fn handles_single_element_range() {
-        // Arrange
+        // given
         let mut mock_provider = MockApi::new();
 
         mock_provider
@@ -347,17 +347,17 @@ mod tests {
 
         let provider = CachingApi::new(mock_provider, 10);
 
-        // Act
+        // when
         let result = provider.get_fees(3..=3).await.unwrap();
 
-        // Assert
+        // then
         let expected = generate_sequential_fees(3..=3);
         assert_eq!(result, expected);
     }
 
     #[tokio::test]
     async fn handles_overlapping_ranges() {
-        // Arrange
+        // given
         let mut mock_provider = MockApi::new();
 
         let mut sequence = mockall::Sequence::new();
@@ -384,11 +384,11 @@ mod tests {
 
         let provider = CachingApi::new(mock_provider, 10);
 
-        // Act
+        // when
         let first_call = provider.get_fees(0..=4).await.unwrap();
         let second_call = provider.get_fees(0..=7).await.unwrap();
 
-        // Assert
+        // then
         let expected_first = generate_sequential_fees(0..=4);
         let expected_second = generate_sequential_fees(0..=7);
         assert_eq!(first_call, expected_first);
@@ -397,7 +397,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_after_import() {
-        // Arrange
+        // given
         let mut mock_provider = MockApi::new();
 
         mock_provider
@@ -420,17 +420,17 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        // Act
+        // when
         provider.import(fees_to_import.clone()).await;
         let exported_fees = provider.export().await.into_iter().collect::<Vec<_>>();
 
-        // Assert
+        // then
         assert_eq!(exported_fees, fees_to_import);
     }
 
     #[tokio::test]
     async fn updates_cache_correctly() {
-        // Arrange
+        // given
         let mut mock_provider = MockApi::new();
 
         mock_provider
@@ -451,13 +451,13 @@ mod tests {
 
         let provider = CachingApi::new(mock_provider, 6);
 
-        // Act
+        // when
         let first_call = provider.get_fees(0..=4).await.unwrap();
         let second_call = provider.get_fees(0..=5).await.unwrap();
 
         let exported = provider.export().await.into_iter().collect::<Vec<_>>();
 
-        // Assert
+        // then
         let expected_first = generate_sequential_fees(0..=4);
         let expected_second = generate_sequential_fees(0..=5);
         assert_eq!(first_call, expected_first);
