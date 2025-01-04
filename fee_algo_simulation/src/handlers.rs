@@ -5,10 +5,8 @@ use anyhow::Result;
 use eth::HttpClient;
 use services::{
     fee_metrics_tracker::{
-        port::{
-            cache::CachingApi,
-            l1::{Api, SequentialBlockFees},
-        },
+        cache::CachingApi,
+        port::l1::{Api, SequentialBlockFees},
         service::calculate_blob_tx_fee,
     },
     state_committer::{AlgoConfig, SmaFeeAlgo},
