@@ -11,6 +11,8 @@ pub mod status_reporter;
 pub mod types;
 pub mod wallet_balance_tracker;
 
+pub mod fees;
+
 pub use block_bundler::{
     bundler::Factory as BundlerFactory,
     service::{BlockBundler, Config as BlockBundlerConfig},

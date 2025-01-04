@@ -9,7 +9,8 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_metrics_tracker::{cache::CachingApi, service::FeeMetricsTracker},
+    fee_metrics_tracker::service::FeeMetricsTracker,
+    fees::cache::CachingApi,
     state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,

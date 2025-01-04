@@ -1,5 +1,6 @@
 use std::{ops::RangeInclusive, path::PathBuf};
 
+use services::fees::{Fees, FeesAtHeight};
 use tracing::{error, info};
 use xdg::BaseDirectories;
 
@@ -15,7 +16,7 @@ pub fn fee_file() -> PathBuf {
     }
 }
 
-pub fn load_cache() -> Vec<(u64, services::fee_metrics_tracker::port::l1::Fees)> {
+pub fn load_cache() -> Vec<(u64, Fees)> {
     let contents = match std::fs::read_to_string(fee_file()) {
         Ok(contents) => contents,
         Err(e) => {
@@ -33,18 +34,11 @@ pub fn load_cache() -> Vec<(u64, services::fee_metrics_tracker::port::l1::Fees)>
     fees.fees.into_iter().map(|f| (f.height, f.fees)).collect()
 }
 
-pub fn save_cache(
-    cache: impl IntoIterator<Item = (u64, services::fee_metrics_tracker::port::l1::Fees)>,
-) -> anyhow::Result<()> {
+pub fn save_cache(cache: impl IntoIterator<Item = (u64, Fees)>) -> anyhow::Result<()> {
     let fees = SavedFees {
         fees: cache
             .into_iter()
-            .map(
-                |(height, fees)| services::fee_metrics_tracker::port::l1::FeesAtHeight {
-                    height,
-                    fees,
-                },
-            )
+            .map(|(height, fees)| FeesAtHeight { height, fees })
             .collect(),
     };
     std::fs::write(fee_file(), serde_json::to_string(&fees)?)?;

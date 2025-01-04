@@ -4,7 +4,7 @@ use alloy::rpc::types::FeeHistory;
 use futures::{stream, StreamExt, TryStreamExt};
 use itertools::{izip, Itertools};
 use services::{
-    fee_metrics_tracker::port::l1::{Fees, FeesAtHeight, SequentialBlockFees},
+    fees::{Fees, FeesAtHeight, SequentialBlockFees},
     Result,
 };
 use static_assertions::const_assert;
@@ -130,7 +130,7 @@ mod test {
     use std::ops::RangeInclusive;
 
     use alloy::rpc::types::FeeHistory;
-    use services::fee_metrics_tracker::port::l1::{Fees, FeesAtHeight};
+    use services::fees::{Fees, FeesAtHeight};
 
     use crate::fee_api_helpers::{chunk_range_inclusive, unpack_fee_history};
 

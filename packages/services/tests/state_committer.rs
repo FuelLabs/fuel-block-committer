@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use services::{
-    fee_metrics_tracker::port::l1::Fees,
+    fees::Fees,
     state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
     types::{L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,

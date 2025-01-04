@@ -9,7 +9,6 @@ use tracing::info;
 
 use super::{fee_algo::SmaFeeAlgo, AlgoConfig};
 use crate::{
-    fee_metrics_tracker::{self},
     types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
     Result, Runner,
 };
@@ -108,7 +107,7 @@ where
     FuelApi: crate::state_committer::port::fuel::Api,
     Db: crate::state_committer::port::Storage,
     Clock: crate::state_committer::port::Clock,
-    FeeProvider: fee_metrics_tracker::port::l1::Api + Sync,
+    FeeProvider: crate::fees::Api + Sync,
 {
     async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
         Ok(self
@@ -339,7 +338,7 @@ where
     FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
     Db: crate::state_committer::port::Storage + Clone + Send + Sync,
     Clock: crate::state_committer::port::Clock + Send + Sync,
-    FeeProvider: fee_metrics_tracker::port::l1::Api + Send + Sync,
+    FeeProvider: crate::fees::Api + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         if self.storage.has_nonfinalized_txs().await? {
@@ -354,10 +353,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use fee_metrics_tracker::testing::PreconfiguredFeeApi;
 
     use super::*;
-    use crate::state_committer::{FeeThresholds, SmaPeriods};
+    use crate::{
+        fees::testing::PreconfiguredFeeApi,
+        state_committer::{FeeThresholds, SmaPeriods},
+    };
 
     #[tokio::test]
     async fn test_send_when_too_far_behind_and_fee_provider_fails() {

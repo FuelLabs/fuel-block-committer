@@ -189,7 +189,7 @@ const fn from_ppm(val: u128) -> u128 {
 
 impl<P> SmaFeeAlgo<P>
 where
-    P: fee_metrics_tracker::port::l1::Api + Send + Sync,
+    P: crate::fees::Api + Send + Sync,
 {
     pub async fn fees_acceptable(
         &self,
@@ -266,10 +266,7 @@ mod test {
 
     use super::{Config, SmaPeriods};
     use crate::{
-        fee_metrics_tracker::{
-            port::l1::{Api, Fees},
-            testing::PreconfiguredFeeApi,
-        },
+        fees::{testing::PreconfiguredFeeApi, Api, Fees},
         state_committer::{
             fee_algo::{calculate_max_upper_fee, FeeMultiplierRange, SmaFeeAlgo},
             FeeThresholds,

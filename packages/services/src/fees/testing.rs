@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::RangeInclusive};
 
 use itertools::Itertools;
 
-use super::port::l1::{Api, Fees, FeesAtHeight, SequentialBlockFees};
+use super::{Api, Fees, FeesAtHeight, SequentialBlockFees};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConstantFeeApi {

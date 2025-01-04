@@ -4,11 +4,8 @@ use actix_web::{web, HttpResponse, Responder, ResponseError};
 use anyhow::Result;
 use eth::HttpClient;
 use services::{
-    fee_metrics_tracker::{
-        cache::CachingApi,
-        port::l1::{Api, SequentialBlockFees},
-        service::calculate_blob_tx_fee,
-    },
+    fee_metrics_tracker::service::calculate_blob_tx_fee,
+    fees::{cache::CachingApi, Api, FeesAtHeight, SequentialBlockFees},
     state_committer::{AlgoConfig, SmaFeeAlgo},
     types::{DateTime, Utc},
 };
@@ -149,10 +146,7 @@ impl FeeHandler {
         Ok(data)
     }
 
-    async fn process_block_fee(
-        &self,
-        block_fee: &services::fee_metrics_tracker::port::l1::FeesAtHeight,
-    ) -> Result<FeeDataPoint, FeeError> {
+    async fn process_block_fee(&self, block_fee: &FeesAtHeight) -> Result<FeeDataPoint, FeeError> {
         let current_fee_wei = calculate_blob_tx_fee(self.params.num_blobs, &block_fee.fees);
         let short_fee_wei = self
             .fetch_fee(block_fee.height, self.config.sma_periods.short)

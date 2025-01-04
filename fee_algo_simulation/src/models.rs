@@ -3,7 +3,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use services::{
-    fee_metrics_tracker::port::l1::FeesAtHeight,
+    fees::FeesAtHeight,
     state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods},
 };
 

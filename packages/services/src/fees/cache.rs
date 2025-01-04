@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use super::port::l1::{Api, Fees, FeesAtHeight, SequentialBlockFees};
+use super::{Api, Fees, FeesAtHeight, SequentialBlockFees};
 use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
@@ -141,10 +141,7 @@ mod tests {
 
     use mockall::predicate::eq;
 
-    use crate::fee_metrics_tracker::{
-        cache::CachingApi,
-        port::l1::{Fees, FeesAtHeight, MockApi, SequentialBlockFees},
-    };
+    use crate::fees::{cache::CachingApi, Fees, FeesAtHeight, MockApi, SequentialBlockFees};
 
     #[tokio::test]
     async fn evicts_oldest_blocks() {

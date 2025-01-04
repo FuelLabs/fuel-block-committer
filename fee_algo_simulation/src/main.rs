@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use actix_web::web::{self, Data};
 use anyhow::Result;
-use services::fee_metrics_tracker::cache::CachingApi;
+use services::fees::cache::CachingApi;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 

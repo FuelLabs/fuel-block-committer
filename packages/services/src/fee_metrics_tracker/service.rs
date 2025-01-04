@@ -5,8 +5,11 @@ use metrics::{
     RegistersMetrics,
 };
 
-use super::port::l1::{Api, Fees, FeesAtHeight};
-use crate::{state_committer::SmaPeriods, Error, Result, Runner};
+use crate::{
+    fees::{Api, Fees, FeesAtHeight},
+    state_committer::SmaPeriods,
+    Error, Result, Runner,
+};
 
 #[derive(Debug, Clone)]
 struct FeeMetrics {
