@@ -78,35 +78,6 @@ pub mod service {
         base_fee.saturating_add(blob_fee).saturating_add(reward_fee)
     }
 
-    impl<P: Api> FeeMetricsTracker<P> {
-        pub async fn calculate_sma(&self, block_range: RangeInclusive<u64>) -> crate::Result<Fees> {
-            let fees = self.fee_provider.fees(block_range.clone()).await?;
-
-            let received_height_range = fees.height_range();
-            if received_height_range != block_range {
-                return Err(Error::from(format!(
-                "fees received from the adapter({received_height_range:?}) don't cover the requested range ({block_range:?})"
-            )));
-            }
-
-            Ok(fees.mean())
-        }
-
-        pub async fn latest_fees(&self) -> crate::Result<FeesAtHeight> {
-            let height = self.fee_provider.current_height().await?;
-
-            let fee = self
-                .fee_provider
-                .fees(height..=height)
-                .await?
-                .into_iter()
-                .next()
-                .expect("sequential fees guaranteed not empty");
-
-            Ok(fee)
-        }
-    }
-
     const fn last_n_blocks(current_block: u64, n: NonZeroU64) -> RangeInclusive<u64> {
         current_block.saturating_sub(n.get().saturating_sub(1))..=current_block
     }
@@ -123,34 +94,24 @@ pub mod service {
 
     impl<P: Api> FeeMetricsTracker<P> {
         pub async fn update_metrics(&self) -> Result<()> {
-            let metrics_sma = self.sma_periods;
             let current_block = self.fee_provider.current_height().await?;
-            let latest_fees = self
-                .fee_provider
-                .fees(last_n_blocks(
-                    current_block,
-                    1.try_into().expect("not zero"),
-                ))
-                .await?
-                .mean();
-            let short_term_sma = self
-                .fee_provider
-                .fees(last_n_blocks(current_block, metrics_sma.short))
-                .await?
-                .mean();
+            let tx_fees_for_last_n_blocks = |n| async move {
+                let fees = self
+                    .fee_provider
+                    .fees(last_n_blocks(current_block, n))
+                    .await?
+                    .mean();
 
-            let long_term_sma = self
-                .fee_provider
-                .fees(last_n_blocks(current_block, metrics_sma.long))
-                .await?
-                .mean();
+                Result::Ok(i64::try_from(calculate_blob_tx_fee(6, &fees)).unwrap_or(i64::MAX))
+            };
 
-            let calc_fee =
-                |fees: &Fees| i64::try_from(calculate_blob_tx_fee(6, fees)).unwrap_or(i64::MAX);
+            let current = tx_fees_for_last_n_blocks(1.try_into().expect("not zero")).await?;
+            let short_term = tx_fees_for_last_n_blocks(self.sma_periods.short).await?;
+            let long_term = tx_fees_for_last_n_blocks(self.sma_periods.long).await?;
 
-            self.metrics.current.set(calc_fee(&latest_fees));
-            self.metrics.short.set(calc_fee(&short_term_sma));
-            self.metrics.long.set(calc_fee(&long_term_sma));
+            self.metrics.current.set(current);
+            self.metrics.short.set(short_term);
+            self.metrics.long.set(long_term);
 
             Ok(())
         }
