@@ -1,5 +1,7 @@
+use std::iter::repeat;
 use std::time::Duration;
 
+use itertools::Itertools;
 use metrics::prometheus;
 use metrics::RegistersMetrics;
 use services::{
@@ -17,14 +19,9 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
 
     let fragments = setup.insert_fragments(0, 4).await;
 
-    let tx_hash = [0; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx {
-            hash: tx_hash,
-            nonce: 0,
-            ..Default::default()
-        },
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -381,11 +378,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx {
-            hash: [0; 32],
-            nonce: 0,
-            ..Default::default()
-        },
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -489,57 +482,21 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    // Define fee sequence with high fees to ensure that without the behind condition, it wouldn't send
-    let fee_sequence = vec![
-        (
-            0,
-            Fees {
-                base_fee_per_gas: 7000.try_into().unwrap(),
-                reward: 7000.try_into().unwrap(),
-                base_fee_per_blob_gas: 7000.try_into().unwrap(),
-            },
-        ),
-        (
-            1,
-            Fees {
-                base_fee_per_gas: 7000.try_into().unwrap(),
-                reward: 7000.try_into().unwrap(),
-                base_fee_per_blob_gas: 7000.try_into().unwrap(),
-            },
-        ),
-        (
-            2,
-            Fees {
-                base_fee_per_gas: 7000.try_into().unwrap(),
-                reward: 7000.try_into().unwrap(),
-                base_fee_per_blob_gas: 7000.try_into().unwrap(),
-            },
-        ),
-        (
-            3,
-            Fees {
-                base_fee_per_gas: 7000.try_into().unwrap(),
-                reward: 7000.try_into().unwrap(),
-                base_fee_per_blob_gas: 7000.try_into().unwrap(),
-            },
-        ),
-        (
-            4,
-            Fees {
-                base_fee_per_gas: 7000.try_into().unwrap(),
-                reward: 7000.try_into().unwrap(),
-                base_fee_per_blob_gas: 7000.try_into().unwrap(),
-            },
-        ),
-        (
-            5,
-            Fees {
-                base_fee_per_gas: 7000.try_into().unwrap(),
-                reward: 7000.try_into().unwrap(),
-                base_fee_per_blob_gas: 7000.try_into().unwrap(),
-            },
-        ),
-    ];
+    // high fees to ensure that without the behind condition, it wouldn't send
+    let expensive = Fees {
+        base_fee_per_gas: 5000.try_into().unwrap(),
+        reward: 5000.try_into().unwrap(),
+        base_fee_per_blob_gas: 5000.try_into().unwrap(),
+    };
+
+    let super_expensive = Fees {
+        base_fee_per_gas: 7000.try_into().unwrap(),
+        reward: 7000.try_into().unwrap(),
+        base_fee_per_blob_gas: 7000.try_into().unwrap(),
+    };
+    let expensive_seq = (0..=3).zip(repeat(expensive));
+    let super_expen_seq = (4..=5).zip(repeat(super_expensive));
+    let fee_sequence = expensive_seq.chain(super_expen_seq).collect_vec();
 
     let fee_algo = AlgoConfig {
         sma_periods: SmaPeriods {
@@ -553,18 +510,12 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         },
     };
 
-    // Insert enough fragments to meet the accumulation threshold
+    // enough fragments to meet the accumulation threshold
     let fragments = setup.insert_fragments(0, 6).await;
 
-    // Expect a state submission despite high fees because blocks behind exceed max
-    let tx_hash = [0; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx {
-            hash: tx_hash,
-            nonce: 0,
-            ..Default::default()
-        },
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -599,55 +550,24 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let normal = Fees {
+        base_fee_per_gas: 5000.try_into().unwrap(),
+        reward: 5000.try_into().unwrap(),
+        base_fee_per_blob_gas: 5000.try_into().unwrap(),
+    };
+
+    let slightly_more_expensive = Fees {
+        base_fee_per_gas: 5800.try_into().unwrap(),
+        reward: 5800.try_into().unwrap(),
+        base_fee_per_blob_gas: 5800.try_into().unwrap(),
+    };
     let fee_sequence = vec![
-        (
-            95,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            96,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            97,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            98,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            99,
-            Fees {
-                base_fee_per_gas: 5800.try_into().unwrap(),
-                reward: 5800.try_into().unwrap(),
-                base_fee_per_blob_gas: 5800.try_into().unwrap(),
-            },
-        ),
-        (
-            100,
-            Fees {
-                base_fee_per_gas: 5800.try_into().unwrap(),
-                reward: 5800.try_into().unwrap(),
-                base_fee_per_blob_gas: 5800.try_into().unwrap(),
-            },
-        ),
+        (95, normal),
+        (96, normal),
+        (97, normal),
+        (98, normal),
+        (99, slightly_more_expensive),
+        (100, slightly_more_expensive),
     ];
 
     let fee_algo = AlgoConfig {
@@ -666,15 +586,9 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
 
     let fragments = setup.insert_fragments(0, 6).await;
 
-    // Expect a state submission due to nearing max blocks behind and increased tolerance
-    let tx_hash = [0; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx {
-            hash: tx_hash,
-            nonce: 0,
-            ..Default::default()
-        },
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
