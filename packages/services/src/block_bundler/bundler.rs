@@ -29,7 +29,7 @@ impl Metadata {
         self.block_heights.clone().count()
     }
 
-    // This is for metrics anyway, precission loss is ok
+    // This is for metrics anyway, precision loss is ok
     #[allow(clippy::cast_precision_loss)]
     pub fn compression_ratio(&self) -> f64 {
         self.uncompressed_data_size.get() as f64 / self.compressed_data_size.get() as f64

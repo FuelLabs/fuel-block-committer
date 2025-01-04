@@ -13,7 +13,6 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // TODO: segfault test out how this behaves when there is no data
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?
@@ -26,7 +25,7 @@ async fn main() -> Result<()> {
 
     let client = eth::HttpClient::new(models::URL).unwrap();
 
-    let num_blocks_per_month = 30 * 24 * 3600 / 12; // 259200 blocks
+    let num_blocks_per_month = 30 * 24 * 3600 / 12;
 
     let caching_api = CachingApi::new(client, num_blocks_per_month * 2);
     caching_api.import(utils::load_cache()).await;
