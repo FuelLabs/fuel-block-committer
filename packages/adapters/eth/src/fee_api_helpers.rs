@@ -26,18 +26,15 @@ where
     // There is a comment in alloy about not doing more than 1024 blocks at a time
     const RPC_LIMIT: u64 = 1024;
 
-    let fees: Vec<FeeHistory> = stream::iter(chunk_range_inclusive(height_range, RPC_LIMIT))
+    let fees: Vec<_> = stream::iter(chunk_range_inclusive(height_range, RPC_LIMIT))
         .then(|range| get_fees(range, std::slice::from_ref(&REWARD_PERCENTILE)))
+        .map(|fee_history| fee_history.and_then(unpack_fee_history))
+        .map_ok(|block_fees_vec| stream::iter(block_fees_vec.into_iter().map(Result::Ok)))
+        .try_flatten()
         .try_collect()
         .await?;
 
-    let mut unpacked_fees = vec![];
-    for fee in fees {
-        unpacked_fees.extend(unpack_fee_history(fee)?);
-    }
-
-    unpacked_fees
-        .try_into()
+    fees.try_into()
         .map_err(|e| services::Error::Other(format!("{e}")))
 }
 
@@ -118,7 +115,6 @@ pub fn chunk_range_inclusive(
 
     let mut current = start;
     while current <= end {
-        // Calculate the end of the current chunk.
         let chunk_end = (current + chunk_size - 1).min(end);
 
         ranges.push(current..=chunk_end);

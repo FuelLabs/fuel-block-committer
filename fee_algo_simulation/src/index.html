@@ -60,7 +60,7 @@
             </div>
             <div class="col-md-4">
               <label for="numBlobs" class="form-label required">Number of Blobs:</label>
-              <input type="number" class="form-control" id="numBlobs" value="6" min="1" max="10" required />
+              <input type="number" class="form-control" id="numBlobs" value="6" min="1" max="6" required />
             </div>
           </div>
 
@@ -231,13 +231,14 @@
       const startMultiplier    = parseFloat(document.getElementById('startMultiplier').value);
       const endMultiplier      = parseFloat(document.getElementById('endMultiplier').value);
       const alwaysAcceptable   = document.getElementById('alwaysAcceptable').value;
-      const numBlobs           = parseInt(document.getElementById('numBlobs').value, 6);
+      const numBlobs           = parseInt(document.getElementById('numBlobs').value, 10);
       const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
 
       // Input Validation
       if (isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
           isNaN(maxL2) || isNaN(startMultiplier) || isNaN(endMultiplier) ||
           isNaN(numBlobs) || isNaN(numL2BlocksBehind)) {
+
         alert('Please ensure all input fields are filled out correctly.');
         return;
       }
