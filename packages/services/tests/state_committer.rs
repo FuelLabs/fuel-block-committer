@@ -342,58 +342,26 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
 
 #[tokio::test]
 async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
-    // Given
+    // given
     let setup = test_helpers::Setup::init().await;
 
+    let expensive = Fees {
+        base_fee_per_gas: 5000.try_into().unwrap(),
+        reward: 5000.try_into().unwrap(),
+        base_fee_per_blob_gas: 5000.try_into().unwrap(),
+    };
+    let cheap = Fees {
+        base_fee_per_gas: 3000.try_into().unwrap(),
+        reward: 3000.try_into().unwrap(),
+        base_fee_per_blob_gas: 3000.try_into().unwrap(),
+    };
     let fee_sequence = vec![
-        (
-            0,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            1,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            2,
-            Fees {
-                base_fee_per_gas: 3000.try_into().unwrap(),
-                reward: 3000.try_into().unwrap(),
-                base_fee_per_blob_gas: 3000.try_into().unwrap(),
-            },
-        ),
-        (
-            3,
-            Fees {
-                base_fee_per_gas: 3000.try_into().unwrap(),
-                reward: 3000.try_into().unwrap(),
-                base_fee_per_blob_gas: 3000.try_into().unwrap(),
-            },
-        ),
-        (
-            4,
-            Fees {
-                base_fee_per_gas: 3000.try_into().unwrap(),
-                reward: 3000.try_into().unwrap(),
-                base_fee_per_blob_gas: 3000.try_into().unwrap(),
-            },
-        ),
-        (
-            5,
-            Fees {
-                base_fee_per_gas: 3000.try_into().unwrap(),
-                reward: 3000.try_into().unwrap(),
-                base_fee_per_blob_gas: 3000.try_into().unwrap(),
-            },
-        ),
+        (0, expensive),
+        (1, expensive),
+        (2, cheap),
+        (3, cheap),
+        (4, cheap),
+        (5, cheap),
     ];
 
     let config = AlgoConfig {
@@ -408,15 +376,13 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         },
     };
 
-    // Insert enough fragments to meet the accumulation threshold
+    // enough fragments to meet the accumulation threshold
     let fragments = setup.insert_fragments(0, 6).await;
 
-    // Expect a state submission
-    let tx_hash = [0; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
         L1Tx {
-            hash: tx_hash,
+            hash: [0; 32],
             nonce: 0,
             ..Default::default()
         },
@@ -425,7 +391,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         .expect_current_height()
         .returning(|| Box::pin(async { Ok(5) }));
 
-    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(6);
+    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(100);
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
         fuel_mock,
@@ -441,11 +407,11 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         preconfigured_fees(fee_sequence),
     );
 
-    // When
+    // when
     state_committer.run().await?;
 
-    // Then
-    // Mocks validate that the fragments have been sent
+    // then
+    // mocks validate that the fragments have been sent
     Ok(())
 }
 
@@ -454,56 +420,24 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
     // given
     let setup = test_helpers::Setup::init().await;
 
-    // Define fee sequence: last 2 blocks have higher fees than the long-term average
+    let expensive = Fees {
+        base_fee_per_gas: 5000.try_into().unwrap(),
+        reward: 5000.try_into().unwrap(),
+        base_fee_per_blob_gas: 5000.try_into().unwrap(),
+    };
+    let cheap = Fees {
+        base_fee_per_gas: 3000.try_into().unwrap(),
+        reward: 3000.try_into().unwrap(),
+        base_fee_per_blob_gas: 3000.try_into().unwrap(),
+    };
+
     let fee_sequence = vec![
-        (
-            0,
-            Fees {
-                base_fee_per_gas: 3000.try_into().unwrap(),
-                reward: 3000.try_into().unwrap(),
-                base_fee_per_blob_gas: 3000.try_into().unwrap(),
-            },
-        ),
-        (
-            1,
-            Fees {
-                base_fee_per_gas: 3000.try_into().unwrap(),
-                reward: 3000.try_into().unwrap(),
-                base_fee_per_blob_gas: 3000.try_into().unwrap(),
-            },
-        ),
-        (
-            2,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            3,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            4,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
-        (
-            5,
-            Fees {
-                base_fee_per_gas: 5000.try_into().unwrap(),
-                reward: 5000.try_into().unwrap(),
-                base_fee_per_blob_gas: 5000.try_into().unwrap(),
-            },
-        ),
+        (0, cheap),
+        (1, cheap),
+        (2, cheap),
+        (3, cheap),
+        (4, expensive),
+        (5, expensive),
     ];
 
     let fee_algo = AlgoConfig {
@@ -518,7 +452,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         },
     };
 
-    // Insert enough fragments to meet the accumulation threshold
+    // enough fragments to meet the accumulation threshold
     let _fragments = setup.insert_fragments(0, 6).await;
 
     let mut l1_mock = test_helpers::mocks::l1::expects_state_submissions([]);
@@ -546,7 +480,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
     state_committer.run().await?;
 
     // then
-    // Mocks validate that no fragments have been sent
+    // mocks validate that no fragments have been sent
     Ok(())
 }
 
