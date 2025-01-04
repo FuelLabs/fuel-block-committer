@@ -358,8 +358,8 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
     let fee_sequence = vec![
         (0, expensive),
         (1, expensive),
-        (2, cheap),
-        (3, cheap),
+        (2, expensive),
+        (3, expensive),
         (4, cheap),
         (5, cheap),
     ];
