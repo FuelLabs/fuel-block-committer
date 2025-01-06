@@ -454,6 +454,27 @@ impl Postgres {
         Ok(response)
     }
 
+    pub(crate) async fn _earliest_submission_attempt(
+        &self,
+        nonce: u32,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let response = sqlx::query!(
+            r#"SELECT
+            MIN(l1_blob_transaction.created_at) AS earliest_tx_time
+        FROM
+            l1_blob_transaction
+        WHERE
+            l1_blob_transaction.nonce = $1;
+        "#,
+            nonce as i64
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .and_then(|response| response.earliest_tx_time);
+
+        Ok(response)
+    }
+
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
         starting_height: u32,
