@@ -14,14 +14,12 @@ pub struct Encoder {
 }
 
 impl Encoder {
-    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 }
 
 impl Encoder {
-    #[must_use]
     pub const fn blobs_needed_to_encode(&self, num_bytes: usize) -> usize {
         #[allow(clippy::cast_possible_truncation)]
         const USABLE_BITS_PER_BLOB: usize = USABLE_BITS_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB;
@@ -50,7 +48,7 @@ impl Encoder {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     #[test]
     fn can_handle_zero_input() {
         // given

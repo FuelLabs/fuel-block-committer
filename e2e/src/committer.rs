@@ -73,7 +73,7 @@ impl Committer {
             .env("COMMITTER__APP__HOST", "127.0.0.1")
             .env("COMMITTER__APP__BLOCK_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__TX_FINALIZATION_CHECK_INTERVAL", "5s")
-            .env("COMMITTER__APP__L1_PRICES_CHECK_INTERVAL", "5s")
+            .env("COMMITTER__APP__L1_FEE_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
             .env("COMMITTER__APP__GAS_BUMP_TIMEOUT", "300s")
             .env("COMMITTER__APP__TX_MAX_FEE", "4000000000000000")
@@ -125,8 +125,8 @@ impl Committer {
             .env("COMMITTER__APP__FEE_ALGO__SHORT_SMA_BLOCKS", "1")
             .env("COMMITTER__APP__FEE_ALGO__LONG_SMA_BLOCKS", "1")
             .env("COMMITTER__APP__FEE_ALGO__MAX_L2_BLOCKS_BEHIND", "1")
-            .env("COMMITTER__APP__FEE_ALGO__START_DISCOUNT_PERCENTAGE", "0")
-            .env("COMMITTER__APP__FEE_ALGO__END_PREMIUM_PERCENTAGE", "0")
+            .env("COMMITTER__APP__FEE_ALGO__START_MAX_FEE_MULTIPLIER", "1.0")
+            .env("COMMITTER__APP__FEE_ALGO__END_MAX_FEE_MULTIPLIER", "1.0")
             // we're basically disabling the fee algo here
             .env(
                 "COMMITTER__APP__FEE_ALGO__ALWAYS_ACCEPTABLE_FEE",

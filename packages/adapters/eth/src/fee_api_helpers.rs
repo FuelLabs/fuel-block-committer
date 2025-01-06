@@ -1,13 +1,44 @@
-use std::ops::RangeInclusive;
+use std::{future::Future, ops::RangeInclusive};
 
 use alloy::rpc::types::FeeHistory;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::{izip, Itertools};
 use services::{
-    fee_tracker::port::l1::{BlockFees, Fees},
+    fees::{Fees, FeesAtHeight, SequentialBlockFees},
     Result,
 };
+use static_assertions::const_assert;
 
-pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
+pub async fn batch_requests<'a, 'b, Fut, F>(
+    height_range: RangeInclusive<u64>,
+    get_fees: F,
+) -> Result<SequentialBlockFees>
+where
+    'a: 'b,
+    F: Fn(RangeInclusive<u64>, &'a [f64]) -> Fut,
+    Fut: Future<Output = Result<FeeHistory>> + 'b,
+{
+    const REWARD_PERCENTILE: f64 =
+        alloy::providers::utils::EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE;
+    // so that a alloy version bump doesn't surprise us
+    const_assert!(REWARD_PERCENTILE == 20.0,);
+
+    // There is a comment in alloy about not doing more than 1024 blocks at a time
+    const RPC_LIMIT: u64 = 1024;
+
+    let fees: Vec<_> = stream::iter(chunk_range_inclusive(height_range, RPC_LIMIT))
+        .then(|range| get_fees(range, std::slice::from_ref(&REWARD_PERCENTILE)))
+        .map(|fee_history| fee_history.and_then(unpack_fee_history))
+        .map_ok(|block_fees_vec| stream::iter(block_fees_vec.into_iter().map(Result::Ok)))
+        .try_flatten()
+        .try_collect()
+        .await?;
+
+    fees.try_into()
+        .map_err(|e| services::Error::Other(format!("{e}")))
+}
+
+fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<FeesAtHeight>> {
     let number_of_blocks = if fees.base_fee_per_gas.is_empty() {
         0
     } else {
@@ -47,7 +78,7 @@ pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
         })
         .try_collect()?;
 
-    let values = izip!(
+    let fees = izip!(
         (fees.oldest_block..),
         fees.base_fee_per_gas.into_iter(),
         fees.base_fee_per_blob_gas.into_iter(),
@@ -55,7 +86,7 @@ pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     )
     .take(number_of_blocks)
     .map(
-        |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| BlockFees {
+        |(height, base_fee_per_gas, base_fee_per_blob_gas, reward)| FeesAtHeight {
             height,
             fees: Fees {
                 base_fee_per_gas,
@@ -66,7 +97,7 @@ pub fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<BlockFees>> {
     )
     .collect();
 
-    Ok(values)
+    Ok(fees)
 }
 
 pub fn chunk_range_inclusive(
@@ -84,7 +115,6 @@ pub fn chunk_range_inclusive(
 
     let mut current = start;
     while current <= end {
-        // Calculate the end of the current chunk.
         let chunk_end = (current + chunk_size - 1).min(end);
 
         ranges.push(current..=chunk_end);
@@ -96,13 +126,13 @@ pub fn chunk_range_inclusive(
 }
 
 #[cfg(test)]
-mod test {
-    use alloy::rpc::types::FeeHistory;
-    use services::fee_tracker::port::l1::{BlockFees, Fees};
-
+mod tests {
     use std::ops::RangeInclusive;
 
-    use crate::fee_conversion::{self};
+    use alloy::rpc::types::FeeHistory;
+    use services::fees::{Fees, FeesAtHeight};
+
+    use crate::fee_api_helpers::{chunk_range_inclusive, unpack_fee_history};
 
     #[test]
     fn test_chunk_size_zero() {
@@ -111,7 +141,7 @@ mod test {
         let chunk_size = 0;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected: Vec<RangeInclusive<u64>> = vec![];
@@ -128,7 +158,7 @@ mod test {
         let chunk_size = 10;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![1..=5];
@@ -145,7 +175,7 @@ mod test {
         let chunk_size = 2;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![1..=2, 3..=4, 5..=6, 7..=8, 9..=10];
@@ -159,7 +189,7 @@ mod test {
         let chunk_size = 3;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![1..=3, 4..=6, 7..=9, 10..=10];
@@ -176,7 +206,7 @@ mod test {
         let chunk_size = 1;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![5..=5];
@@ -193,7 +223,7 @@ mod test {
         let chunk_size = 50;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![100..=100];
@@ -210,7 +240,7 @@ mod test {
         let chunk_size = 1;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![10..=10, 11..=11, 12..=12, 13..=13, 14..=14, 15..=15];
@@ -227,7 +257,7 @@ mod test {
         let chunk_size = 11;
 
         // when
-        let result = fee_conversion::chunk_range_inclusive(initial_range, chunk_size);
+        let result = chunk_range_inclusive(initial_range, chunk_size);
 
         // then
         let expected = vec![20..=30];
@@ -249,10 +279,10 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
-        let expected: Vec<BlockFees> = vec![];
+        let expected: Vec<FeesAtHeight> = vec![];
         assert_eq!(
             result.unwrap(),
             expected,
@@ -272,7 +302,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error = services::Error::Other(format!("missing rewards field: {:?}", fees));
@@ -295,7 +325,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error =
@@ -319,7 +349,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error =
@@ -343,7 +373,7 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected_error =
@@ -367,15 +397,15 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
-        let expected = vec![BlockFees {
+        let expected = vec![FeesAtHeight {
             height: 600,
             fees: Fees {
-                base_fee_per_gas: 100,
-                reward: 10,
-                base_fee_per_blob_gas: 150,
+                base_fee_per_gas: 100.try_into().unwrap(),
+                reward: 10.try_into().unwrap(),
+                base_fee_per_blob_gas: 150.try_into().unwrap(),
             },
         }];
         assert_eq!(
@@ -397,32 +427,32 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
         let expected = vec![
-            BlockFees {
+            FeesAtHeight {
                 height: 700,
                 fees: Fees {
-                    base_fee_per_gas: 100,
-                    reward: 10,
-                    base_fee_per_blob_gas: 150,
+                    base_fee_per_gas: 100.try_into().unwrap(),
+                    reward: 10.try_into().unwrap(),
+                    base_fee_per_blob_gas: 150.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 701,
                 fees: Fees {
-                    base_fee_per_gas: 200,
-                    reward: 20,
-                    base_fee_per_blob_gas: 250,
+                    base_fee_per_gas: 200.try_into().unwrap(),
+                    reward: 20.try_into().unwrap(),
+                    base_fee_per_blob_gas: 250.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 702,
                 fees: Fees {
-                    base_fee_per_gas: 300,
-                    reward: 30,
-                    base_fee_per_blob_gas: 350,
+                    base_fee_per_gas: 300.try_into().unwrap(),
+                    reward: 30.try_into().unwrap(),
+                    base_fee_per_blob_gas: 350.try_into().unwrap(),
                 },
             },
         ];
@@ -445,11 +475,11 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees.clone());
+        let result = unpack_fee_history(fees.clone());
 
         // then
         let expected = vec![
-            BlockFees {
+            FeesAtHeight {
                 height: u64::MAX - 2,
                 fees: Fees {
                     base_fee_per_gas: u128::MAX - 2,
@@ -457,7 +487,7 @@ mod test {
                     base_fee_per_blob_gas: u128::MAX - 3,
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: u64::MAX - 1,
                 fees: Fees {
                     base_fee_per_gas: u128::MAX - 1,
@@ -485,40 +515,40 @@ mod test {
         };
 
         // when
-        let result = fee_conversion::unpack_fee_history(fees);
+        let result = unpack_fee_history(fees);
 
         // then
         let expected = vec![
-            BlockFees {
+            FeesAtHeight {
                 height: 800,
                 fees: Fees {
-                    base_fee_per_gas: 500,
-                    reward: 50,
-                    base_fee_per_blob_gas: 550,
+                    base_fee_per_gas: 500.try_into().unwrap(),
+                    reward: 50.try_into().unwrap(),
+                    base_fee_per_blob_gas: 550.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 801,
                 fees: Fees {
-                    base_fee_per_gas: 600,
-                    reward: 60,
-                    base_fee_per_blob_gas: 650,
+                    base_fee_per_gas: 600.try_into().unwrap(),
+                    reward: 60.try_into().unwrap(),
+                    base_fee_per_blob_gas: 650.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 802,
                 fees: Fees {
-                    base_fee_per_gas: 700,
-                    reward: 70,
-                    base_fee_per_blob_gas: 750,
+                    base_fee_per_gas: 700.try_into().unwrap(),
+                    reward: 70.try_into().unwrap(),
+                    base_fee_per_blob_gas: 750.try_into().unwrap(),
                 },
             },
-            BlockFees {
+            FeesAtHeight {
                 height: 803,
                 fees: Fees {
-                    base_fee_per_gas: 800,
-                    reward: 80,
-                    base_fee_per_blob_gas: 850,
+                    base_fee_per_gas: 800.try_into().unwrap(),
+                    reward: 80.try_into().unwrap(),
+                    base_fee_per_blob_gas: 850.try_into().unwrap(),
                 },
             },
         ];

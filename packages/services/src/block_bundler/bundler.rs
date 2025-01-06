@@ -1,5 +1,10 @@
 use std::{cmp::min, collections::VecDeque, fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
 
+use bytesize::ByteSize;
+use fuel_block_committer_encoding::bundle::{self, BundleV1};
+use itertools::Itertools;
+use rayon::prelude::*;
+
 use crate::{
     types::{
         storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty,
@@ -7,12 +12,8 @@ use crate::{
     },
     Result,
 };
-use bytesize::ByteSize;
-use fuel_block_committer_encoding::bundle::{self, BundleV1};
-use itertools::Itertools;
-use rayon::prelude::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
@@ -28,6 +29,8 @@ impl Metadata {
         self.block_heights.clone().count()
     }
 
+    // This is for metrics anyway, precision loss is ok
+    #[allow(clippy::cast_precision_loss)]
     pub fn compression_ratio(&self) -> f64 {
         self.uncompressed_data_size.get() as f64 / self.compressed_data_size.get() as f64
     }
@@ -55,7 +58,7 @@ impl Display for Metadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleProposal {
     pub fragments: NonEmpty<Fragment>,
     pub metadata: Metadata,

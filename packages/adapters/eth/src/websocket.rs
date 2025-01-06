@@ -8,10 +8,12 @@ use alloy::{
     rpc::types::FeeHistory,
     signers::{local::PrivateKeySigner, Signature},
 };
+use delegate::delegate;
 use serde::Deserialize;
 use services::{
     types::{
-        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
+        TransactionResponse, U256,
     },
     Result,
 };
@@ -21,7 +23,7 @@ use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{AwsClient, AwsConfig};
+use crate::{fee_api_helpers::batch_requests, AwsClient, AwsConfig};
 
 mod connection;
 mod health_tracking_middleware;
@@ -31,6 +33,86 @@ pub struct WebsocketClient {
     inner: HealthTrackingMiddleware<WsConnection>,
     blob_poster_address: Option<Address>,
     contract_caller_address: Address,
+}
+
+impl services::block_committer::port::l1::Contract for WebsocketClient {
+    delegate! {
+        to self {
+            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
+            fn commit_interval(&self) -> NonZeroU32;
+        }
+    }
+}
+
+impl services::state_listener::port::l1::Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
+            async fn is_squeezed_out(&self, tx_hash: [u8; 32],) -> Result<bool>;
+        }
+    }
+
+    async fn get_block_number(&self) -> Result<L1Height> {
+        let block_num = self._get_block_number().await?;
+        let height = L1Height::try_from(block_num)?;
+
+        Ok(height)
+    }
+}
+
+impl services::wallet_balance_tracker::port::l1::Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn balance(&self, address: Address) -> Result<U256>;
+        }
+    }
+}
+
+impl services::block_committer::port::l1::Api for WebsocketClient {
+    delegate! {
+        to (*self) {
+            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
+        }
+    }
+
+    async fn get_block_number(&self) -> Result<L1Height> {
+        let block_num = self._get_block_number().await?;
+        let height = L1Height::try_from(block_num)?;
+
+        Ok(height)
+    }
+}
+
+impl services::fees::Api for WebsocketClient {
+    async fn current_height(&self) -> Result<u64> {
+        self._get_block_number().await
+    }
+
+    async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+    ) -> Result<services::fees::SequentialBlockFees> {
+        batch_requests(height_range, move |sub_range, percentiles| async move {
+            self.fees(sub_range, percentiles).await
+        })
+        .await
+    }
+}
+
+impl services::state_committer::port::l1::Api for WebsocketClient {
+    async fn current_height(&self) -> Result<u64> {
+        self._get_block_number().await
+    }
+
+    delegate! {
+        to (*self) {
+            async fn submit_state_fragments(
+                &self,
+                fragments: NonEmpty<Fragment>,
+                previous_tx: Option<services::types::L1Tx>,
+            ) -> Result<(L1Tx, FragmentsSubmitted)>;
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -202,7 +284,6 @@ impl WebsocketClient {
         })
     }
 
-    #[must_use]
     pub fn connection_health_checker(&self) -> HealthChecker {
         self.inner.connection_health_checker()
     }
@@ -283,7 +364,7 @@ impl RegistersMetrics for WebsocketClient {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pretty_assertions::assert_eq;
 
     use super::L1Key;

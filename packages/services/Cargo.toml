@@ -13,7 +13,6 @@ rust-version = { workspace = true }
 alloy = { workspace = true }
 async-trait = { workspace = true }
 bytesize = { workspace = true }
-delegate = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
 fuel-core-client = { workspace = true }
 fuel-crypto = { workspace = true }
@@ -35,7 +34,6 @@ trait-variant = { workspace = true }
 [dev-dependencies]
 test-case = { workspace = true }
 clock = { workspace = true, features = ["test-helpers"] }
-delegate = { workspace = true }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
@@ -46,8 +44,6 @@ tai64 = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 test-helpers = { workspace = true }
 rand = { workspace = true, features = ["small_rng", "std", "std_rng"] }
-csv = "1.3"
-proptest = { workspace = true, features = ["default"] }
 
 [features]
 test-helpers = ["dep:mockall", "dep:rand"]
