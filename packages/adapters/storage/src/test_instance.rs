@@ -1,9 +1,3 @@
-use std::{
-    borrow::Cow,
-    ops::RangeInclusive,
-    sync::{Arc, Weak},
-};
-
 use delegate::delegate;
 use services::{
     block_bundler, block_committer, block_importer,
@@ -14,6 +8,11 @@ use services::{
     },
 };
 use sqlx::Executor;
+use std::{
+    borrow::Cow,
+    ops::RangeInclusive,
+    sync::{Arc, Weak},
+};
 use testcontainers::{
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
@@ -201,6 +200,16 @@ impl services::state_listener::port::Storage for DbWithProcess {
     async fn has_pending_txs(&self) -> services::Result<bool> {
         self.db._has_pending_txs().await.map_err(Into::into)
     }
+
+    async fn earliest_submission_attempt(
+        &self,
+        nonce: u32,
+    ) -> services::Result<Option<DateTime<Utc>>> {
+        self.db
+            ._earliest_submission_attempt(nonce)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 impl block_importer::port::Storage for DbWithProcess {
@@ -350,5 +359,9 @@ impl services::cost_reporter::port::Storage for DbWithProcess {
             ._get_finalized_costs(from_block_height, limit)
             .await
             .map_err(Into::into)
+    }
+
+    async fn get_latest_costs(&self, limit: usize) -> services::Result<Vec<BundleCost>> {
+        self.db._get_latest_costs(limit).await.map_err(Into::into)
     }
 }

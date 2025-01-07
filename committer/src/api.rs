@@ -90,9 +90,17 @@ async fn metrics(registry: web::Data<Arc<Registry>>) -> impl Responder {
     std::result::Result::<_, InternalError<_>>::Ok(text)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum HeightVariant {
+    Latest,
+    Specific,
+}
+
 #[derive(Deserialize)]
 struct CostQueryParams {
-    from_height: u32,
+    variant: HeightVariant,
+    value: Option<u32>,
     limit: Option<usize>,
 }
 
@@ -103,8 +111,18 @@ async fn costs(
 ) -> impl Responder {
     let limit = query.limit.unwrap_or(100);
 
-    match data.get_costs(query.from_height, limit).await {
-        Ok(bundle_costs) => HttpResponse::Ok().json(bundle_costs),
+    let response = match query.variant {
+        HeightVariant::Latest => data.get_latest_costs(limit).await,
+        HeightVariant::Specific => match query.value {
+            Some(height) => data.get_costs(height, limit).await,
+            None => Err(services::Error::Other(
+                "height value is required".to_string(),
+            )),
+        },
+    };
+
+    match response {
+        Ok(costs) => HttpResponse::Ok().json(costs),
         Err(services::Error::Other(e)) => {
             HttpResponse::from_error(InternalError::new(e, StatusCode::BAD_REQUEST))
         }
