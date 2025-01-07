@@ -152,8 +152,7 @@ pub mod service {
         fn default() -> Self {
             let blob_transactions =
                 create_int_gauge("tsize_blob_transactions", "Blob transactions table size.");
-            let fragments =
-                create_int_gauge("tsize_pruned_fragments", "Pruned fragments table size.");
+            let fragments = create_int_gauge("tsize_fragments", "Fragments table size.");
 
             let transaction_fragments = create_int_gauge(
                 "tsize_transaction_fragments",
