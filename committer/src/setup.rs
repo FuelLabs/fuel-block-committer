@@ -330,7 +330,7 @@ pub fn fee_metrics_tracker(
     config: &config::Config,
     registry: &Registry,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let fee_metrics_tracker = FeeMetricsTracker::new(api, config.fee_algo_config().sma_periods);
+    let fee_metrics_tracker = FeeMetricsTracker::new(api);
 
     fee_metrics_tracker.register_metrics(registry);
 

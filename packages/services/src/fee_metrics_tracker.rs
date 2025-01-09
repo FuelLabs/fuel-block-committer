@@ -8,15 +8,12 @@ pub mod service {
 
     use crate::{
         fees::{Api, Fees},
-        state_committer::SmaPeriods,
         Result, Runner,
     };
 
     #[derive(Debug, Clone)]
     struct FeeMetrics {
         current: IntGauge,
-        short: IntGauge,
-        long: IntGauge,
     }
 
     impl Default for FeeMetrics {
@@ -27,40 +24,19 @@ pub mod service {
             ))
             .expect("metric config to be correct");
 
-            let short = IntGauge::with_opts(Opts::new(
-                "short_term_blob_tx_fee",
-                "The short term fee for a transaction with 6 blobs",
-            ))
-            .expect("metric config to be correct");
-
-            let long = IntGauge::with_opts(Opts::new(
-                "long_term_blob_tx_fee",
-                "The long term fee for a transaction with 6 blobs",
-            ))
-            .expect("metric config to be correct");
-
-            Self {
-                current,
-                short,
-                long,
-            }
+            Self { current }
         }
     }
 
     impl<P> RegistersMetrics for FeeMetricsTracker<P> {
         fn metrics(&self) -> Vec<Box<dyn Collector>> {
-            vec![
-                Box::new(self.metrics.current.clone()),
-                Box::new(self.metrics.short.clone()),
-                Box::new(self.metrics.long.clone()),
-            ]
+            vec![Box::new(self.metrics.current.clone())]
         }
     }
 
     #[derive(Clone)]
     pub struct FeeMetricsTracker<P> {
         fee_provider: P,
-        sma_periods: SmaPeriods,
         metrics: FeeMetrics,
     }
 
@@ -83,10 +59,9 @@ pub mod service {
     }
 
     impl<P> FeeMetricsTracker<P> {
-        pub fn new(fee_provider: P, sma_periods: SmaPeriods) -> Self {
+        pub fn new(fee_provider: P) -> Self {
             Self {
                 fee_provider,
-                sma_periods,
                 metrics: FeeMetrics::default(),
             }
         }
@@ -106,12 +81,8 @@ pub mod service {
             };
 
             let current = tx_fees_for_last_n_blocks(1.try_into().expect("not zero")).await?;
-            let short_term = tx_fees_for_last_n_blocks(self.sma_periods.short).await?;
-            let long_term = tx_fees_for_last_n_blocks(self.sma_periods.long).await?;
 
             self.metrics.current.set(current);
-            self.metrics.short.set(short_term);
-            self.metrics.long.set(long_term);
 
             Ok(())
         }
