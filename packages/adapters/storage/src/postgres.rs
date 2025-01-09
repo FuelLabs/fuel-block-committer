@@ -1017,10 +1017,13 @@ impl Postgres {
         Ok(())
     }
 
-    pub(crate) async fn _prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()> {
+    pub(crate) async fn _prune_entries_older_than(
+        &self,
+        date: DateTime<Utc>,
+    ) -> Result<services::state_pruner::port::PrunedBlocksRange> {
         let mut transaction = self.connection_pool.begin().await?;
 
-        sqlx::query!(
+        let response = sqlx::query!(
             r#"
             WITH
 
@@ -1115,7 +1118,10 @@ impl Postgres {
                   )
             )
 
-            SELECT;
+            SELECT
+                MIN(start_height) AS start_height,
+                MAX(end_height) AS end_height
+            FROM deleted_bundles;
             "#,
            date
         )
@@ -1124,7 +1130,10 @@ impl Postgres {
 
         transaction.commit().await?;
 
-        Ok(())
+        Ok(services::state_pruner::port::PrunedBlocksRange {
+            start_height: response.start_height.unwrap_or_default() as u32,
+            end_height: response.end_height.unwrap_or_default() as u32,
+        })
     }
 
     pub(crate) async fn _table_sizes(&self) -> Result<services::state_pruner::port::TableSizes> {

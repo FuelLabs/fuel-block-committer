@@ -34,14 +34,15 @@ pub mod service {
     {
         pub async fn prune(&self) -> Result<()> {
             let pre_pruning_table_sizes = self.storage.table_sizes().await?;
-            self.storage
+            let pruned_blocks_range = self
+                .storage
                 .prune_entries_older_than(self.clock.now() - self.retention)
                 .await?;
 
             let post_pruning_table_sizes = self.storage.table_sizes().await?;
             let pruned = diff_dbg_str(&pre_pruning_table_sizes, &post_pruning_table_sizes);
 
-            tracing::info!("Pruned: {pruned}");
+            tracing::info!("Pruned: {pruned} with {pruned_blocks_range:?}");
             tracing::info!("Table sizes: {post_pruning_table_sizes:?}");
 
             self.metrics.observe_table_sizes(&post_pruning_table_sizes);
@@ -204,10 +205,16 @@ pub mod port {
         pub contract_submissions: u32,
     }
 
+    #[derive(Debug, Clone)]
+    pub struct PrunedBlocksRange {
+        pub start_height: u32,
+        pub end_height: u32,
+    }
+
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Send + Sync {
-        async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()>;
+        async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<PrunedBlocksRange>;
         async fn table_sizes(&self) -> Result<TableSizes>;
     }
 

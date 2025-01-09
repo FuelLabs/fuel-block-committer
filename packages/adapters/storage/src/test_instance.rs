@@ -172,7 +172,7 @@ impl services::state_pruner::port::Storage for DbWithProcess {
             async fn prune_entries_older_than(
                 &self,
                 date: DateTime<Utc>,
-            ) -> services::Result<()>;
+            ) -> services::Result<services::state_pruner::port::PrunedBlocksRange>;
             async fn table_sizes(
                 &self,
             ) -> services::Result<services::state_pruner::port::TableSizes>;
