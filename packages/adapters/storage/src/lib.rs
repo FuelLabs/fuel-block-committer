@@ -194,17 +194,18 @@ impl services::state_pruner::port::Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
-    use services::block_bundler::port::Storage as BundlerStorage;
-    use services::cost_reporter::port::Storage as CostStorage;
-    use services::state_committer::port::Storage as CommiterStorage;
-    use services::state_listener::port::Storage as ListenerStorage;
-    use services::types::{L1Tx, TransactionCostUpdate, TransactionState};
     use std::time::Duration;
 
     use clock::TestClock;
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
-    use services::types::{nonempty, CollectNonEmpty};
+    use services::{
+        block_bundler::port::Storage as BundlerStorage,
+        cost_reporter::port::Storage as CostStorage,
+        state_committer::port::Storage as CommiterStorage,
+        state_listener::port::Storage as ListenerStorage,
+        types::{nonempty, CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState},
+    };
 
     use super::*;
 
@@ -462,8 +463,9 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_last_time_a_fragment_was_finalized() {
-        use services::state_committer::port::Storage;
-        use services::state_listener::port::Storage as ListenerStorage;
+        use services::{
+            state_committer::port::Storage, state_listener::port::Storage as ListenerStorage,
+        };
 
         // given
         let storage = start_db().await;
@@ -926,9 +928,10 @@ mod tests {
 
     #[tokio::test]
     async fn can_update_costs() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-        use services::state_committer::port::Storage as StateStorage;
-        use services::state_listener::port::Storage as ListenerStorage;
+        use services::{
+            cost_reporter::port::Storage, state_committer::port::Storage as StateStorage,
+            state_listener::port::Storage as ListenerStorage,
+        };
 
         // given
         let storage = start_db().await;

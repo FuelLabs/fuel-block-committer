@@ -1,6 +1,5 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
-use crate::postgres::tables::u128_to_bigdecimal;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use services::types::{
@@ -14,7 +13,10 @@ use sqlx::{
 };
 
 use super::error::{Error, Result};
-use crate::mappings::tables::{self, L1TxState};
+use crate::{
+    mappings::tables::{self, L1TxState},
+    postgres::tables::u128_to_bigdecimal,
+};
 
 #[derive(Debug, Clone)]
 struct Metrics {
@@ -1188,15 +1190,13 @@ fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
 mod tests {
     use std::{env, fs, path::Path};
 
+    use rand::Rng;
+    use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
     use sqlx::{Executor, PgPool, Row};
     use tokio::time::Instant;
 
-    use crate::test_instance;
-
     use super::*;
-
-    use rand::Rng;
-    use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
+    use crate::test_instance;
 
     #[tokio::test]
     async fn test_second_migration_applies_successfully() {
@@ -1459,9 +1459,10 @@ mod tests {
 
     #[tokio::test]
     async fn stress_test_update_costs() -> Result<()> {
-        use services::block_bundler::port::Storage;
-        use services::state_committer::port::Storage as CommitterStorage;
-        use services::state_listener::port::Storage as ListenerStorage;
+        use services::{
+            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
+            state_listener::port::Storage as ListenerStorage,
+        };
 
         let mut rng = rand::thread_rng();
 
