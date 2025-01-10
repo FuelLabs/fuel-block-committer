@@ -758,7 +758,6 @@ impl Postgres {
             da_block_height,
         } in cost_per_tx
         {
-            // 1) Fetch the number of fragments and total byte usage per bundle
             let rows = sqlx::query!(
                 r#"
             SELECT
@@ -777,49 +776,40 @@ impl Postgres {
             .fetch_all(&mut *tx)
             .await?;
 
-            // 2) Calculate the total number of fragments in this transaction
             let total_fragments_in_tx = rows
                 .iter()
                 .map(|r| r.fragment_count.unwrap_or(0) as u64)
                 .sum::<u64>();
 
-            // 3) Distribute cost among all bundles based on fragment count,
-            //    but still track the size usage.
             for row in rows {
                 let bundle_id = row.bundle_id;
 
-                // 3a) number of fragments in this bundle
                 let frag_count_in_bundle = row.fragment_count.unwrap_or(0) as u64;
-
-                // 3b) fraction = how many fragments for this bundle vs. total
-                let fraction = if total_fragments_in_tx == 0 {
-                    0.0
-                } else {
-                    frag_count_in_bundle as f64 / total_fragments_in_tx as f64
-                };
-
-                // 3c) proportion of the total fee to allocate
-                let cost_contribution = (*total_fee as f64 * fraction).round() as u128;
-
-                // 3d) "used bytes" for size tracking
                 let total_bytes = row.total_bytes.unwrap_or(0).max(0) as u64;
                 let unused_bytes = row.unused_bytes.unwrap_or(0).max(0) as u64;
                 let used_bytes = total_bytes.saturating_sub(unused_bytes);
 
-                // 3e) update the aggregator
+                const PPM: u128 = 1_000_000;
+                let fraction_in_ppm = if total_fragments_in_tx == 0 {
+                    0u128
+                } else {
+                    u128::from(frag_count_in_bundle)
+                        .saturating_mul(PPM)
+                        .saturating_div(u128::from(total_fragments_in_tx))
+                };
+
+                let cost_contribution = fraction_in_ppm
+                    .saturating_mul(*total_fee)
+                    .saturating_div(PPM);
+
                 let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
                     cost_contribution: 0,
                     size_contribution: 0,
                     latest_da_block_height: 0,
                 });
 
-                // add to cost
                 entry.cost_contribution = entry.cost_contribution.saturating_add(cost_contribution);
-
-                // update size usage, if you still want to accumulate it
                 entry.size_contribution = entry.size_contribution.saturating_add(used_bytes);
-
-                // track the most recent da block height
                 entry.latest_da_block_height = entry.latest_da_block_height.max(*da_block_height);
             }
         }
