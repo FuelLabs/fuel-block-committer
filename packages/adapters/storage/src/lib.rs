@@ -199,7 +199,14 @@ mod tests {
     use clock::TestClock;
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
-    use services::types::{nonempty, CollectNonEmpty};
+    use services::{
+        block_bundler::port::Storage as BundlerStorage,
+        block_importer::port::Storage,
+        cost_reporter::port::Storage as CostStorage,
+        state_committer::port::Storage as CommitterStorage,
+        state_listener::port::Storage as ListenerStorage,
+        types::{nonempty, CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState},
+    };
 
     use super::*;
 
@@ -457,9 +464,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_last_time_a_fragment_was_finalized() {
-        use services::state_committer::port::Storage;
-        use services::state_listener::port::Storage as ListenerStorage;
-
         // given
         let storage = start_db().await;
 
@@ -667,10 +671,6 @@ mod tests {
 
     #[tokio::test]
     async fn excludes_fragments_from_bundles_ending_before_starting_height() {
-        use services::{
-            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
-        };
-
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -720,10 +720,6 @@ mod tests {
 
     #[tokio::test]
     async fn includes_fragments_from_bundles_ending_at_starting_height() {
-        use services::{
-            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
-        };
-
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -757,10 +753,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_next_bundle_id() {
-        use services::{
-            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
-        };
-
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -794,8 +786,6 @@ mod tests {
 
     #[tokio::test]
     async fn empty_db_reports_missing_heights() -> Result<()> {
-        use services::block_importer::port::Storage;
-
         // given
         let current_height = 10;
         let storage = start_db().await;
@@ -811,8 +801,6 @@ mod tests {
 
     #[tokio::test]
     async fn missing_blocks_no_holes() -> Result<()> {
-        use services::block_importer::port::Storage;
-
         // given
         let current_height = 10;
         let storage = start_db().await;
@@ -830,8 +818,6 @@ mod tests {
 
     #[tokio::test]
     async fn reports_holes_in_blocks() -> Result<()> {
-        use services::block_importer::port::Storage;
-
         // given
         let current_height = 15;
         let storage = start_db().await;
@@ -850,8 +836,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_retrieve_fragments_submitted_by_tx() -> Result<()> {
-        use services::state_committer::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -876,8 +860,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_latest_pending_txs() -> Result<()> {
-        use services::state_committer::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -921,10 +903,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_update_costs() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-        use services::state_committer::port::Storage as StateStorage;
-        use services::state_listener::port::Storage as ListenerStorage;
-
         // given
         let storage = start_db().await;
 
@@ -1020,8 +998,6 @@ mod tests {
 
     #[tokio::test]
     async fn costs_returned_only_for_finalized_bundles() {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
         let cost = 1000u128;
@@ -1061,8 +1037,6 @@ mod tests {
 
     #[tokio::test]
     async fn costs_returned_only_for_finalized_with_replacement_txs() {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
         let cost = 1000u128;
@@ -1100,8 +1074,6 @@ mod tests {
 
     #[tokio::test]
     async fn respects_from_block_height_and_limit_in_get_finalized_costs() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -1138,8 +1110,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_finalized_costs_from_middle_of_range() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -1176,8 +1146,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_latest_finalized_costs() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -1206,5 +1174,121 @@ mod tests {
         assert_eq!(finalized_cost.end_height, 50);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fee_split_across_multiple_bundles() {
+        let storage = start_db().await;
+
+        let bundle_a_id = storage.next_bundle_id().await.unwrap();
+        let fragment_a = Fragment {
+            data: nonempty![0xaa],
+            unused_bytes: 0,
+            total_bytes: 10.try_into().unwrap(),
+        };
+        storage
+            .insert_bundle_and_fragments(bundle_a_id, 1..=5, nonempty!(fragment_a.clone()))
+            .await
+            .unwrap();
+
+        let fragment_a_id = storage
+            .oldest_nonfinalized_fragments(0, 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|bf| bf.fragment.data == fragment_a.data)
+            .expect("Should have inserted fragment into BUNDLE A")
+            .id;
+
+        let bundle_b_id = storage.next_bundle_id().await.unwrap();
+
+        let random_frag = || {
+            let data: [u8; 2] = thread_rng().gen();
+            Fragment {
+                data: nonempty![data[0], data[1]],
+                unused_bytes: 0,
+                total_bytes: 20.try_into().unwrap(),
+            }
+        };
+
+        let b_fragments = std::iter::repeat_with(random_frag).take(3).collect_vec();
+
+        storage
+            .insert_bundle_and_fragments(
+                bundle_b_id,
+                6..=10, // Another arbitrary range
+                NonEmpty::from_vec(b_fragments.clone()).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let all_b_fragments = storage.oldest_nonfinalized_fragments(0, 10).await.unwrap();
+        let find_id = |data: &NonEmpty<u8>| {
+            all_b_fragments
+                .iter()
+                .find(|bf| bf.fragment.data == *data)
+                .expect("Should have inserted fragment B1")
+                .id
+        };
+
+        let fragment_b1_id = find_id(&b_fragments[0].data);
+        let fragment_b2_id = find_id(&b_fragments[1].data);
+        let fragment_b3_id = find_id(&b_fragments[2].data);
+
+        let tx_hash = [0; 32];
+        let tx = L1Tx {
+            hash: tx_hash,
+            ..Default::default()
+        };
+
+        let all_frag_ids = nonempty![
+            fragment_a_id,
+            fragment_b1_id,
+            fragment_b2_id,
+            fragment_b3_id
+        ];
+        storage
+            .record_pending_tx(tx.clone(), all_frag_ids, Utc::now())
+            .await
+            .unwrap();
+
+        let total_fee = 1000u128;
+        let changes = vec![(tx.hash, tx.nonce, TransactionState::Finalized(Utc::now()))];
+        let cost_update = TransactionCostUpdate {
+            tx_hash,
+            total_fee,
+            da_block_height: 9999,
+        };
+        storage
+            .update_tx_states_and_costs(vec![], changes, vec![cost_update.clone()])
+            .await
+            .unwrap();
+
+        let all_costs = storage.get_finalized_costs(0, 10).await.unwrap();
+
+        let cost_a = all_costs
+            .iter()
+            .find(|bc| bc.id == bundle_a_id.get() as u64);
+        let cost_b = all_costs
+            .iter()
+            .find(|bc| bc.id == bundle_b_id.get() as u64);
+
+        assert!(
+            cost_a.is_some(),
+            "Should have cost info for first bundle (A)"
+        );
+        assert!(
+            cost_b.is_some(),
+            "Should have cost info for second bundle (B)"
+        );
+
+        let cost_a = cost_a.unwrap().cost;
+        let cost_b = cost_b.unwrap().cost;
+
+        //  - A has 1 fragment
+        //  - B has 3 fragments
+        // => total 4 fragments, so we expect 1/4 of the fee for A (250) and 3/4 (750) for B.
+        assert_eq!(cost_a, 250, "Bundle A should get 25% of the 1000 fee");
+        assert_eq!(cost_b, 750, "Bundle B should get 75% of the 1000 fee");
     }
 }
