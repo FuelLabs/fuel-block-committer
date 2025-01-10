@@ -1177,7 +1177,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_fee_not_split_across_multiple_bundles() {
+    async fn test_fee_split_across_multiple_bundles() {
         let storage = start_db().await;
 
         let bundle_a_id = storage.next_bundle_id().await.unwrap();
