@@ -194,6 +194,11 @@ impl services::state_pruner::port::Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
+    use services::block_bundler::port::Storage as BundlerStorage;
+    use services::cost_reporter::port::Storage as CostStorage;
+    use services::state_committer::port::Storage as CommiterStorage;
+    use services::state_listener::port::Storage as ListenerStorage;
+    use services::types::{L1Tx, TransactionCostUpdate, TransactionState};
     use std::time::Duration;
 
     use clock::TestClock;
@@ -1210,16 +1215,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fee_not_split_across_multiple_bundles() {
-        use services::block_bundler::port::Storage as BundlerStorage;
-        use services::cost_reporter::port::Storage as CostStorage;
-        use services::state_committer::port::Storage as CommiterStorage;
-        use services::state_listener::port::Storage as ListenerStorage;
-        use services::types::{CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState};
-
-        // 1) Set up a fresh DB
         let storage = start_db().await;
 
-        // 2) Insert BUNDLE A with 1 fragment
         let bundle_a_id = storage.next_bundle_id().await.unwrap();
         let fragment_a = Fragment {
             data: nonempty![0xaa],
@@ -1227,14 +1224,10 @@ mod tests {
             total_bytes: 10.try_into().unwrap(),
         };
         storage
-            .insert_bundle_and_fragments(
-                bundle_a_id,
-                1..=5, // Some arbitrary range
-                nonempty!(fragment_a.clone()),
-            )
+            .insert_bundle_and_fragments(bundle_a_id, 1..=5, nonempty!(fragment_a.clone()))
             .await
             .unwrap();
-        // Grab the fragment ID from BUNDLE A
+
         let fragment_a_id = storage
             .oldest_nonfinalized_fragments(0, 10)
             .await
@@ -1244,67 +1237,72 @@ mod tests {
             .expect("Should have inserted fragment into BUNDLE A")
             .id;
 
-        // 3) Insert BUNDLE B with 1 fragment
         let bundle_b_id = storage.next_bundle_id().await.unwrap();
-        let fragment_b = Fragment {
-            data: nonempty![0xbb],
-            unused_bytes: 0,
-            total_bytes: 20.try_into().unwrap(),
+
+        let random_frag = || {
+            let data: [u8; 2] = thread_rng().gen();
+            Fragment {
+                data: nonempty![data[0], data[1]],
+                unused_bytes: 0,
+                total_bytes: 20.try_into().unwrap(),
+            }
         };
+
+        let b_fragments = std::iter::repeat_with(random_frag).take(3).collect_vec();
+
         storage
             .insert_bundle_and_fragments(
                 bundle_b_id,
                 6..=10, // Another arbitrary range
-                nonempty!(fragment_b.clone()),
+                NonEmpty::from_vec(b_fragments.clone()).unwrap(),
             )
             .await
             .unwrap();
-        // Grab the fragment ID from BUNDLE B
-        let fragment_b_id = storage
-            .oldest_nonfinalized_fragments(0, 10)
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|bf| bf.fragment.data == fragment_b.data)
-            .expect("Should have inserted fragment into BUNDLE B")
-            .id;
 
-        // 4) Create a SINGLE transaction referencing BOTH fragments from different bundles
-        let tx_hash = rand::random::<[u8; 32]>();
+        let all_b_fragments = storage.oldest_nonfinalized_fragments(0, 10).await.unwrap();
+        let find_id = |data: &NonEmpty<u8>| {
+            all_b_fragments
+                .iter()
+                .find(|bf| bf.fragment.data == *data)
+                .expect("Should have inserted fragment B1")
+                .id
+        };
+
+        let fragment_b1_id = find_id(&b_fragments[0].data);
+        let fragment_b2_id = find_id(&b_fragments[1].data);
+        let fragment_b3_id = find_id(&b_fragments[2].data);
+
+        let tx_hash = [0; 32];
         let tx = L1Tx {
             hash: tx_hash,
-            nonce: 999,
             ..Default::default()
         };
 
+        let all_frag_ids = nonempty![
+            fragment_a_id,
+            fragment_b1_id,
+            fragment_b2_id,
+            fragment_b3_id
+        ];
         storage
-            .record_pending_tx(
-                tx.clone(),
-                nonempty![fragment_a_id, fragment_b_id],
-                Utc::now(),
-            )
+            .record_pending_tx(tx.clone(), all_frag_ids, Utc::now())
             .await
             .unwrap();
 
-        // 5) Finalize the transaction with some total fee
-        let total_fee = 1000u128; // The entire fee we want to distribute
-        let da_block_height = 9999u64;
+        let total_fee = 1000u128;
         let changes = vec![(tx.hash, tx.nonce, TransactionState::Finalized(Utc::now()))];
         let cost_update = TransactionCostUpdate {
             tx_hash,
             total_fee,
-            da_block_height,
+            da_block_height: 9999,
         };
         storage
             .update_tx_states_and_costs(vec![], changes, vec![cost_update.clone()])
             .await
             .unwrap();
 
-        // 6) Now query the costs of each final bundle
         let all_costs = storage.get_finalized_costs(0, 10).await.unwrap();
 
-        // We expect to see TWO final bundles in the DB.
-        // However, the "buggy" logic will incorrectly give the entire fee to only one of them.
         let cost_a = all_costs
             .iter()
             .find(|bc| bc.id == bundle_a_id.get() as u64);
@@ -1312,23 +1310,22 @@ mod tests {
             .iter()
             .find(|bc| bc.id == bundle_b_id.get() as u64);
 
-        // For demonstration, the current (incorrect) logic often sets cost to 1000 for one,
-        // and 0 (or absent) for the other. Let's assert that the second is missing or 0.
-        // This test is meant to *expose* that bug:
-        assert!(cost_a.is_some(), "Should have cost info for first bundles");
-        assert!(cost_b.is_some(), "Should have cost info for second bundles");
+        assert!(
+            cost_a.is_some(),
+            "Should have cost info for first bundle (A)"
+        );
+        assert!(
+            cost_b.is_some(),
+            "Should have cost info for second bundle (B)"
+        );
 
         let cost_a = cost_a.unwrap().cost;
         let cost_b = cost_b.unwrap().cost;
 
-        // This will fail (or show a mismatch) if the entire 1000 was assigned to only one bundle.
-        // Realistically, you'd want some proportion, e.g. 10 bytes vs 20 bytes usage => split 1/3 vs 2/3 or similar.
-        // But let's just show that the second bundle got 0 or is missing:
-        println!("Debug: costA={cost_a}, costB={cost_b}");
-        assert_eq!(cost_a, 500);
-        assert_eq!(cost_b, 500);
-
-        // If the above assertion passes, it means the bug is *still* present in your code.
-        // If you fix the bug properly, the test should fail because costB is no longer zero.
+        //  - A has 1 fragment
+        //  - B has 3 fragments
+        // => total 4 fragments, so we expect 1/4 of the fee for A (250) and 3/4 (750) for B.
+        assert_eq!(cost_a, 250, "Bundle A should get 25% of the 1000 fee");
+        assert_eq!(cost_b, 750, "Bundle B should get 75% of the 1000 fee");
     }
 }
