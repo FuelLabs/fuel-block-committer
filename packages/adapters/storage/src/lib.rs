@@ -203,7 +203,7 @@ mod tests {
         block_bundler::port::Storage as BundlerStorage,
         block_importer::port::Storage,
         cost_reporter::port::Storage as CostStorage,
-        state_committer::port::Storage as CommiterStorage,
+        state_committer::port::Storage as CommitterStorage,
         state_listener::port::Storage as ListenerStorage,
         types::{nonempty, CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState},
     };
