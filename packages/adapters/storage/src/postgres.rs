@@ -758,41 +758,70 @@ impl Postgres {
             da_block_height,
         } in cost_per_tx
         {
-            let row = sqlx::query!(
+            // 1) Fetch the number of fragments and total byte usage per bundle
+            let rows = sqlx::query!(
                 r#"
-                SELECT
-                    f.bundle_id,
-                    SUM(f.total_bytes)::BIGINT AS total_bytes,
-                    SUM(f.unused_bytes)::BIGINT AS unused_bytes
-                FROM
-                    l1_blob_transaction t
-                    JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id
-                    JOIN l1_fragments f ON tf.fragment_id = f.id
-                WHERE
-                    t.hash = $1
-                GROUP BY
-                    f.bundle_id
-                "#,
+            SELECT
+                f.bundle_id,
+                SUM(f.total_bytes)::BIGINT       AS total_bytes,
+                SUM(f.unused_bytes)::BIGINT      AS unused_bytes,
+                COUNT(*)::BIGINT                 AS fragment_count
+            FROM l1_blob_transaction t
+            JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id
+            JOIN l1_fragments f              ON tf.fragment_id = f.id
+            WHERE t.hash = $1
+            GROUP BY f.bundle_id
+            "#,
                 tx_hash.as_slice()
             )
-            .fetch_one(&mut *tx)
+            .fetch_all(&mut *tx)
             .await?;
 
-            let bundle_id = row.bundle_id;
-            let total_bytes: i64 = row.total_bytes.unwrap_or(0);
-            let unused_bytes: i64 = row.unused_bytes.unwrap_or(0);
-            let size_contribution = total_bytes.saturating_sub(unused_bytes) as u64;
+            // 2) Calculate the total number of fragments in this transaction
+            let total_fragments_in_tx = rows
+                .iter()
+                .map(|r| r.fragment_count.unwrap_or(0) as u64)
+                .sum::<u64>();
 
-            let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
-                cost_contribution: 0,
-                size_contribution: 0,
-                latest_da_block_height: 0,
-            });
+            // 3) Distribute cost among all bundles based on fragment count,
+            //    but still track the size usage.
+            for row in rows {
+                let bundle_id = row.bundle_id;
 
-            entry.cost_contribution = entry.cost_contribution.saturating_add(*total_fee);
-            entry.size_contribution = entry.size_contribution.saturating_add(size_contribution);
-            // Update with the latest da_block_height
-            entry.latest_da_block_height = *da_block_height;
+                // 3a) number of fragments in this bundle
+                let frag_count_in_bundle = row.fragment_count.unwrap_or(0) as u64;
+
+                // 3b) fraction = how many fragments for this bundle vs. total
+                let fraction = if total_fragments_in_tx == 0 {
+                    0.0
+                } else {
+                    frag_count_in_bundle as f64 / total_fragments_in_tx as f64
+                };
+
+                // 3c) proportion of the total fee to allocate
+                let cost_contribution = (*total_fee as f64 * fraction).round() as u128;
+
+                // 3d) "used bytes" for size tracking
+                let total_bytes = row.total_bytes.unwrap_or(0).max(0) as u64;
+                let unused_bytes = row.unused_bytes.unwrap_or(0).max(0) as u64;
+                let used_bytes = total_bytes.saturating_sub(unused_bytes);
+
+                // 3e) update the aggregator
+                let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
+                    cost_contribution: 0,
+                    size_contribution: 0,
+                    latest_da_block_height: 0,
+                });
+
+                // add to cost
+                entry.cost_contribution = entry.cost_contribution.saturating_add(cost_contribution);
+
+                // update size usage, if you still want to accumulate it
+                entry.size_contribution = entry.size_contribution.saturating_add(used_bytes);
+
+                // track the most recent da block height
+                entry.latest_da_block_height = entry.latest_da_block_height.max(*da_block_height);
+            }
         }
 
         Ok(bundle_updates)

@@ -1325,11 +1325,8 @@ mod tests {
         // Realistically, you'd want some proportion, e.g. 10 bytes vs 20 bytes usage => split 1/3 vs 2/3 or similar.
         // But let's just show that the second bundle got 0 or is missing:
         println!("Debug: costA={cost_a}, costB={cost_b}");
-        assert!(
-            cost_a == 1000 && cost_b == 0,
-            "BUG: The entire fee should not be assigned to only one bundle.\
-         The test reveals that cost_b got no portion of the fee!"
-        );
+        assert_eq!(cost_a, 500);
+        assert_eq!(cost_b, 500);
 
         // If the above assertion passes, it means the bug is *still* present in your code.
         // If you fix the bug properly, the test should fail because costB is no longer zero.
