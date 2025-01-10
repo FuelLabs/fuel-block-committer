@@ -201,6 +201,7 @@ mod tests {
     use rand::{thread_rng, Rng};
     use services::{
         block_bundler::port::Storage as BundlerStorage,
+        block_importer::port::Storage,
         cost_reporter::port::Storage as CostStorage,
         state_committer::port::Storage as CommiterStorage,
         state_listener::port::Storage as ListenerStorage,
@@ -463,10 +464,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_last_time_a_fragment_was_finalized() {
-        use services::{
-            state_committer::port::Storage, state_listener::port::Storage as ListenerStorage,
-        };
-
         // given
         let storage = start_db().await;
 
@@ -674,10 +671,6 @@ mod tests {
 
     #[tokio::test]
     async fn excludes_fragments_from_bundles_ending_before_starting_height() {
-        use services::{
-            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
-        };
-
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -727,10 +720,6 @@ mod tests {
 
     #[tokio::test]
     async fn includes_fragments_from_bundles_ending_at_starting_height() {
-        use services::{
-            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
-        };
-
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -764,10 +753,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_next_bundle_id() {
-        use services::{
-            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
-        };
-
         // given
         let storage = start_db().await;
         let starting_height = 10;
@@ -801,8 +786,6 @@ mod tests {
 
     #[tokio::test]
     async fn empty_db_reports_missing_heights() -> Result<()> {
-        use services::block_importer::port::Storage;
-
         // given
         let current_height = 10;
         let storage = start_db().await;
@@ -818,8 +801,6 @@ mod tests {
 
     #[tokio::test]
     async fn missing_blocks_no_holes() -> Result<()> {
-        use services::block_importer::port::Storage;
-
         // given
         let current_height = 10;
         let storage = start_db().await;
@@ -837,8 +818,6 @@ mod tests {
 
     #[tokio::test]
     async fn reports_holes_in_blocks() -> Result<()> {
-        use services::block_importer::port::Storage;
-
         // given
         let current_height = 15;
         let storage = start_db().await;
@@ -857,8 +836,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_retrieve_fragments_submitted_by_tx() -> Result<()> {
-        use services::state_committer::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -883,8 +860,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_get_latest_pending_txs() -> Result<()> {
-        use services::state_committer::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -928,11 +903,6 @@ mod tests {
 
     #[tokio::test]
     async fn can_update_costs() -> Result<()> {
-        use services::{
-            cost_reporter::port::Storage, state_committer::port::Storage as StateStorage,
-            state_listener::port::Storage as ListenerStorage,
-        };
-
         // given
         let storage = start_db().await;
 
@@ -1028,8 +998,6 @@ mod tests {
 
     #[tokio::test]
     async fn costs_returned_only_for_finalized_bundles() {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
         let cost = 1000u128;
@@ -1069,8 +1037,6 @@ mod tests {
 
     #[tokio::test]
     async fn costs_returned_only_for_finalized_with_replacement_txs() {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
         let cost = 1000u128;
@@ -1108,8 +1074,6 @@ mod tests {
 
     #[tokio::test]
     async fn respects_from_block_height_and_limit_in_get_finalized_costs() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -1146,8 +1110,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_finalized_costs_from_middle_of_range() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
 
@@ -1184,8 +1146,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_latest_finalized_costs() -> Result<()> {
-        use services::cost_reporter::port::Storage;
-
         // given
         let storage = start_db().await;
 
