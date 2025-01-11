@@ -1,6 +1,5 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
-use crate::postgres::tables::u128_to_bigdecimal;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use services::types::{
@@ -14,7 +13,10 @@ use sqlx::{
 };
 
 use super::error::{Error, Result};
-use crate::mappings::tables::{self, L1TxState};
+use crate::{
+    mappings::tables::{self, L1TxState},
+    postgres::tables::u128_to_bigdecimal,
+};
 
 #[derive(Debug, Clone)]
 struct Metrics {
@@ -761,41 +763,60 @@ impl Postgres {
             da_block_height,
         } in cost_per_tx
         {
-            let row = sqlx::query!(
+            let rows = sqlx::query!(
                 r#"
-                SELECT
-                    f.bundle_id,
-                    SUM(f.total_bytes)::BIGINT AS total_bytes,
-                    SUM(f.unused_bytes)::BIGINT AS unused_bytes
-                FROM
-                    l1_blob_transaction t
-                    JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id
-                    JOIN l1_fragments f ON tf.fragment_id = f.id
-                WHERE
-                    t.hash = $1
-                GROUP BY
-                    f.bundle_id
-                "#,
+            SELECT
+                f.bundle_id,
+                SUM(f.total_bytes)::BIGINT       AS total_bytes,
+                SUM(f.unused_bytes)::BIGINT      AS unused_bytes,
+                COUNT(*)::BIGINT                 AS fragment_count
+            FROM l1_blob_transaction t
+            JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id
+            JOIN l1_fragments f              ON tf.fragment_id = f.id
+            WHERE t.hash = $1
+            GROUP BY f.bundle_id
+            "#,
                 tx_hash.as_slice()
             )
-            .fetch_one(&mut *tx)
+            .fetch_all(&mut *tx)
             .await?;
 
-            let bundle_id = row.bundle_id;
-            let total_bytes: i64 = row.total_bytes.unwrap_or(0);
-            let unused_bytes: i64 = row.unused_bytes.unwrap_or(0);
-            let size_contribution = total_bytes.saturating_sub(unused_bytes) as u64;
+            let total_fragments_in_tx = rows
+                .iter()
+                .map(|r| r.fragment_count.unwrap_or(0) as u64)
+                .sum::<u64>();
 
-            let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
-                cost_contribution: 0,
-                size_contribution: 0,
-                latest_da_block_height: 0,
-            });
+            for row in rows {
+                let bundle_id = row.bundle_id;
 
-            entry.cost_contribution = entry.cost_contribution.saturating_add(*total_fee);
-            entry.size_contribution = entry.size_contribution.saturating_add(size_contribution);
-            // Update with the latest da_block_height
-            entry.latest_da_block_height = *da_block_height;
+                let frag_count_in_bundle = row.fragment_count.unwrap_or(0) as u64;
+                let total_bytes = row.total_bytes.unwrap_or(0).max(0) as u64;
+                let unused_bytes = row.unused_bytes.unwrap_or(0).max(0) as u64;
+                let used_bytes = total_bytes.saturating_sub(unused_bytes);
+
+                const PPM: u128 = 1_000_000;
+                let fraction_in_ppm = if total_fragments_in_tx == 0 {
+                    0u128
+                } else {
+                    u128::from(frag_count_in_bundle)
+                        .saturating_mul(PPM)
+                        .saturating_div(u128::from(total_fragments_in_tx))
+                };
+
+                let cost_contribution = fraction_in_ppm
+                    .saturating_mul(*total_fee)
+                    .saturating_div(PPM);
+
+                let entry = bundle_updates.entry(bundle_id).or_insert(BundleCostUpdate {
+                    cost_contribution: 0,
+                    size_contribution: 0,
+                    latest_da_block_height: 0,
+                });
+
+                entry.cost_contribution = entry.cost_contribution.saturating_add(cost_contribution);
+                entry.size_contribution = entry.size_contribution.saturating_add(used_bytes);
+                entry.latest_da_block_height = entry.latest_da_block_height.max(*da_block_height);
+            }
         }
 
         Ok(bundle_updates)
@@ -1172,15 +1193,13 @@ fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
 mod tests {
     use std::{env, fs, path::Path};
 
+    use rand::Rng;
+    use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
     use sqlx::{Executor, PgPool, Row};
     use tokio::time::Instant;
 
-    use crate::test_instance;
-
     use super::*;
-
-    use rand::Rng;
-    use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
+    use crate::test_instance;
 
     #[tokio::test]
     async fn test_second_migration_applies_successfully() {
@@ -1443,9 +1462,10 @@ mod tests {
 
     #[tokio::test]
     async fn stress_test_update_costs() -> Result<()> {
-        use services::block_bundler::port::Storage;
-        use services::state_committer::port::Storage as CommitterStorage;
-        use services::state_listener::port::Storage as ListenerStorage;
+        use services::{
+            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
+            state_listener::port::Storage as ListenerStorage,
+        };
 
         let mut rng = rand::thread_rng();
 
