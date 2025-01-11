@@ -502,16 +502,19 @@ mod tests {
         storage: impl services::block_importer::port::Storage,
         range: RangeInclusive<u32>,
     ) {
-        let blocks = range
-            .clone()
-            .map(|height| CompressedFuelBlock {
-                height,
-                data: nonempty![height as u8],
-            })
-            .collect_nonempty()
-            .expect("shouldn't be empty");
+        let chunk_size = 10_000;
+        for chunk in range.clone().collect::<Vec<_>>().chunks(chunk_size) {
+            let blocks = chunk
+                .iter()
+                .map(|&height| CompressedFuelBlock {
+                    height,
+                    data: nonempty![height as u8],
+                })
+                .collect_nonempty()
+                .expect("chunk shouldn't be empty");
 
-        storage.insert_blocks(blocks).await.unwrap();
+            storage.insert_blocks(blocks).await.unwrap();
+        }
     }
 
     async fn insert_sequence_of_bundled_blocks(
@@ -649,6 +652,33 @@ mod tests {
 
         // then
         assert_eq!(height_range, 0..=2);
+    }
+
+    #[tokio::test]
+    async fn load_test_for_query() {
+        let storage = start_db().await;
+
+        let bundled_count = 7_000_000;
+        insert_sequence_of_bundled_blocks(storage.clone(), 0..=bundled_count, 1).await;
+
+        let unbundled_start = bundled_count + 1;
+        let unbundled_end = unbundled_start + 10_000;
+        insert_sequence_of_unbundled_blocks(storage.clone(), unbundled_start..=unbundled_end).await;
+
+        // look back a week into the past
+        let start_height = unbundled_end - 604_800;
+        let blocks_to_retrieve = 3500;
+        let start_time = std::time::Instant::now();
+        let height_range =
+            lowest_unbundled_sequence(storage.clone(), start_height, blocks_to_retrieve as usize)
+                .await;
+        let elapsed_time = start_time.elapsed();
+
+        let expected_range = unbundled_start..=(unbundled_start + blocks_to_retrieve - 1);
+        assert_eq!(height_range, expected_range);
+
+        // assert that the query executes within an acceptable time
+        assert!(elapsed_time.as_secs_f64() <= 2.0);
     }
 
     // Important because sqlx panics if the bundle is too big
