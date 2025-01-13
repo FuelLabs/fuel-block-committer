@@ -1,14 +1,10 @@
-use std::{
-    iter::repeat,
-    num::{NonZeroU32, NonZeroUsize},
-    time::Duration,
-};
+use std::{iter::repeat, num::NonZeroU32, time::Duration};
 
 use itertools::Itertools;
 use metrics::{prometheus, RegistersMetrics};
 use services::{
     fees::Fees,
-    state_committer::{port::l1::Priority, AlgoConfig, FeeThresholds, SmaPeriods},
+    state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
     types::{Fragment, FragmentsSubmitted, L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
