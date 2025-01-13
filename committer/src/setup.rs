@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clock::SystemClock;
-use eth::{AcceptablePriorityFeePercentage, BlobEncoder, Signers};
+use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     prometheus::{IntGauge, Registry},
@@ -232,7 +232,7 @@ pub async fn l1_adapter(
         eth::TxConfig {
             tx_max_fee: u128::from(config.app.tx_fees.max),
             send_tx_request_timeout: config.app.send_tx_request_timeout,
-            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentage::new(
+            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::new(
                 config.app.tx_fees.min_reward_perc,
                 config.app.tx_fees.max_reward_perc,
             )?,

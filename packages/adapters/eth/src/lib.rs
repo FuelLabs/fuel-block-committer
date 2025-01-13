@@ -13,5 +13,5 @@ pub use aws::*;
 pub use blob_encoder::BlobEncoder;
 pub use http::Provider as HttpClient;
 pub use websocket::{
-    AcceptablePriorityFeePercentage, L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient,
+    AcceptablePriorityFeePercentages, L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient,
 };

@@ -8,7 +8,7 @@ use alloy::{
     rpc::types::TransactionRequest,
 };
 use eth::{
-    AcceptablePriorityFeePercentage, AwsClient, AwsConfig, Signer, Signers, WebsocketClient,
+    AcceptablePriorityFeePercentages, AwsClient, AwsConfig, Signer, Signers, WebsocketClient,
 };
 use fs_extra::dir::{copy, CopyOptions};
 use serde::Deserialize;
@@ -44,7 +44,7 @@ impl DeployedContract {
             eth::TxConfig {
                 tx_max_fee,
                 send_tx_request_timeout,
-                acceptable_priority_fee_percentage: AcceptablePriorityFeePercentage::default(),
+                acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::default(),
             },
         )
         .await?;

@@ -160,7 +160,7 @@ impl L1Keys {
 pub struct TxConfig {
     pub tx_max_fee: u128,
     pub send_tx_request_timeout: Duration,
-    pub acceptable_priority_fee_percentage: AcceptablePriorityFeePercentage,
+    pub acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages,
 }
 
 #[cfg(feature = "test-helpers")]
@@ -169,25 +169,25 @@ impl Default for TxConfig {
         Self {
             tx_max_fee: u128::MAX,
             send_tx_request_timeout: Duration::from_secs(10),
-            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentage::default(),
+            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::default(),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct AcceptablePriorityFeePercentage {
+pub struct AcceptablePriorityFeePercentages {
     min: f64,
     max: f64,
 }
 
 #[cfg(feature = "test-helpers")]
-impl Default for AcceptablePriorityFeePercentage {
+impl Default for AcceptablePriorityFeePercentages {
     fn default() -> Self {
         Self::new(20., 20.).expect("valid reward percentile range")
     }
 }
 
-impl AcceptablePriorityFeePercentage {
+impl AcceptablePriorityFeePercentages {
     pub fn new(min: f64, max: f64) -> Result<Self> {
         if min > max {
             return Err(services::Error::Other(
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn lowest_priority_gives_min_priority_fee_perc() {
         // given
-        let sut = super::AcceptablePriorityFeePercentage::new(20., 40.).unwrap();
+        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
 
         // when
         let fee_perc = sut.apply(Priority::MIN);
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn lowest_priority_gives_max_priority_fee_perc() {
         // given
-        let sut = super::AcceptablePriorityFeePercentage::new(20., 40.).unwrap();
+        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
 
         // when
         let fee_perc = sut.apply(Priority::MAX);
@@ -469,7 +469,7 @@ mod tests {
     #[test]
     fn medium_priority_gives_middle_priority_fee_perc() {
         // given
-        let sut = super::AcceptablePriorityFeePercentage::new(20., 40.).unwrap();
+        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
 
         // when
         let fee_perc = sut.apply(Priority::new(50.).unwrap());
