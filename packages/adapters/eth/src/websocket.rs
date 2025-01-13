@@ -455,18 +455,6 @@ mod tests {
     }
 
     #[test]
-    fn lowest_priority_gives_max_priority_fee_perc() {
-        // given
-        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
-
-        // when
-        let fee_perc = sut.apply(Priority::MAX);
-
-        // then
-        assert_eq!(fee_perc, 40.);
-    }
-
-    #[test]
     fn medium_priority_gives_middle_priority_fee_perc() {
         // given
         let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
@@ -476,5 +464,17 @@ mod tests {
 
         // then
         assert_eq!(fee_perc, 30.);
+    }
+
+    #[test]
+    fn highest_priority_gives_max_priority_fee_perc() {
+        // given
+        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
+
+        // when
+        let fee_perc = sut.apply(Priority::MAX);
+
+        // then
+        assert_eq!(fee_perc, 40.);
     }
 }
