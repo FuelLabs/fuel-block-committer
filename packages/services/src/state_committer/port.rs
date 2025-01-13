@@ -19,6 +19,13 @@ pub mod l1 {
         async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     }
 
+    #[derive(Debug, Clone, Copy)]
+    pub enum Priority {
+        High,
+        Medium,
+        Low,
+    }
+
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -28,6 +35,7 @@ pub mod l1 {
             &self,
             fragments: NonEmpty<Fragment>,
             previous_tx: Option<L1Tx>,
+            priority: Priority,
         ) -> Result<(L1Tx, FragmentsSubmitted)>;
     }
 }

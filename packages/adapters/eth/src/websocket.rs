@@ -11,6 +11,7 @@ use alloy::{
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
+    state_committer::port::l1::Priority,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
         TransactionResponse, U256,
@@ -110,6 +111,7 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
                 &self,
                 fragments: NonEmpty<Fragment>,
                 previous_tx: Option<services::types::L1Tx>,
+                priority: Priority
             ) -> Result<(L1Tx, FragmentsSubmitted)>;
         }
     }
@@ -327,10 +329,11 @@ impl WebsocketClient {
         &self,
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<services::types::L1Tx>,
+        priority: Priority,
     ) -> Result<(L1Tx, FragmentsSubmitted)> {
         Ok(self
             .inner
-            .submit_state_fragments(fragments, previous_tx)
+            .submit_state_fragments(fragments, previous_tx, priority)
             .await?)
     }
 

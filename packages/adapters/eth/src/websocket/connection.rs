@@ -24,8 +24,9 @@ use metrics::{
     prometheus::{self, histogram_opts},
     RegistersMetrics,
 };
-use services::types::{
-    BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse,
+use services::{
+    state_committer::port::l1::Priority,
+    types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse},
 };
 use tracing::info;
 use url::Url;
@@ -241,6 +242,7 @@ impl EthApi for WsConnection {
         &self,
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<L1Tx>,
+        priority: Priority,
     ) -> Result<(L1Tx, services::types::FragmentsSubmitted)> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
@@ -539,7 +541,7 @@ mod tests {
 
         // when
         let (submitted_tx, _) = connection
-            .submit_state_fragments(fragments, Some(previous_tx.clone()))
+            .submit_state_fragments(fragments, Some(previous_tx.clone()), Priority::Low)
             .await
             .unwrap();
 
@@ -600,7 +602,9 @@ mod tests {
             .unwrap();
 
         // when
-        let result = connection.submit_state_fragments(fragment, None).await;
+        let result = connection
+            .submit_state_fragments(fragment, None, Priority::Low)
+            .await;
 
         // then
         let result = result.expect_err("should return an error");

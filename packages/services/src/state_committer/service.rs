@@ -9,6 +9,7 @@ use tracing::info;
 
 use super::{fee_algo::SmaFeeAlgo, AlgoConfig};
 use crate::{
+    state_committer::port::l1::Priority,
     types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
     Result, Runner,
 };
@@ -159,9 +160,10 @@ where
 
         let data = fragments.clone().map(|f| f.fragment);
 
+        // TODO: segfault calc the priority here
         match self
             .l1_adapter
-            .submit_state_fragments(data, previous_tx)
+            .submit_state_fragments(data, previous_tx, Priority::Low)
             .await
         {
             Ok((submitted_tx, submitted_fragments)) => {

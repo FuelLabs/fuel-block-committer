@@ -1,3 +1,15 @@
+use std::cmp::max;
+
+use alloy::{
+    network::{TransactionBuilder, TransactionBuilder4844},
+    providers::utils::EIP1559_MIN_PRIORITY_FEE,
+    rpc::types::{FeeHistory, TransactionRequest},
+};
+use itertools::Itertools;
+use services::types::L1Tx;
+
+use crate::error::{Error, Result};
+
 #[derive(Debug, Clone, Copy)]
 pub struct FeeHorizon {
     pub blob: u32,
@@ -31,18 +43,6 @@ impl<'a> From<&'a L1Tx> for MaxTxFeePerGas {
             priority: value.blob_fee,
             blob: value.priority_fee,
         }
-    }
-}
-
-pub trait TransactionRequestExt {
-    fn with_max_fees(self, fees: MaxTxFeePerGas) -> Self;
-}
-
-impl TransactionRequestExt for TransactionRequest {
-    fn with_max_fees(self, fees: MaxTxFeePerGas) -> Self {
-        self.with_max_fee_per_gas(fees.normal)
-            .with_max_priority_fee_per_gas(fees.priority)
-            .with_max_fee_per_blob_gas(fees.blob)
     }
 }
 
@@ -90,6 +90,18 @@ impl TryFrom<FeeHistory> for MaxTxFeePerGas {
     }
 }
 
+pub trait TransactionRequestExt {
+    fn with_max_fees(self, fees: MaxTxFeePerGas) -> Self;
+}
+
+impl TransactionRequestExt for TransactionRequest {
+    fn with_max_fees(self, fees: MaxTxFeePerGas) -> Self {
+        self.with_max_fee_per_gas(fees.normal)
+            .with_max_priority_fee_per_gas(fees.priority)
+            .with_max_fee_per_blob_gas(fees.blob)
+    }
+}
+
 pub fn at_horizon(mut value: u128, horizon: u32) -> u128 {
     for _ in 0..horizon {
         // multiply by 1.125 = multiply by 9, then divide by 8
@@ -97,23 +109,8 @@ pub fn at_horizon(mut value: u128, horizon: u32) -> u128 {
     }
     value
 }
-use std::cmp::max;
 
-use alloy::network::TransactionBuilder;
-use alloy::network::TransactionBuilder4844;
-use alloy::providers::utils::EIP1559_MIN_PRIORITY_FEE;
-
-use alloy::rpc::types::TransactionRequest;
-use itertools::Itertools;
-use services::types::L1Tx;
-
-use crate::error::Error;
-
-use crate::error::Result;
-
-use alloy::rpc::types::FeeHistory;
-
-pub(crate) fn estimate_max_priority_fee_per_gas(fee_history: &FeeHistory) -> Result<u128> {
+fn estimate_max_priority_fee_per_gas(fee_history: &FeeHistory) -> Result<u128> {
     // Taken from the default priority estimator for alloy
     let rewards = fee_history
         .reward
