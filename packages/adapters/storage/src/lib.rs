@@ -507,10 +507,9 @@ mod tests {
         range: RangeInclusive<u32>,
     ) {
         let chunk_size = 10_000;
-        for chunk in range.clone().collect::<Vec<_>>().chunks(chunk_size) {
+        for chunk in range.chunks(chunk_size).into_iter() {
             let blocks = chunk
-                .iter()
-                .map(|&height| CompressedFuelBlock {
+                .map(|height| CompressedFuelBlock {
                     height,
                     data: nonempty![height as u8],
                 })
