@@ -414,6 +414,7 @@ impl RegistersMetrics for WebsocketClient {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use services::state_committer::port::l1::Priority;
 
     use super::L1Key;
 
@@ -439,5 +440,41 @@ mod tests {
 
         // then
         assert_eq!(key, L1Key::Kms("0x1234".to_owned()));
+    }
+
+    #[test]
+    fn lowest_priority_gives_min_priority_fee_perc() {
+        // given
+        let sut = super::AcceptablePriorityFeePercentage::new(20., 40.).unwrap();
+
+        // when
+        let fee_perc = sut.apply(Priority::MIN);
+
+        // then
+        assert_eq!(fee_perc, 20.);
+    }
+
+    #[test]
+    fn lowest_priority_gives_max_priority_fee_perc() {
+        // given
+        let sut = super::AcceptablePriorityFeePercentage::new(20., 40.).unwrap();
+
+        // when
+        let fee_perc = sut.apply(Priority::MAX);
+
+        // then
+        assert_eq!(fee_perc, 40.);
+    }
+
+    #[test]
+    fn medium_priority_gives_middle_priority_fee_perc() {
+        // given
+        let sut = super::AcceptablePriorityFeePercentage::new(20., 40.).unwrap();
+
+        // when
+        let fee_perc = sut.apply(Priority::new(50.).unwrap());
+
+        // then
+        assert_eq!(fee_perc, 30.);
     }
 }

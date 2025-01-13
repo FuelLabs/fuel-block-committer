@@ -84,26 +84,10 @@ where
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "test-helpers", derive(Default))]
 pub struct Config {
     pub sma_periods: SmaPeriods,
     pub fee_thresholds: FeeThresholds,
-}
-
-#[cfg(feature = "test-helpers")]
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            sma_periods: SmaPeriods {
-                short: 1.try_into().expect("not zero"),
-                long: 2.try_into().expect("not zero"),
-            },
-            fee_thresholds: FeeThresholds {
-                max_l2_blocks_behind: 100.try_into().unwrap(),
-                always_acceptable_fee: u128::MAX,
-                ..Default::default()
-            },
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,6 +159,16 @@ pub struct FeeThresholds {
 pub struct SmaPeriods {
     pub short: NonZeroU64,
     pub long: NonZeroU64,
+}
+
+#[cfg(feature = "test-helpers")]
+impl Default for SmaPeriods {
+    fn default() -> Self {
+        Self {
+            short: 1.try_into().expect("not zero"),
+            long: 2.try_into().expect("not zero"),
+        }
+    }
 }
 
 #[cfg(feature = "test-helpers")]

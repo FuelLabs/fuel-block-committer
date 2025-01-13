@@ -19,11 +19,13 @@ pub mod l1 {
         async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
     pub struct Priority(f64);
 
     impl Priority {
-        pub const ZERO: Self = Self(0.);
+        pub const MIN: Self = Self(0.);
+        pub const MAX: Self = Self(100.);
+
         pub fn new(percent: f64) -> Result<Self> {
             if !(0. ..=100.).contains(&percent) {
                 return Err(Error::Other(

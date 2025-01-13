@@ -545,7 +545,7 @@ mod tests {
 
         // when
         let (submitted_tx, _) = connection
-            .submit_state_fragments(fragments, Some(previous_tx.clone()), Priority::ZERO)
+            .submit_state_fragments(fragments, Some(previous_tx.clone()), Priority::MIN)
             .await
             .unwrap();
 
@@ -609,7 +609,7 @@ mod tests {
 
         // when
         let result = connection
-            .submit_state_fragments(fragment, None, Priority::ZERO)
+            .submit_state_fragments(fragment, None, Priority::MIN)
             .await;
 
         // then
