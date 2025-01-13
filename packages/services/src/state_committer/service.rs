@@ -127,21 +127,23 @@ where
         Ok(std_elapsed >= self.config.fragment_accumulation_timeout)
     }
 
-    async fn fees_acceptable(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
-        let l1_height = self.l1_adapter.current_height().await?;
+    async fn l2_blocks_behind(&self, fragments: &NonEmpty<BundleFragment>) -> Result<u32> {
         let l2_height = self.fuel_api.latest_height().await?;
 
         let oldest_l2_block = Self::oldest_l2_block_in_fragments(fragments);
         self.update_oldest_block_metric(oldest_l2_block);
 
-        let num_l2_blocks_behind = l2_height.saturating_sub(oldest_l2_block);
+        Ok(l2_height.saturating_sub(oldest_l2_block))
+    }
+
+    async fn fees_acceptable(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
+        let l1_height = self.l1_adapter.current_height().await?;
+        let num_l2_blocks_behind = self.l2_blocks_behind(fragments).await?;
+        let num_blobs =
+            u32::try_from(fragments.len()).expect("not to send more than u32::MAX blobs");
 
         self.fee_algo
-            .fees_acceptable(
-                u32::try_from(fragments.len()).expect("not to send more than u32::MAX blobs"),
-                num_l2_blocks_behind,
-                l1_height,
-            )
+            .fees_acceptable(num_blobs, num_l2_blocks_behind, l1_height)
             .await
     }
 
@@ -149,6 +151,23 @@ where
         fragments
             .minimum_by_key(|b| b.oldest_block_in_bundle)
             .oldest_block_in_bundle
+    }
+
+    async fn determine_priority(&self, fragments: &NonEmpty<BundleFragment>) -> Result<Priority> {
+        let blocks_behind = self.l2_blocks_behind(fragments).await? as f64;
+
+        let max_l2_behind = self
+            .config
+            .fee_algo
+            .fee_thresholds
+            .max_l2_blocks_behind
+            .get() as f64;
+
+        let percentage = blocks_behind / max_l2_behind * 100.;
+
+        let capped_at_100 = percentage.min(100.);
+
+        Priority::new(capped_at_100)
     }
 
     async fn submit_fragments(
@@ -160,10 +179,10 @@ where
 
         let data = fragments.clone().map(|f| f.fragment);
 
-        // TODO: segfault calc the priority here
+        let priority = self.determine_priority(&fragments).await?;
         match self
             .l1_adapter
-            .submit_state_fragments(data, previous_tx, Priority::ZERO)
+            .submit_state_fragments(data, previous_tx, priority)
             .await
         {
             Ok((submitted_tx, submitted_fragments)) => {
