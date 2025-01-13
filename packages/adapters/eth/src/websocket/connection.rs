@@ -1,9 +1,6 @@
-use std::{
-    cmp::{max, min},
-    num::NonZeroU32,
-    ops::RangeInclusive,
-    time::Duration,
-};
+mod estimation;
+
+use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive, time::Duration};
 
 use alloy::{
     consensus::Transaction,
@@ -13,11 +10,15 @@ use alloy::{
     },
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
+    providers::{
+        utils::{Eip1559Estimation, EIP1559_FEE_ESTIMATION_PAST_BLOCKS},
+        Provider, ProviderBuilder, SendableTx, WsConnect,
+    },
     pubsub::PubSubFrontend,
     rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
     sol,
 };
+use estimation::{FeeHorizon, MaxTxFeePerGas, TransactionRequestExt};
 use itertools::Itertools;
 use metrics::{
     prometheus::{self, histogram_opts},
@@ -82,54 +83,22 @@ pub struct WsConnection {
     metrics: Metrics,
 }
 
-const MAX_BLOB_FEE_HORIZON: u32 = 5;
-
 impl WsConnection {
-    async fn get_next_blob_fee(&self, horizon: u32) -> Result<u128> {
-        let mut next_block_blob_fee = self
+    async fn estimate_fees_at_horizon(&self, horizon: FeeHorizon) -> Result<MaxTxFeePerGas> {
+        let fee_history = self
             .provider
-            .get_block_by_number(BlockNumberOrTag::Latest, false)
-            .await?
-            .ok_or(Error::Network(
-                "get_block_by_number returned None".to_string(),
-            ))?
-            .header
-            .next_block_blob_fee()
-            .ok_or(Error::Network(
-                "next_block_blob_fee returned None".to_string(),
-            ))?;
+            .get_fee_history(
+                EIP1559_FEE_ESTIMATION_PAST_BLOCKS,
+                BlockNumberOrTag::Latest,
+                &[horizon.reward_perc],
+            )
+            .await?;
 
-        for _ in 0..horizon {
-            // multiply by 1.125 = multiply by 9, then divide by 8
-            next_block_blob_fee = next_block_blob_fee.saturating_mul(9).saturating_div(8);
-        }
-        Ok(next_block_blob_fee)
-    }
+        let mut fees_w_horizon = MaxTxFeePerGas::try_from(fee_history)?;
+        fees_w_horizon.blob = estimation::at_horizon(fees_w_horizon.blob, horizon.blob);
+        fees_w_horizon.normal = estimation::at_horizon(fees_w_horizon.normal, horizon.normal);
 
-    async fn get_bumped_fees(
-        &self,
-        previous_tx: &L1Tx,
-        provider: &WsProvider,
-    ) -> Result<(u128, u128, u128)> {
-        let next_blob_fee = self.get_next_blob_fee(MAX_BLOB_FEE_HORIZON).await?;
-        let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
-
-        let Eip1559Estimation {
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
-        } = provider.estimate_eip1559_fees(None).await?;
-
-        let max_fee_per_gas = max(max_fee_per_gas, previous_tx.max_fee.saturating_mul(2));
-        let max_priority_fee_per_gas = max(
-            max_priority_fee_per_gas,
-            previous_tx.priority_fee.saturating_mul(2),
-        );
-
-        Ok((
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
-            max_fee_per_blob_gas,
-        ))
+        Ok(fees_w_horizon)
     }
 
     fn get_max_fee(tx: &L1Tx, gas_limit: u128, num_fragments: usize) -> u128 {
@@ -287,27 +256,21 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = blob_encoder::BlobEncoder::sidecar_from_fragments(limited_fragments)?;
 
-        let blob_tx = match previous_tx {
-            Some(previous_tx) => {
-                let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-                    self.get_bumped_fees(&previous_tx, blob_provider).await?;
+        let fees = self.estimate_fees_at_horizon(FeeHorizon::default()).await?;
 
-                TransactionRequest::default()
-                    .with_max_fee_per_gas(max_fee_per_gas)
-                    .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
-                    .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
-                    .with_nonce(previous_tx.nonce as u64)
-                    .with_blob_sidecar(sidecar)
-                    .with_to(*blob_signer_address)
-            }
-            _ => {
-                let blob_fee = self.get_next_blob_fee(MAX_BLOB_FEE_HORIZON).await?;
+        let blob_tx = TransactionRequest::default()
+            .with_blob_sidecar(sidecar)
+            .with_to(*blob_signer_address);
 
-                TransactionRequest::default()
-                    .with_blob_sidecar(sidecar)
-                    .with_max_fee_per_blob_gas(blob_fee)
-                    .with_to(*blob_signer_address)
-            }
+        let blob_tx = if let Some(previous_tx) = previous_tx {
+            let minimum_replacement_fees = MaxTxFeePerGas::from(&previous_tx).double();
+            let fees = fees.retain_max(minimum_replacement_fees);
+
+            blob_tx
+                .with_max_fees(fees)
+                .with_nonce(previous_tx.nonce as u64)
+        } else {
+            blob_tx.with_max_fees(fees)
         };
 
         let blob_tx = blob_provider.fill(blob_tx).await?;
