@@ -18,7 +18,7 @@ use alloy::{
     rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
     sol,
 };
-use estimation::{MaxTxFeePerGas, TransactionRequestExt};
+use estimation::{MaxTxFeesPerGas, TransactionRequestExt};
 use itertools::Itertools;
 use metrics::{
     prometheus::{self, histogram_opts},
@@ -84,7 +84,7 @@ pub struct WsConnection {
 }
 
 impl WsConnection {
-    async fn estimate_fees_at_horizon(&self, priority: Priority) -> Result<MaxTxFeePerGas> {
+    async fn estimate_fees_at_horizon(&self, priority: Priority) -> Result<MaxTxFeesPerGas> {
         const BLOB_FEE_HORIZON: u32 = 5;
         const FEE_HORIZON: u32 = 6;
 
@@ -102,7 +102,7 @@ impl WsConnection {
             )
             .await?;
 
-        let mut fees_w_horizon = MaxTxFeePerGas::try_from(fee_history)?;
+        let mut fees_w_horizon = MaxTxFeesPerGas::try_from(fee_history)?;
         fees_w_horizon.blob = estimation::at_horizon(fees_w_horizon.blob, BLOB_FEE_HORIZON);
         fees_w_horizon.normal = estimation::at_horizon(fees_w_horizon.normal, FEE_HORIZON);
 
@@ -272,7 +272,7 @@ impl EthApi for WsConnection {
             .with_to(*blob_signer_address);
 
         let blob_tx = if let Some(previous_tx) = previous_tx {
-            let minimum_replacement_fees = MaxTxFeePerGas::from(&previous_tx).double();
+            let minimum_replacement_fees = MaxTxFeesPerGas::from(&previous_tx).double();
             let fees = fees.retain_max(minimum_replacement_fees);
 
             blob_tx

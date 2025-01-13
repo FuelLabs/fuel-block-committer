@@ -11,13 +11,13 @@ use services::types::L1Tx;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Copy)]
-pub struct MaxTxFeePerGas {
+pub struct MaxTxFeesPerGas {
     pub normal: u128,
     pub priority: u128,
     pub blob: u128,
 }
 
-impl<'a> From<&'a L1Tx> for MaxTxFeePerGas {
+impl<'a> From<&'a L1Tx> for MaxTxFeesPerGas {
     fn from(value: &'a L1Tx) -> Self {
         Self {
             normal: value.max_fee,
@@ -27,7 +27,7 @@ impl<'a> From<&'a L1Tx> for MaxTxFeePerGas {
     }
 }
 
-impl MaxTxFeePerGas {
+impl MaxTxFeesPerGas {
     pub fn double(self) -> Self {
         Self {
             normal: self.normal.saturating_mul(2),
@@ -36,7 +36,7 @@ impl MaxTxFeePerGas {
         }
     }
 
-    pub fn retain_max(self, previous_fees: MaxTxFeePerGas) -> Self {
+    pub fn retain_max(self, previous_fees: MaxTxFeesPerGas) -> Self {
         let max_fee_per_gas = max(self.normal, previous_fees.normal);
         let max_fee_per_blob_gas = max(self.blob, previous_fees.blob);
         let max_priority_fee_per_gas = max(self.priority, previous_fees.priority);
@@ -49,7 +49,7 @@ impl MaxTxFeePerGas {
     }
 }
 
-impl TryFrom<FeeHistory> for MaxTxFeePerGas {
+impl TryFrom<FeeHistory> for MaxTxFeesPerGas {
     type Error = crate::error::Error;
 
     fn try_from(fee_history: FeeHistory) -> std::result::Result<Self, Self::Error> {
@@ -63,7 +63,7 @@ impl TryFrom<FeeHistory> for MaxTxFeePerGas {
 
         let priority = estimate_max_priority_fee_per_gas(&fee_history)?;
 
-        Ok(MaxTxFeePerGas {
+        Ok(MaxTxFeesPerGas {
             priority,
             normal,
             blob,
@@ -72,11 +72,11 @@ impl TryFrom<FeeHistory> for MaxTxFeePerGas {
 }
 
 pub trait TransactionRequestExt {
-    fn with_max_fees(self, fees: MaxTxFeePerGas) -> Self;
+    fn with_max_fees(self, fees: MaxTxFeesPerGas) -> Self;
 }
 
 impl TransactionRequestExt for TransactionRequest {
-    fn with_max_fees(self, fees: MaxTxFeePerGas) -> Self {
+    fn with_max_fees(self, fees: MaxTxFeesPerGas) -> Self {
         self.with_max_fee_per_gas(fees.normal)
             .with_max_priority_fee_per_gas(fees.priority)
             .with_max_fee_per_blob_gas(fees.blob)
