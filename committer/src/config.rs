@@ -135,8 +135,6 @@ pub struct App {
     pub gas_bump_timeout: Duration,
     /// Tweak how we pay for a l1 transaction
     pub tx_fees: TxFeesConfig,
-    pub reward_perc_lowest: f64,
-    pub reward_perc_highest: f64,
     ///// Contains configs relating to block state posting to l1
     pub bundle: BundleConfig,
     //// Duration for timeout when sending tx requests
