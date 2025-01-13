@@ -760,7 +760,6 @@ async fn propagates_correct_priority_not_capped() -> Result<()> {
             },
         );
 
-    // Setup fee algorithm with max_l2_blocks_behind = 100.
     let fee_thresholds = FeeThresholds {
         max_l2_blocks_behind: NonZeroU32::new(100).unwrap(),
         ..Default::default()
@@ -771,11 +770,8 @@ async fn propagates_correct_priority_not_capped() -> Result<()> {
     };
 
     let state_committer_config = StateCommitterConfig {
-        lookback_window: 1000,
-        fragment_accumulation_timeout: Duration::from_secs(60),
-        fragments_to_accumulate: NonZeroUsize::new(1).unwrap(),
         fee_algo,
-        gas_bump_timeout: Duration::from_secs(60),
+        ..Default::default()
     };
 
     let _ = setup.insert_fragments(0, 1).await;
@@ -834,11 +830,8 @@ async fn propagates_correct_priority_capped_at_100() -> Result<()> {
     };
 
     let state_committer_config = StateCommitterConfig {
-        lookback_window: 1000,
-        fragment_accumulation_timeout: Duration::from_secs(60),
-        fragments_to_accumulate: NonZeroUsize::new(1).unwrap(),
         fee_algo,
-        gas_bump_timeout: Duration::from_secs(60),
+        ..Default::default()
     };
 
     let _ = setup.insert_fragments(0, 1).await;
@@ -852,7 +845,7 @@ async fn propagates_correct_priority_capped_at_100() -> Result<()> {
         noop_fees(),
     );
 
-    // Act
+    // when
     state_committer.run().await?;
 
     // then
