@@ -37,14 +37,10 @@ impl MaxTxFeesPerGas {
     }
 
     pub fn retain_max(self, previous_fees: MaxTxFeesPerGas) -> Self {
-        let max_fee_per_gas = max(self.normal, previous_fees.normal);
-        let max_fee_per_blob_gas = max(self.blob, previous_fees.blob);
-        let max_priority_fee_per_gas = max(self.priority, previous_fees.priority);
-
         Self {
-            normal: max_fee_per_gas,
-            priority: max_priority_fee_per_gas,
-            blob: max_fee_per_blob_gas,
+            normal: max(self.normal, previous_fees.normal),
+            priority: max(self.priority, previous_fees.priority),
+            blob: max(self.blob, previous_fees.blob),
         }
     }
 }
