@@ -506,6 +506,7 @@ mod tests {
         storage: impl services::block_importer::port::Storage,
         range: RangeInclusive<u32>,
     ) {
+        // Insert blocks in chunks to enable setting up the db for a load test
         let chunk_size = 10_000;
         for chunk in range.chunks(chunk_size).into_iter() {
             let blocks = chunk
