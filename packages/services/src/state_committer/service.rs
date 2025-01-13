@@ -163,7 +163,7 @@ where
         // TODO: segfault calc the priority here
         match self
             .l1_adapter
-            .submit_state_fragments(data, previous_tx, Priority::Low)
+            .submit_state_fragments(data, previous_tx, Priority::ZERO)
             .await
         {
             Ok((submitted_tx, submitted_fragments)) => {

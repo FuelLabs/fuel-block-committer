@@ -10,7 +10,7 @@ pub mod l1 {
 
     use crate::{
         types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
-        Result,
+        Error, Result,
     };
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
@@ -20,10 +20,23 @@ pub mod l1 {
     }
 
     #[derive(Debug, Clone, Copy)]
-    pub enum Priority {
-        High,
-        Medium,
-        Low,
+    pub struct Priority(f64);
+
+    impl Priority {
+        pub const ZERO: Self = Self(0.);
+        pub fn new(percent: f64) -> Result<Self> {
+            if !(0. ..=100.).contains(&percent) {
+                return Err(Error::Other(
+                    "priority must be between 0 and 100".to_string(),
+                ));
+            }
+
+            Ok(Self(percent))
+        }
+
+        pub fn get(&self) -> f64 {
+            self.0
+        }
     }
 
     #[allow(async_fn_in_trait)]

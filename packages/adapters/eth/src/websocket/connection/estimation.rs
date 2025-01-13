@@ -11,25 +11,6 @@ use services::types::L1Tx;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Copy)]
-pub struct FeeHorizon {
-    pub blob: u32,
-    pub normal: u32,
-    pub reward_perc: f64,
-}
-
-impl Default for FeeHorizon {
-    fn default() -> Self {
-        Self {
-            // around 1.8x
-            blob: 5,
-            // around 2.02x
-            normal: 6,
-            reward_perc: 20.,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct MaxTxFeePerGas {
     pub normal: u128,
     pub priority: u128,

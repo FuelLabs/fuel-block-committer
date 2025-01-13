@@ -1,6 +1,6 @@
 mod estimation;
 
-use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive, time::Duration};
+use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
 
 use alloy::{
     consensus::Transaction,
@@ -18,7 +18,7 @@ use alloy::{
     rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
     sol,
 };
-use estimation::{FeeHorizon, MaxTxFeePerGas, TransactionRequestExt};
+use estimation::{MaxTxFeePerGas, TransactionRequestExt};
 use itertools::Itertools;
 use metrics::{
     prometheus::{self, histogram_opts},
@@ -31,7 +31,7 @@ use services::{
 use tracing::info;
 use url::Url;
 
-use super::{health_tracking_middleware::EthApi, Signers};
+use super::{health_tracking_middleware::EthApi, Signers, TxConfig};
 use crate::{
     blob_encoder::{self},
     error::{Error, Result},
@@ -79,25 +79,32 @@ pub struct WsConnection {
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
-    tx_max_fee: u128,
-    send_tx_request_timeout: Duration,
     metrics: Metrics,
+    tx_config: TxConfig,
 }
 
 impl WsConnection {
-    async fn estimate_fees_at_horizon(&self, horizon: FeeHorizon) -> Result<MaxTxFeePerGas> {
+    async fn estimate_fees_at_horizon(&self, priority: Priority) -> Result<MaxTxFeePerGas> {
+        const BLOB_FEE_HORIZON: u32 = 5;
+        const FEE_HORIZON: u32 = 6;
+
+        let priority_perc = self
+            .tx_config
+            .acceptable_priority_fee_percentage
+            .apply(priority);
+
         let fee_history = self
             .provider
             .get_fee_history(
                 EIP1559_FEE_ESTIMATION_PAST_BLOCKS,
                 BlockNumberOrTag::Latest,
-                &[horizon.reward_perc],
+                &[priority_perc],
             )
             .await?;
 
         let mut fees_w_horizon = MaxTxFeePerGas::try_from(fee_history)?;
-        fees_w_horizon.blob = estimation::at_horizon(fees_w_horizon.blob, horizon.blob);
-        fees_w_horizon.normal = estimation::at_horizon(fees_w_horizon.normal, horizon.normal);
+        fees_w_horizon.blob = estimation::at_horizon(fees_w_horizon.blob, BLOB_FEE_HORIZON);
+        fees_w_horizon.normal = estimation::at_horizon(fees_w_horizon.normal, FEE_HORIZON);
 
         Ok(fees_w_horizon)
     }
@@ -169,7 +176,7 @@ impl EthApi for WsConnection {
             .nonce(nonce);
 
         let send_fut = self.provider.send_transaction(tx_request);
-        let tx = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+        let tx = tokio::time::timeout(self.tx_config.send_tx_request_timeout, send_fut)
             .await
             .map_err(|_| Error::Network("timed out trying to submit block".to_string()))??;
         tracing::info!("tx: {} submitted", tx.tx_hash());
@@ -258,7 +265,7 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = blob_encoder::BlobEncoder::sidecar_from_fragments(limited_fragments)?;
 
-        let fees = self.estimate_fees_at_horizon(FeeHorizon::default()).await?;
+        let fees = self.estimate_fees_at_horizon(priority).await?;
 
         let blob_tx = TransactionRequest::default()
             .with_blob_sidecar(sidecar)
@@ -305,18 +312,18 @@ impl EthApi for WsConnection {
         info!("sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
 
         let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
-        if max_fee > self.tx_max_fee {
+        if max_fee > self.tx_config.tx_max_fee {
             return Err(Error::Other(
                 format!(
                     "max fee exceeded: tried {}, limit {}",
-                    max_fee, self.tx_max_fee
+                    max_fee, self.tx_config.tx_max_fee
                 )
                 .to_string(),
             ));
         }
 
         let send_fut = blob_provider.send_tx_envelope(blob_tx);
-        let _ = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+        let _ = tokio::time::timeout(self.tx_config.send_tx_request_timeout, send_fut)
             .await
             .map_err(|_| Error::Network("timed out trying to send blob tx".to_string()))??;
 
@@ -360,8 +367,7 @@ impl WsConnection {
         url: Url,
         contract_address: Address,
         signers: Signers,
-        tx_max_fee: u128,
-        send_tx_request_timeout: Duration,
+        tx_config: TxConfig,
     ) -> Result<Self> {
         let address = TxSigner::address(&signers.main);
         let ws = WsConnect::new(url);
@@ -395,8 +401,7 @@ impl WsConnection {
             blob_signer_address,
             contract,
             commit_interval,
-            tx_max_fee,
-            send_tx_request_timeout,
+            tx_config,
             metrics: Default::default(),
         })
     }
@@ -513,8 +518,7 @@ mod tests {
                 provider.clone(),
             ),
             commit_interval: 3.try_into().unwrap(),
-            tx_max_fee: u128::MAX,
-            send_tx_request_timeout: Duration::from_secs(10),
+            tx_config: TxConfig::default(),
             metrics: Default::default(),
         };
 
@@ -541,7 +545,7 @@ mod tests {
 
         // when
         let (submitted_tx, _) = connection
-            .submit_state_fragments(fragments, Some(previous_tx.clone()), Priority::Low)
+            .submit_state_fragments(fragments, Some(previous_tx.clone()), Priority::ZERO)
             .await
             .unwrap();
 
@@ -591,8 +595,10 @@ mod tests {
                 provider.clone(),
             ),
             commit_interval: 3.try_into().unwrap(),
-            tx_max_fee,
-            send_tx_request_timeout: Duration::from_secs(10),
+            tx_config: TxConfig {
+                tx_max_fee,
+                ..Default::default()
+            },
             metrics: Default::default(),
         };
 
@@ -603,7 +609,7 @@ mod tests {
 
         // when
         let result = connection
-            .submit_state_fragments(fragment, None, Priority::Low)
+            .submit_state_fragments(fragment, None, Priority::ZERO)
             .await;
 
         // then
