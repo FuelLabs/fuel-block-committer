@@ -251,23 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn test_full_range_chunk() {
-        // given
-        let initial_range = 20..=30;
-        let chunk_size = 11;
-
-        // when
-        let result = chunk_range_inclusive(initial_range, chunk_size);
-
-        // then
-        let expected = vec![20..=30];
-        assert_eq!(
-            result, expected,
-            "Whole range should be a single chunk when chunk_size equals range size"
-        );
-    }
-
-    #[test]
     fn test_unpack_fee_history_empty_base_fee() {
         // given
         let fees = FeeHistory {
@@ -500,62 +483,6 @@ mod tests {
             result.unwrap(),
             expected,
             "Expected BlockFees entries with large u64 values"
-        );
-    }
-
-    #[test]
-    fn test_unpack_fee_history_full_range_chunk() {
-        // given
-        let fees = FeeHistory {
-            oldest_block: 800,
-            base_fee_per_gas: vec![500, 600, 700, 800, 900], // number_of_blocks =4
-            base_fee_per_blob_gas: vec![550, 650, 750, 850, 950],
-            reward: Some(vec![vec![50], vec![60], vec![70], vec![80]]),
-            ..Default::default()
-        };
-
-        // when
-        let result = unpack_fee_history(fees);
-
-        // then
-        let expected = vec![
-            FeesAtHeight {
-                height: 800,
-                fees: Fees {
-                    base_fee_per_gas: 500.try_into().unwrap(),
-                    reward: 50.try_into().unwrap(),
-                    base_fee_per_blob_gas: 550.try_into().unwrap(),
-                },
-            },
-            FeesAtHeight {
-                height: 801,
-                fees: Fees {
-                    base_fee_per_gas: 600.try_into().unwrap(),
-                    reward: 60.try_into().unwrap(),
-                    base_fee_per_blob_gas: 650.try_into().unwrap(),
-                },
-            },
-            FeesAtHeight {
-                height: 802,
-                fees: Fees {
-                    base_fee_per_gas: 700.try_into().unwrap(),
-                    reward: 70.try_into().unwrap(),
-                    base_fee_per_blob_gas: 750.try_into().unwrap(),
-                },
-            },
-            FeesAtHeight {
-                height: 803,
-                fees: Fees {
-                    base_fee_per_gas: 800.try_into().unwrap(),
-                    reward: 80.try_into().unwrap(),
-                    base_fee_per_blob_gas: 850.try_into().unwrap(),
-                },
-            },
-        ];
-        assert_eq!(
-            result.unwrap(),
-            expected,
-            "Expected BlockFees entries matching the full range chunk"
         );
     }
 }

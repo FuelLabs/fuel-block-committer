@@ -485,14 +485,17 @@ impl Postgres {
         let response = sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
-            SELECT fb.*
-            FROM fuel_blocks fb WHERE fb.height >= $1
-            AND NOT EXISTS (
-                SELECT 1
-                FROM bundles b
-                WHERE fb.height BETWEEN b.start_height AND b.end_height
-            )
-            ORDER BY fb.height LIMIT $2"#,
+            SELECT fb.* 
+        FROM fuel_blocks fb 
+        WHERE fb.height >= $1
+        AND NOT EXISTS (
+            SELECT 1 FROM bundles b 
+            WHERE fb.height BETWEEN b.start_height AND b.end_height
+            AND b.end_height >= $1
+        ) 
+        ORDER BY fb.height 
+        LIMIT $2;
+            "#,
             i64::from(starting_height), // Parameter $1
             limit                       // Parameter $2
         )
