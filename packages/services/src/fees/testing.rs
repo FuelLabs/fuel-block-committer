@@ -70,21 +70,3 @@ impl PreconfiguredFeeApi {
         }
     }
 }
-
-pub fn incrementing_fees(num_blocks: u64) -> SequentialBlockFees {
-    let fees = (0..num_blocks)
-        .map(|i| {
-            let fee = u128::from(i) + 1;
-            FeesAtHeight {
-                height: i,
-                fees: Fees {
-                    base_fee_per_gas: fee,
-                    reward: fee,
-                    base_fee_per_blob_gas: fee,
-                },
-            }
-        })
-        .collect::<Result<_, _>>();
-
-    fees.unwrap()
-}
