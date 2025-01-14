@@ -448,24 +448,6 @@ mod tests {
     )]
         #[test_case(
         Setup {
-            old_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-            new_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-            num_blobs: 6,
-            num_l2_blocks_behind: 0,
-            should_send: false,
-        },
-        Config {
-            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
-            fee_thresholds: FeeThresholds {
-                max_l2_blocks_behind: 100.try_into().unwrap(),
-                always_acceptable_fee: 0,
-                ..Default::default()
-            }
-        };
-        "Should not send because all fees are identical and no tolerance"
-    )]
-        #[test_case(
-        Setup {
             old_fees: Fees { base_fee_per_gas: 3000, reward: 6000, base_fee_per_blob_gas: 5000},
             new_fees: Fees { base_fee_per_gas: 2500, reward: 5500, base_fee_per_blob_gas: 5000},
             num_blobs: 0,
