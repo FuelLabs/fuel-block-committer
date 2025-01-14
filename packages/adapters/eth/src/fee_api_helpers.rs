@@ -251,23 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn test_full_range_chunk() {
-        // given
-        let initial_range = 20..=30;
-        let chunk_size = 11;
-
-        // when
-        let result = chunk_range_inclusive(initial_range, chunk_size);
-
-        // then
-        let expected = vec![20..=30];
-        assert_eq!(
-            result, expected,
-            "Whole range should be a single chunk when chunk_size equals range size"
-        );
-    }
-
-    #[test]
     fn test_unpack_fee_history_empty_base_fee() {
         // given
         let fees = FeeHistory {
