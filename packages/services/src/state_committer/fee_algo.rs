@@ -65,7 +65,7 @@ where
 
         info!( "short_term_tx_fee: {short_term_tx_fee}, long_term_tx_fee: {long_term_tx_fee}, max_upper_tx_fee: {max_upper_tx_fee}");
 
-        let should_send = short_term_tx_fee < max_upper_tx_fee;
+        let should_send = short_term_tx_fee <= max_upper_tx_fee;
 
         if should_send {
             info!(
@@ -203,7 +203,7 @@ impl<P> SmaFeeAlgo<P> {
     }
 
     const fn too_far_behind(&self, num_l2_blocks_behind: u32) -> bool {
-        num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind.get()
+        num_l2_blocks_behind > self.config.fee_thresholds.max_l2_blocks_behind.get()
     }
 
     const fn fee_always_acceptable(&self, short_term_tx_fee: u128) -> bool {
