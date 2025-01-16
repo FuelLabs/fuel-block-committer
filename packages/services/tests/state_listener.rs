@@ -8,7 +8,10 @@ use services::{
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_case::test_case;
-use test_helpers::mocks::{self, l1::TxStatus};
+use test_helpers::{
+    mocks::{self, l1::TxStatus},
+    noop_fees,
+};
 
 #[tokio::test]
 async fn successful_finalized_tx() -> Result<()> {
@@ -438,8 +441,14 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
         nonce,
         ..Default::default()
     };
+    let mut l1_mock =
+        mocks::l1::expects_state_submissions(vec![(None, orig_tx), (None, replacement_tx)]);
+    l1_mock
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
+
     let mut committer = StateCommitter::new(
-        mocks::l1::expects_state_submissions(vec![(None, orig_tx), (None, replacement_tx)]),
+        l1_mock,
         mocks::fuel::latest_height_is(0),
         setup.db(),
         StateCommitterConfig {
@@ -447,6 +456,7 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
             ..Default::default()
         },
         test_clock.clone(),
+        noop_fees(),
     );
 
     // Orig tx
@@ -535,8 +545,14 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
         ..Default::default()
     };
 
+    let mut l1_mock =
+        mocks::l1::expects_state_submissions(vec![(None, orig_tx), (None, replacement_tx)]);
+    l1_mock
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
+
     let mut committer = StateCommitter::new(
-        mocks::l1::expects_state_submissions(vec![(None, orig_tx), (None, replacement_tx)]),
+        l1_mock,
         mocks::fuel::latest_height_is(0),
         setup.db(),
         crate::StateCommitterConfig {
@@ -544,6 +560,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
             ..Default::default()
         },
         test_clock.clone(),
+        noop_fees(),
     );
 
     // Orig tx

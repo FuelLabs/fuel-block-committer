@@ -339,6 +339,10 @@ impl services::state_committer::port::Storage for DbWithProcess {
     async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::L1Tx>> {
         self.db._get_latest_pending_txs().await.map_err(Into::into)
     }
+
+    async fn latest_bundled_height(&self) -> services::Result<Option<u32>> {
+        self.db._latest_bundled_height().await.map_err(Into::into)
+    }
 }
 
 impl services::status_reporter::port::Storage for DbWithProcess {

@@ -1,16 +1,15 @@
 pub mod service {
     use std::collections::HashMap;
 
-    use crate::{
-        types::{Address, U256},
-        Result,
-    };
     use metrics::{
         prometheus::{core::Collector, IntGauge, Opts},
         RegistersMetrics,
     };
 
-    use crate::Runner;
+    use crate::{
+        types::{Address, U256},
+        Result, Runner,
+    };
 
     struct Balance {
         gauge: IntGauge,
@@ -29,7 +28,7 @@ pub mod service {
         pub fn new(api: Api) -> Self {
             Self {
                 api,
-                tracking: Default::default(),
+                tracking: HashMap::default(),
             }
         }
 
@@ -99,16 +98,19 @@ mod tests {
 
     use std::str::FromStr;
 
-    use crate::types::Address;
     use alloy::primitives::U256;
     use metrics::{
-        prometheus::{proto::Metric, Registry},
+        prometheus::{
+            proto::{Metric, MetricFamily},
+            Registry,
+        },
         RegistersMetrics,
     };
     use mockall::predicate::eq;
     use service::WalletBalanceTracker;
 
     use super::*;
+    use crate::types::Address;
 
     #[tokio::test]
     async fn updates_metrics() {
@@ -144,7 +146,7 @@ mod tests {
             let eth_balance_metric = metrics
                 .iter()
                 .filter(|metric_group| metric_group.get_name() == "wallet_balance")
-                .flat_map(|metric_group| metric_group.get_metric())
+                .flat_map(MetricFamily::get_metric)
                 .filter(|metric| {
                     metric.get_label().iter().any(|label| {
                         label.get_name() == "usage" && (label.get_value() == expected_label_value)

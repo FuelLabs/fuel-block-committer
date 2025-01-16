@@ -223,8 +223,9 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
 #[tokio::test]
 async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_creation() -> Result<()>
 {
-    use services::block_bundler::port::Storage as BundlerStorage;
-    use services::state_committer::port::Storage;
+    use services::{
+        block_bundler::port::Storage as BundlerStorage, state_committer::port::Storage,
+    };
 
     // given
     let setup = test_helpers::Setup::init().await;
@@ -561,8 +562,9 @@ async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()
 
 #[tokio::test]
 async fn skips_blocks_outside_lookback_window() -> Result<()> {
-    use services::block_bundler::port::Storage as BundlerStorage;
-    use services::state_committer::port::Storage;
+    use services::{
+        block_bundler::port::Storage as BundlerStorage, state_committer::port::Storage,
+    };
 
     // given
     let setup = test_helpers::Setup::init().await;

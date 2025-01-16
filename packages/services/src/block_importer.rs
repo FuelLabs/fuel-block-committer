@@ -1,10 +1,11 @@
 pub mod service {
+    use futures::TryStreamExt;
+    use tracing::info;
+
     use crate::{
         types::{nonempty, CompressedFuelBlock, NonEmpty},
         Result, Runner,
     };
-    use futures::TryStreamExt;
-    use tracing::info;
 
     /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
     /// into local storage. It fetches blocks from the Fuel API
@@ -82,7 +83,7 @@ pub mod port {
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
-    pub trait Storage: Send + Sync {
+    pub trait Storage: Sync {
         async fn insert_blocks(&self, block: NonEmpty<CompressedFuelBlock>) -> Result<()>;
         async fn missing_blocks(
             &self,
@@ -101,7 +102,7 @@ pub mod port {
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
-        pub trait Api: Send + Sync {
+        pub trait Api: Sync {
             fn compressed_blocks_in_height_range(
                 &self,
                 range: RangeInclusive<u32>,

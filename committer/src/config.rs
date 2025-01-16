@@ -1,6 +1,6 @@
 use std::{
     net::Ipv4Addr,
-    num::{NonZeroU32, NonZeroUsize},
+    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
     str::FromStr,
     time::Duration,
 };
@@ -9,6 +9,7 @@ use clap::{command, Parser};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
+use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
 use storage::DbConfig;
 use url::Url;
 
@@ -20,6 +21,11 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn fee_algo_config(&self) -> AlgoConfig {
+        self.validated_fee_algo_config()
+            .expect("already validated via `validate` in main")
+    }
+
     pub fn validate(&self) -> crate::errors::Result<()> {
         let keys = &self.eth.l1_keys;
         if keys
@@ -45,7 +51,32 @@ impl Config {
             ));
         }
 
+        if let Err(e) = self.validated_fee_algo_config() {
+            return Err(crate::errors::Error::Other(format!(
+                "Invalid fee algo config: {e}",
+            )));
+        }
+
         Ok(())
+    }
+
+    fn validated_fee_algo_config(&self) -> crate::errors::Result<AlgoConfig> {
+        let config = self;
+        let algo_config = services::state_committer::AlgoConfig {
+            sma_periods: SmaPeriods {
+                short: config.app.fee_algo.short_sma_blocks,
+                long: config.app.fee_algo.long_sma_blocks,
+            },
+            fee_thresholds: FeeThresholds {
+                max_l2_blocks_behind: config.app.fee_algo.max_l2_blocks_behind,
+                multiplier_range: FeeMultiplierRange::new(
+                    config.app.fee_algo.start_max_fee_multiplier,
+                    config.app.fee_algo.end_max_fee_multiplier,
+                )?,
+                always_acceptable_fee: config.app.fee_algo.always_acceptable_fee as u128,
+            },
+        };
+        Ok(algo_config)
     }
 }
 
@@ -94,6 +125,9 @@ pub struct App {
     /// How often to check for finalized l1 txs
     #[serde(deserialize_with = "human_readable_duration")]
     pub tx_finalization_check_interval: Duration,
+    /// How often to check for l1 fees
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub l1_fee_check_interval: Duration,
     /// Number of L1 blocks that need to pass to accept the tx as finalized
     pub num_blocks_to_finalize_tx: u64,
     /// Interval after which to bump a pending tx
@@ -112,6 +146,30 @@ pub struct App {
     /// How often to run state pruner
     #[serde(deserialize_with = "human_readable_duration")]
     pub state_pruner_run_interval: Duration,
+    /// Configuration for the fee algorithm used by the StateCommitter
+    pub fee_algo: FeeAlgoConfig,
+}
+
+/// Configuration for the fee algorithm used by the StateCommitter
+#[derive(Debug, Clone, Deserialize)]
+pub struct FeeAlgoConfig {
+    /// Short-term period for Simple Moving Average (SMA) in block numbers
+    pub short_sma_blocks: NonZeroU64,
+
+    /// Long-term period for Simple Moving Average (SMA) in block numbers
+    pub long_sma_blocks: NonZeroU64,
+
+    /// Maximum number of unposted L2 blocks before sending a transaction regardless of fees
+    pub max_l2_blocks_behind: NonZeroU32,
+
+    /// Starting multiplier applied when we're 0 l2 blocks behind
+    pub start_max_fee_multiplier: f64,
+
+    /// Ending multiplier applied if we're max_l2_blocks_behind - 1 blocks behind
+    pub end_max_fee_multiplier: f64,
+
+    /// A fee that is always acceptable regardless of other conditions
+    pub always_acceptable_fee: u64,
 }
 
 /// Configuration settings for managing fuel block bundling and fragment submission operations.
@@ -205,15 +263,19 @@ pub struct Internal {
     pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
     pub cost_request_limit: usize,
+    pub l1_blocks_cached_for_fee_metrics_tracker: usize,
 }
 
 impl Default for Internal {
     fn default() -> Self {
+        const ETH_BLOCK_TIME: usize = 12;
+        const ETH_BLOCKS_PER_DAY: usize = 24 * 3600 / ETH_BLOCK_TIME;
         Self {
             fuel_errors_before_unhealthy: 3,
             eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
             cost_request_limit: 1000,
+            l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
         }
     }
 }

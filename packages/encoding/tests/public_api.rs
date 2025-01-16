@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod test {
+mod tests {
     use alloy::{consensus::EnvKzgSettings, eips::eip4844::DATA_GAS_PER_BLOB};
     use bitvec::{order::Msb0, vec::BitVec};
     use fuel_block_committer_encoding::{

@@ -178,6 +178,10 @@ impl services::state_committer::port::Storage for Postgres {
     async fn get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
         self._get_latest_pending_txs().await.map_err(Into::into)
     }
+
+    async fn latest_bundled_height(&self) -> Result<Option<u32>> {
+        self._latest_bundled_height().await.map_err(Into::into)
+    }
 }
 
 impl services::state_pruner::port::Storage for Postgres {

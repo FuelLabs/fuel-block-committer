@@ -2,6 +2,7 @@ pub mod block_bundler;
 pub mod block_committer;
 pub mod block_importer;
 pub mod cost_reporter;
+pub mod fee_metrics_tracker;
 pub mod health_reporter;
 pub mod state_committer;
 pub mod state_listener;
@@ -10,9 +11,11 @@ pub mod status_reporter;
 pub mod types;
 pub mod wallet_balance_tracker;
 
+pub mod fees;
+
 pub use block_bundler::{
-    bundler::Factory as BundlerFactory, service::BlockBundler,
-    service::Config as BlockBundlerConfig,
+    bundler::Factory as BundlerFactory,
+    service::{BlockBundler, Config as BlockBundlerConfig},
 };
 #[cfg(feature = "test-helpers")]
 pub use block_bundler::{
@@ -22,7 +25,7 @@ pub use block_bundler::{
 pub use state_committer::service::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("{0}")]
     Other(String),
@@ -49,6 +52,6 @@ impl From<String> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[trait_variant::make(Send)]
-pub trait Runner: Send + Sync {
+pub trait Runner: Sync {
     async fn run(&mut self) -> Result<()>;
 }

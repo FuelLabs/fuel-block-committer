@@ -12,11 +12,13 @@ use futures::{stream, Stream, StreamExt};
 use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
-use services::types::{CompressedFuelBlock, NonEmpty};
+use services::{
+    types::{CompressedFuelBlock, NonEmpty},
+    Error, Result,
+};
 use url::Url;
 
 use crate::metrics::Metrics;
-use services::{Error, Result};
 
 #[derive(Clone)]
 pub struct HttpClient {
@@ -27,7 +29,6 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    #[must_use]
     pub fn new(
         url: &Url,
         unhealthy_after_n_errors: usize,
@@ -164,7 +165,6 @@ impl HttpClient {
         }
     }
 
-    #[must_use]
     pub fn connection_health_checker(&self) -> HealthChecker {
         self.health_tracker.tracker()
     }
