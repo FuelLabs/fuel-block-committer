@@ -9,6 +9,8 @@ use metrics::{
 };
 use services::{
     block_committer::{port::l1::Contract, service::BlockCommitter},
+    fee_metrics_tracker::service::FeeMetricsTracker,
+    fees::cache::CachingApi,
     state_committer::port::Storage,
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
@@ -117,7 +119,9 @@ pub fn state_committer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
-) -> tokio::task::JoinHandle<()> {
+    registry: &Registry,
+    fee_api: CachingApi<L1>,
+) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
         l1,
         fuel,
@@ -127,17 +131,20 @@ pub fn state_committer(
             fragment_accumulation_timeout: config.app.bundle.fragment_accumulation_timeout,
             fragments_to_accumulate: config.app.bundle.fragments_to_accumulate,
             gas_bump_timeout: config.app.gas_bump_timeout,
-            tx_max_fee: config.app.tx_max_fee as u128,
+            fee_algo: config.fee_algo_config(),
         },
         SystemClock,
+        fee_api,
     );
 
-    schedule_polling(
+    state_committer.register_metrics(registry);
+
+    Ok(schedule_polling(
         config.app.tx_finalization_check_interval,
         state_committer,
         "State Committer",
         cancel_token,
-    )
+    ))
 }
 
 pub fn block_importer(
@@ -315,4 +322,24 @@ pub async fn shut_down(
 
     storage.close().await;
     Ok(())
+}
+
+pub fn fee_metrics_tracker(
+    api: CachingApi<L1>,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let fee_metrics_tracker = FeeMetricsTracker::new(api);
+
+    fee_metrics_tracker.register_metrics(registry);
+
+    let handle = schedule_polling(
+        config.app.l1_fee_check_interval,
+        fee_metrics_tracker,
+        "Fee Tracker",
+        cancel_token,
+    );
+
+    Ok(handle)
 }

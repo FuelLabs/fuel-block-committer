@@ -120,7 +120,7 @@ impl Header {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use bitvec::{field::BitField, order::Msb0};
 
     use super::Header;

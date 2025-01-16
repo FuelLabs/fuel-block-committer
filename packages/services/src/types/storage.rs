@@ -16,6 +16,7 @@ pub struct BundleFragment {
     pub id: NonNegative<i32>,
     pub idx: NonNegative<i32>,
     pub bundle_id: NonNegative<i32>,
+    pub oldest_block_in_bundle: u32,
     pub fragment: Fragment,
 }
 
@@ -81,7 +82,7 @@ pub struct InvalidSequence {
 }
 
 impl InvalidSequence {
-    pub fn new(reason: String) -> Self {
+    pub const fn new(reason: String) -> Self {
         Self { reason }
     }
 }
@@ -142,7 +143,7 @@ mod tests {
     fn create_non_empty_fuel_blocks(block_heights: &[u32]) -> NonEmpty<CompressedFuelBlock> {
         block_heights
             .iter()
-            .cloned()
+            .copied()
             .map(create_fuel_block)
             .collect_nonempty()
             .unwrap()
@@ -176,7 +177,7 @@ mod tests {
         let blocks = create_non_empty_fuel_blocks(&[1, 3, 2, 4, 5]);
 
         // when
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks);
 
         // then
         assert!(
@@ -198,7 +199,7 @@ mod tests {
         let blocks = create_non_empty_fuel_blocks(&[1, 2, 4, 5]);
 
         // when
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks);
 
         // then
         assert!(
@@ -218,10 +219,10 @@ mod tests {
     fn iterates_over_sequential_fuel_blocks_correctly() {
         // given
         let blocks = create_non_empty_fuel_blocks(&[10, 11, 12]);
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks).unwrap();
 
         // when
-        let collected: Vec<CompressedFuelBlock> = seq_blocks.clone().into_iter().collect();
+        let collected: Vec<CompressedFuelBlock> = seq_blocks.into_iter().collect();
 
         // then
         assert_eq!(
@@ -240,7 +241,7 @@ mod tests {
     fn indexing_returns_correct_fuel_block() {
         // given
         let blocks = create_non_empty_fuel_blocks(&[100, 101, 102, 103]);
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks).unwrap();
 
         // when & Then
         assert_eq!(
@@ -280,7 +281,7 @@ mod tests {
     fn len_returns_correct_number_of_blocks() {
         // given
         let blocks = create_non_empty_fuel_blocks(&[7, 8, 9, 10]);
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks).unwrap();
 
         // when
         let length = seq_blocks.len();
@@ -298,7 +299,7 @@ mod tests {
     fn height_range_returns_correct_range() {
         // given
         let blocks = create_non_empty_fuel_blocks(&[20, 21, 22, 23]);
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone()).unwrap();
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks).unwrap();
 
         // when
         let range = seq_blocks.height_range();
@@ -421,7 +422,7 @@ mod tests {
         let blocks = nonempty![create_fuel_block(1), create_fuel_block(1)];
 
         // when
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks);
 
         // then
         assert!(
@@ -443,7 +444,7 @@ mod tests {
         let blocks = nonempty![create_fuel_block(1), create_fuel_block(3)];
 
         // when
-        let seq_blocks = SequentialFuelBlocks::try_from(blocks.clone());
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks);
 
         // then
         assert!(

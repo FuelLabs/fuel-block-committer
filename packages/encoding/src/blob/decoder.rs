@@ -48,7 +48,7 @@ impl Decoder {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use bitvec::{order::Msb0, vec::BitVec};
 
     use crate::blob::{self, Blob, Header};
