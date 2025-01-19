@@ -15,7 +15,7 @@ use url::Url;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub eth: Eth,
+    pub da_layer: DALayer,
     pub fuel: Fuel,
     pub app: App,
 }
@@ -86,6 +86,27 @@ pub struct Fuel {
     #[serde(deserialize_with = "parse_url")]
     pub graphql_endpoint: Url,
     pub num_buffered_requests: NonZeroU32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum KeyConfig {
+    Kms(String),
+    Private(String),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum DALayer {
+    Ethereum(Eth),
+    EigenDA(EigenDA),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EigenDA {
+    /// Key for posting authenticated requests to the EigenDA disperser.
+    pub key: KeyConfig,
+    /// URL to a EigenDA RPC endpoint.
+    #[serde(deserialize_with = "parse_url")]
+    pub rpc: Url,
 }
 
 #[derive(Debug, Clone, Deserialize)]

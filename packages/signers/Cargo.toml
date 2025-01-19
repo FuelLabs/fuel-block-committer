@@ -1,0 +1,15 @@
+[package]
+name = "da-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy = { workspace = true }
+aws-config = { workspace = true }
+aws-sdk-kms = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+services = { path = "../services" }
+
+[features]
+test-helpers = []
