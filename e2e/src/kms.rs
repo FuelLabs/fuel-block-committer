@@ -1,6 +1,5 @@
-use alloy::signers::{aws::AwsSigner, Signer};
 use anyhow::Context;
-use eth::{Address, AwsClient, AwsConfig};
+use signers::{AwsConfig, AwsKmsClient, KeySource};
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -49,7 +48,7 @@ impl Kms {
         let url = format!("http://localhost:{}", port);
 
         let config = AwsConfig::for_testing(url.clone()).await;
-        let client = AwsClient::new(config);
+        let client = AwsKmsClient::new(config);
 
         Ok(KmsProcess {
             _container: container,
@@ -100,46 +99,26 @@ fn spawn_log_printer(container: &testcontainers::ContainerAsync<KmsImage>) {
 
 pub struct KmsProcess {
     _container: testcontainers::ContainerAsync<KmsImage>,
-    client: AwsClient,
+    client: AwsKmsClient,
     url: String,
+}
+
+impl KmsProcess {
+    pub async fn create_key(&self) -> anyhow::Result<KeySource> {
+        Ok(self.client.create_key().await?)
+    }
+
+    pub fn client(&self) -> &AwsKmsClient {
+        &self.client
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct KmsKey {
     pub id: String,
-    pub signer: AwsSigner,
     pub url: String,
-}
-
-impl KmsKey {
-    pub fn address(&self) -> Address {
-        self.signer.address()
-    }
-}
-
-impl KmsProcess {
-    pub async fn create_key(&self) -> anyhow::Result<KmsKey> {
-        let response = self
-            .client
-            .inner()
-            .create_key()
-            .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
-            .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
-            .send()
-            .await?;
-
-        // use arn as id to closer imitate prod behavior
-        let id = response
-            .key_metadata
-            .and_then(|metadata| metadata.arn)
-            .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
-
-        let signer = self.client.make_signer(id.clone()).await?;
-
-        Ok(KmsKey {
-            id,
-            signer,
-            url: self.url.clone(),
-        })
-    }
 }

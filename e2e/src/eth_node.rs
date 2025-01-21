@@ -9,11 +9,10 @@ use alloy::{
 };
 use eth::Address;
 use services::types::U256;
+use signers::KeySource;
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
 use url::Url;
-
-use crate::kms::KmsKey;
 
 #[derive(Default, Debug)]
 pub struct EthNode {
@@ -75,7 +74,7 @@ impl EthNodeProcess {
 
     pub async fn deploy_state_contract(
         &self,
-        kms_key: KmsKey,
+        kms_key: KeySource,
         contract_args: ContractArgs,
         tx_max_fee: u128,
         request_timeout: Duration,

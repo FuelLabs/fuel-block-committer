@@ -6,7 +6,7 @@ use alloy::{
     network::TxSigner,
     primitives::{Address, ChainId, B256},
     rpc::types::FeeHistory,
-    signers::{local::PrivateKeySigner, Signature},
+    signers::{aws::AwsSigner, local::PrivateKeySigner, Signature},
 };
 use delegate::delegate;
 use serde::Deserialize;
@@ -17,13 +17,14 @@ use services::{
     },
     Result,
 };
+use signers::{AwsConfig, AwsKmsClient};
 use url::Url;
 
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{fee_api_helpers::batch_requests, AwsClient, AwsConfig};
+use crate::{error::Error, fee_api_helpers::batch_requests};
 
 mod connection;
 mod health_tracking_middleware;
@@ -203,8 +204,10 @@ impl alloy::signers::Signer<Signature> for Signer {
 }
 
 impl Signer {
-    pub async fn make_aws_signer(client: &AwsClient, key: String) -> Result<Self> {
-        let signer = client.make_signer(key).await?;
+    pub async fn make_aws_signer(client: &AwsKmsClient, key: String) -> Result<Self> {
+        let signer = AwsSigner::new(client.inner().clone(), key, None)
+            .await
+            .map_err(|err| Error::Other(format!("Error making aws signer: {err:?}")))?;
 
         Ok(Signer {
             signer: Box::new(signer),
@@ -229,7 +232,7 @@ impl Signers {
     pub async fn for_keys(keys: L1Keys) -> Result<Self> {
         let aws_client = if keys.uses_aws() {
             let config = AwsConfig::from_env().await;
-            Some(AwsClient::new(config))
+            Some(AwsKmsClient::new(config))
         } else {
             None
         };

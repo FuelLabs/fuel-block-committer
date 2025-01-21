@@ -1,6 +1,9 @@
 use std::time::Duration;
 
+use alloy::network::TxSigner;
+use eth::Signer;
 use fuel::HttpClient;
+use signers::KeySource;
 use storage::DbWithProcess;
 use url::Url;
 
@@ -8,7 +11,7 @@ use crate::{
     committer::{Committer, CommitterProcess},
     eth_node::{ContractArgs, DeployedContract, EthNode, EthNodeProcess},
     fuel_node::{FuelNode, FuelNodeProcess},
-    kms::{Kms, KmsKey, KmsProcess},
+    kms::{Kms, KmsProcess},
 };
 
 pub enum FuelNodeType {
@@ -109,8 +112,8 @@ impl WholeStack {
                 .with_db_port(db.port())
                 .with_db_name(db.db_name())
                 .with_state_contract_address(deployed_contract.address())
-                .with_main_key_arn(main_key.id.clone())
-                .with_kms_url(main_key.url.clone())
+                .with_main_key_arn(main_key.raw().to_owned())
+                .with_kms_url(kms.url().to_owned())
                 .with_bundle_accumulation_timeout("3600s".to_owned())
                 .with_bundle_blocks_to_accumulate("400".to_string())
                 .with_bundle_optimization_timeout("60s".to_owned())
@@ -124,7 +127,7 @@ impl WholeStack {
                 .with_state_pruner_run_interval("60s".to_owned());
 
             let committer = if blob_support {
-                committer_builder.with_blob_key_arn(secondary_key.id.clone())
+                committer_builder.with_blob_key_arn(secondary_key.raw().to_owned())
             } else {
                 committer_builder
             };
@@ -154,12 +157,14 @@ async fn start_eth(logs: bool) -> anyhow::Result<EthNodeProcess> {
 async fn create_and_fund_kms_keys(
     kms: &KmsProcess,
     eth_node: &EthNodeProcess,
-) -> anyhow::Result<(KmsKey, KmsKey)> {
+) -> anyhow::Result<(KeySource, KeySource)> {
     let amount = alloy::primitives::utils::parse_ether("10")?;
 
     let create_and_fund = || async {
         let key = kms.create_key().await?;
-        eth_node.fund(key.address(), amount).await?;
+        let signer = Signer::make_aws_signer(kms.client(), key.raw().to_owned()).await?;
+
+        eth_node.fund(signer.address(), amount).await?;
         anyhow::Result::<_>::Ok(key)
     };
 
@@ -210,8 +215,8 @@ async fn start_committer(
     eth_node: &EthNodeProcess,
     fuel_node_url: Url,
     deployed_contract: &DeployedContract,
-    main_key: &KmsKey,
-    secondary_key: &KmsKey,
+    main_key: &KeySource,
+    secondary_key: &KeySource,
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
         .with_show_logs(logs)
@@ -220,8 +225,8 @@ async fn start_committer(
         .with_db_port(random_db.port())
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
-        .with_main_key_arn(main_key.id.clone())
-        .with_kms_url(main_key.url.clone())
+        .with_main_key_arn(main_key.raw().to_owned())
+        .with_kms_url(kms.url().clone())
         .with_bundle_accumulation_timeout("5s".to_owned())
         .with_bundle_blocks_to_accumulate("3600".to_string())
         .with_bundle_optimization_timeout("5s".to_owned())
@@ -235,7 +240,7 @@ async fn start_committer(
         .with_state_pruner_run_interval("30s".to_owned());
 
     let committer = if blob_support {
-        committer_builder.with_blob_key_arn(secondary_key.id.clone())
+        committer_builder.with_blob_key_arn(secondary_key.raw().to_owned())
     } else {
         committer_builder
     };

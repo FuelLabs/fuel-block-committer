@@ -2501,6 +2501,7 @@ dependencies = [
  "serde",
  "serde_json",
  "services",
+ "signers",
  "storage",
  "tempfile",
  "testcontainers",
@@ -2673,6 +2674,7 @@ dependencies = [
  "serde",
  "serde_json",
  "services",
+ "signers",
  "static_assertions",
  "test-case",
  "thiserror 1.0.69",
@@ -5915,6 +5917,19 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
  "rand_core",
+]
+
+[[package]]
+name = "signers"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-kms",
+ "serde",
+ "services",
 ]
 
 [[package]]

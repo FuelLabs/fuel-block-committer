@@ -1,10 +1,11 @@
 [package]
-name = "da-common"
+name = "signers"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 alloy = { workspace = true }
+anyhow = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-kms = { workspace = true }
 async-trait = { workspace = true }

@@ -7,14 +7,13 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
 };
-use eth::{AwsClient, AwsConfig, Signer, Signers, WebsocketClient};
+use eth::{Signer, Signers, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
 use serde::Deserialize;
 use services::types::{fuel::FuelBlock, Address};
+use signers::{AwsConfig, AwsKmsClient, KeySource};
 use tokio::process::Command;
 use url::Url;
-
-use crate::kms::KmsKey;
 
 pub struct DeployedContract {
     address: Address,
@@ -25,11 +24,11 @@ impl DeployedContract {
     pub async fn connect(
         url: Url,
         address: Address,
-        key: KmsKey,
+        key: KeySource,
         tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> anyhow::Result<Self> {
-        let aws_client = AwsClient::new(AwsConfig::for_testing(key.url).await);
+        let aws_client = AwsKmsClient::new(AwsConfig::for_testing(key.url).await);
 
         let chain_state_contract = WebsocketClient::connect(
             url,
