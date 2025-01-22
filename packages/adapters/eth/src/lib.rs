@@ -10,4 +10,4 @@ mod websocket;
 pub use alloy::primitives::Address;
 pub use blob_encoder::BlobEncoder;
 pub use http::Provider as HttpClient;
-pub use websocket::{L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient};
+pub use websocket::{L1Keys, Signer, Signers, TxConfig, WebsocketClient};

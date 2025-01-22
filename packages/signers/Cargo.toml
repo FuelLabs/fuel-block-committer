@@ -10,6 +10,7 @@ aws-config = { workspace = true }
 aws-sdk-kms = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 services = { path = "../services" }
 
 [features]

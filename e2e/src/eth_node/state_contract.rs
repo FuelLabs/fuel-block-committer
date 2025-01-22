@@ -2,7 +2,7 @@ const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
 use std::time::Duration;
 
 use alloy::{
-    network::EthereumWallet,
+    network::{EthereumWallet, TxSigner},
     primitives::{Bytes, TxKind},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
@@ -11,9 +11,11 @@ use eth::{Signer, Signers, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
 use serde::Deserialize;
 use services::types::{fuel::FuelBlock, Address};
-use signers::{AwsConfig, AwsKmsClient, KeySource};
+use signers::{AwsConfig, AwsKmsClient};
 use tokio::process::Command;
 use url::Url;
+
+use crate::kms::KmsKey;
 
 pub struct DeployedContract {
     address: Address,
@@ -24,7 +26,7 @@ impl DeployedContract {
     pub async fn connect(
         url: Url,
         address: Address,
-        key: KeySource,
+        key: KmsKey,
         tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> anyhow::Result<Self> {
@@ -99,7 +101,9 @@ impl CreateTransactions {
     }
 
     pub async fn deploy(self, url: Url, kms_key: &KmsKey) -> anyhow::Result<()> {
-        let wallet = EthereumWallet::from(kms_key.signer.clone());
+        let signer = Signer::make_aws_signer(&kms_key.client, kms_key.id.clone()).await?;
+        let wallet = EthereumWallet::from(signer);
+
         let ws = WsConnect::new(url);
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
@@ -201,6 +205,10 @@ async fn generate_transactions_via_foundry(
     })
     .await?;
 
+    let address = Signer::make_aws_signer(&kms_key.client, kms_key.id.clone())
+        .await?
+        .address();
+
     let output = Command::new("forge")
         .current_dir(temp_path)
         .arg("script")
@@ -208,7 +216,7 @@ async fn generate_transactions_via_foundry(
         .arg("--fork-url")
         .arg(url.to_string())
         .stdin(std::process::Stdio::null())
-        .env("ADDRESS", format!("{:?}", kms_key.address()))
+        .env("ADDRESS", format!("{:?}", address))
         .env(
             "TIME_TO_FINALIZE",
             contract_args.finalize_duration.as_secs().to_string(),

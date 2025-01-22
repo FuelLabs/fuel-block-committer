@@ -10,11 +10,13 @@ use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
+use signers::KeySource;
 use storage::DbConfig;
 use url::Url;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    pub eth: Eth,
     pub da_layer: DALayer,
     pub fuel: Fuel,
     pub app: App,
@@ -88,23 +90,16 @@ pub struct Fuel {
     pub num_buffered_requests: NonZeroU32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum KeyConfig {
-    Kms(String),
-    Private(String),
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub enum DALayer {
-    Ethereum(Eth),
     EigenDA(EigenDA),
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct EigenDA {
     /// Key for posting authenticated requests to the EigenDA disperser.
-    pub key: KeyConfig,
-    /// URL to a EigenDA RPC endpoint.
+    pub key: KeySource,
+    /// URL to an EigenDA RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
 }

@@ -14,7 +14,6 @@ use tokio_util::sync::CancellationToken;
 use crate::setup::shut_down;
 
 pub type L1 = eth::WebsocketClient;
-pub type AwsClient = eth::AwsClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
 

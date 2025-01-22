@@ -1,5 +1,5 @@
 use anyhow::Context;
-use signers::{AwsConfig, AwsKmsClient, KeySource};
+use signers::{AwsConfig, AwsKmsClient};
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -104,8 +104,14 @@ pub struct KmsProcess {
 }
 
 impl KmsProcess {
-    pub async fn create_key(&self) -> anyhow::Result<KeySource> {
-        Ok(self.client.create_key().await?)
+    pub async fn create_key(&self) -> anyhow::Result<KmsKey> {
+        let id = self.client.create_key().await?;
+
+        Ok(KmsKey {
+            id: id.to_string(),
+            url: self.url.clone(),
+            client: self.client.clone(),
+        })
     }
 
     pub fn client(&self) -> &AwsKmsClient {
@@ -121,4 +127,5 @@ impl KmsProcess {
 pub struct KmsKey {
     pub id: String,
     pub url: String,
+    pub client: AwsKmsClient,
 }

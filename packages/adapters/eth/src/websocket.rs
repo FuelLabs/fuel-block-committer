@@ -17,7 +17,7 @@ use services::{
     },
     Result,
 };
-use signers::{AwsConfig, AwsKmsClient};
+use signers::{AwsConfig, AwsKmsClient, KeySource};
 use url::Url;
 
 use self::{
@@ -116,42 +116,17 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum L1Key {
-    Kms(String),
-    Private(String),
-}
-
-impl<'a> serde::Deserialize<'a> for L1Key {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
-            Ok(L1Key::Kms(k.to_string()))
-        } else if let Some(k) = value
-            .strip_prefix("Private(")
-            .and_then(|s| s.strip_suffix(')'))
-        {
-            Ok(L1Key::Private(k.to_string()))
-        } else {
-            Err(serde::de::Error::custom("invalid L1Key format"))
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1Keys {
     /// The eth key authorized by the L1 bridging contracts to post block commitments.
-    pub main: L1Key,
+    pub main: KeySource,
     /// The eth key for posting L2 state to L1.
-    pub blob: Option<L1Key>,
+    pub blob: Option<KeySource>,
 }
 
 impl L1Keys {
     pub fn uses_aws(&self) -> bool {
-        matches!(self.main, L1Key::Kms(_)) || matches!(self.blob, Some(L1Key::Kms(_)))
+        matches!(self.main, KeySource::Kms(_)) || matches!(self.blob, Some(KeySource::Kms(_)))
     }
 }
 
@@ -238,16 +213,18 @@ impl Signers {
         };
 
         let blob_signer = match keys.blob {
-            Some(L1Key::Kms(key)) => {
+            Some(KeySource::Kms(key)) => {
                 Some(Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?)
             }
-            Some(L1Key::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
+            Some(KeySource::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
             None => None,
         };
 
         let main_signer = match keys.main {
-            L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await?,
-            L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
+            KeySource::Kms(key) => {
+                Signer::make_aws_signer(&aws_client.expect("is set"), key).await?
+            }
+            KeySource::Private(key) => Signer::make_private_key_signer(&key)?,
         };
 
         Ok(Self {
@@ -363,36 +340,5 @@ impl WebsocketClient {
 impl RegistersMetrics for WebsocketClient {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.inner.metrics()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_eq;
-
-    use super::L1Key;
-
-    #[test]
-    fn can_deserialize_private_key() {
-        // given
-        let val = r#""Private(0x1234)""#;
-
-        // when
-        let key: L1Key = serde_json::from_str(val).unwrap();
-
-        // then
-        assert_eq!(key, L1Key::Private("0x1234".to_owned()));
-    }
-
-    #[test]
-    fn can_deserialize_kms_key() {
-        // given
-        let val = r#""Kms(0x1234)""#;
-
-        // when
-        let key: L1Key = serde_json::from_str(val).unwrap();
-
-        // then
-        assert_eq!(key, L1Key::Kms("0x1234".to_owned()));
     }
 }

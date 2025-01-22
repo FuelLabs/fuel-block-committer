@@ -3,6 +3,7 @@ use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region,
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{config::BehaviorVersion, Client};
 
+#[cfg(feature = "test-helpers")]
 use crate::KeySource;
 
 #[derive(Debug, Clone)]
@@ -52,7 +53,7 @@ impl AwsConfig {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AwsKmsClient {
     client: Client,
 }

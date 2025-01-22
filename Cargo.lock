@@ -2888,6 +2888,7 @@ dependencies = [
  "serde",
  "serde_json",
  "services",
+ "signers",
  "storage",
  "thiserror 1.0.69",
  "tokio",
@@ -5929,6 +5930,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "serde",
+ "serde_json",
  "services",
 ]
 

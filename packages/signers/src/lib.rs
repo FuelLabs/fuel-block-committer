@@ -8,12 +8,13 @@ pub enum KeySource {
     Private(String),
 }
 
-impl KeySource {
-    pub fn raw(&self) -> &str {
-        match self {
+impl ToString for KeySource {
+    fn to_string(&self) -> String {
+        let k = match self {
             KeySource::Kms(k) => k,
             KeySource::Private(k) => k,
-        }
+        };
+        k.to_owned()
     }
 }
 
@@ -33,5 +34,34 @@ impl<'a> serde::Deserialize<'a> for KeySource {
         } else {
             Err(serde::de::Error::custom("invalid KeySource format"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KeySource;
+
+    #[test]
+    fn can_deserialize_private_key() {
+        // given
+        let val = r#""Private(0x1234)""#;
+
+        // when
+        let key: KeySource = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, KeySource::Private("0x1234".to_owned()));
+    }
+
+    #[test]
+    fn can_deserialize_kms_key() {
+        // given
+        let val = r#""Kms(0x1234)""#;
+
+        // when
+        let key: KeySource = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, KeySource::Kms("0x1234".to_owned()));
     }
 }
