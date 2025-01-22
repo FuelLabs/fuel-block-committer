@@ -16,21 +16,6 @@ use crate::bindings::{
     AuthenticationData,
 };
 
-// Error type for our connector
-#[derive(Debug, thiserror::Error)]
-pub enum ConnectorError {
-    #[error("Transport error: {0}")]
-    Transport(#[from] tonic::transport::Error),
-    #[error("RPC error: {0}")]
-    Rpc(#[from] tonic::Status),
-    #[error("Authentication failed")]
-    AuthenticationFailed,
-    #[error("Blob processing failed: {0}")]
-    BlobProcessingFailed(String),
-    #[error("Timeout waiting for blob status")]
-    Timeout,
-}
-
 // Main trait for data availability connectors
 pub trait DataAvailabilityConnector: Send + Sync {
     fn post_data(
@@ -48,14 +33,15 @@ pub trait DataAvailabilityConnector: Send + Sync {
     ) -> impl std::future::Future<Output = Result<BlobStatus, ConnectorError>> + Send;
 }
 
-pub struct EigenDAConnector {
+pub struct EigenDAClient {
     client: DisperserClient<Channel>,
     signing_key: SigningKey,
     account_id: String,
 }
 
-impl EigenDAConnector {
+impl EigenDAClient {
     pub async fn new(endpoint: String, signing_key: SigningKey) -> Result<Self, ConnectorError> {
+        // TODO: revisit this once we start using tls
         let tls_config = ClientTlsConfig::new().with_native_roots();
 
         let endpoint = Channel::from_shared(endpoint)
@@ -83,7 +69,7 @@ impl EigenDAConnector {
         &mut self,
         data: Vec<u8>
     ) -> Result<Vec<u8>, ConnectorError> {
-        // Create initial request with blob data
+        // create initial request with blob data
         let initial_request = AuthenticatedRequest {
             payload: Some(authenticated_request::Payload::DisperseRequest(
                 DisperseBlobRequest {
@@ -94,27 +80,23 @@ impl EigenDAConnector {
             )),
         };
 
-        // Start bidirectional streaming
         let mut stream = self
             .client
             .disperse_blob_authenticated(Request::new(futures::stream::iter(vec![initial_request.clone()])))
             .await?
             .into_inner();
 
-        // Process server responses
+        // process server response
         if let Some(reply) = stream.next().await {
             let reply = reply?;
             match reply.payload {
                 Some(authenticated_reply::Payload::BlobAuthHeader(header)) => {
-                    // Create message to sign from challenge parameter
                     let challenge = header.challenge_parameter;
                     let message = challenge.to_be_bytes();
 
-                    // Sign the challenge
                     let signature: Signature = self.signing_key.sign(&message);
                     let signature_bytes = signature.to_vec();
 
-                    // Send back the authentication data
                     let auth_request = AuthenticatedRequest {
                         payload: Some(authenticated_request::Payload::AuthenticationData(
                             AuthenticationData {
@@ -123,7 +105,7 @@ impl EigenDAConnector {
                         )),
                     };
 
-                    // Send the authentication response
+                    // send the authentication response
                     self.client
                         .disperse_blob_authenticated(Request::new(futures::stream::iter(vec![
                             initial_request, auth_request
@@ -160,7 +142,7 @@ impl EigenDAConnector {
     }
 }
 
-impl DataAvailabilityConnector for EigenDAConnector {
+impl DataAvailabilityConnector for EigenDAClient {
     async fn post_data(&mut self, data: Vec<u8>) -> Result<Vec<u8>, ConnectorError> {
         self.handle_unauthenticated_dispersal(data)
             .await

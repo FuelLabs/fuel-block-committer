@@ -5,6 +5,7 @@ members = [
   "e2e",
   "fee_algo_simulation",
   "packages/adapters/clock",
+  "packages/adapters/eigenda",
   "packages/adapters/eth",
   "packages/adapters/fuel",
   "packages/adapters/storage",
@@ -66,12 +67,14 @@ futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 humantime = { version = "2.1", default-features = false }
 itertools = { version = "0.13", default-features = false }
+k256 = { version = "0.13", default-features = false }
 mockall = { version = "0.12", default-features = false }
 num-bigint = { version = "0.4.6", default-features = false }
 nonempty = { version = "0.10", default-features = false }
 portpicker = { version = "0.1", default-features = false }
 pretty_assertions = { version = "1.4", default-features = false }
 prometheus = { version = "0.13", default-features = false }
+prost = { version = "0.13.4", default-features = false}
 rand = { version = "0.8", default-features = false }
 reqwest = { version = "0.12", default-features = false }
 secp256k1 = { version = "0.29", default-features = false }
@@ -87,6 +90,8 @@ c-kzg = { version = "1.0", default-features = false }
 thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.37", default-features = false }
 tokio-util = { version = "0.7", default-features = false }
+tonic = { version = "0.12.3", default-features = false }
+tonic-build = { version = "0.12.3" }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
 trait-variant = { version = "0.1", default-features = false }

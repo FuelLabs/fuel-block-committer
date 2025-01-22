@@ -106,6 +106,11 @@ async fn main() -> Result<()> {
             finalization_metric,
         );
 
+        // if EigenDA is enabled, start a service committing to EigenDA
+        if config.da_layer.is_some() {
+
+        }
+
         // Enable pruner once the issue is resolved
         // TODO: https://github.com/FuelLabs/fuel-block-committer/issues/173
         // let state_pruner_handle = setup::state_pruner(

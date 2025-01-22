@@ -17,7 +17,7 @@ use url::Url;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub eth: Eth,
-    pub da_layer: DALayer,
+    pub da_layer: Option<DALayer>,
     pub fuel: Fuel,
     pub app: App,
 }
