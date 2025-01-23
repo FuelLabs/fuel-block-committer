@@ -1,25 +1,34 @@
-use futures::StreamExt;
+use futures::{StreamExt, TryFutureExt};
 use k256::ecdsa::{signature::Signer, Signature, SigningKey};
-use std::time::Duration;
+use services::{
+    types::{Fragment, NonEmpty},
+    Error as ServiceError, Result as ServiceResult,
+};
+use signers::KeySource;
+use std::{cmp::min, time::Duration};
 use tokio::time::sleep;
 use tonic::{
     transport::{Channel, ClientTlsConfig},
     Request,
 };
+use url::Url;
 
-use crate::bindings::{
-    authenticated_reply,
-    disperser::{
-        authenticated_request, disperser_client::DisperserClient, AuthenticatedRequest, BlobStatus,
-        BlobStatusRequest, DisperseBlobRequest,
+use crate::{
+    bindings::{
+        authenticated_reply,
+        disperser::{
+            authenticated_request, disperser_client::DisperserClient, AuthenticatedRequest,
+            BlobStatus, BlobStatusRequest, DisperseBlobRequest,
+        },
+        AuthenticationData,
     },
-    AuthenticationData,
+    error::ConnectorError,
+    signer::EigenDASigner,
 };
 
-// Main trait for data availability connectors
 pub trait DataAvailabilityConnector: Send + Sync {
     fn post_data(
-        &mut self,
+        &self,
         data: Vec<u8>,
     ) -> impl std::future::Future<Output = Result<Vec<u8>, ConnectorError>> + Send;
     fn check_status(
@@ -33,18 +42,43 @@ pub trait DataAvailabilityConnector: Send + Sync {
     ) -> impl std::future::Future<Output = Result<BlobStatus, ConnectorError>> + Send;
 }
 
+pub(crate) fn serialize_fragments(fragments: impl IntoIterator<Item = Fragment>) -> Vec<u8> {
+    fragments.into_iter().fold(Vec::new(), |mut acc, fragment| {
+        acc.extend_from_slice(&fragment.data.into_iter().collect::<Vec<_>>());
+        acc
+    })
+}
+
+impl services::state_committer::port::l1::DALayerApi for EigenDAClient {
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmpty<Fragment>,
+    ) -> ServiceResult<Vec<u8>> {
+        let num_fragments = min(fragments.len(), 6);
+        let fragments = fragments.into_iter().take(num_fragments);
+        let data = serialize_fragments(fragments);
+
+        let mut client = self.clone();
+        client
+            .handle_authenticated_dispersal(data)
+            .map_err(|_| ServiceError::Other("Failed to disperse state fragments".to_string()))
+            .await
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct EigenDAClient {
     client: DisperserClient<Channel>,
-    signing_key: SigningKey,
+    signer: EigenDASigner,
     account_id: String,
 }
 
 impl EigenDAClient {
-    pub async fn new(endpoint: String, signing_key: SigningKey) -> Result<Self, ConnectorError> {
+    pub async fn new(key: KeySource, rpc: Url) -> Result<Self, ConnectorError> {
         // TODO: revisit this once we start using tls
         let tls_config = ClientTlsConfig::new().with_native_roots();
 
-        let endpoint = Channel::from_shared(endpoint)
+        let endpoint = Channel::from_shared(rpc.to_string())
             .unwrap()
             .tls_config(tls_config)
             .unwrap()
@@ -53,21 +87,19 @@ impl EigenDAClient {
 
         let client = DisperserClient::new(endpoint);
 
-        let public_key = signing_key
-            .verifying_key()
-            .to_encoded_point(false);
-        let account_id = format!("0x{}", hex::encode(public_key.as_bytes()));
+        let signer = EigenDASigner::new(key).await;
+        let account_id = signer.account_id().await;
 
         Ok(Self {
             client,
-            signing_key,
+            signer,
             account_id,
         })
     }
 
     async fn handle_authenticated_dispersal(
         &mut self,
-        data: Vec<u8>
+        data: Vec<u8>,
     ) -> Result<Vec<u8>, ConnectorError> {
         // create initial request with blob data
         let initial_request = AuthenticatedRequest {
@@ -82,7 +114,9 @@ impl EigenDAClient {
 
         let mut stream = self
             .client
-            .disperse_blob_authenticated(Request::new(futures::stream::iter(vec![initial_request.clone()])))
+            .disperse_blob_authenticated(Request::new(futures::stream::iter(vec![
+                initial_request.clone()
+            ])))
             .await?
             .into_inner();
 
@@ -91,24 +125,24 @@ impl EigenDAClient {
             let reply = reply?;
             match reply.payload {
                 Some(authenticated_reply::Payload::BlobAuthHeader(header)) => {
+                    // send the authentication response
                     let challenge = header.challenge_parameter;
                     let message = challenge.to_be_bytes();
 
-                    let signature: Signature = self.signing_key.sign(&message);
-                    let signature_bytes = signature.to_vec();
+                    let signature = self.signer.sign(&message).await?;
 
                     let auth_request = AuthenticatedRequest {
                         payload: Some(authenticated_request::Payload::AuthenticationData(
                             AuthenticationData {
-                                authentication_data: signature_bytes,
+                                authentication_data: signature.data,
                             },
                         )),
                     };
 
-                    // send the authentication response
                     self.client
                         .disperse_blob_authenticated(Request::new(futures::stream::iter(vec![
-                            initial_request, auth_request
+                            initial_request,
+                            auth_request,
                         ])))
                         .await?;
                 }
@@ -143,9 +177,9 @@ impl EigenDAClient {
 }
 
 impl DataAvailabilityConnector for EigenDAClient {
-    async fn post_data(&mut self, data: Vec<u8>) -> Result<Vec<u8>, ConnectorError> {
-        self.handle_unauthenticated_dispersal(data)
-            .await
+    async fn post_data(&self, data: Vec<u8>) -> Result<Vec<u8>, ConnectorError> {
+        let mut client = self.clone();
+        client.handle_authenticated_dispersal(data).await
     }
 
     async fn check_status(&self, request_id: Vec<u8>) -> Result<BlobStatus, ConnectorError> {
@@ -173,9 +207,7 @@ impl DataAvailabilityConnector for EigenDAClient {
 
             let status = self.check_status(request_id.clone()).await?;
             match status {
-                BlobStatus::Failed
-                | BlobStatus::Finalized
-                | BlobStatus::InsufficientSignatures => {
+                BlobStatus::Failed | BlobStatus::Finalized | BlobStatus::InsufficientSignatures => {
                     return Ok(status);
                 }
                 _ => {

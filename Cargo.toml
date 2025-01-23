@@ -30,6 +30,7 @@ publish = false
 
 [workspace.dependencies]
 clock = { path = "./packages/adapters/clock", default-features = false }
+eigenda = { path = "./packages/adapters/eigenda", default-features = false }
 eth = { path = "./packages/adapters/eth", default-features = false }
 fuel = { path = "./packages/adapters/fuel", default-features = false }
 storage = { path = "./packages/adapters/storage", default-features = false }

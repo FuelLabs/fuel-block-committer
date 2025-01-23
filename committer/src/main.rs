@@ -5,6 +5,8 @@ mod errors;
 mod setup;
 
 use api::launch_api_server;
+use config::{DALayer, EigenDA};
+use eigenda::EigenDAClient;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
 use services::fees::cache::CachingApi;
@@ -84,6 +86,15 @@ async fn main() -> Result<()> {
             &metrics_registry,
         )?;
 
+        // if EigenDA is enabled, start a service committing to EigenDA
+        let da_layer = match config.da_layer.clone() {
+            Some(DALayer::EigenDA(EigenDA { key, rpc })) => {
+                let client = EigenDAClient::new(key, rpc).await.unwrap();
+                Some(client)
+            }
+            None => None,
+        };
+
         let state_committer_handle = setup::state_committer(
             fuel_adapter.clone(),
             ethereum_rpc.clone(),
@@ -92,6 +103,7 @@ async fn main() -> Result<()> {
             &config,
             &metrics_registry,
             fee_api,
+            da_layer,
         )?;
 
         let state_importer_handle =
@@ -105,11 +117,6 @@ async fn main() -> Result<()> {
             &config,
             finalization_metric,
         );
-
-        // if EigenDA is enabled, start a service committing to EigenDA
-        if config.da_layer.is_some() {
-
-        }
 
         // Enable pruner once the issue is resolved
         // TODO: https://github.com/FuelLabs/fuel-block-committer/issues/173

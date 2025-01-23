@@ -30,6 +30,13 @@ pub mod l1 {
             previous_tx: Option<L1Tx>,
         ) -> Result<(L1Tx, FragmentsSubmitted)>;
     }
+
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    #[cfg_attr(feature = "test-helpers", mockall::automock)]
+    pub trait DALayerApi {
+        async fn submit_state_fragments(&self, fragments: NonEmpty<Fragment>) -> Result<Vec<u8>>;
+    }
 }
 
 pub mod fuel {

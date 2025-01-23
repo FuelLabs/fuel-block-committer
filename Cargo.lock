@@ -2598,12 +2598,16 @@ name = "eigenda"
 version = "0.10.5"
 dependencies = [
  "futures",
+ "hex",
  "k256",
  "prost",
+ "services",
+ "signers",
  "thiserror 1.0.69",
  "tokio",
  "tonic",
  "tonic-build",
+ "url",
 ]
 
 [[package]]
@@ -2945,6 +2949,7 @@ dependencies = [
  "clap",
  "clock",
  "config",
+ "eigenda",
  "eth",
  "fuel",
  "fuel-block-committer-encoding",
@@ -6669,6 +6674,7 @@ version = "0.10.5"
 dependencies = [
  "clock",
  "delegate",
+ "eigenda",
  "eth",
  "fuel-block-committer-encoding",
  "fuel-crypto",
@@ -6983,6 +6989,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877c5b330756d856ffcc4553ab34a5684481ade925ecc54bcd1bf02b1d0d4d52"
 dependencies = [
  "async-stream",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "bytes",
@@ -6995,6 +7002,7 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
+ "prost",
  "rustls-native-certs 0.8.1",
  "rustls-pemfile 2.2.0",
  "socket2",

@@ -206,8 +206,8 @@ pub struct Signers {
 impl Signers {
     pub async fn for_keys(keys: L1Keys) -> Result<Self> {
         let aws_client = if keys.uses_aws() {
-            let config = AwsConfig::from_env().await;
-            Some(AwsKmsClient::new(config))
+            let client = AwsKmsClient::new().await;
+            Some(client)
         } else {
             None
         };

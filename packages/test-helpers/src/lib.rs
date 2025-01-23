@@ -3,6 +3,7 @@
 use std::{ops::RangeInclusive, time::Duration};
 
 use clock::TestClock;
+use eigenda::EigenDAClient;
 use eth::BlobEncoder;
 use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;
@@ -568,6 +569,7 @@ impl Setup {
             },
             self.test_clock.clone(),
             noop_fees(),
+            None::<EigenDAClient>,
         )
         .run()
         .await
@@ -607,6 +609,7 @@ impl Setup {
             },
             self.test_clock.clone(),
             noop_fees(),
+            None::<EigenDAClient>,
         );
         committer.run().await.unwrap();
 

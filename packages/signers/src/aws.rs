@@ -59,9 +59,9 @@ pub struct AwsKmsClient {
 }
 
 impl AwsKmsClient {
-    pub fn new(config: AwsConfig) -> Self {
-        let config = config.sdk_config;
-        let client = Client::new(&config);
+    pub async fn new() -> Self {
+        let config = AwsConfig::from_env().await;
+        let client = Client::new(&config.sdk_config);
 
         Self { client }
     }
