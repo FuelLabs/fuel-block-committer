@@ -35,6 +35,7 @@ trait-variant = { workspace = true }
 test-case = { workspace = true }
 clock = { workspace = true, features = ["test-helpers"] }
 eth = { workspace = true, features = ["test-helpers"] }
+eigenda = { workspace = true }
 fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
 services = { workspace = true, features = ["test-helpers"] }

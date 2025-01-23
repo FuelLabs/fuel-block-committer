@@ -5978,6 +5978,7 @@ dependencies = [
  "async-trait",
  "bytesize",
  "clock",
+ "eigenda",
  "eth",
  "fuel-block-committer-encoding",
  "fuel-core-client",

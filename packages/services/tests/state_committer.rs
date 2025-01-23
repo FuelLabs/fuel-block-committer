@@ -1,5 +1,6 @@
 use std::{iter::repeat, time::Duration};
 
+use eigenda::EigenDAClient;
 use itertools::Itertools;
 use metrics::{prometheus, RegistersMetrics};
 use services::{
@@ -38,6 +39,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
         },
         setup.test_clock(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // when
@@ -82,6 +84,7 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // Advance time beyond the timeout
@@ -118,6 +121,7 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // Advance time less than the timeout
@@ -164,6 +168,7 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
         },
         setup.test_clock(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // when
@@ -211,6 +216,7 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -258,6 +264,7 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // Advance time beyond the timeout from startup
@@ -318,6 +325,7 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // Submit the initial fragments
@@ -396,6 +404,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
+        None::<EigenDAClient>,
     );
 
     // when
@@ -465,6 +474,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
+        None::<EigenDAClient>,
     );
 
     // when
@@ -533,6 +543,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
+        None::<EigenDAClient>,
     );
 
     // when
@@ -607,6 +618,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
+        None::<EigenDAClient>,
     );
 
     // when
@@ -643,6 +655,7 @@ async fn updates_current_height_to_commit_metric_with_latest_bundled_height() ->
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     state_committer.register_metrics(&registry);
@@ -699,6 +712,7 @@ async fn updates_current_height_to_commit_metric_without_latest_bundled_height()
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     state_committer.register_metrics(&registry);

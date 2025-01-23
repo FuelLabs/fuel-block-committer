@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use eigenda::EigenDAClient;
 use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use services::{
@@ -457,6 +458,7 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // Orig tx
@@ -561,6 +563,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
         },
         test_clock.clone(),
         noop_fees(),
+        None::<EigenDAClient>,
     );
 
     // Orig tx

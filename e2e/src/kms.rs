@@ -1,5 +1,5 @@
 use anyhow::Context;
-use signers::{AwsConfig, AwsKmsClient};
+use signers::AwsKmsClient;
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -47,8 +47,7 @@ impl Kms {
         let port = container.get_host_port_ipv4(4566).await?;
         let url = format!("http://localhost:{}", port);
 
-        let config = AwsConfig::for_testing(url.clone()).await;
-        let client = AwsKmsClient::new(config);
+        let client = AwsKmsClient::for_testing(url.clone()).await;
 
         Ok(KmsProcess {
             _container: container,

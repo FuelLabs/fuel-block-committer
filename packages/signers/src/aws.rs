@@ -26,24 +26,6 @@ impl AwsConfig {
         }
     }
 
-    #[cfg(feature = "test-helpers")]
-    pub async fn for_testing(url: String) -> Self {
-        let sdk_config = aws_config::defaults(BehaviorVersion::latest())
-            .credentials_provider(Credentials::new(
-                "test",
-                "test",
-                None,
-                None,
-                "Static Credentials",
-            ))
-            .endpoint_url(url)
-            .region(Region::new("us-east-1")) // placeholder region for test
-            .load()
-            .await;
-
-        Self { sdk_config }
-    }
-
     pub fn url(&self) -> Option<&str> {
         self.sdk_config.endpoint_url()
     }
@@ -68,6 +50,26 @@ impl AwsKmsClient {
 
     pub fn inner(&self) -> &Client {
         &self.client
+    }
+
+    #[cfg(feature = "test-helpers")]
+    pub async fn for_testing(url: String) -> Self {
+        let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+            .credentials_provider(Credentials::new(
+                "test",
+                "test",
+                None,
+                None,
+                "Static Credentials",
+            ))
+            .endpoint_url(url)
+            .region(Region::new("us-east-1")) // placeholder region for test
+            .load()
+            .await;
+
+        let client = Client::new(&sdk_config);
+
+        Self { client }
     }
 
     #[cfg(feature = "test-helpers")]

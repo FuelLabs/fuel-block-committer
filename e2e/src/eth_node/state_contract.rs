@@ -11,7 +11,7 @@ use eth::{Signer, Signers, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
 use serde::Deserialize;
 use services::types::{fuel::FuelBlock, Address};
-use signers::{AwsConfig, AwsKmsClient};
+use signers::AwsKmsClient;
 use tokio::process::Command;
 use url::Url;
 
@@ -30,7 +30,7 @@ impl DeployedContract {
         tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> anyhow::Result<Self> {
-        let aws_client = AwsKmsClient::new(AwsConfig::for_testing(key.url).await);
+        let aws_client = AwsKmsClient::for_testing(key.url).await;
 
         let chain_state_contract = WebsocketClient::connect(
             url,
