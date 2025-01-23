@@ -1,0 +1,29 @@
+[package]
+name = "eigenda"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+signers = { workspace = true }
+services = { workspace = true }
+hex = { workspace = true }
+k256 = { workspace = true, features = ["ecdsa"] }
+futures = { workspace = true }
+prost = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true, features = ["tls", "transport", "tls-roots", "codegen", "prost"] }
+tonic-build = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+
+
+[features]
+test-helpers = []
