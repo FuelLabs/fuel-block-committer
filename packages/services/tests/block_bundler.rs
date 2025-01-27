@@ -642,7 +642,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // Ensure that blocks outside the lookback window are still unbundled
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 

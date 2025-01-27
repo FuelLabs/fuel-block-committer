@@ -108,7 +108,7 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
     // then
     let stored_new_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
+        .lowest_sequence_of_unbundled_blocks(starting_height, u32::MAX)
         .await?
         .unwrap();
 
