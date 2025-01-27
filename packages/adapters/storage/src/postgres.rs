@@ -478,26 +478,36 @@ impl Postgres {
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
         starting_height: u32,
-        limit: usize,
+        max_cumulative_bytes: u32,
     ) -> Result<Option<SequentialFuelBlocks>> {
-        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-
         let response = sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
-            SELECT fb.* 
-        FROM fuel_blocks fb 
-        WHERE fb.height >= $1
-        AND NOT EXISTS (
-            SELECT 1 FROM bundles b 
-            WHERE fb.height BETWEEN b.start_height AND b.end_height
-            AND b.end_height >= $1
-        ) 
-        ORDER BY fb.height 
-        LIMIT $2;
-            "#,
-            i64::from(starting_height), // Parameter $1
-            limit                       // Parameter $2
+        WITH ordered_blocks AS (
+            SELECT 
+                fb.*, 
+                octet_length(fb.data) AS data_length,
+                SUM(octet_length(fb.data)) OVER (ORDER BY fb.height) AS cumulative_length
+            FROM 
+                fuel_blocks fb
+            WHERE 
+                fb.height >= $1
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM bundles b 
+                    WHERE fb.height BETWEEN b.start_height AND b.end_height
+                      AND b.end_height >= $1
+                )
+            ORDER BY 
+                fb.height
+        )
+        SELECT height,data
+        FROM ordered_blocks
+        WHERE height >= $1 AND cumulative_length <= $2
+        ORDER BY height;
+        "#,
+            i64::from(starting_height),
+            i64::from(max_cumulative_bytes)
         )
         .fetch_all(&self.connection_pool)
         .await
@@ -506,7 +516,7 @@ impl Postgres {
         let sequential_blocks = response
             .into_iter()
             .map(CompressedFuelBlock::try_from)
-            .try_collect_nonempty()?
+            .try_collect_nonempty()? // Assuming `try_collect_nonempty` is defined appropriately
             .map(SequentialFuelBlocks::from_first_sequence);
 
         if let Some(sequential_blocks) = &sequential_blocks {

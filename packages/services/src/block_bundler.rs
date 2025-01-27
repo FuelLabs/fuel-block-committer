@@ -20,8 +20,10 @@ pub mod service {
     pub struct Config {
         pub optimization_time_limit: Duration,
         pub max_bundles_per_optimization_run: NonZeroUsize,
-        pub block_accumulation_time_limit: Duration,
-        pub num_blocks_to_accumulate: NonZeroUsize,
+        pub accumulation_time_limit: Duration,
+        pub bytes_to_accumulate: NonZeroUsize,
+        // TODO: segfault this is not implemented
+        pub max_bundle_size: NonZeroUsize,
         pub lookback_window: u32,
     }
 
@@ -30,8 +32,9 @@ pub mod service {
         fn default() -> Self {
             Self {
                 optimization_time_limit: Duration::from_secs(100),
-                block_accumulation_time_limit: Duration::from_secs(100),
-                num_blocks_to_accumulate: NonZeroUsize::new(1).unwrap(),
+                accumulation_time_limit: Duration::from_secs(100),
+                bytes_to_accumulate: NonZeroUsize::new(1).unwrap(),
+                max_bundle_size: NonZeroUsize::MAX,
                 lookback_window: 1000,
                 max_bundles_per_optimization_run: 1.try_into().unwrap(),
             }
@@ -156,18 +159,18 @@ pub mod service {
                 .storage
                 .lowest_sequence_of_unbundled_blocks(
                     starting_height,
-                    self.config.num_blocks_to_accumulate.get(),
+                    self.config.bytes_to_accumulate.get() as u32,
                 )
                 .await?
             {
                 let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
-                if blocks.len() < self.config.num_blocks_to_accumulate
-                    && still_time_to_accumulate_more
-                {
+                let cum_size = blocks.cumulative_size();
+                if cum_size < self.config.bytes_to_accumulate && still_time_to_accumulate_more {
+                    // TODO: humantime
                     info!(
-                        "Not enough blocks ({} < {}) to bundle. Waiting for more to accumulate.",
-                        blocks.len(),
-                        self.config.num_blocks_to_accumulate.get()
+                        "Not enough data ({} < {}) to bundle. Waiting for more blocks to accumulate.",
+                        cum_size,
+                        self.config.bytes_to_accumulate
                     );
 
                     return Ok(());
@@ -234,7 +237,7 @@ pub mod service {
         fn still_time_to_accumulate_more(&self) -> Result<bool> {
             let elapsed = self.elapsed(self.last_time_bundled)?;
 
-            Ok(elapsed < self.config.block_accumulation_time_limit)
+            Ok(elapsed < self.config.accumulation_time_limit)
         }
 
         fn elapsed(&self, point: DateTime<Utc>) -> Result<Duration> {
@@ -313,7 +316,7 @@ pub mod port {
         async fn lowest_sequence_of_unbundled_blocks(
             &self,
             starting_height: u32,
-            limit: usize,
+            max_cumulative_bytes: u32,
         ) -> Result<Option<SequentialFuelBlocks>>;
         async fn insert_bundle_and_fragments(
             &self,

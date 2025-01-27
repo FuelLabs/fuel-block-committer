@@ -184,14 +184,13 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
 
     // given
     let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
-
-    let num_blocks_to_accumulate = 2.try_into().unwrap();
 
     let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(0);
 
@@ -201,7 +200,7 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate,
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             lookback_window: 0, // Adjust lookback_window as needed
             ..BlockBundlerConfig::default()
         },
@@ -230,10 +229,11 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -250,8 +250,8 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
         clock.clone(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            block_accumulation_time_limit: Duration::from_secs(1),
-            num_blocks_to_accumulate: 2.try_into().unwrap(),
+            accumulation_time_limit: Duration::from_secs(1),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             lookback_window: 0,
             ..Default::default()
         },
@@ -292,10 +292,11 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_ti
 
     let clock = TestClock::default();
 
+    let block_size = 100;
     let fuel_blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 1..=3,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -305,8 +306,8 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_ti
         clock.clone(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            block_accumulation_time_limit: Duration::from_secs(10),
-            num_blocks_to_accumulate: 2.try_into().unwrap(),
+            accumulation_time_limit: Duration::from_secs(10),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             ..Default::default()
         },
     );
@@ -351,10 +352,11 @@ async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -367,7 +369,7 @@ async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: 2.try_into().unwrap(),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             ..Default::default()
         },
     );
@@ -400,7 +402,7 @@ async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=1,
-            data_size: 100,
+            block_size: 100,
         })
         .await;
 
@@ -414,7 +416,7 @@ async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: 1.try_into().unwrap(),
+            bytes_to_accumulate: 100.try_into().unwrap(),
             ..Default::default()
         },
     );
@@ -443,10 +445,11 @@ async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
 async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -483,6 +486,7 @@ async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
         bundler_factory,
         BlockBundlerConfig {
             optimization_time_limit: optimization_timeout,
+            bytes_to_accumulate: block_size.try_into().unwrap(),
             ..BlockBundlerConfig::default()
         },
     );
@@ -512,10 +516,11 @@ async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
 async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -536,6 +541,7 @@ async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()
         BlockBundlerConfig {
             optimization_time_limit: optimization_timeout,
             lookback_window: 0,
+            bytes_to_accumulate: block_size.try_into().unwrap(),
             ..BlockBundlerConfig::default()
         },
     );
@@ -569,10 +575,11 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=3,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -607,7 +614,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: 1.try_into().unwrap(),
+            bytes_to_accumulate: block_size.try_into().unwrap(),
             lookback_window,
             ..Default::default()
         },
@@ -660,10 +667,11 @@ async fn metrics_are_updated() -> Result<()> {
     let setup = test_helpers::Setup::init().await;
 
     // Import two blocks with specific parameters
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=1,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -678,7 +686,7 @@ async fn metrics_are_updated() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             ..Default::default()
         },
     );

@@ -26,7 +26,7 @@ async fn imports_first_block_when_db_is_empty() -> Result<()> {
     // then
     let all_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 
@@ -42,10 +42,11 @@ async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let existing_blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -69,7 +70,7 @@ async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
     // then
     let stored_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 100)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 
@@ -83,10 +84,11 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -106,7 +108,7 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
     // then
     let stored_new_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(starting_height, 100)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 
@@ -123,7 +125,7 @@ async fn handles_chain_with_no_new_blocks() -> Result<()> {
     let fuel_blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size: 100,
         })
         .await;
 
@@ -138,7 +140,7 @@ async fn handles_chain_with_no_new_blocks() -> Result<()> {
     // Database should remain unchanged
     let stored_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 
@@ -166,7 +168,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // then
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 
@@ -194,7 +196,7 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
         setup
             .import_blocks(Blocks::WithHeights {
                 range,
-                data_size: 100,
+                block_size: 100,
             })
             .await;
     }
@@ -230,7 +232,7 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
     // then
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 101)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 

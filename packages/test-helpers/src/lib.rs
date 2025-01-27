@@ -628,10 +628,11 @@ impl Setup {
         use services::state_committer::port::Storage;
 
         let max_per_blob = (BlobEncoder::FRAGMENT_SIZE as f64 * 0.96) as usize;
+        let block_size = amount.saturating_mul(max_per_blob);
         let fuel_blocks = self
             .import_blocks(Blocks::WithHeights {
                 range: height..=height,
-                data_size: amount.saturating_mul(max_per_blob),
+                block_size,
             })
             .await;
 
@@ -655,10 +656,11 @@ impl Setup {
             factory,
             BlockBundlerConfig {
                 optimization_time_limit: Duration::ZERO,
-                block_accumulation_time_limit: Duration::ZERO,
-                num_blocks_to_accumulate: 1.try_into().unwrap(),
+                accumulation_time_limit: Duration::ZERO,
+                bytes_to_accumulate: block_size.try_into().unwrap(),
                 lookback_window: 100,
                 max_bundles_per_optimization_run: 1.try_into().unwrap(),
+                ..Default::default()
             },
         );
 
@@ -690,7 +692,10 @@ impl Setup {
         NonEmpty<CompressedFuelBlock>,
     ) {
         match blocks {
-            Blocks::WithHeights { range, data_size } => {
+            Blocks::WithHeights {
+                range,
+                block_size: data_size,
+            } => {
                 let fuel_blocks = range
                     .map(|height| mocks::fuel::generate_block(height, data_size))
                     .collect_nonempty()
@@ -736,6 +741,6 @@ impl Setup {
 pub enum Blocks {
     WithHeights {
         range: RangeInclusive<u32>,
-        data_size: usize,
+        block_size: usize,
     },
 }

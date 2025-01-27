@@ -44,13 +44,6 @@ impl Config {
             ));
         }
 
-        if self.app.bundle.block_height_lookback < self.app.bundle.blocks_to_accumulate.get() as u32
-        {
-            return Err(crate::errors::Error::Other(
-                "block_height_lookback must be >= blocks_to_accumulate".to_string(),
-            ));
-        }
-
         if let Err(e) = self.validated_fee_algo_config() {
             return Err(crate::errors::Error::Other(format!(
                 "Invalid fee algo config: {e}",
@@ -184,12 +177,17 @@ pub struct BundleConfig {
     #[serde(deserialize_with = "human_readable_duration")]
     pub accumulation_timeout: Duration,
 
-    /// The number of fuel blocks to accumulate before initiating the bundling process.
+    /// TODO: rephrase
+    /// The number of bytes from fuel blocks to accumulate before initiating the bundling process.
     ///
-    /// If the system successfully accumulates this number of blocks before the `accumulation_timeout` is reached,
+    /// If the system successfully accumulates this number of bytes before the `accumulation_timeout` is reached,
     /// the bundling process will start immediately. Otherwise, the bundling process will be triggered when the
-    /// `accumulation_timeout` fires, regardless of the number of blocks accumulated.
-    pub blocks_to_accumulate: NonZeroUsize,
+    /// `accumulation_timeout` fires, regardless of the number of bytes accumulated.
+    pub bytes_to_accumulate: NonZeroUsize,
+
+    /// TODO: rephrase
+    /// Max number of bytes the resulting bundle can be.
+    pub max_bundle_size: NonZeroUsize,
 
     /// Maximum duration allocated for determining the optimal bundle size.
     ///
