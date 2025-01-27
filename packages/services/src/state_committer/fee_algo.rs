@@ -65,7 +65,7 @@ where
 
         info!( "short_term_tx_fee: {short_term_tx_fee}, long_term_tx_fee: {long_term_tx_fee}, max_upper_tx_fee: {max_upper_tx_fee}");
 
-        let should_send = short_term_tx_fee < max_upper_tx_fee;
+        let should_send = short_term_tx_fee <= max_upper_tx_fee;
 
         if should_send {
             info!(
@@ -197,7 +197,7 @@ impl<P> SmaFeeAlgo<P> {
     }
 
     const fn too_far_behind(&self, num_l2_blocks_behind: u32) -> bool {
-        num_l2_blocks_behind >= self.config.fee_thresholds.max_l2_blocks_behind.get()
+        num_l2_blocks_behind > self.config.fee_thresholds.max_l2_blocks_behind.get()
     }
 
     const fn fee_always_acceptable(&self, short_term_tx_fee: u128) -> bool {
@@ -439,24 +439,6 @@ mod tests {
             }
         };
         "Should not send because short-term reward is higher"
-    )]
-        #[test_case(
-        Setup {
-            old_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-            new_fees: Fees { base_fee_per_gas: 5000, reward: 5000, base_fee_per_blob_gas: 5000},
-            num_blobs: 6,
-            num_l2_blocks_behind: 0,
-            should_send: false,
-        },
-        Config {
-            sma_periods: SmaPeriods { short: 2.try_into().unwrap(), long: 6.try_into().unwrap()},
-            fee_thresholds: FeeThresholds {
-                max_l2_blocks_behind: 100.try_into().unwrap(),
-                always_acceptable_fee: 0,
-                ..Default::default()
-            }
-        };
-        "Should not send because all fees are identical and no tolerance"
     )]
         #[test_case(
         Setup {

@@ -365,7 +365,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
             long: 6.try_into().unwrap(),
         },
         fee_thresholds: FeeThresholds {
-            max_l2_blocks_behind: 100.try_into().unwrap(),
+            max_l2_blocks_behind: u32::MAX.try_into().unwrap(),
             always_acceptable_fee: 0,
             ..Default::default()
         },
@@ -437,7 +437,7 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
             long: 6.try_into().unwrap(),
         },
         fee_thresholds: FeeThresholds {
-            max_l2_blocks_behind: 100.try_into().unwrap(),
+            max_l2_blocks_behind: u32::MAX.try_into().unwrap(),
             always_acceptable_fee: 0,
             ..Default::default()
         },
@@ -519,7 +519,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         .expect_current_height()
         .returning(|| Box::pin(async { Ok(5) }));
 
-    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(50); // L2 height is 50, behind by 50
+    let fuel_mock = test_helpers::mocks::fuel::latest_height_is(51);
     let mut state_committer = StateCommitter::new(
         l1_mock_submit,
         fuel_mock,
