@@ -88,7 +88,7 @@ pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
     bundle_encoder: bundle::Encoder,
     step_size: NonZeroUsize,
-    target_bundle_size: NonZeroUsize,
+    target_num_fragments: NonZeroUsize,
 }
 
 impl<L1> Factory<L1> {
@@ -96,13 +96,13 @@ impl<L1> Factory<L1> {
         gas_calc: L1,
         bundle_encoder: bundle::Encoder,
         step_size: NonZeroUsize,
-        target_bundle_size: NonZeroUsize,
+        target_num_fragments: NonZeroUsize,
     ) -> Self {
         Self {
             gas_calc,
             bundle_encoder,
             step_size,
-            target_bundle_size,
+            target_num_fragments,
         }
     }
 }
@@ -120,7 +120,7 @@ where
             self.bundle_encoder.clone(),
             self.step_size,
             id,
-            self.target_bundle_size,
+            self.target_num_fragments,
         )
     }
 }
@@ -149,7 +149,7 @@ pub struct Bundler<FragmentEncoder> {
     bundle_encoder: bundle::Encoder,
     attempts: VecDeque<NonZeroUsize>,
     bundle_id: NonNegative<i32>,
-    target_bundle_size: NonZeroUsize,
+    target_num_fragments: NonZeroUsize,
 }
 
 impl<T> Bundler<T> {
@@ -159,7 +159,7 @@ impl<T> Bundler<T> {
         bundle_encoder: bundle::Encoder,
         initial_step_size: NonZeroUsize,
         bundle_id: NonNegative<i32>,
-        target_bundle_size: NonZeroUsize,
+        target_num_fragments: NonZeroUsize,
     ) -> Self {
         let max_blocks = blocks.len();
         let initial_step = initial_step_size;
@@ -174,7 +174,7 @@ impl<T> Bundler<T> {
             bundle_encoder,
             attempts,
             bundle_id,
-            target_bundle_size,
+            target_num_fragments,
         }
     }
 
@@ -240,14 +240,19 @@ impl<T> Bundler<T> {
         let fragment_encoder = self.fragment_encoder.clone();
 
         // Needs to be wrapped in a blocking task to avoid blocking the executor
-        let target_bundle_size = self.target_bundle_size;
+        let target_num_fragments = self.target_num_fragments;
         tokio::task::spawn_blocking(move || {
             blocks_for_analyzing
                 .into_par_iter()
                 .map(|blocks| {
                     let fragment_encoder = fragment_encoder.clone();
                     let bundle_encoder = bundle_encoder.clone();
-                    create_proposal(bundle_encoder, fragment_encoder, blocks, target_bundle_size)
+                    create_proposal(
+                        bundle_encoder,
+                        fragment_encoder,
+                        blocks,
+                        target_num_fragments,
+                    )
                 })
                 .collect::<Result<Vec<_>>>()
         })
@@ -334,7 +339,7 @@ fn create_proposal(
     bundle_encoder: bundle::Encoder,
     fragment_encoder: impl crate::block_bundler::port::l1::FragmentEncoder,
     bundle_blocks: NonEmpty<CompressedFuelBlock>,
-    target_bundle_size: NonZeroUsize,
+    target_num_fragments: NonZeroUsize,
 ) -> Result<Proposal> {
     let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
 
@@ -357,7 +362,8 @@ fn create_proposal(
     let compressed_data = NonEmpty::from_vec(compressed_data)
         .ok_or_else(|| crate::Error::Other("bundle encoder returned zero bytes".to_string()))?;
 
-    let meets_target = compressed_data.len_nonzero() <= target_bundle_size;
+    let meets_target = fragment_encoder.num_fragments_needed(compressed_data.len_nonzero())
+        <= target_num_fragments;
 
     let gas_usage = fragment_encoder.gas_usage(compressed_data.len_nonzero());
 

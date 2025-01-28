@@ -792,10 +792,10 @@ async fn test_fallback_to_smallest_invalid_proposal() {
 async fn respects_target_bundle_size() {
     // given
     // in total 300B
-    let blocks = generate_storage_block_sequence(0..=2, 100);
+    let blocks = generate_storage_block_sequence(0..=1, enough_bytes_to_almost_fill_a_blob());
 
-    // can fit 2 blocks + encoding overhead, but not 3 blocks
-    let target_size = NonZeroUsize::new(240).unwrap();
+    // bundle should fit in 1 blob
+    let target_size = NonZeroUsize::new(1).unwrap();
 
     let mut bundler = Bundler::new(
         BlobEncoder,
@@ -818,12 +818,12 @@ async fn respects_target_bundle_size() {
 
     assert_eq!(
         final_bundle.metadata.block_heights,
-        0..=1,
-        "Expected only two blocks to fit in bundle"
+        0..=0,
+        "Expected one block to fit in bundle"
     );
 
     assert!(
-        final_bundle.metadata.compressed_data_size.get() <= target_size.get(),
+        final_bundle.metadata.num_fragments <= target_size,
         "Bundle should not exceed target size"
     );
 }
@@ -854,7 +854,7 @@ async fn chooses_less_blocks_for_better_gas_usage() {
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(),
         1u16.into(),
-        NonZeroUsize::new(fragment_capacity * 4).unwrap(),
+        NonZeroUsize::new(4).unwrap(),
     );
     while bundler.advance(1.try_into().unwrap()).await.unwrap() {}
 

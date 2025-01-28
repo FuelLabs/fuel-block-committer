@@ -86,7 +86,7 @@ impl Committer {
                 "COMMITTER__APP__BUNDLE__BYTES_TO_ACCUMULATE",
                 get_field!(block_bytes_to_accumulate),
             )
-            .env("COMMITTER__APP__BUNDLE__TARGET_BUNDLE_SIZE", "1572864")
+            .env("COMMITTER__APP__BUNDLE__TARGET_FRAGMENTS_PER_BUNDLE", "12")
             .env(
                 "COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT",
                 get_field!(bundle_optimization_timeout),

@@ -186,8 +186,8 @@ pub struct BundleConfig {
     pub bytes_to_accumulate: NonZeroUsize,
 
     /// TODO: rephrase
-    /// Max number of bytes the resulting bundle can be.
-    pub target_bundle_size: NonZeroUsize,
+    /// target number of fragments the resulting bundle can be.
+    pub target_fragments_per_bundle: NonZeroUsize,
 
     /// Maximum duration allocated for determining the optimal bundle size.
     ///
