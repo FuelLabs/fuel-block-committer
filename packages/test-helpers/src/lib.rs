@@ -1,6 +1,6 @@
 #![deny(unused_crate_dependencies)]
 
-use std::{ops::RangeInclusive, time::Duration};
+use std::{num::NonZeroUsize, ops::RangeInclusive, time::Duration};
 
 use clock::TestClock;
 use eth::BlobEncoder;
@@ -640,6 +640,7 @@ impl Setup {
             BlobEncoder,
             bundle::Encoder::new(CompressionLevel::Level6),
             1.try_into().unwrap(),
+            NonZeroUsize::MAX,
         );
 
         let mut fuel_api = services::block_bundler::port::fuel::MockApi::new();

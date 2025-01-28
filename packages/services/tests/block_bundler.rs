@@ -54,6 +54,7 @@ async fn bundler_finishing_will_advance_if_not_called_at_least_once() {
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(),
         1u16.into(),
+        NonZeroUsize::MAX,
     );
 
     // when
@@ -87,6 +88,7 @@ async fn bundler_will_provide_a_suboptimal_bundle_if_not_advanced_enough() -> Re
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(),
         1u16.into(),
+        NonZeroUsize::MAX,
     );
 
     bundler.advance(1.try_into().unwrap()).await?;
@@ -123,6 +125,7 @@ async fn bundler_tolerates_step_too_large() -> Result<()> {
         bundle::Encoder::new(CompressionLevel::Disabled),
         step_size,
         1u16.into(),
+        NonZeroUsize::MAX,
     );
 
     while bundler.advance(1.try_into().unwrap()).await? {}
@@ -153,6 +156,7 @@ async fn bigger_bundle_will_have_same_storage_gas_usage() -> Result<()> {
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(), // Default step size
         1u16.into(),
+        NonZeroUsize::MAX,
     );
     while bundler.advance(1.try_into().unwrap()).await? {}
 
@@ -175,6 +179,7 @@ fn default_bundler_factory() -> BundlerFactory<BlobEncoder> {
         BlobEncoder,
         bundle::Encoder::new(CompressionLevel::Disabled),
         1.try_into().unwrap(),
+        NonZeroUsize::MAX,
     )
 }
 
@@ -753,4 +758,124 @@ async fn metrics_are_updated() -> Result<()> {
     assert!((0.97..=1.0).contains(&compression_ratio_sum));
 
     Ok(())
+}
+
+#[tokio::test]
+async fn test_fallback_to_smallest_invalid_proposal() {
+    // given
+    let block_size = 1000;
+    let blocks = generate_storage_block_sequence(0..=10, block_size);
+
+    let target_bundle_size = NonZeroUsize::new(50).unwrap();
+    assert!(
+        target_bundle_size.get() < block_size,
+        "so that even a single block is over the target_bundle_size"
+    );
+
+    let bundler = Bundler::new(
+        BlobEncoder,
+        blocks,
+        bundle::Encoder::new(CompressionLevel::Disabled),
+        NonZeroUsize::new(1).unwrap(),
+        1u16.into(),
+        target_bundle_size,
+    );
+
+    // when
+    let proposal = bundler.finish().await.unwrap();
+
+    // then
+    assert!(proposal.metadata.compressed_data_size.get() > target_bundle_size.get());
+}
+
+#[tokio::test]
+async fn respects_target_bundle_size() {
+    // given
+    // in total 300B
+    let blocks = generate_storage_block_sequence(0..=2, 100);
+
+    // can fit 2 blocks + encoding overhead, but not 3 blocks
+    let target_size = NonZeroUsize::new(240).unwrap();
+
+    let mut bundler = Bundler::new(
+        BlobEncoder,
+        blocks.clone(),
+        bundle::Encoder::new(CompressionLevel::Disabled),
+        NonZeroUsize::new(1).unwrap(),
+        1u16.into(),
+        target_size,
+    );
+    while bundler.advance(1.try_into().unwrap()).await.unwrap() {}
+
+    // when
+    let final_bundle: BundleProposal = bundler.finish().await.unwrap();
+
+    // then
+    assert!(
+        final_bundle.metadata.known_to_be_optimal,
+        "Expected the bundler to know this result is optimal"
+    );
+
+    assert_eq!(
+        final_bundle.metadata.block_heights,
+        0..=1,
+        "Expected only two blocks to fit in bundle"
+    );
+
+    assert!(
+        final_bundle.metadata.compressed_data_size.get() <= target_size.get(),
+        "Bundle should not exceed target size"
+    );
+}
+
+/// In this example, bundling all 3 blocks would fit under the target size,
+/// but it would require two fragments, leading to higher gas usage.
+/// Bundling just the first 2 blocks fits in a single fragment,
+/// producing a better ratio—so the bundler opts for the smaller bundle.
+#[tokio::test]
+async fn chooses_less_blocks_for_better_gas_usage() {
+    let fragment_capacity = BlobEncoder::FRAGMENT_SIZE;
+
+    let overhead = 1000;
+    let half_a_blob = fragment_capacity / 2 - overhead;
+    let spillover_to_second_blob = 5000;
+
+    // Three blocks sized so that 2 blocks fit in one fragment, but all 3 blocks together require two fragments.
+    let blocks = nonempty![
+        generate_block(0, half_a_blob),
+        generate_block(1, half_a_blob),
+        generate_block(2, spillover_to_second_blob),
+    ];
+    let blocks = SequentialFuelBlocks::try_from(blocks).unwrap();
+
+    let mut bundler = Bundler::new(
+        BlobEncoder,
+        blocks.clone(),
+        bundle::Encoder::new(CompressionLevel::Disabled),
+        NonZeroUsize::new(1).unwrap(),
+        1u16.into(),
+        NonZeroUsize::new(fragment_capacity * 4).unwrap(),
+    );
+    while bundler.advance(1.try_into().unwrap()).await.unwrap() {}
+
+    // when
+    let final_bundle: BundleProposal = bundler.finish().await.unwrap();
+
+    // then
+    assert!(
+        final_bundle.metadata.known_to_be_optimal,
+        "We expect the bundler to finalize an optimal solution"
+    );
+
+    let used_fragments = final_bundle.metadata.num_fragments.get();
+    assert_eq!(
+        used_fragments, 1,
+        "Should only need 1 fragment for 2 blocks"
+    );
+
+    assert_eq!(
+        final_bundle.metadata.block_heights,
+        0..=1,
+        "Expected bundler to choose blocks [0..=1] instead of all three"
+    );
 }

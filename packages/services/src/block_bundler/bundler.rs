@@ -88,14 +88,21 @@ pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
     bundle_encoder: bundle::Encoder,
     step_size: NonZeroUsize,
+    target_bundle_size: NonZeroUsize,
 }
 
 impl<L1> Factory<L1> {
-    pub fn new(gas_calc: L1, bundle_encoder: bundle::Encoder, step_size: NonZeroUsize) -> Self {
+    pub fn new(
+        gas_calc: L1,
+        bundle_encoder: bundle::Encoder,
+        step_size: NonZeroUsize,
+        target_bundle_size: NonZeroUsize,
+    ) -> Self {
         Self {
             gas_calc,
             bundle_encoder,
             step_size,
+            target_bundle_size,
         }
     }
 }
@@ -113,6 +120,7 @@ where
             self.bundle_encoder.clone(),
             self.step_size,
             id,
+            self.target_bundle_size,
         )
     }
 }
@@ -123,6 +131,7 @@ struct Proposal {
     uncompressed_data_size: NonZeroUsize,
     compressed_data: NonEmpty<u8>,
     gas_usage: u64,
+    meets_target: bool,
 }
 
 impl Proposal {
@@ -135,10 +144,12 @@ impl Proposal {
 pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
     blocks: NonEmpty<CompressedFuelBlock>,
-    best_proposal: Option<Proposal>,
+    best_valid_proposal: Option<Proposal>,
+    smallest_invalid_proposal: Option<Proposal>,
     bundle_encoder: bundle::Encoder,
     attempts: VecDeque<NonZeroUsize>,
     bundle_id: NonNegative<i32>,
+    target_bundle_size: NonZeroUsize,
 }
 
 impl<T> Bundler<T> {
@@ -148,6 +159,7 @@ impl<T> Bundler<T> {
         bundle_encoder: bundle::Encoder,
         initial_step_size: NonZeroUsize,
         bundle_id: NonNegative<i32>,
+        target_bundle_size: NonZeroUsize,
     ) -> Self {
         let max_blocks = blocks.len();
         let initial_step = initial_step_size;
@@ -157,24 +169,41 @@ impl<T> Bundler<T> {
         Self {
             fragment_encoder: cost_calculator,
             blocks: blocks.into_inner(),
-            best_proposal: None,
+            best_valid_proposal: None,
+            smallest_invalid_proposal: None,
             bundle_encoder,
             attempts,
             bundle_id,
+            target_bundle_size,
         }
     }
 
     fn save_if_best_so_far(&mut self, new_proposal: Proposal) {
-        match &mut self.best_proposal {
-            Some(best)
-                if new_proposal.gas_per_uncompressed_byte() < best.gas_per_uncompressed_byte() =>
-            {
-                *best = new_proposal;
+        if new_proposal.meets_target {
+            match &mut self.best_valid_proposal {
+                Some(best)
+                    if new_proposal.gas_per_uncompressed_byte()
+                        < best.gas_per_uncompressed_byte() =>
+                {
+                    *best = new_proposal;
+                }
+                None => {
+                    self.best_valid_proposal = Some(new_proposal);
+                }
+                _ => {}
             }
-            None => {
-                self.best_proposal = Some(new_proposal);
+        } else {
+            match &mut self.smallest_invalid_proposal {
+                Some(smallest)
+                    if new_proposal.compressed_data.len() < smallest.compressed_data.len() =>
+                {
+                    *smallest = new_proposal;
+                }
+                None => {
+                    self.smallest_invalid_proposal = Some(new_proposal);
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -211,13 +240,14 @@ impl<T> Bundler<T> {
         let fragment_encoder = self.fragment_encoder.clone();
 
         // Needs to be wrapped in a blocking task to avoid blocking the executor
+        let target_bundle_size = self.target_bundle_size;
         tokio::task::spawn_blocking(move || {
             blocks_for_analyzing
                 .into_par_iter()
                 .map(|blocks| {
                     let fragment_encoder = fragment_encoder.clone();
                     let bundle_encoder = bundle_encoder.clone();
-                    create_proposal(bundle_encoder, fragment_encoder, blocks)
+                    create_proposal(bundle_encoder, fragment_encoder, blocks, target_bundle_size)
                 })
                 .collect::<Result<Vec<_>>>()
         })
@@ -243,14 +273,15 @@ where
     }
 
     async fn finish(mut self) -> Result<BundleProposal> {
-        if self.best_proposal.is_none() {
+        if self.best_valid_proposal.is_none() {
             self.advance(1.try_into().expect("not zero")).await?;
         }
 
         let best_proposal = self
-            .best_proposal
+            .best_valid_proposal
             .take()
-            .expect("advance should have set the best proposal");
+            .or(self.smallest_invalid_proposal.take())
+            .expect("advance should have set at least one");
 
         let compressed_data_size = best_proposal.compressed_data.len_nonzero();
         let fragments = self
@@ -303,6 +334,7 @@ fn create_proposal(
     bundle_encoder: bundle::Encoder,
     fragment_encoder: impl crate::block_bundler::port::l1::FragmentEncoder,
     bundle_blocks: NonEmpty<CompressedFuelBlock>,
+    target_bundle_size: NonZeroUsize,
 ) -> Result<Proposal> {
     let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
 
@@ -325,6 +357,8 @@ fn create_proposal(
     let compressed_data = NonEmpty::from_vec(compressed_data)
         .ok_or_else(|| crate::Error::Other("bundle encoder returned zero bytes".to_string()))?;
 
+    let meets_target = compressed_data.len_nonzero() <= target_bundle_size;
+
     let gas_usage = fragment_encoder.gas_usage(compressed_data.len_nonzero());
 
     Ok(Proposal {
@@ -332,5 +366,6 @@ fn create_proposal(
         compressed_data,
         gas_usage,
         block_heights,
+        meets_target,
     })
 }

@@ -23,7 +23,7 @@ pub mod service {
         pub accumulation_time_limit: Duration,
         pub bytes_to_accumulate: NonZeroUsize,
         // TODO: segfault this is not implemented
-        pub max_bundle_size: NonZeroUsize,
+        pub target_bundle_size: NonZeroUsize,
         pub lookback_window: u32,
     }
 
@@ -34,7 +34,7 @@ pub mod service {
                 optimization_time_limit: Duration::from_secs(100),
                 accumulation_time_limit: Duration::from_secs(100),
                 bytes_to_accumulate: NonZeroUsize::new(1).unwrap(),
-                max_bundle_size: NonZeroUsize::MAX,
+                target_bundle_size: NonZeroUsize::MAX,
                 lookback_window: 1000,
                 max_bundles_per_optimization_run: 1.try_into().unwrap(),
             }

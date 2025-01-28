@@ -187,7 +187,7 @@ pub struct BundleConfig {
 
     /// TODO: rephrase
     /// Max number of bytes the resulting bundle can be.
-    pub max_bundle_size: NonZeroUsize,
+    pub target_bundle_size: NonZeroUsize,
 
     /// Maximum duration allocated for determining the optimal bundle size.
     ///
