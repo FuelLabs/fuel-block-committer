@@ -190,6 +190,8 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
     let block_size = 100;
+
+    // We only store a single block.
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
@@ -197,8 +199,12 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
         })
         .await;
 
+    // The chain’s latest height is 0
     let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(0);
 
+    // We require 2 * block_size in bytes AND we also require 2 blocks
+    // to force immediate bundling. We only have 1 block, so bundling
+    // should NOT occur.
     let mut block_bundler = BlockBundler::new(
         mock_fuel_api,
         setup.db(),
@@ -206,7 +212,8 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
         default_bundler_factory(),
         BlockBundlerConfig {
             bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
-            lookback_window: 0, // Adjust lookback_window as needed
+            blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+            lookback_window: 0,
             ..BlockBundlerConfig::default()
         },
     );
@@ -215,11 +222,14 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
     block_bundler.run().await?;
 
     // then
-    assert!(setup
-        .db()
-        .oldest_nonfinalized_fragments(0, 1)
-        .await?
-        .is_empty());
+    assert!(
+        setup
+            .db()
+            .oldest_nonfinalized_fragments(0, 1)
+            .await?
+            .is_empty(),
+        "No fragments should be bundled"
+    );
 
     Ok(())
 }
@@ -879,4 +889,57 @@ async fn chooses_less_blocks_for_better_gas_usage() {
         0..=1,
         "Expected bundler to choose blocks [0..=1] instead of all three"
     );
+}
+
+#[tokio::test]
+async fn bundles_immediately_if_enough_blocks() -> Result<()> {
+    use services::state_committer::port::Storage;
+
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
+
+    // We will store exactly 2 blocks so that we hit the threshold.
+    let blocks = setup
+        .import_blocks(Blocks::WithHeights {
+            range: 0..=1, // This gives us 2 blocks
+            block_size,
+        })
+        .await;
+
+    let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(1);
+
+    // We'll set a large bytes_to_accumulate so the bundler won't trigger on bytes,
+    // but only on the number of blocks. We set max_blocks_to_accumulate to 2.
+    let mut block_bundler = BlockBundler::new(
+        mock_fuel_api,
+        setup.db(),
+        TestClock::default(),
+        default_bundler_factory(),
+        BlockBundlerConfig {
+            bytes_to_accumulate: NonZeroUsize::MAX,
+            blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+            ..BlockBundlerConfig::default()
+        },
+    );
+
+    // when
+    block_bundler.run().await?;
+
+    // then
+    // We expect that the 2 blocks triggered an immediate bundle.
+    let unsubmitted_fragments = setup
+        .db()
+        .oldest_nonfinalized_fragments(0, 10)
+        .await?
+        .into_iter()
+        .map(|f| f.fragment)
+        .collect_nonempty()
+        .unwrap();
+
+    let expected_fragments = bundle_and_encode_into_blobs(blocks.clone(), 1);
+
+    assert_eq!(unsubmitted_fragments, expected_fragments);
+
+    Ok(())
 }

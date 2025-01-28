@@ -3,6 +3,7 @@ pub mod bundler;
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
+    use humansize::FormatSizeOptions;
     use metrics::{
         custom_exponential_buckets,
         prometheus::{histogram_opts, linear_buckets, Histogram, IntGauge},
@@ -12,7 +13,7 @@ pub mod service {
 
     use super::bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
     use crate::{
-        types::{DateTime, Utc},
+        types::{storage::SequentialFuelBlocks, DateTime, Utc},
         Error, Result, Runner,
     };
 
@@ -20,10 +21,10 @@ pub mod service {
     pub struct Config {
         pub optimization_time_limit: Duration,
         pub max_bundles_per_optimization_run: NonZeroUsize,
+        pub target_fragments_per_bundle: NonZeroUsize,
         pub accumulation_time_limit: Duration,
         pub bytes_to_accumulate: NonZeroUsize,
-        // TODO: segfault this is not implemented
-        pub target_fragments_per_bundle: NonZeroUsize,
+        pub blocks_to_accumulate: NonZeroUsize,
         pub lookback_window: u32,
     }
 
@@ -37,6 +38,7 @@ pub mod service {
                 target_fragments_per_bundle: NonZeroUsize::MAX,
                 lookback_window: 1000,
                 max_bundles_per_optimization_run: 1.try_into().unwrap(),
+                blocks_to_accumulate: NonZeroUsize::new(10).unwrap(),
             }
         }
     }
@@ -163,27 +165,9 @@ pub mod service {
                 )
                 .await?
             {
-                let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
-                let cum_size = blocks.cumulative_size();
-                if cum_size < self.config.bytes_to_accumulate
-                    && !has_more
-                    && still_time_to_accumulate_more
-                {
-                    // TODO: humantime
-                    info!(
-                        "Not enough data ({} < {}) to bundle. Waiting for more blocks to accumulate.",
-                        cum_size,
-                        self.config.bytes_to_accumulate
-                    );
-
+                if self.should_wait(&blocks, has_more)? {
                     return Ok(());
                 }
-
-                if !still_time_to_accumulate_more {
-                    info!("Accumulation time limit reached.",);
-                }
-
-                info!("Giving {} blocks to the bundler", blocks.len());
 
                 let next_id = self.storage.next_bundle_id().await?;
                 let bundler = self.bundler_factory.build(blocks, next_id).await;
@@ -197,7 +181,7 @@ pub mod service {
                 let optimization_duration =
                     self.clock.now().signed_duration_since(optimization_start);
 
-                info!("Bundler proposed: {metadata}");
+                tracing::info!("Bundler proposed: {metadata}");
 
                 self.storage
                     .insert_bundle_and_fragments(next_id, metadata.block_heights.clone(), fragments)
@@ -212,6 +196,45 @@ pub mod service {
             }
 
             Ok(())
+        }
+
+        fn should_wait(&self, blocks: &SequentialFuelBlocks, has_more: bool) -> Result<bool> {
+            let block_count = blocks.len();
+            let cum_size = blocks.cumulative_size();
+
+            let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
+            let should_wait = cum_size < self.config.bytes_to_accumulate
+                && block_count < self.config.blocks_to_accumulate
+                && !has_more
+                && still_time_to_accumulate_more;
+
+            let available_data =
+                humansize::format_size(cum_size.get(), FormatSizeOptions::default());
+
+            if should_wait {
+                let needed_data = humansize::format_size(
+                    self.config.bytes_to_accumulate.get(),
+                    FormatSizeOptions::default(),
+                );
+
+                let until_timeout = humantime::format_duration(
+                    self.config
+                        .accumulation_time_limit
+                        .checked_sub(self.elapsed(self.last_time_bundled)?)
+                        .unwrap_or_default(),
+                );
+
+                tracing::info!(
+                    "Not bundling yet ({available_data}/{needed_data}, {block_count}/{} blocks, timeout in {until_timeout}); waiting for more.",
+                    self.config.blocks_to_accumulate
+                );
+            } else {
+                tracing::info!(
+                    "Proceeding to bundle with {block_count} blocks ({available_data}).",
+                );
+            }
+
+            Ok(should_wait)
         }
 
         async fn get_starting_height(&self) -> Result<u32> {

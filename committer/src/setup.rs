@@ -99,6 +99,7 @@ pub fn block_bundler(
             bytes_to_accumulate: config.app.bundle.bytes_to_accumulate,
             target_fragments_per_bundle: config.app.bundle.target_fragments_per_bundle,
             lookback_window: config.app.bundle.block_height_lookback,
+            blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
             max_bundles_per_optimization_run: num_cpus::get()
                 .try_into()
                 .expect("num cpus not zero"),

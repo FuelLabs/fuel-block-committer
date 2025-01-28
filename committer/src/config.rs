@@ -186,6 +186,9 @@ pub struct BundleConfig {
     pub bytes_to_accumulate: NonZeroUsize,
 
     /// TODO: rephrase
+    pub blocks_to_accumulate: NonZeroUsize,
+
+    /// TODO: rephrase
     /// target number of fragments the resulting bundle can be.
     pub target_fragments_per_bundle: NonZeroUsize,
 
