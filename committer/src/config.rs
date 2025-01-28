@@ -90,9 +90,10 @@ pub struct Fuel {
     pub num_buffered_requests: NonZeroU32,
 }
 
-#[serde(rename_all = "snake_case")]
 #[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum DALayer {
+    #[serde(rename = "EigenDA")]
     EigenDA(EigenDA),
 }
 

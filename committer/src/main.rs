@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
                 let client = EigenDAClient::new(key, rpc).await.unwrap();
                 Some(client)
             }
-            None => None,
+            _ => None,
         };
 
         let state_committer_handle = setup::state_committer(
