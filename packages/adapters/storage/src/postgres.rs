@@ -484,8 +484,6 @@ impl Postgres {
         starting_height: u32,
         max_cumulative_bytes: u32,
     ) -> Result<Option<UnbundledBlocks>> {
-        let mut tx = self.connection_pool.begin().await?;
-
         let count = sqlx::query!(
             r#"SELECT COUNT(*)
         FROM fuel_blocks fb 
@@ -497,7 +495,7 @@ impl Postgres {
         )"#,
             i64::from(starting_height)
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&self.connection_pool)
         .await?
         .count
         .unwrap_or_default();
