@@ -3,10 +3,13 @@ use std::{collections::HashMap, ops::RangeInclusive};
 use futures::TryStreamExt;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
-use services::types::{
-    storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-    CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-    TransactionState, Utc,
+use services::{
+    block_bundler::port::UnbundledBlocks,
+    types::{
+        storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
+        CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+        TransactionState, Utc,
+    },
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -480,7 +483,32 @@ impl Postgres {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
-    ) -> Result<Option<(SequentialFuelBlocks, bool)>> {
+    ) -> Result<Option<UnbundledBlocks>> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        let count = sqlx::query!(
+            r#"SELECT COUNT(*)
+        FROM fuel_blocks fb 
+        WHERE fb.height >= $1
+        AND NOT EXISTS (
+            SELECT 1 FROM bundles b 
+            WHERE fb.height BETWEEN b.start_height AND b.end_height
+            AND b.end_height >= $1
+        )"#,
+            i64::from(starting_height)
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .count
+        .unwrap_or_default();
+
+        if count == 0 {
+            return Ok(None);
+        }
+
+        let count = u64::try_from(count)
+            .map_err(|_| crate::error::Error::Conversion("invalid block count".to_string()))?;
+
         let mut stream = sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
@@ -500,11 +528,9 @@ impl Postgres {
         let mut blocks = vec![];
 
         let mut total_bytes = 0;
-        let mut has_more = false;
         while let Some(val) = stream.try_next().await? {
             let data_len = val.data.len();
             if total_bytes + data_len > max_cumulative_bytes as usize {
-                has_more = true;
                 break;
             }
 
@@ -522,7 +548,10 @@ impl Postgres {
             self.metrics
                 .lowest_unbundled_height
                 .set(lowest_unbundled_height.into());
-            return Ok(Some((sequential_blocks, has_more)));
+            return Ok(Some(UnbundledBlocks {
+                oldest: sequential_blocks,
+                total_unbundled: (count as usize).try_into().expect("checked already"),
+            }));
         }
 
         Ok(None)

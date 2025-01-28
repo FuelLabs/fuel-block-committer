@@ -6,11 +6,12 @@ use std::{
 
 use delegate::delegate;
 use services::{
-    block_bundler, block_committer, block_importer,
+    block_bundler::{self, port::UnbundledBlocks},
+    block_committer, block_importer,
     types::{
-        storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        storage::BundleFragment, BlockSubmission, BlockSubmissionTx, BundleCost,
+        CompressedFuelBlock, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
+        TransactionCostUpdate, TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -235,7 +236,7 @@ impl block_bundler::port::Storage for DbWithProcess {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
-    ) -> services::Result<Option<(SequentialFuelBlocks, bool)>> {
+    ) -> services::Result<Option<UnbundledBlocks>> {
         self.db
             ._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
             .await

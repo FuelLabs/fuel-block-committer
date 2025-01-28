@@ -11,7 +11,10 @@ pub mod service {
     };
     use tracing::info;
 
-    use super::bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
+    use super::{
+        bundler::{Bundle, BundleProposal, BundlerFactory, Metadata},
+        port::UnbundledBlocks,
+    };
     use crate::{
         types::{storage::SequentialFuelBlocks, DateTime, Utc},
         Error, Result, Runner,
@@ -157,7 +160,10 @@ pub mod service {
         async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
             let starting_height = self.get_starting_height().await?;
 
-            while let Some((blocks, has_more)) = self
+            while let Some(UnbundledBlocks {
+                oldest,
+                total_unbundled,
+            }) = self
                 .storage
                 .lowest_sequence_of_unbundled_blocks(
                     starting_height,
@@ -165,12 +171,12 @@ pub mod service {
                 )
                 .await?
             {
-                if self.should_wait(&blocks, has_more)? {
+                if self.should_wait(&oldest, total_unbundled)? {
                     return Ok(());
                 }
 
                 let next_id = self.storage.next_bundle_id().await?;
-                let bundler = self.bundler_factory.build(blocks, next_id).await;
+                let bundler = self.bundler_factory.build(oldest, next_id).await;
 
                 let optimization_start = self.clock.now();
                 let BundleProposal {
@@ -198,13 +204,17 @@ pub mod service {
             Ok(())
         }
 
-        fn should_wait(&self, blocks: &SequentialFuelBlocks, has_more: bool) -> Result<bool> {
-            let block_count = blocks.len();
+        fn should_wait(
+            &self,
+            blocks: &SequentialFuelBlocks,
+            total_available: NonZeroUsize,
+        ) -> Result<bool> {
             let cum_size = blocks.cumulative_size();
+            let has_more = total_available > blocks.len();
 
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
             let should_wait = cum_size < self.config.bytes_to_accumulate
-                && block_count < self.config.blocks_to_accumulate
+                && total_available < self.config.blocks_to_accumulate
                 && !has_more
                 && still_time_to_accumulate_more;
 
@@ -225,12 +235,13 @@ pub mod service {
                 );
 
                 tracing::info!(
-                    "Not bundling yet ({available_data}/{needed_data}, {block_count}/{} blocks, timeout in {until_timeout}); waiting for more.",
+                    "Not bundling yet ({available_data}/{needed_data}, {total_available}/{} blocks accumulated, timeout in {until_timeout}); waiting for more.",
                     self.config.blocks_to_accumulate
                 );
             } else {
                 tracing::info!(
-                    "Proceeding to bundle with {block_count} blocks ({available_data}).",
+                    "Proceeding to bundle with {} blocks ({available_data}).",
+                    blocks.len()
                 );
             }
 
@@ -298,7 +309,7 @@ pub mod service {
 }
 
 pub mod port {
-    use std::ops::RangeInclusive;
+    use std::{num::NonZeroUsize, ops::RangeInclusive};
 
     use nonempty::NonEmpty;
 
@@ -337,6 +348,12 @@ pub mod port {
         }
     }
 
+    #[derive(Debug, Clone)]
+    pub struct UnbundledBlocks {
+        pub oldest: SequentialFuelBlocks,
+        pub total_unbundled: NonZeroUsize,
+    }
+
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Sync {
@@ -344,7 +361,7 @@ pub mod port {
             &self,
             starting_height: u32,
             max_cumulative_bytes: u32,
-        ) -> Result<Option<(SequentialFuelBlocks, bool)>>;
+        ) -> Result<Option<UnbundledBlocks>>;
         async fn insert_bundle_and_fragments(
             &self,
             bundle_id: NonNegative<i32>,

@@ -11,10 +11,11 @@ pub(crate) mod error;
 mod postgres;
 pub use postgres::{DbConfig, Postgres};
 use services::{
+    block_bundler::port::UnbundledBlocks,
     types::{
-        storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        storage::BundleFragment, BlockSubmission, BlockSubmissionTx, BundleCost,
+        CompressedFuelBlock, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
+        TransactionCostUpdate, TransactionState, Utc,
     },
     Result,
 };
@@ -89,7 +90,7 @@ impl services::block_bundler::port::Storage for Postgres {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
-    ) -> Result<Option<(SequentialFuelBlocks, bool)>> {
+    ) -> Result<Option<UnbundledBlocks>> {
         self._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
             .await
             .map_err(Into::into)
@@ -565,7 +566,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap()
-            .0
+            .oldest
             .height_range()
     }
 
@@ -1360,7 +1361,7 @@ mod tests {
                     .lowest_sequence_of_unbundled_blocks(starting_height, max_cumulative_bytes)
                     .await
                     .unwrap()
-                    .map(|seq| seq.0.height_range())
+                    .map(|seq| seq.oldest.height_range())
             }
         };
 
