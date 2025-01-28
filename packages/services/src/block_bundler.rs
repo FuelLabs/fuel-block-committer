@@ -155,7 +155,7 @@ pub mod service {
         async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
             let starting_height = self.get_starting_height().await?;
 
-            while let Some(blocks) = self
+            while let Some((blocks, has_more)) = self
                 .storage
                 .lowest_sequence_of_unbundled_blocks(
                     starting_height,
@@ -165,7 +165,10 @@ pub mod service {
             {
                 let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
                 let cum_size = blocks.cumulative_size();
-                if cum_size < self.config.bytes_to_accumulate && still_time_to_accumulate_more {
+                if cum_size < self.config.bytes_to_accumulate
+                    && !has_more
+                    && still_time_to_accumulate_more
+                {
                     // TODO: humantime
                     info!(
                         "Not enough data ({} < {}) to bundle. Waiting for more blocks to accumulate.",
@@ -318,7 +321,7 @@ pub mod port {
             &self,
             starting_height: u32,
             max_cumulative_bytes: u32,
-        ) -> Result<Option<SequentialFuelBlocks>>;
+        ) -> Result<Option<(SequentialFuelBlocks, bool)>>;
         async fn insert_bundle_and_fragments(
             &self,
             bundle_id: NonNegative<i32>,

@@ -89,7 +89,7 @@ impl services::block_bundler::port::Storage for Postgres {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
-    ) -> Result<Option<SequentialFuelBlocks>> {
+    ) -> Result<Option<(SequentialFuelBlocks, bool)>> {
         self._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
             .await
             .map_err(Into::into)
@@ -565,6 +565,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap()
+            .0
             .height_range()
     }
 
@@ -1359,7 +1360,7 @@ mod tests {
                     .lowest_sequence_of_unbundled_blocks(starting_height, max_cumulative_bytes)
                     .await
                     .unwrap()
-                    .map(|seq| seq.height_range())
+                    .map(|seq| seq.0.height_range())
             }
         };
 

@@ -28,7 +28,8 @@ async fn imports_first_block_when_db_is_empty() -> Result<()> {
         .db()
         .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .0;
 
     let expected_block = nonempty![block];
 
@@ -72,7 +73,8 @@ async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
         .db()
         .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .0;
 
     pretty_assertions::assert_eq!(stored_blocks.into_inner(), all_blocks);
 
@@ -110,7 +112,8 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
         .db()
         .lowest_sequence_of_unbundled_blocks(starting_height, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .0;
 
     pretty_assertions::assert_eq!(stored_new_blocks.into_inner(), new_blocks);
 
@@ -142,7 +145,8 @@ async fn handles_chain_with_no_new_blocks() -> Result<()> {
         .db()
         .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .0;
 
     assert_eq!(stored_blocks.into_inner(), fuel_blocks);
 
@@ -170,7 +174,8 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
         .db()
         .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .0;
 
     let unbundled_block_heights: Vec<_> = unbundled_blocks
         .into_inner()
@@ -234,7 +239,8 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
         .db()
         .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .0;
 
     let unbundled_block_heights: Vec<_> = unbundled_blocks
         .into_inner()

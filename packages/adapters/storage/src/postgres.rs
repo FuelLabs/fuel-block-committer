@@ -1,11 +1,12 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
+use futures::TryStreamExt;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use services::types::{
     storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
     CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-    TransactionState, TryCollectNonEmpty, Utc,
+    TransactionState, Utc,
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -479,54 +480,52 @@ impl Postgres {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
-    ) -> Result<Option<SequentialFuelBlocks>> {
-        let response = sqlx::query_as!(
+    ) -> Result<Option<(SequentialFuelBlocks, bool)>> {
+        let mut stream = sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
-        WITH ordered_blocks AS (
-            SELECT 
-                fb.*, 
-                octet_length(fb.data) AS data_length,
-                SUM(octet_length(fb.data)) OVER (ORDER BY fb.height) AS cumulative_length
-            FROM 
-                fuel_blocks fb
-            WHERE 
-                fb.height >= $1
-                AND NOT EXISTS (
-                    SELECT 1 
-                    FROM bundles b 
-                    WHERE fb.height BETWEEN b.start_height AND b.end_height
-                      AND b.end_height >= $1
-                )
-            ORDER BY 
-                fb.height
-        )
-        SELECT height,data
-        FROM ordered_blocks
-        WHERE height >= $1 AND cumulative_length <= $2
-        ORDER BY height;
-        "#,
+            SELECT fb.* 
+        FROM fuel_blocks fb 
+        WHERE fb.height >= $1
+        AND NOT EXISTS (
+            SELECT 1 FROM bundles b 
+            WHERE fb.height BETWEEN b.start_height AND b.end_height
+            AND b.end_height >= $1
+        ) 
+        ORDER BY fb.height"#,
             i64::from(starting_height),
-            i64::from(max_cumulative_bytes)
         )
-        .fetch_all(&self.connection_pool)
-        .await
-        .map_err(Error::from)?;
+        .fetch(&self.connection_pool);
 
-        let sequential_blocks = response
-            .into_iter()
-            .map(CompressedFuelBlock::try_from)
-            .try_collect_nonempty()? // Assuming `try_collect_nonempty` is defined appropriately
-            .map(SequentialFuelBlocks::from_first_sequence);
+        let mut blocks = vec![];
 
-        if let Some(sequential_blocks) = &sequential_blocks {
+        let mut total_bytes = 0;
+        let mut has_more = false;
+        while let Some(val) = stream.try_next().await? {
+            let data_len = val.data.len();
+            if total_bytes + data_len > max_cumulative_bytes as usize {
+                has_more = true;
+                break;
+            }
+
+            let block = CompressedFuelBlock::try_from(val)?;
+            total_bytes += data_len;
+
+            blocks.push(block);
+        }
+
+        let sequential_blocks =
+            NonEmpty::from_vec(blocks).map(SequentialFuelBlocks::from_first_sequence);
+
+        if let Some(sequential_blocks) = sequential_blocks {
             let lowest_unbundled_height = *sequential_blocks.height_range().start();
             self.metrics
                 .lowest_unbundled_height
                 .set(lowest_unbundled_height.into());
+            return Ok(Some((sequential_blocks, has_more)));
         }
 
-        Ok(sequential_blocks)
+        Ok(None)
     }
 
     pub(crate) async fn _set_submission_completed(

@@ -235,7 +235,7 @@ impl block_bundler::port::Storage for DbWithProcess {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
-    ) -> services::Result<Option<SequentialFuelBlocks>> {
+    ) -> services::Result<Option<(SequentialFuelBlocks, bool)>> {
         self.db
             ._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
             .await

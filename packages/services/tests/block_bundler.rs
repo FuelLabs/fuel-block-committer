@@ -652,6 +652,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
         .unwrap();
 
     let unbundled_block_heights: Vec<_> = unbundled_blocks
+        .0
         .into_inner()
         .iter()
         .map(|b| b.height)
