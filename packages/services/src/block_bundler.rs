@@ -174,6 +174,9 @@ pub mod service {
                 // TODO: what about when you move the lookback and import hasn't had time to fill
                 // the hole yet but you also have a lot of blocks that are newer but not bundled,
                 // wouldn't you like bundled 1 block at a time then?
+                //
+                // TODO: the optimization time being large when we're too far behind is not
+                // acceptable
                 if self.should_wait(&oldest, total_unbundled)? {
                     return Ok(());
                 }
