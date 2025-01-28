@@ -61,7 +61,7 @@ impl services::state_committer::port::l1::DALayerApi for EigenDAClient {
         let mut client = self.clone();
         client
             .handle_authenticated_dispersal(data)
-            .map_err(|_| ServiceError::Other("Failed to disperse state fragments".to_string()))
+            .map_err(|e| ServiceError::Other(format!("Failed to disperse state fragments: {e}")))
             .await
     }
 }
