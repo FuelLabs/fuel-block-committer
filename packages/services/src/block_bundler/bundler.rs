@@ -17,7 +17,8 @@ use crate::{
 pub struct Metadata {
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
-    pub optimization_attempts: u64,
+    pub block_num_upper_limit: NonZeroUsize,
+    pub optimization_attempts: usize,
     pub gas_usage: u64,
     pub compressed_data_size: NonZeroUsize,
     pub uncompressed_data_size: NonZeroUsize,
@@ -155,7 +156,9 @@ pub struct Bundler<FragmentEncoder> {
     best_valid_proposal: Option<Proposal>,
     smallest_invalid_proposal: Option<Proposal>,
     bundle_encoder: bundle::Encoder,
-    attempts: VecDeque<NonZeroUsize>,
+    sizes_to_try: VecDeque<NonZeroUsize>,
+    attempts_made: usize,
+    max_blocks_in_bundle: NonZeroUsize,
     bundle_id: NonNegative<i32>,
     target_num_fragments: NonZeroUsize,
 }
@@ -180,9 +183,11 @@ impl<T> Bundler<T> {
             best_valid_proposal: None,
             smallest_invalid_proposal: None,
             bundle_encoder,
-            attempts,
+            sizes_to_try: attempts,
             bundle_id,
             target_num_fragments,
+            attempts_made: 0,
+            max_blocks_in_bundle: max_blocks,
         }
     }
 
@@ -214,8 +219,12 @@ impl<T> Bundler<T> {
                 _ => {}
             }
 
-            // Adding more blocks will likely increase the overall bundle size.
-            self.attempts.retain(|a| a <= &block_count_failed);
+            let min_blocks_in_bundle = NonZeroUsize::try_from(1).unwrap();
+            let max_blocks_in_bundle =
+                NonZeroUsize::try_from(block_count_failed.get().saturating_sub(1))
+                    .unwrap_or(min_blocks_in_bundle);
+
+            self.max_blocks_in_bundle = min(self.max_blocks_in_bundle, max_blocks_in_bundle);
         }
     }
 
@@ -234,8 +243,8 @@ impl<T> Bundler<T> {
     ) -> Vec<NonEmpty<CompressedFuelBlock>> {
         let mut blocks_for_attempts = vec![];
 
-        while !self.attempts.is_empty() && blocks_for_attempts.len() < num_concurrent.get() {
-            let block_count = self.attempts.pop_front().expect("not empty");
+        while !self.sizes_to_try.is_empty() && blocks_for_attempts.len() < num_concurrent.get() {
+            let block_count = self.sizes_to_try.pop_front().expect("not empty");
             let blocks = self.blocks_for_new_proposal(block_count);
             blocks_for_attempts.push(blocks);
         }
@@ -272,15 +281,20 @@ where
     T: crate::block_bundler::port::l1::FragmentEncoder + Send + Sync + Clone + 'static,
 {
     async fn advance(&mut self, optimization_runs: NonZeroUsize) -> Result<bool> {
-        if self.attempts.is_empty() {
+        self.sizes_to_try
+            .retain(|size| size <= &self.max_blocks_in_bundle);
+
+        if self.sizes_to_try.is_empty() {
             return Ok(false);
         }
+        let proposals = self.analyze(optimization_runs).await?;
+        self.attempts_made += proposals.len();
 
-        for proposal in self.analyze(optimization_runs).await? {
+        for proposal in proposals {
             self.save_if_best_so_far(proposal);
         }
 
-        Ok(!self.attempts.is_empty())
+        Ok(!self.sizes_to_try.is_empty())
     }
 
     async fn finish(mut self) -> Result<BundleProposal> {
@@ -299,22 +313,16 @@ where
             .fragment_encoder
             .encode(best_proposal.compressed_data, self.bundle_id)?;
 
-        let num_attempts = self
-            .blocks
-            .len()
-            .saturating_sub(self.attempts.len())
-            .try_into()
-            .map_err(|_| crate::Error::Other("too many attempts".to_string()))?;
-
         Ok(BundleProposal {
             metadata: Metadata {
                 block_heights: best_proposal.block_heights,
-                known_to_be_optimal: self.attempts.is_empty(),
+                known_to_be_optimal: self.sizes_to_try.is_empty(),
                 uncompressed_data_size: best_proposal.uncompressed_data_size,
                 compressed_data_size,
                 gas_usage: best_proposal.gas_usage,
-                optimization_attempts: num_attempts,
+                optimization_attempts: self.attempts_made,
                 num_fragments: fragments.len_nonzero(),
+                block_num_upper_limit: self.max_blocks_in_bundle,
             },
             fragments,
         })

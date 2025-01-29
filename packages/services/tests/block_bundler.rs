@@ -484,6 +484,7 @@ async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
             compressed_data_size: 100.try_into().unwrap(),
             uncompressed_data_size: 1000.try_into().unwrap(),
             num_fragments: 1.try_into().unwrap(),
+            block_num_upper_limit: 1.try_into().unwrap(),
         },
     };
 
