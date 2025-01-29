@@ -44,6 +44,7 @@ impl Display for Metadata {
             .field("block_heights", &self.block_heights)
             .field("known_to_be_optimal", &self.known_to_be_optimal)
             .field("optimization_attempts", &self.optimization_attempts)
+            .field("block_num_upper_limit", &self.block_num_upper_limit)
             .field("gas_usage", &self.gas_usage)
             .field(
                 "compressed_data_size",
