@@ -181,6 +181,11 @@ pub mod service {
                     return Ok(());
                 }
 
+                // TODO: we had 580+ blocks, spent needless optimization attempts on bundles that
+                // were never going to make the target fragment size, maybe find a way to
+                // communicate back to par iterator that bigger than N blocks is not going to cut
+                // it.
+
                 let next_id = self.storage.next_bundle_id().await?;
                 let bundler = self.bundler_factory.build(oldest, next_id).await;
 
