@@ -2,6 +2,7 @@ use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region,
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{config::BehaviorVersion, Client};
+use k256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
 
 #[cfg(feature = "test-helpers")]
 use crate::KeySource;
@@ -112,10 +113,15 @@ impl AwsKmsClient {
     pub async fn get_public_key(&self, key_id: &str) -> anyhow::Result<Vec<u8>> {
         let key_info = self.client.get_public_key().key_id(key_id).send().await?;
 
-        let key = key_info
+        let der_bytes: Vec<u8> = key_info
             .public_key
-            .ok_or_else(|| anyhow::anyhow!("kms public key missing"))?;
+            .ok_or_else(|| anyhow::anyhow!("kms public key missing"))?
+            .into();
 
-        Ok(key.into())
+        // convert to uncompressed form
+        let verifying_key = VerifyingKey::from_public_key_der(&der_bytes)?;
+        let encoded_point = verifying_key.to_encoded_point(false);
+
+        Ok(encoded_point.as_bytes().to_vec())
     }
 }

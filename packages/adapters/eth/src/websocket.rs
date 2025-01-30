@@ -17,7 +17,7 @@ use services::{
     },
     Result,
 };
-use signers::{AwsConfig, AwsKmsClient, KeySource};
+use signers::{AwsKmsClient, KeySource};
 use url::Url;
 
 use self::{

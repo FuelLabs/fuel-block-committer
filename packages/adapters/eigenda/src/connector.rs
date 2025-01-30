@@ -1,5 +1,4 @@
 use futures::{StreamExt, TryFutureExt};
-use k256::ecdsa::{signature::Signer, Signature, SigningKey};
 use services::{
     types::{Fragment, NonEmpty},
     Error as ServiceError, Result as ServiceResult,

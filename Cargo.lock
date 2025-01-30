@@ -6095,11 +6095,11 @@ dependencies = [
 name = "signers"
 version = "0.1.0"
 dependencies = [
- "alloy",
  "anyhow",
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
+ "k256",
  "serde",
  "serde_json",
 ]
