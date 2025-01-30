@@ -22,6 +22,7 @@ use crate::{
         },
         AuthenticationData,
     },
+    codec::convert_by_padding_empty_byte,
     error::ConnectorError,
     signer::EigenDASigner,
 };
@@ -57,6 +58,8 @@ impl services::state_committer::port::l1::DALayerApi for EigenDAClient {
         let num_fragments = min(fragments.len(), 6);
         let fragments = fragments.into_iter().take(num_fragments);
         let data = serialize_fragments(fragments);
+
+        let data = convert_by_padding_empty_byte(&data);
 
         let mut client = self.clone();
         client
