@@ -484,6 +484,8 @@ impl Postgres {
         starting_height: u32,
         max_cumulative_bytes: u32,
     ) -> Result<Option<UnbundledBlocks>> {
+        // We're probably not doing snapshot isolation, so the count could very well be less than
+        // the accumulated blocks.
         let count = sqlx::query!(
             r#"SELECT COUNT(*)
         FROM fuel_blocks fb 
@@ -526,6 +528,7 @@ impl Postgres {
         let mut blocks = vec![];
 
         let mut total_bytes = 0;
+        let mut last_height: Option<u32> = None;
         while let Some(val) = stream.try_next().await? {
             let data_len = val.data.len();
             if total_bytes + data_len > max_cumulative_bytes as usize {
@@ -533,9 +536,18 @@ impl Postgres {
             }
 
             let block = CompressedFuelBlock::try_from(val)?;
+            let height = block.height;
             total_bytes += data_len;
 
             blocks.push(block);
+            match &mut last_height {
+                Some(last_height) if height != last_height.saturating_add(1) => {
+                    break;
+                }
+                _ => {
+                    last_height = Some(height);
+                }
+            }
         }
 
         let sequential_blocks =
