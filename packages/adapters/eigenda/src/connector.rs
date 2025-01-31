@@ -1,8 +1,9 @@
-use futures::{StreamExt, TryFutureExt};
+use futures::{stream, StreamExt, TryFutureExt};
 use services::{
     types::{Fragment, NonEmpty},
     Error as ServiceError, Result as ServiceResult,
 };
+use sha3::{Digest, Keccak256};
 use signers::KeySource;
 use std::{cmp::min, time::Duration};
 use tokio::time::sleep;
@@ -60,6 +61,7 @@ impl services::state_committer::port::l1::DALayerApi for EigenDAClient {
 
         let data = convert_by_padding_empty_byte(&data);
 
+        let data = vec![1, 2, 3];
         let mut client = self.clone();
         client
             .handle_authenticated_dispersal(data)
@@ -99,60 +101,74 @@ impl EigenDAClient {
         })
     }
 
+    async fn sign_challenge_u32(&self, nonce: u32) -> Result<Vec<u8>, ConnectorError> {
+        let nonce_bytes = nonce.to_be_bytes();
+        let hash = Keccak256::digest(nonce_bytes);
+
+        let sig = self.signer.sign_prehash(&hash).await?;
+
+        Ok(sig.data)
+    }
+
     async fn handle_authenticated_dispersal(
         &mut self,
         data: Vec<u8>,
     ) -> Result<Vec<u8>, ConnectorError> {
-        // create initial request with blob data
-        let initial_request = AuthenticatedRequest {
+        let disperse_request = AuthenticatedRequest {
             payload: Some(authenticated_request::Payload::DisperseRequest(
                 DisperseBlobRequest {
                     data,
-                    custom_quorum_numbers: vec![], // ussing default quorums
+                    custom_quorum_numbers: vec![],
                     account_id: self.account_id.clone(),
                 },
             )),
         };
 
+        let (tx, rx) = tokio::sync::mpsc::channel(2);
+        let tx_clone = tx.clone();
+
+        tx.send(disperse_request)
+            .await
+            .map_err(|_| ConnectorError::AuthenticationFailed)?;
+
+        // Start bidirectional streaming with a stream that can be extended
         let mut stream = self
             .client
-            .disperse_blob_authenticated(Request::new(futures::stream::iter(vec![
-                initial_request.clone()
-            ])))
+            .disperse_blob_authenticated(Request::new(stream::unfold(rx, |mut rx| async move {
+                rx.recv().await.map(|req| (req, rx))
+            })))
             .await?
             .into_inner();
 
-        // process server response
-        if let Some(reply) = stream.next().await {
+        // Process server responses
+        while let Some(reply) = stream.next().await {
             let reply = reply?;
+
             match reply.payload {
                 Some(authenticated_reply::Payload::BlobAuthHeader(header)) => {
-                    // send the authentication response
-                    let challenge = header.challenge_parameter;
-                    let message = challenge.to_be_bytes();
+                    let signature_bytes =
+                        self.sign_challenge_u32(header.challenge_parameter).await?;
 
-                    let signature = self.signer.sign(&message).await?;
-
+                    // Send back the authentication data
                     let auth_request = AuthenticatedRequest {
                         payload: Some(authenticated_request::Payload::AuthenticationData(
                             AuthenticationData {
-                                authentication_data: signature.data,
+                                authentication_data: signature_bytes,
                             },
                         )),
                     };
 
-                    self.client
-                        .disperse_blob_authenticated(Request::new(futures::stream::iter(vec![
-                            initial_request,
-                            auth_request,
-                        ])))
-                        .await?;
+                    // Send the authentication response through the same stream
+                    tx_clone
+                        .send(auth_request)
+                        .await
+                        .map_err(|_| ConnectorError::AuthenticationFailed)?;
                 }
                 Some(authenticated_reply::Payload::DisperseReply(reply)) => {
                     return Ok(reply.request_id);
                 }
                 None => {
-                    return Err(ConnectorError::AuthenticationFailed);
+                    return Err(ConnectorError::UnexpectedResponse);
                 }
             }
         }

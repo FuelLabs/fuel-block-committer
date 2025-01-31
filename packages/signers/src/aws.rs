@@ -2,7 +2,7 @@ use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region,
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{config::BehaviorVersion, Client};
-use k256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
+use k256::{ecdsa::{Signature, VerifyingKey}, pkcs8::DecodePublicKey};
 
 #[cfg(feature = "test-helpers")]
 use crate::KeySource;
@@ -74,40 +74,83 @@ impl AwsKmsClient {
     }
 
     #[cfg(feature = "test-helpers")]
-    pub async fn create_key(&self) -> anyhow::Result<KeySource> {
-        let response = self
-            .client
-            .create_key()
-            .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
-            .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
-            .send()
-            .await?;
+pub async fn create_key(
+    &self,
+) -> anyhow::Result<KeySource> {
+    use std::ops::Deref;
 
-        // use arn as id to closer imitate prod behavior
-        let id = response
-            .key_metadata
-            .and_then(|metadata| metadata.arn)
-            .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
+    // Convert hex private key to DER format
+    let private_key = hex::decode("***REMOVED***")?;
+    let der = k256::SecretKey::from_slice(&private_key)?
+        .to_sec1_der()?;
+    let der = der.deref().clone();
 
-        Ok(KeySource::Kms(id))
-    }
+    // Create custom key with explicit material
+    let response = self.client
+        .create_key()
+        .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
+        .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
+        .customize()
+        .mutate_request(move |req| {
+            // LocalStack-specific parameter
+            req.headers_mut().insert(
+                "X-LocalStack-KMS-KeyMaterial",
+                base64::encode(der.clone())
+            );
+        })
+        .send()
+        .await?;
 
-    pub async fn sign(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let id = response
+        .key_metadata
+        .and_then(|metadata| metadata.arn)
+        .ok_or_else(|| anyhow::anyhow!("key arn missing"))?;
+
+    Ok(KeySource::Kms(id))
+}
+
+    // #[cfg(feature = "test-helpers")]
+    // pub async fn create_key(&self) -> anyhow::Result<KeySource> {
+    //     let response = self
+    //         .client
+    //         .create_key()
+    //         .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
+    //         .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
+    //         .send()
+    //         .await?;
+
+    //     // use arn as id to closer imitate prod behavior
+    //     let id = response
+    //         .key_metadata
+    //         .and_then(|metadata| metadata.arn)
+    //         .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
+
+    //     Ok(KeySource::Kms(id))
+    // }
+
+    pub async fn sign_prehash(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Vec<u8>> {
         let response = self
             .client
             .sign()
             .key_id(key_id)
             .message(data.into())
-            .message_type(aws_sdk_kms::types::MessageType::Raw)
+            // use MessageType::Digest because we assume that the data is already hashed
+            .message_type(aws_sdk_kms::types::MessageType::Digest)
             .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
             .send()
             .await?;
 
-        let signature = response
+        let der_signature = response
             .signature
             .ok_or_else(|| anyhow::anyhow!("kms signature missing"))?;
 
-        Ok(signature.into())
+        let signature = Signature::from_der(der_signature.as_ref())?;
+        let normalized = signature.normalize_s().unwrap_or(signature);
+        
+        let mut signature_bytes = normalized.to_bytes().to_vec();
+        signature_bytes.push(0);
+
+        Ok(signature_bytes)
     }
 
     pub async fn get_public_key(&self, key_id: &str) -> anyhow::Result<Vec<u8>> {

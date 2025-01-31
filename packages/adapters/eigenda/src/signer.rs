@@ -24,9 +24,13 @@ impl AwsSigner {
         Self { key_id, client }
     }
 
-    async fn sign(&self, message: &[u8]) -> Result<SignedMessage, ConnectorError> {
+    async fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage, ConnectorError> {
         // TODO unwrap
-        let signed = self.client.sign(&self.key_id, message).await.unwrap();
+        let signed = self
+            .client
+            .sign_prehash(&self.key_id, message)
+            .await
+            .unwrap();
 
         Ok(SignedMessage { data: signed })
     }
@@ -49,9 +53,9 @@ impl EigenDASigner {
         }
     }
 
-    pub async fn sign(&self, message: &[u8]) -> Result<SignedMessage, ConnectorError> {
+    pub async fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage, ConnectorError> {
         match self {
-            Self::AwsKms(signer) => signer.sign(message).await,
+            Self::AwsKms(signer) => signer.sign_prehash(message).await,
         }
     }
 

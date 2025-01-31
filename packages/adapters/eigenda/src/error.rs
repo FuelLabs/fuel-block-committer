@@ -10,4 +10,6 @@ pub enum ConnectorError {
     BlobProcessingFailed(String),
     #[error("Timeout waiting for blob status")]
     Timeout,
+    #[error("Unexpected server response")]
+    UnexpectedResponse,
 }
