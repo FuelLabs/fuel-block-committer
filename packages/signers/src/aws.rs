@@ -2,7 +2,7 @@ use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region,
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{config::BehaviorVersion, Client};
-use k256::{ecdsa::{Signature, VerifyingKey}, pkcs8::DecodePublicKey};
+use k256::{ecdsa::{RecoveryId, Signature, VerifyingKey}, pkcs8::DecodePublicKey};
 
 #[cfg(feature = "test-helpers")]
 use crate::KeySource;
@@ -80,7 +80,7 @@ pub async fn create_key(
     use std::ops::Deref;
 
     // Convert hex private key to DER format
-    let private_key = hex::decode("***REMOVED***")?;
+    let private_key = hex::decode("8a229ef1d1f528787e14656c424e1c8710402cb0b0329d3091f11aaf854151e1")?;
     let der = k256::SecretKey::from_slice(&private_key)?
         .to_sec1_der()?;
     let der = der.deref().clone();
@@ -128,13 +128,12 @@ pub async fn create_key(
     //     Ok(KeySource::Kms(id))
     // }
 
-    pub async fn sign_prehash(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+    async fn get_raw_signature(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Signature> {
         let response = self
             .client
             .sign()
             .key_id(key_id)
             .message(data.into())
-            // use MessageType::Digest because we assume that the data is already hashed
             .message_type(aws_sdk_kms::types::MessageType::Digest)
             .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
             .send()
@@ -145,13 +144,48 @@ pub async fn create_key(
             .ok_or_else(|| anyhow::anyhow!("kms signature missing"))?;
 
         let signature = Signature::from_der(der_signature.as_ref())?;
-        let normalized = signature.normalize_s().unwrap_or(signature);
-        
-        let mut signature_bytes = normalized.to_bytes().to_vec();
-        signature_bytes.push(0);
+        Ok(signature.normalize_s().unwrap_or(signature))
+    }
 
+    fn recover_id(
+        &self,
+        data: &[u8],
+        signature: &Signature,
+        public_key: &[u8],
+    ) -> anyhow::Result<u8> {
+        let expected_key = VerifyingKey::from_sec1_bytes(public_key)?;
+
+        // try both possible recovery IDs
+        for recovery_id in 0..2 {
+            if let Ok(recovered_key) = VerifyingKey::recover_from_prehash(
+                data,
+                signature,
+                RecoveryId::from_byte(recovery_id).expect("valid recovery id"),
+            ) {
+                if recovered_key == expected_key {
+                    return Ok(recovery_id);
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("Could not determine recovery ID"))
+    }
+
+    pub async fn sign_prehash(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        // Get public key and signature
+        let public_key = self.get_public_key(key_id).await?;
+        let signature = self.get_raw_signature(key_id, data).await?;
+        
+        // Recover the correct v value
+        let recovery_id = self.recover_id(data, &signature, &public_key)?;
+        
+        // Combine r, s, and v into final signature
+        let mut signature_bytes = signature.to_bytes().to_vec();
+        signature_bytes.push(recovery_id);
+        
         Ok(signature_bytes)
     }
+
 
     pub async fn get_public_key(&self, key_id: &str) -> anyhow::Result<Vec<u8>> {
         let key_info = self.client.get_public_key().key_id(key_id).send().await?;

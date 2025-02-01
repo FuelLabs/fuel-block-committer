@@ -61,7 +61,6 @@ impl services::state_committer::port::l1::DALayerApi for EigenDAClient {
 
         let data = convert_by_padding_empty_byte(&data);
 
-        let data = vec![1, 2, 3];
         let mut client = self.clone();
         client
             .handle_authenticated_dispersal(data)
