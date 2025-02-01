@@ -14,12 +14,14 @@ actix-web = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["default", "derive"] }
 clock = { workspace = true }
 config = { workspace = true, features = ["async"] }
+eigenda = { workspace = true }
 eth = { workspace = true }
 fuel = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
 humantime = { workspace = true }
 metrics = { workspace = true }
 num_cpus = { workspace = true }
+signers = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 services = { workspace = true }

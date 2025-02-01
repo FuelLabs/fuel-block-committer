@@ -55,14 +55,16 @@ impl Default for Metrics {
     }
 }
 
-impl<L1, FuelApi, Db, Clock, D> RegistersMetrics for StateCommitter<L1, FuelApi, Db, Clock, D> {
+impl<L1, FuelApi, Db, Clock, D, DALayer> RegistersMetrics
+    for StateCommitter<L1, FuelApi, Db, Clock, D, DALayer>
+{
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.metrics.current_height_to_commit.clone())]
     }
 }
 
 /// The `StateCommitter` is responsible for committing state fragments to L1.
-pub struct StateCommitter<L1, FuelApi, Db, Clock, FeeProvider> {
+pub struct StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer> {
     l1_adapter: L1,
     fuel_api: FuelApi,
     storage: Db,
@@ -71,9 +73,11 @@ pub struct StateCommitter<L1, FuelApi, Db, Clock, FeeProvider> {
     startup_time: DateTime<Utc>,
     metrics: Metrics,
     fee_algo: SmaFeeAlgo<FeeProvider>,
+    eigenda: Option<DALayer>,
 }
 
-impl<L1, FuelApi, Db, Clock, FeeProvider> StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
+impl<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
+    StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
 where
     Clock: crate::state_committer::port::Clock,
 {
@@ -85,6 +89,7 @@ where
         config: Config,
         clock: Clock,
         fee_provider: FeeProvider,
+        eigenda: Option<DALayer>,
     ) -> Self {
         let startup_time = clock.now();
 
@@ -97,17 +102,20 @@ where
             clock,
             startup_time,
             metrics: Metrics::default(),
+            eigenda,
         }
     }
 }
 
-impl<L1, FuelApi, Db, Clock, FeeProvider> StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
+impl<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
+    StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
 where
     L1: crate::state_committer::port::l1::Api + Send + Sync,
     FuelApi: crate::state_committer::port::fuel::Api,
     Db: crate::state_committer::port::Storage,
     Clock: crate::state_committer::port::Clock,
     FeeProvider: crate::fees::Api + Sync,
+    DALayer: crate::state_committer::port::l1::DALayerApi + Send + Sync,
 {
     async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
         Ok(self
@@ -161,7 +169,7 @@ where
 
         match self
             .l1_adapter
-            .submit_state_fragments(data, previous_tx)
+            .submit_state_fragments(data.clone(), previous_tx)
             .await
         {
             Ok((submitted_tx, submitted_fragments)) => {
@@ -183,6 +191,15 @@ where
                     .await?;
 
                 tracing::info!("Submitted fragments {ids} with tx {}", hex::encode(tx_hash));
+
+                if let Some(eigenda) = &self.eigenda {
+                    let request_id = eigenda.submit_state_fragments(data).await?;
+                    tracing::info!(
+                        "Submitted fragments {ids} to eigenDA with request id {}",
+                        hex::encode(request_id)
+                    );
+                }
+
                 Ok(())
             }
             Err(e) => {
@@ -330,14 +347,15 @@ where
     }
 }
 
-impl<L1, FuelApi, Db, Clock, FeeProvider> Runner
-    for StateCommitter<L1, FuelApi, Db, Clock, FeeProvider>
+impl<L1, FuelApi, Db, Clock, FeeProvider, DALayer> Runner
+    for StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
 where
     L1: crate::state_committer::port::l1::Api + Send + Sync,
     FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
     Db: crate::state_committer::port::Storage + Clone + Send + Sync,
     Clock: crate::state_committer::port::Clock + Send + Sync,
     FeeProvider: crate::fees::Api + Send + Sync,
+    DALayer: crate::state_committer::port::l1::DALayerApi + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
         if self.storage.has_nonfinalized_txs().await? {

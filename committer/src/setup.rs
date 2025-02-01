@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clock::SystemClock;
+use eigenda::EigenDAClient;
 use eth::{BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -121,6 +122,7 @@ pub fn state_committer(
     config: &config::Config,
     registry: &Registry,
     fee_api: CachingApi<L1>,
+    eigenda: Option<EigenDAClient>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
         l1,
@@ -135,6 +137,7 @@ pub fn state_committer(
         },
         SystemClock,
         fee_api,
+        eigenda,
     );
 
     state_committer.register_metrics(registry);

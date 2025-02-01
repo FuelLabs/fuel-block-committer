@@ -45,6 +45,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 portpicker = { workspace = true }
+signers = { workspace = true, features = ["test-helpers"] }
 services = { workspace = true }
 rand = { workspace = true, features = ["std"] }
 reqwest = { workspace = true }

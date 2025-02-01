@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use alloy::network::TxSigner;
+use eth::Signer;
 use fuel::HttpClient;
 use storage::DbWithProcess;
 use url::Url;
@@ -110,7 +112,7 @@ impl WholeStack {
                 .with_db_name(db.db_name())
                 .with_state_contract_address(deployed_contract.address())
                 .with_main_key_arn(main_key.id.clone())
-                .with_kms_url(main_key.url.clone())
+                .with_kms_url(kms.url().to_owned())
                 .with_bundle_accumulation_timeout("3600s".to_owned())
                 .with_bundle_blocks_to_accumulate("400".to_string())
                 .with_bundle_optimization_timeout("60s".to_owned())
@@ -159,7 +161,9 @@ async fn create_and_fund_kms_keys(
 
     let create_and_fund = || async {
         let key = kms.create_key().await?;
-        eth_node.fund(key.address(), amount).await?;
+        let signer = Signer::make_aws_signer(kms.client(), key.id.clone()).await?;
+
+        eth_node.fund(signer.address(), amount).await?;
         anyhow::Result::<_>::Ok(key)
     };
 

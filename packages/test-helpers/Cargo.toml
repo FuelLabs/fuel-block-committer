@@ -12,6 +12,7 @@ rust-version = { workspace = true }
 [dependencies]
 clock = { workspace = true, features = ["test-helpers"] }
 delegate = { workspace = true }
+eigenda = { workspace = true, features = ["test-helpers"] }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel-block-committer-encoding = { workspace = true }
 fuel-crypto = { workspace = true, features = ["random"] }
