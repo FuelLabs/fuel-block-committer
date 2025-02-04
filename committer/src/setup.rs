@@ -201,7 +201,7 @@ pub fn state_listener(
     )
 }
 
-pub fn _state_pruner(
+pub fn state_pruner(
     storage: Database,
     cancel_token: CancellationToken,
     registry: &Registry,
