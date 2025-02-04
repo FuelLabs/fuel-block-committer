@@ -181,11 +181,6 @@ pub mod service {
                     return Ok(());
                 }
 
-                // TODO: we had 580+ blocks, spent needless optimization attempts on bundles that
-                // were never going to make the target fragment size, maybe find a way to
-                // communicate back to par iterator that bigger than N blocks is not going to cut
-                // it.
-
                 let next_id = self.storage.next_bundle_id().await?;
                 let bundler = self.bundler_factory.build(oldest, next_id).await;
 
@@ -223,6 +218,10 @@ pub mod service {
             let cum_size = blocks.cumulative_size();
             let has_more = total_available > blocks.len();
 
+            // TODO: segfault
+            // explain the motivation behind using total_available vs blocks.len() (the case when
+            // we couldn't get unstuck because we had few blocks and a big hole separating them
+            // from the remaining unbundled blocks)
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
             let should_wait = cum_size < self.config.bytes_to_accumulate
                 && total_available < self.config.blocks_to_accumulate
