@@ -41,6 +41,13 @@ impl Index<usize> for SequentialFuelBlocks {
 }
 
 impl SequentialFuelBlocks {
+    pub fn cumulative_size(&self) -> NonZeroUsize {
+        let size: usize = self.blocks.iter().map(|block| block.data.len()).sum();
+
+        size.try_into()
+            .expect("at least one byte from at least one block")
+    }
+
     pub fn into_inner(self) -> NonEmpty<CompressedFuelBlock> {
         self.blocks
     }
@@ -457,5 +464,22 @@ mod tests {
             "invalid sequence: blocks are not sequential by height",
             "Error message should indicate sequentiality issue"
         );
+    }
+    #[test]
+    fn cumulative_size_returns_correct_sum() {
+        // given
+        let block_heights = &[1, 2, 3, 4, 5];
+        let blocks = create_non_empty_fuel_blocks(block_heights);
+        let seq_blocks = SequentialFuelBlocks::try_from(blocks).unwrap();
+
+        // when
+        let size = seq_blocks.cumulative_size();
+
+        // then
+        assert_eq!(
+        size.get(),
+        block_heights.len(),
+        "Cumulative size should be equal to the number of blocks, as each block has data length 1"
+    );
     }
 }

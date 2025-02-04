@@ -10,6 +10,8 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+humantime = { workspace = true }
+humansize = { workspace = true }
 alloy = { workspace = true }
 async-trait = { workspace = true }
 bytesize = { workspace = true }

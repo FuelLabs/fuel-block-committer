@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT fb.* \n        FROM fuel_blocks fb \n        WHERE fb.height >= $1\n        AND NOT EXISTS (\n            SELECT 1 FROM bundles b \n            WHERE fb.height BETWEEN b.start_height AND b.end_height\n            AND b.end_height >= $1\n        ) \n        ORDER BY fb.height",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "height",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "data",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9b0462800c1d54c2f53679747a9adab59b442b31fdcea196fca3bfeaa85903ac"
+}

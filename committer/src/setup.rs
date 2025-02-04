@@ -85,6 +85,7 @@ pub fn block_bundler(
         BlobEncoder,
         bundle::Encoder::new(config.app.bundle.compression_level),
         config.app.bundle.optimization_step,
+        config.app.bundle.target_fragments_per_bundle,
     );
 
     let block_bundler = BlockBundler::new(
@@ -94,9 +95,11 @@ pub fn block_bundler(
         bundler_factory,
         BlockBundlerConfig {
             optimization_time_limit: config.app.bundle.optimization_timeout,
-            block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
-            num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            bytes_to_accumulate: config.app.bundle.bytes_to_accumulate,
+            target_fragments_per_bundle: config.app.bundle.target_fragments_per_bundle,
             lookback_window: config.app.bundle.block_height_lookback,
+            blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
             max_bundles_per_optimization_run: num_cpus::get()
                 .try_into()
                 .expect("num cpus not zero"),

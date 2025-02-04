@@ -1,11 +1,15 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
+use futures::TryStreamExt;
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
-use services::types::{
-    storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-    CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-    TransactionState, TryCollectNonEmpty, Utc,
+use services::{
+    block_bundler::port::UnbundledBlocks,
+    types::{
+        storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
+        CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+        TransactionState, Utc,
+    },
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -478,11 +482,34 @@ impl Postgres {
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
         starting_height: u32,
-        limit: usize,
-    ) -> Result<Option<SequentialFuelBlocks>> {
-        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        max_cumulative_bytes: u32,
+    ) -> Result<Option<UnbundledBlocks>> {
+        // We're probably not doing snapshot isolation, so the count could very well be less than
+        // the accumulated blocks.
+        let count = sqlx::query!(
+            r#"SELECT COUNT(*)
+        FROM fuel_blocks fb 
+        WHERE fb.height >= $1
+        AND NOT EXISTS (
+            SELECT 1 FROM bundles b 
+            WHERE fb.height BETWEEN b.start_height AND b.end_height
+            AND b.end_height >= $1
+        )"#,
+            i64::from(starting_height)
+        )
+        .fetch_one(&self.connection_pool)
+        .await?
+        .count
+        .unwrap_or_default();
 
-        let response = sqlx::query_as!(
+        if count == 0 {
+            return Ok(None);
+        }
+
+        let count = u64::try_from(count)
+            .map_err(|_| crate::error::Error::Conversion("invalid block count".to_string()))?;
+
+        let mut stream = sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
             SELECT fb.* 
@@ -493,30 +520,51 @@ impl Postgres {
             WHERE fb.height BETWEEN b.start_height AND b.end_height
             AND b.end_height >= $1
         ) 
-        ORDER BY fb.height 
-        LIMIT $2;
-            "#,
-            i64::from(starting_height), // Parameter $1
-            limit                       // Parameter $2
+        ORDER BY fb.height"#,
+            i64::from(starting_height),
         )
-        .fetch_all(&self.connection_pool)
-        .await
-        .map_err(Error::from)?;
+        .fetch(&self.connection_pool);
 
-        let sequential_blocks = response
-            .into_iter()
-            .map(CompressedFuelBlock::try_from)
-            .try_collect_nonempty()?
-            .map(SequentialFuelBlocks::from_first_sequence);
+        let mut blocks = vec![];
 
-        if let Some(sequential_blocks) = &sequential_blocks {
+        let mut total_bytes = 0;
+        let mut last_height: Option<u32> = None;
+        while let Some(val) = stream.try_next().await? {
+            let data_len = val.data.len();
+            if total_bytes + data_len > max_cumulative_bytes as usize {
+                break;
+            }
+
+            let block = CompressedFuelBlock::try_from(val)?;
+            let height = block.height;
+            total_bytes += data_len;
+
+            blocks.push(block);
+            match &mut last_height {
+                Some(last_height) if height != last_height.saturating_add(1) => {
+                    break;
+                }
+                _ => {
+                    last_height = Some(height);
+                }
+            }
+        }
+
+        let sequential_blocks =
+            NonEmpty::from_vec(blocks).map(SequentialFuelBlocks::from_first_sequence);
+
+        if let Some(sequential_blocks) = sequential_blocks {
             let lowest_unbundled_height = *sequential_blocks.height_range().start();
             self.metrics
                 .lowest_unbundled_height
                 .set(lowest_unbundled_height.into());
+            return Ok(Some(UnbundledBlocks {
+                oldest: sequential_blocks,
+                total_unbundled: (count as usize).try_into().expect("checked already"),
+            }));
         }
 
-        Ok(sequential_blocks)
+        Ok(None)
     }
 
     pub(crate) async fn _set_submission_completed(
