@@ -1,11 +1,11 @@
-use std::{iter::repeat, time::Duration};
+use std::{iter::repeat, num::NonZeroU32, time::Duration};
 
 use itertools::Itertools;
 use metrics::{prometheus, RegistersMetrics};
 use services::{
     fees::Fees,
     state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
-    types::{L1Tx, NonEmpty},
+    types::{Fragment, FragmentsSubmitted, L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_helpers::{mocks, noop_fees, preconfigured_fees};
@@ -726,5 +726,125 @@ async fn updates_current_height_to_commit_metric_without_latest_bundled_height()
         "current_height_to_commit should be set to latest_height - lookback_window (150 - 100 = 0)"
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn propagates_correct_priority_not_capped() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+
+    let mut l1_mock = services::state_committer::port::l1::MockApi::new();
+
+    l1_mock
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0) }));
+
+    l1_mock
+        .expect_submit_state_fragments()
+        .withf(|_, _, priority| priority.get() == 50.)
+        .return_once(
+            |fragments: NonEmpty<Fragment>, _prev_tx: Option<L1Tx>, _priority| {
+                Box::pin(async move {
+                    Ok((
+                        L1Tx::default(),
+                        FragmentsSubmitted {
+                            num_fragments: fragments.len_nonzero(),
+                        },
+                    ))
+                })
+            },
+        );
+
+    let fee_thresholds = FeeThresholds {
+        max_l2_blocks_behind: NonZeroU32::new(100).unwrap(),
+        ..Default::default()
+    };
+    let fee_algo = AlgoConfig {
+        fee_thresholds,
+        ..Default::default()
+    };
+
+    let state_committer_config = StateCommitterConfig {
+        fee_algo,
+        ..Default::default()
+    };
+
+    let _ = setup.insert_fragments(0, 1).await;
+
+    let mut state_committer = StateCommitter::new(
+        l1_mock,
+        test_helpers::mocks::fuel::latest_height_is(50),
+        setup.db(),
+        state_committer_config,
+        setup.test_clock(),
+        noop_fees(),
+    );
+
+    // when
+    state_committer.run().await?;
+
+    // then
+    // the mock expectation validates that the priority passed was 50.0.
+    Ok(())
+}
+
+#[tokio::test]
+async fn propagates_correct_priority_capped_at_100() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let test_clock = setup.test_clock();
+
+    let mut l1_mock = services::state_committer::port::l1::MockApi::new();
+    l1_mock
+        .expect_current_height()
+        .returning(|| Box::pin(async { Ok(0u64) }));
+
+    l1_mock
+        .expect_submit_state_fragments()
+        .withf(|_, _, priority| priority.get() == 100.0)
+        .returning(
+            |fragments: NonEmpty<Fragment>, _prev_tx: Option<L1Tx>, _priority| {
+                Box::pin(async move {
+                    Ok((
+                        L1Tx::default(),
+                        FragmentsSubmitted {
+                            num_fragments: fragments.len_nonzero(),
+                        },
+                    ))
+                })
+            },
+        );
+
+    let fee_thresholds = FeeThresholds {
+        max_l2_blocks_behind: 100.try_into().unwrap(),
+        ..Default::default()
+    };
+    let fee_algo = AlgoConfig {
+        fee_thresholds,
+        ..Default::default()
+    };
+
+    let state_committer_config = StateCommitterConfig {
+        fee_algo,
+        ..Default::default()
+    };
+
+    let _ = setup.insert_fragments(0, 1).await;
+
+    let mut state_committer = StateCommitter::new(
+        l1_mock,
+        test_helpers::mocks::fuel::latest_height_is(150),
+        setup.db(),
+        state_committer_config,
+        test_clock,
+        noop_fees(),
+    );
+
+    // when
+    state_committer.run().await?;
+
+    // then
+    // the mock expectation validates that the priority passed was capped at 100.0.
     Ok(())
 }

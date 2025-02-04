@@ -38,6 +38,7 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+eth = { workspace = true, features = ["test-helpers"] }
 alloy = { workspace = true, features = [
   "signer-local",
   "node-bindings",

@@ -183,11 +183,23 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Format:** Human-readable duration
   - **Example:** `300s`
 
-- **`COMMITTER__APP__TX_MAX_FEE`**
+- **`COMMITTER__APP__TX_FEES__MAX`**
 
   - **Description:** Maximum gas fee permitted for a transaction in wei.
   - **Type:** `u64`
   - **Example:** `4000000000000000`
+
+- **`COMMITTER__APP__TX_FEES__MIN_REWARD_PERC`**
+
+  - **Description:** Lowest reward percentage to use when the system is up to date with L2 block posting.
+  - **Type:** `f64`
+  - **Example:** `20.0`
+
+- **`COMMITTER__APP__TX_FEES__MAX_REWARD_PERC`**
+
+  - **Description:** Highest reward percentage to use when the system is very late with L2 block posting.
+  - **Type:** `f64`
+  - **Example:** `30.0`
 
 - **`COMMITTER__APP__SEND_TX_REQUEST_TIMEOUT`**
 

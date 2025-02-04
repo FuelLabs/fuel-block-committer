@@ -133,8 +133,8 @@ pub struct App {
     /// Interval after which to bump a pending tx
     #[serde(deserialize_with = "human_readable_duration")]
     pub gas_bump_timeout: Duration,
-    /// Max gas fee we permit a tx to have in wei
-    pub tx_max_fee: u64,
+    /// Tweak how we pay for a l1 transaction
+    pub tx_fees: TxFeesConfig,
     ///// Contains configs relating to block state posting to l1
     pub bundle: BundleConfig,
     //// Duration for timeout when sending tx requests
@@ -148,6 +148,16 @@ pub struct App {
     pub state_pruner_run_interval: Duration,
     /// Configuration for the fee algorithm used by the StateCommitter
     pub fee_algo: FeeAlgoConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Copy)]
+pub struct TxFeesConfig {
+    /// Max gas fee we permit a tx to have in wei
+    pub max: u64,
+    /// lowest reward percentage to use when we're up to date with l2 block posting (e.g. 20.)
+    pub min_reward_perc: f64,
+    /// highest reward percentage to use when we're very late with l2 block posting (e.g. 30.)
+    pub max_reward_perc: f64,
 }
 
 /// Configuration for the fee algorithm used by the StateCommitter

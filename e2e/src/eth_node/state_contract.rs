@@ -7,7 +7,9 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
 };
-use eth::{AwsClient, AwsConfig, Signer, Signers, WebsocketClient};
+use eth::{
+    AcceptablePriorityFeePercentages, AwsClient, AwsConfig, Signer, Signers, WebsocketClient,
+};
 use fs_extra::dir::{copy, CopyOptions};
 use serde::Deserialize;
 use services::types::{fuel::FuelBlock, Address};
@@ -42,6 +44,7 @@ impl DeployedContract {
             eth::TxConfig {
                 tx_max_fee,
                 send_tx_request_timeout,
+                acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::default(),
             },
         )
         .await?;

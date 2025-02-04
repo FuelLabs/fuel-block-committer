@@ -164,7 +164,7 @@ pub mod mocks {
             for (fragment, tx) in expectations {
                 l1_mock
                     .expect_submit_state_fragments()
-                    .withf(move |data, _previous_tx| {
+                    .withf(move |data, _previous_tx, _| {
                         if let Some(fragment) = &fragment {
                             data == fragment
                         } else {
@@ -172,7 +172,7 @@ pub mod mocks {
                         }
                     })
                     .once()
-                    .return_once(move |fragments, _previous_tx| {
+                    .return_once(move |fragments, _previous_tx, _| {
                         Box::pin(async move {
                             Ok((
                                 tx,
