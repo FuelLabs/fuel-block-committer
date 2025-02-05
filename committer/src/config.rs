@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use byte_unit::Byte;
 use clap::{command, Parser};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
@@ -184,6 +185,9 @@ pub struct BundleConfig {
     ///
     /// This timeout is measured from the moment the last blob transaction was finalized, or, if
     /// missing, from the application startup time.
+    ///
+    ///
+    /// We will bundle if the timeout happens even if we don't have enough bytes or blocks
     #[serde(deserialize_with = "human_readable_duration")]
     pub accumulation_timeout: Duration,
 
@@ -193,14 +197,18 @@ pub struct BundleConfig {
     /// If the system successfully accumulates this number of bytes before the `accumulation_timeout` is reached,
     /// the bundling process will start immediately. Otherwise, the bundling process will be triggered when the
     /// `accumulation_timeout` fires, regardless of the number of bytes accumulated.
+    ///
+    /// We will bundle if we accumulate this many bytes even if we don't have enough blocks
+    #[serde(deserialize_with = "human_readable_bytes")]
     pub bytes_to_accumulate: NonZeroUsize,
 
-    /// TODO: rephrase
+    /// If we accumulate these many blocks that aren't bundled we'll proceed with bundling even if
+    /// we haven't accumulated enough blocks
     pub blocks_to_accumulate: NonZeroUsize,
 
     /// TODO: rephrase
     /// target number of fragments the resulting bundle can be.
-    pub target_fragments_per_bundle: NonZeroUsize,
+    pub max_fragments_per_bundle: NonZeroUsize,
 
     /// Maximum duration allocated for determining the optimal bundle size.
     ///
@@ -266,6 +274,26 @@ where
         let msg = format!("Failed to parse duration '{duration_str}': {e};");
         serde::de::Error::custom(msg)
     })
+}
+
+fn human_readable_bytes<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration_str: String = Deserialize::deserialize(deserializer).unwrap();
+
+    let num_bytes = Byte::from_str(&duration_str)
+        .map_err(|e| {
+            let msg = format!("Failed to parse bytes '{duration_str}': {e};");
+            serde::de::Error::custom(msg)
+        })?
+        .as_u64() as usize;
+
+    if num_bytes == 0 {
+        return Err(serde::de::Error::custom("num bytes must be greater than 0"));
+    }
+
+    Ok(NonZeroUsize::new(num_bytes).expect("just checked"))
 }
 
 #[derive(Debug, Clone)]

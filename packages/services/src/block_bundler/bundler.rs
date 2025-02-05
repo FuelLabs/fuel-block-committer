@@ -90,7 +90,7 @@ pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
     bundle_encoder: bundle::Encoder,
     step_size: NonZeroUsize,
-    target_num_fragments: NonZeroUsize,
+    max_fragments: NonZeroUsize,
 }
 
 impl<L1> Factory<L1> {
@@ -98,13 +98,13 @@ impl<L1> Factory<L1> {
         gas_calc: L1,
         bundle_encoder: bundle::Encoder,
         step_size: NonZeroUsize,
-        target_num_fragments: NonZeroUsize,
+        max_fragments: NonZeroUsize,
     ) -> Self {
         Self {
             gas_calc,
             bundle_encoder,
             step_size,
-            target_num_fragments,
+            max_fragments,
         }
     }
 }
@@ -122,7 +122,7 @@ where
             self.bundle_encoder.clone(),
             self.step_size,
             id,
-            self.target_num_fragments,
+            self.max_fragments,
         )
     }
 }
@@ -137,10 +137,6 @@ struct Proposal {
 }
 
 impl Proposal {
-    fn meets_target(&self, target_num_fragments: NonZeroUsize) -> bool {
-        self.num_fragments <= target_num_fragments
-    }
-
     fn block_count(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.block_heights.clone().count()).expect("not empty range")
     }
@@ -161,7 +157,7 @@ pub struct Bundler<FragmentEncoder> {
     attempts_made: usize,
     max_blocks_in_bundle: NonZeroUsize,
     bundle_id: NonNegative<i32>,
-    target_num_fragments: NonZeroUsize,
+    max_fragments: NonZeroUsize,
 }
 
 impl<T> Bundler<T> {
@@ -171,7 +167,7 @@ impl<T> Bundler<T> {
         bundle_encoder: bundle::Encoder,
         initial_step_size: NonZeroUsize,
         bundle_id: NonNegative<i32>,
-        target_num_fragments: NonZeroUsize,
+        max_fragments: NonZeroUsize,
     ) -> Self {
         let max_blocks = blocks.len();
         let initial_step = initial_step_size;
@@ -186,14 +182,14 @@ impl<T> Bundler<T> {
             bundle_encoder,
             sizes_to_try: attempts,
             bundle_id,
-            target_num_fragments,
+            max_fragments,
             attempts_made: 0,
             max_blocks_in_bundle: max_blocks,
         }
     }
 
     fn save_if_best_so_far(&mut self, new_proposal: Proposal) {
-        if new_proposal.meets_target(self.target_num_fragments) {
+        if new_proposal.num_fragments <= self.max_fragments {
             match &mut self.best_valid_proposal {
                 Some(best)
                     if new_proposal.gas_per_uncompressed_byte()

@@ -3,7 +3,7 @@ pub mod bundler;
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
-    use humansize::FormatSizeOptions;
+    use byte_unit::Byte;
     use metrics::{
         custom_exponential_buckets,
         prometheus::{histogram_opts, linear_buckets, Histogram, IntGauge},
@@ -24,7 +24,7 @@ pub mod service {
     pub struct Config {
         pub optimization_time_limit: Duration,
         pub max_bundles_per_optimization_run: NonZeroUsize,
-        pub target_fragments_per_bundle: NonZeroUsize,
+        pub max_fragments_per_bundle: NonZeroUsize,
         pub accumulation_time_limit: Duration,
         pub bytes_to_accumulate: NonZeroUsize,
         pub blocks_to_accumulate: NonZeroUsize,
@@ -38,7 +38,7 @@ pub mod service {
                 optimization_time_limit: Duration::from_secs(100),
                 accumulation_time_limit: Duration::from_secs(100),
                 bytes_to_accumulate: NonZeroUsize::new(1).unwrap(),
-                target_fragments_per_bundle: NonZeroUsize::MAX,
+                max_fragments_per_bundle: NonZeroUsize::MAX,
                 lookback_window: 1000,
                 max_bundles_per_optimization_run: 1.try_into().unwrap(),
                 blocks_to_accumulate: NonZeroUsize::new(10).unwrap(),
@@ -228,14 +228,10 @@ pub mod service {
                 && !has_more
                 && still_time_to_accumulate_more;
 
-            let available_data =
-                humansize::format_size(cum_size.get(), FormatSizeOptions::default());
+            let available_data = human_readable_size(cum_size);
 
             if should_wait {
-                let needed_data = humansize::format_size(
-                    self.config.bytes_to_accumulate.get(),
-                    FormatSizeOptions::default(),
-                );
+                let needed_data = human_readable_size(self.config.bytes_to_accumulate);
 
                 let until_timeout = humantime::format_duration(
                     self.config
@@ -301,6 +297,12 @@ pub mod service {
 
             Ok(elapsed >= self.config.optimization_time_limit)
         }
+    }
+
+    fn human_readable_size(num_bytes: std::num::NonZero<usize>) -> String {
+        let unit = Byte::from_u64(num_bytes.get() as u64)
+            .get_appropriate_unit(byte_unit::UnitType::Decimal);
+        format!("{unit:.3}")
     }
 
     impl<FuelApi, Db, Clock, BF> Runner for BlockBundler<FuelApi, Db, Clock, BF>
