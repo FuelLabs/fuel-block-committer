@@ -20,6 +20,7 @@ pub type FuelApi = fuel::HttpClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dbg!("main");
     setup::logger();
 
     let config = config::parse().with_context(|| "failed to parse config")?;
