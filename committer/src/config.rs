@@ -45,6 +45,13 @@ impl Config {
             ));
         }
 
+        if self.app.bundle.block_height_lookback < self.app.bundle.blocks_to_accumulate.get() as u32
+        {
+            return Err(crate::errors::Error::Other(
+                "block_height_lookback must be >= blocks_to_accumulate".to_string(),
+            ));
+        }
+
         if let Err(e) = self.validated_fee_algo_config() {
             return Err(crate::errors::Error::Other(format!(
                 "Invalid fee algo config: {e}",
