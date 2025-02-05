@@ -1270,8 +1270,6 @@ async fn take_blocks_until_limit(
 
         blocks.push(block);
 
-        // we're just breaking for performance/resource usage, `from_first_sequence` below is going to get the
-        // oldest sequence anyway
         match &mut last_height {
             Some(last_height) if height != last_height.saturating_add(1) => {
                 break;
