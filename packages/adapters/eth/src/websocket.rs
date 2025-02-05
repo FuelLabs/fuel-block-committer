@@ -11,6 +11,7 @@ use alloy::{
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
+    state_committer::port::l1::Priority,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
         TransactionResponse, U256,
@@ -110,6 +111,7 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
                 &self,
                 fragments: NonEmpty<Fragment>,
                 previous_tx: Option<services::types::L1Tx>,
+                priority: Priority
             ) -> Result<(L1Tx, FragmentsSubmitted)>;
         }
     }
@@ -158,6 +160,58 @@ impl L1Keys {
 pub struct TxConfig {
     pub tx_max_fee: u128,
     pub send_tx_request_timeout: Duration,
+    pub acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages,
+}
+
+#[cfg(feature = "test-helpers")]
+impl Default for TxConfig {
+    fn default() -> Self {
+        Self {
+            tx_max_fee: u128::MAX,
+            send_tx_request_timeout: Duration::from_secs(10),
+            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AcceptablePriorityFeePercentages {
+    min: f64,
+    max: f64,
+}
+
+#[cfg(feature = "test-helpers")]
+impl Default for AcceptablePriorityFeePercentages {
+    fn default() -> Self {
+        Self::new(20., 20.).expect("valid reward percentile range")
+    }
+}
+
+impl AcceptablePriorityFeePercentages {
+    pub fn new(min: f64, max: f64) -> Result<Self> {
+        if min > max {
+            return Err(services::Error::Other(
+                "min reward percentile must be less than or equal to max reward percentile"
+                    .to_string(),
+            ));
+        }
+
+        if min <= 0.0 || max > 100.0 {
+            return Err(services::Error::Other(
+                "reward percentiles must be > 0 and <= 100".to_string(),
+            ));
+        }
+
+        Ok(Self { min, max })
+    }
+
+    pub fn apply(&self, priority: Priority) -> f64 {
+        let min = self.min;
+
+        let increase = (self.max - min) * priority.get() / 100.;
+
+        (min + increase).min(self.max)
+    }
 }
 
 // This trait is needed because you cannot write `dyn TraitA + TraitB` except when TraitB is an
@@ -268,14 +322,7 @@ impl WebsocketClient {
             .map(|signer| TxSigner::address(&signer));
         let contract_caller_address = TxSigner::address(&signers.main);
 
-        let provider = WsConnection::connect(
-            url,
-            contract_address,
-            signers,
-            tx_config.tx_max_fee,
-            tx_config.send_tx_request_timeout,
-        )
-        .await?;
+        let provider = WsConnection::connect(url, contract_address, signers, tx_config).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
@@ -327,10 +374,11 @@ impl WebsocketClient {
         &self,
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<services::types::L1Tx>,
+        priority: Priority,
     ) -> Result<(L1Tx, FragmentsSubmitted)> {
         Ok(self
             .inner
-            .submit_state_fragments(fragments, previous_tx)
+            .submit_state_fragments(fragments, previous_tx, priority)
             .await?)
     }
 
@@ -366,6 +414,7 @@ impl RegistersMetrics for WebsocketClient {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use services::state_committer::port::l1::Priority;
 
     use super::L1Key;
 
@@ -391,5 +440,41 @@ mod tests {
 
         // then
         assert_eq!(key, L1Key::Kms("0x1234".to_owned()));
+    }
+
+    #[test]
+    fn lowest_priority_gives_min_priority_fee_perc() {
+        // given
+        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
+
+        // when
+        let fee_perc = sut.apply(Priority::MIN);
+
+        // then
+        assert_eq!(fee_perc, 20.);
+    }
+
+    #[test]
+    fn medium_priority_gives_middle_priority_fee_perc() {
+        // given
+        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
+
+        // when
+        let fee_perc = sut.apply(Priority::new(50.).unwrap());
+
+        // then
+        assert_eq!(fee_perc, 30.);
+    }
+
+    #[test]
+    fn highest_priority_gives_max_priority_fee_perc() {
+        // given
+        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
+
+        // when
+        let fee_perc = sut.apply(Priority::MAX);
+
+        // then
+        assert_eq!(fee_perc, 40.);
     }
 }

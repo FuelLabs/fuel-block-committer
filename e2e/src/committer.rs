@@ -76,7 +76,6 @@ impl Committer {
             .env("COMMITTER__APP__L1_FEE_CHECK_INTERVAL", "5s")
             .env("COMMITTER__APP__NUM_BLOCKS_TO_FINALIZE_TX", "3")
             .env("COMMITTER__APP__GAS_BUMP_TIMEOUT", "300s")
-            .env("COMMITTER__APP__TX_MAX_FEE", "4000000000000000")
             .env("COMMITTER__APP__SEND_TX_REQUEST_TIMEOUT", "10s")
             .env(
                 "COMMITTER__APP__BUNDLE__ACCUMULATION_TIMEOUT",
@@ -134,6 +133,9 @@ impl Committer {
                 "COMMITTER__APP__FEE_ALGO__ALWAYS_ACCEPTABLE_FEE",
                 u64::MAX.to_string(),
             )
+            .env("COMMITTER__APP__TX_FEES__MAX", "4000000000000000")
+            .env("COMMITTER__APP__TX_FEES__MIN_REWARD_PERC", "20")
+            .env("COMMITTER__APP__TX_FEES__MAX_REWARD_PERC", "30")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 

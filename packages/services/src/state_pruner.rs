@@ -34,14 +34,15 @@ pub mod service {
     {
         pub async fn prune(&self) -> Result<()> {
             let pre_pruning_table_sizes = self.storage.table_sizes().await?;
-            self.storage
+            let pruned_blocks_range = self
+                .storage
                 .prune_entries_older_than(self.clock.now() - self.retention)
                 .await?;
 
             let post_pruning_table_sizes = self.storage.table_sizes().await?;
             let pruned = diff_dbg_str(&pre_pruning_table_sizes, &post_pruning_table_sizes);
 
-            tracing::info!("Pruned: {pruned}");
+            tracing::info!("Pruned: {pruned} with {pruned_blocks_range:?}");
             tracing::info!("Table sizes: {post_pruning_table_sizes:?}");
 
             self.metrics.observe_table_sizes(&post_pruning_table_sizes);
@@ -101,6 +102,7 @@ pub mod service {
         fragments: IntGauge,
         transaction_fragments: IntGauge,
         bundles: IntGauge,
+        bundle_costs: IntGauge,
         blocks: IntGauge,
         contract_transactions: IntGauge,
         contract_submissions: IntGauge,
@@ -121,6 +123,7 @@ pub mod service {
                 .transaction_fragments
                 .set(sizes.transaction_fragments.into());
             self.sizes.bundles.set(sizes.bundles.into());
+            self.sizes.bundle_costs.set(sizes.bundle_costs.into());
             self.sizes.blocks.set(sizes.blocks.into());
             self.sizes
                 .contract_transactions
@@ -138,6 +141,7 @@ pub mod service {
                 Box::new(self.metrics.sizes.fragments.clone()),
                 Box::new(self.metrics.sizes.transaction_fragments.clone()),
                 Box::new(self.metrics.sizes.bundles.clone()),
+                Box::new(self.metrics.sizes.bundle_costs.clone()),
                 Box::new(self.metrics.sizes.blocks.clone()),
                 Box::new(self.metrics.sizes.contract_transactions.clone()),
                 Box::new(self.metrics.sizes.contract_submissions.clone()),
@@ -156,6 +160,7 @@ pub mod service {
                 "Transaction fragments table size.",
             );
             let bundles = create_int_gauge("tsize_bundles", "Bundles table size.");
+            let bundle_costs = create_int_gauge("tsize_bundle_costs", "Bundle costs table size.");
             let blocks = create_int_gauge("tsize_blocks", "Blocks table size.");
             let contract_transactions = create_int_gauge(
                 "tsize_contract_transactions",
@@ -171,6 +176,7 @@ pub mod service {
                 fragments,
                 transaction_fragments,
                 bundles,
+                bundle_costs,
                 blocks,
                 contract_transactions,
                 contract_submissions,
@@ -199,10 +205,16 @@ pub mod port {
         pub contract_submissions: u32,
     }
 
+    #[derive(Debug, Clone)]
+    pub struct PrunedBlocksRange {
+        pub start_height: u32,
+        pub end_height: u32,
+    }
+
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Sync {
-        async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()>;
+        async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<PrunedBlocksRange>;
         async fn table_sizes(&self) -> Result<TableSizes>;
     }
 

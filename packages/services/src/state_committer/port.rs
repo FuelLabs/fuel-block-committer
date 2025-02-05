@@ -10,13 +10,35 @@ pub mod l1 {
 
     use crate::{
         types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
-        Result,
+        Error, Result,
     };
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
     pub trait Contract: Sync {
         async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+    pub struct Priority(f64);
+
+    impl Priority {
+        pub const MIN: Self = Self(0.);
+        pub const MAX: Self = Self(100.);
+
+        pub fn new(percent: f64) -> Result<Self> {
+            if !(0. ..=100.).contains(&percent) {
+                return Err(Error::Other(
+                    "priority must be between 0 and 100".to_string(),
+                ));
+            }
+
+            Ok(Self(percent))
+        }
+
+        pub fn get(&self) -> f64 {
+            self.0
+        }
     }
 
     #[allow(async_fn_in_trait)]
@@ -28,6 +50,7 @@ pub mod l1 {
             &self,
             fragments: NonEmpty<Fragment>,
             previous_tx: Option<L1Tx>,
+            priority: Priority,
         ) -> Result<(L1Tx, FragmentsSubmitted)>;
     }
 }
