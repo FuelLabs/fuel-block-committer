@@ -264,7 +264,7 @@ pub mod service {
         }
 
         async fn find_optimal_bundle<B: Bundle>(&self, mut bundler: B) -> Result<BundleProposal> {
-            // TODO: The current approach can lead to excessive optimization time when we are far behind. Maybe we should scale the optimization time depending on how behing bundling we are.
+            // TODO: The current approach can lead to excessive optimization time when we are far behind. Maybe we should scale the optimization time depending on how behind bundling we are.
             let optimization_start = self.clock.now();
 
             while bundler
