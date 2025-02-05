@@ -2662,6 +2662,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "delegate",
+ "eth",
  "fuel-block-committer-encoding",
  "futures",
  "itertools 0.13.0",
