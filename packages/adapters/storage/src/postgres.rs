@@ -480,8 +480,6 @@ impl Postgres {
     }
 
     pub(crate) async fn total_unbundled_blocks(&self, starting_height: u32) -> Result<u64> {
-        // We're probably not doing snapshot isolation, so the count could very well be less than
-        // the accumulated blocks.
         let count = sqlx::query!(
             r#"SELECT COUNT(*)
                 FROM fuel_blocks fb 
@@ -509,6 +507,11 @@ impl Postgres {
         starting_height: u32,
         max_cumulative_bytes: u32,
     ) -> Result<Option<UnbundledBlocks>> {
+        // We're not using snapshot isolation here, so the count may change by the time
+        // we retrieve the blocks. If the pruner is configured aggressively to track the
+        // lookback window closely, the worst-case scenario is a temporary over- or
+        // underestimation of the block count. This discrepancy should resolve quickly,
+        // making the overhead of a snapshot-isolated transaction unnecessary.
         let total_unbundled_blocks = self.total_unbundled_blocks(starting_height).await?;
 
         if total_unbundled_blocks == 0 {
