@@ -803,11 +803,10 @@ async fn test_fallback_to_smallest_invalid_proposal() {
 #[tokio::test]
 async fn respects_target_bundle_size() {
     // given
-    // in total 300B
     let blocks = generate_storage_block_sequence(0..=1, enough_bytes_to_almost_fill_a_blob());
 
     // bundle should fit in 1 blob
-    let target_size = NonZeroUsize::new(1).unwrap();
+    let max_fragments = NonZeroUsize::new(1).unwrap();
 
     let mut bundler = Bundler::new(
         BlobEncoder,
@@ -815,7 +814,7 @@ async fn respects_target_bundle_size() {
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(),
         1u16.into(),
-        target_size,
+        max_fragments,
     );
     while bundler.advance(1.try_into().unwrap()).await.unwrap() {}
 
@@ -831,12 +830,12 @@ async fn respects_target_bundle_size() {
     assert_eq!(
         final_bundle.metadata.block_heights,
         0..=0,
-        "Expected one block to fit in bundle"
+        "Expected one block to fit in fragment"
     );
 
     assert!(
-        final_bundle.metadata.num_fragments <= target_size,
-        "Bundle should not exceed target size"
+        final_bundle.metadata.num_fragments <= max_fragments,
+        "Bundle should not exceed max_fragments"
     );
 }
 
