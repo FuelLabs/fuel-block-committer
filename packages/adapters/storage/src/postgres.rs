@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
-use futures::TryStreamExt;
+use futures::{stream::BoxStream, TryStreamExt};
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use services::{
@@ -479,22 +479,18 @@ impl Postgres {
         Ok(response)
     }
 
-    pub(crate) async fn _lowest_unbundled_blocks(
-        &self,
-        starting_height: u32,
-        max_cumulative_bytes: u32,
-    ) -> Result<Option<UnbundledBlocks>> {
+    pub(crate) async fn total_unbundled_blocks(&self, starting_height: u32) -> Result<u64> {
         // We're probably not doing snapshot isolation, so the count could very well be less than
         // the accumulated blocks.
         let count = sqlx::query!(
             r#"SELECT COUNT(*)
-        FROM fuel_blocks fb 
-        WHERE fb.height >= $1
-        AND NOT EXISTS (
-            SELECT 1 FROM bundles b 
-            WHERE fb.height BETWEEN b.start_height AND b.end_height
-            AND b.end_height >= $1
-        )"#,
+                FROM fuel_blocks fb 
+                WHERE fb.height >= $1
+                AND NOT EXISTS (
+                    SELECT 1 FROM bundles b 
+                    WHERE fb.height BETWEEN b.start_height AND b.end_height
+                    AND b.end_height >= $1
+                )"#,
             i64::from(starting_height)
         )
         .fetch_one(&self.connection_pool)
@@ -502,14 +498,51 @@ impl Postgres {
         .count
         .unwrap_or_default();
 
-        if count == 0 {
-            return Ok(None);
-        }
-
         let count = u64::try_from(count)
             .map_err(|_| crate::error::Error::Conversion("invalid block count".to_string()))?;
 
-        let mut stream = sqlx::query_as!(
+        Ok(count)
+    }
+
+    pub(crate) async fn _lowest_unbundled_blocks(
+        &self,
+        starting_height: u32,
+        max_cumulative_bytes: u32,
+    ) -> Result<Option<UnbundledBlocks>> {
+        let total_unbundled_blocks = self.total_unbundled_blocks(starting_height).await?;
+
+        if total_unbundled_blocks == 0 {
+            return Ok(None);
+        }
+
+        let stream = self.stream_unbundled_blocks(starting_height);
+        let blocks = take_blocks_until_limit(stream, max_cumulative_bytes).await?;
+
+        let sequential_blocks = {
+            let Some(nonempty_blocks) = NonEmpty::from_vec(blocks) else {
+                return Ok(None);
+            };
+            SequentialFuelBlocks::from_first_sequence(nonempty_blocks)
+        };
+
+        let lowest_unbundled_height = *sequential_blocks.height_range().start();
+        self.metrics
+            .lowest_unbundled_height
+            .set(lowest_unbundled_height.into());
+
+        Ok(Some(UnbundledBlocks {
+            oldest: sequential_blocks,
+            total_unbundled: (total_unbundled_blocks as usize)
+                .try_into()
+                .expect("checked already"),
+        }))
+    }
+
+    fn stream_unbundled_blocks(
+        &self,
+        starting_height: u32,
+    ) -> BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>> {
+        sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
             SELECT fb.* 
@@ -523,48 +556,7 @@ impl Postgres {
         ORDER BY fb.height"#,
             i64::from(starting_height),
         )
-        .fetch(&self.connection_pool);
-
-        let mut blocks = vec![];
-
-        let mut total_bytes = 0;
-        let mut last_height: Option<u32> = None;
-        while let Some(val) = stream.try_next().await? {
-            let data_len = val.data.len();
-            if total_bytes + data_len > max_cumulative_bytes as usize {
-                break;
-            }
-
-            let block = CompressedFuelBlock::try_from(val)?;
-            let height = block.height;
-            total_bytes += data_len;
-
-            blocks.push(block);
-            match &mut last_height {
-                Some(last_height) if height != last_height.saturating_add(1) => {
-                    break;
-                }
-                _ => {
-                    last_height = Some(height);
-                }
-            }
-        }
-
-        let sequential_blocks =
-            NonEmpty::from_vec(blocks).map(SequentialFuelBlocks::from_first_sequence);
-
-        if let Some(sequential_blocks) = sequential_blocks {
-            let lowest_unbundled_height = *sequential_blocks.height_range().start();
-            self.metrics
-                .lowest_unbundled_height
-                .set(lowest_unbundled_height.into());
-            return Ok(Some(UnbundledBlocks {
-                oldest: sequential_blocks,
-                total_unbundled: (count as usize).try_into().expect("checked already"),
-            }));
-        }
-
-        Ok(None)
+        .fetch(&self.connection_pool)
     }
 
     pub(crate) async fn _set_submission_completed(
@@ -1253,6 +1245,41 @@ impl Postgres {
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
         })
     }
+}
+
+async fn take_blocks_until_limit(
+    mut stream: BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
+    max_cumulative_bytes: u32,
+) -> Result<Vec<CompressedFuelBlock>> {
+    let mut blocks = vec![];
+
+    let mut total_bytes = 0;
+    let mut last_height: Option<u32> = None;
+    while let Some(val) = stream.try_next().await? {
+        let data_len = val.data.len();
+        if total_bytes + data_len > max_cumulative_bytes as usize {
+            break;
+        }
+
+        let block = CompressedFuelBlock::try_from(val)?;
+        let height = block.height;
+        total_bytes += data_len;
+
+        blocks.push(block);
+
+        // we're just breaking for performance/resource usage, `from_first_sequence` below is going to get the
+        // oldest sequence anyway
+        match &mut last_height {
+            Some(last_height) if height != last_height.saturating_add(1) => {
+                break;
+            }
+            _ => {
+                last_height = Some(height);
+            }
+        }
+    }
+
+    Ok(blocks)
 }
 
 fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
