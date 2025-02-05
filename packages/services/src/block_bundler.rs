@@ -171,12 +171,6 @@ pub mod service {
                 )
                 .await?
             {
-                // TODO: what about when you move the lookback and import hasn't had time to fill
-                // the hole yet but you also have a lot of blocks that are newer but not bundled,
-                // wouldn't you like bundled 1 block at a time then?
-                //
-                // TODO: the optimization time being large when we're too far behind is not
-                // acceptable
                 if self.should_wait(&oldest, total_unbundled)? {
                     return Ok(());
                 }
@@ -218,11 +212,19 @@ pub mod service {
             let cum_size = blocks.cumulative_size();
             let has_more = total_available > blocks.len();
 
-            // TODO: segfault
-            // explain the motivation behind using total_available vs blocks.len() (the case when
-            // we couldn't get unstuck because we had few blocks and a big hole separating them
-            // from the remaining unbundled blocks)
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
+            // We use `total_available` because we previously encountered a scenario with:
+            // - A few very large blocks,
+            // - Followed by a long sequence of bundled blocks,
+            // - And then additional unbundled blocks.
+            // Since bundling required a fixed number of sequential blocks, the process skipped over
+            // the blocks before the gap until a timeout occurred. Even after timing out, only one bundle
+            // was created, and then the system waited for another timeout. To avoid this, we ignore the
+            // total count of unbundled blocks when deciding whether to wait. The trade-off is that if there
+            // is a gap of unimported blocks followed by many unbundled blocks, processing of the newer
+            // blocks is deferred until the older ones are bundled. This can lead to the creation of small
+            // bundles if the import process cannot supply blocks quickly enough.
+
             let should_wait = cum_size < self.config.bytes_to_accumulate
                 && total_available < self.config.blocks_to_accumulate
                 && !has_more
@@ -241,12 +243,12 @@ pub mod service {
                 );
 
                 tracing::info!(
-                    "Not bundling yet ({available_data}/{needed_data}, {total_available}/{} blocks accumulated, timeout in {until_timeout}); waiting for more.",
-                    self.config.blocks_to_accumulate
-                );
+            "Not bundling yet (accumulated {available_data} of required {needed_data}, {total_available}/{} blocks accumulated, timeout in {until_timeout}); waiting for more.",
+            self.config.blocks_to_accumulate
+        );
             } else {
                 tracing::info!(
-                    "Proceeding to bundle with {} blocks ({available_data}).",
+                    "Proceeding to bundle with {} blocks (accumulated {available_data}).",
                     blocks.len()
                 );
             }
@@ -262,6 +264,7 @@ pub mod service {
         }
 
         async fn find_optimal_bundle<B: Bundle>(&self, mut bundler: B) -> Result<BundleProposal> {
+            // TODO: The current approach can lead to excessive optimization time when we are far behind. Maybe we should scale the optimization time depending on how behing bundling we are.
             let optimization_start = self.clock.now();
 
             while bundler
