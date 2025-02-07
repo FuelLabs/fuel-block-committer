@@ -2260,6 +2260,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "da"
+version = "0.10.5"
+
+[[package]]
 name = "darling"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2602,6 +2606,7 @@ dependencies = [
  "k256",
  "prost",
  "services",
+ "sha3",
  "signers",
  "thiserror 1.0.69",
  "tokio",
@@ -6099,6 +6104,8 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
+ "base64 0.22.1",
+ "hex",
  "k256",
  "serde",
  "serde_json",

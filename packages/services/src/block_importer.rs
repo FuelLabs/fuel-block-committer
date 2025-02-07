@@ -38,7 +38,7 @@ pub mod service {
 
             self.storage.insert_blocks(blocks).await?;
 
-            info!("Imported blocks: {starting_height}..={ending_height}");
+            //info!("Imported blocks: {starting_height}..={ending_height}");
 
             Ok(())
         }

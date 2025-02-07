@@ -104,6 +104,8 @@ pub struct EigenDA {
     /// URL to an EigenDA RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
+    // Allocated throughput in MiB for the address corresponding to the key
+    // pub throughput: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

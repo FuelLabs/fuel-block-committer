@@ -147,9 +147,9 @@ pub async fn create_key(
         Ok(signature.normalize_s().unwrap_or(signature))
     }
 
-    fn recover_id(
+    fn determine_recovery_id(
         &self,
-        data: &[u8],
+        prehash: &[u8],
         signature: &Signature,
         public_key: &[u8],
     ) -> anyhow::Result<u8> {
@@ -158,7 +158,7 @@ pub async fn create_key(
         // try both possible recovery IDs
         for recovery_id in 0..2 {
             if let Ok(recovered_key) = VerifyingKey::recover_from_prehash(
-                data,
+                prehash,
                 signature,
                 RecoveryId::from_byte(recovery_id).expect("valid recovery id"),
             ) {
@@ -171,15 +171,13 @@ pub async fn create_key(
         Err(anyhow::anyhow!("Could not determine recovery ID"))
     }
 
-    pub async fn sign_prehash(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Vec<u8>> {
-        // Get public key and signature
+    pub async fn sign_prehash(&self, key_id: &str, prehash: &[u8]) -> anyhow::Result<Vec<u8>> {
         let public_key = self.get_public_key(key_id).await?;
-        let signature = self.get_raw_signature(key_id, data).await?;
+        let signature = self.get_raw_signature(key_id, prehash).await?;
         
-        // Recover the correct v value
-        let recovery_id = self.recover_id(data, &signature, &public_key)?;
+        let recovery_id = self.determine_recovery_id(prehash, &signature, &public_key)?;
         
-        // Combine r, s, and v into final signature
+        // combine into final signature
         let mut signature_bytes = signature.to_bytes().to_vec();
         signature_bytes.push(recovery_id);
         

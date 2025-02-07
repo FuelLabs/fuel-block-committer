@@ -73,21 +73,19 @@ mod tests {
 
     #[test]
     fn test_edge_cases() {
-        // Empty input
         let empty: Vec<u8> = vec![];
         assert_eq!(
             empty,
             remove_empty_byte_from_padded_bytes(&convert_by_padding_empty_byte(&empty))
         );
 
-        // Single byte
         let small = vec![0xBB];
         assert_eq!(
             small,
             remove_empty_byte_from_padded_bytes(&convert_by_padding_empty_byte(&small))
         );
 
-        // Exact multiple of 31
+        // exact multiple of 31
         let exact = vec![0xCC; 31 * 4];
         assert_eq!(
             exact,
@@ -97,14 +95,14 @@ mod tests {
 
     #[test]
     fn test_padding() {
-        // Test padding of 31 bytes becomes 32 bytes
+        // test padding of 31 bytes becomes 32 bytes
         let input31 = vec![1; 31];
         let padded = convert_by_padding_empty_byte(&input31);
         assert_eq!(padded.len(), 32);
         assert_eq!(padded[0], 0x00);
         assert_eq!(&padded[1..], &input31[..]);
 
-        // Test padding of 32 bytes becomes 34 bytes
+        // test padding of 32 bytes becomes 34 bytes
         let input32 = vec![2; 32];
         let padded = convert_by_padding_empty_byte(&input32);
         assert_eq!(padded.len(), 34);

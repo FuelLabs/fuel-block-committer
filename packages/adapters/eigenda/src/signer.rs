@@ -1,10 +1,8 @@
 use signers::{AwsKmsClient, KeySource};
 
-use crate::error::ConnectorError;
+use crate::error::EigenDAError;
 
-pub struct SignedMessage {
-    pub data: Vec<u8>,
-}
+type SignedMessage = Vec<u8>;
 
 #[derive(Debug, Clone)]
 pub enum EigenDASigner {
@@ -24,15 +22,14 @@ impl AwsSigner {
         Self { key_id, client }
     }
 
-    async fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage, ConnectorError> {
-        // TODO unwrap
+    async fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage, EigenDAError> {
         let signed = self
             .client
             .sign_prehash(&self.key_id, message)
             .await
-            .unwrap();
+            .map_err(|e| EigenDAError::Other(format!("failed to sign message: {}", e.to_string())))?;
 
-        Ok(SignedMessage { data: signed })
+        Ok(signed)
     }
 
     async fn account_id(&self) -> String {
@@ -40,10 +37,6 @@ impl AwsSigner {
         format!("0x{}", hex::encode(pk))
     }
 }
-
-// get the public key from the signing key
-// let public_key = signing_key.verifying_key().to_encoded_point(false);
-// let account_id = format!("0x{}", hex::encode(public_key.as_bytes()));
 
 impl EigenDASigner {
     pub async fn new(key: KeySource) -> Self {
@@ -53,7 +46,7 @@ impl EigenDASigner {
         }
     }
 
-    pub async fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage, ConnectorError> {
+    pub async fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage, EigenDAError> {
         match self {
             Self::AwsKms(signer) => signer.sign_prehash(message).await,
         }
