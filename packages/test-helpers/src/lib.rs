@@ -17,7 +17,7 @@ use services::{
         Fees,
     },
     state_listener::service::StateListener,
-    types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
+    types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, DASubmission, EthereumDetails, Fragment, NonEmpty},
     BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
 };
 use storage::{DbWithProcess, PostgresProcess};
@@ -41,8 +41,7 @@ pub mod mocks {
         use delegate::delegate;
         use mockall::{predicate::eq, Sequence};
         use services::types::{
-            BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
-            TransactionResponse,
+            BlockSubmissionTx, DASubmission, EthereumDetails, Fragment, FragmentsSubmitted, L1Height, NonEmpty, TransactionResponse
         };
 
         pub struct FullL1Mock {
@@ -156,11 +155,11 @@ pub mod mocks {
         }
 
         pub fn expects_state_submissions(
-            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, L1Tx)>,
-        ) -> services::state_committer::port::l1::MockApi {
+            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, DASubmission<EthereumDetails>)>,
+        ) -> services::state_committer::port::da_layer::MockApi {
             let mut sequence = Sequence::new();
 
-            let mut l1_mock = services::state_committer::port::l1::MockApi::new();
+            let mut l1_mock = services::state_committer::port::da_layer::MockApi::new();
 
             for (fragment, tx) in expectations {
                 l1_mock
@@ -546,9 +545,12 @@ impl Setup {
     pub async fn send_fragments(&self, eth_tx: [u8; 32], eth_nonce: u32) {
         let mut l1_mock = mocks::l1::expects_state_submissions(vec![(
             None,
-            L1Tx {
+            DASubmission {
                 hash: eth_tx,
-                nonce: eth_nonce,
+                details: EthereumDetails {
+                    nonce: eth_nonce,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )]);
@@ -569,7 +571,6 @@ impl Setup {
             },
             self.test_clock.clone(),
             noop_fees(),
-            None::<EigenDAClient>,
         )
         .run()
         .await
@@ -585,9 +586,12 @@ impl Setup {
 
         let mut l1_mock = mocks::l1::expects_state_submissions(vec![(
             None,
-            L1Tx {
+            DASubmission {
                 hash: eth_tx,
-                nonce: eth_nonce,
+                details: EthereumDetails {
+                    nonce: eth_nonce,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )]);
@@ -609,7 +613,6 @@ impl Setup {
             },
             self.test_clock.clone(),
             noop_fees(),
-            None::<EigenDAClient>,
         );
         committer.run().await.unwrap();
 

@@ -1,8 +1,10 @@
 use std::num::NonZeroU32;
 
 use num_bigint::BigInt;
+use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use services::types::{
-    BlockSubmissionTx, CompressedFuelBlock, DateTime, NonEmpty, NonNegative, TransactionState, Utc,
+    BlockSubmissionTx, CompressedFuelBlock, DateTime, NonEmpty, NonNegative, TransactionState, Utc
 };
 use sqlx::types::BigDecimal;
 
@@ -313,19 +315,16 @@ impl TryFrom<DBCompressedFuelBlock> for CompressedFuelBlock {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct L1Tx {
+pub struct DASubmission {
     pub id: i32,
     pub hash: Vec<u8>,
-    pub nonce: i64,
-    pub max_fee: BigDecimal,
-    pub priority_fee: BigDecimal,
-    pub blob_fee: BigDecimal,
     pub created_at: Option<DateTime<Utc>>,
     pub state: i16,
     pub finalized_at: Option<DateTime<Utc>>,
+    pub details: Value,
 }
 
-impl L1Tx {
+impl DASubmission {
     pub fn parse_state(&self) -> Result<TransactionState, crate::error::Error> {
         match (self.state, self.finalized_at) {
             (0, _) => Ok(TransactionState::Pending),
@@ -348,17 +347,16 @@ impl L1Tx {
     }
 }
 
-impl From<services::types::L1Tx> for L1Tx {
-    fn from(value: services::types::L1Tx) -> Self {
-        let max_fee = u128_to_bigdecimal(value.max_fee);
-        let priority_fee = u128_to_bigdecimal(value.priority_fee);
-        let blob_fee = u128_to_bigdecimal(value.blob_fee);
-
+impl<D: Serialize> From<services::types::DASubmission<D>> for DASubmission {
+    fn from(value: services::types::DASubmission<D>) -> Self {
         let state = L1TxState::from(&value.state).into();
         let finalized_at = match value.state {
             TransactionState::Finalized(finalized_at) => Some(finalized_at),
             _ => None,
         };
+
+        // TODO unwrap
+        let details = serde_json::to_value(value.details).expect("TEST");
 
         Self {
             // if not present use placeholder as id is given by db
@@ -366,19 +364,18 @@ impl From<services::types::L1Tx> for L1Tx {
             hash: value.hash.to_vec(),
             state,
             finalized_at,
-            nonce: value.nonce as i64,
-            max_fee,
-            priority_fee,
-            blob_fee,
             created_at: value.created_at,
+            details,
         }
     }
 }
 
-impl TryFrom<L1Tx> for services::types::L1Tx {
+impl<D> TryFrom<DASubmission> for services::types::DASubmission<D>
+where D: DeserializeOwned + Serialize
+{
     type Error = crate::error::Error;
 
-    fn try_from(value: L1Tx) -> Result<Self, Self::Error> {
+    fn try_from(value: DASubmission) -> Result<Self, Self::Error> {
         let hash = value.hash.as_slice();
         let Ok(hash) = hash.try_into() else {
             bail!("Expected 32 bytes for transaction hash, but got: {hash:?} from db",);
@@ -392,15 +389,16 @@ impl TryFrom<L1Tx> for services::types::L1Tx {
             ))
         })?;
 
+        let details: D = serde_json::from_value(value.details).map_err(|_| {
+            Self::Error::Conversion("Could not deserialize `details` from db".to_string())
+        })?;
+
         Ok(Self {
             id: Some(id),
             hash,
             state,
-            nonce: value.nonce as u32,
-            max_fee: bigdecimal_to_u128(value.max_fee)?,
-            priority_fee: bigdecimal_to_u128(value.priority_fee)?,
-            blob_fee: bigdecimal_to_u128(value.blob_fee)?,
             created_at: value.created_at,
+            details
         })
     }
 }

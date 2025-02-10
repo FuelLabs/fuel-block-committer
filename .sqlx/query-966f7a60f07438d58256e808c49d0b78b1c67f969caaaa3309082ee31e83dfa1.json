@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE da_submission SET state = $1, finalized_at = $2 WHERE hash = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "966f7a60f07438d58256e808c49d0b78b1c67f969caaaa3309082ee31e83dfa1"
+}

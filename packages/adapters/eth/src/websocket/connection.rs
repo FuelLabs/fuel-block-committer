@@ -24,7 +24,7 @@ use metrics::{
     RegistersMetrics,
 };
 use services::types::{
-    BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse,
+    BlockSubmissionTx, EthereumDASubmission, EthereumDetails, Fragment, FragmentsSubmitted, NonEmpty, TransactionResponse
 };
 use tracing::info;
 use url::Url;
@@ -108,21 +108,21 @@ impl WsConnection {
 
     async fn get_bumped_fees(
         &self,
-        previous_tx: &L1Tx,
+        previous_tx: &EthereumDASubmission,
         provider: &WsProvider,
     ) -> Result<(u128, u128, u128)> {
         let next_blob_fee = self.get_next_blob_fee(MAX_BLOB_FEE_HORIZON).await?;
-        let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.blob_fee.saturating_mul(2));
+        let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.details.blob_fee.saturating_mul(2));
 
         let Eip1559Estimation {
             max_fee_per_gas,
             max_priority_fee_per_gas,
         } = provider.estimate_eip1559_fees(None).await?;
 
-        let max_fee_per_gas = max(max_fee_per_gas, previous_tx.max_fee.saturating_mul(2));
+        let max_fee_per_gas = max(max_fee_per_gas, previous_tx.details.max_fee.saturating_mul(2));
         let max_priority_fee_per_gas = max(
             max_priority_fee_per_gas,
-            previous_tx.priority_fee.saturating_mul(2),
+            previous_tx.details.priority_fee.saturating_mul(2),
         );
 
         Ok((
@@ -132,9 +132,9 @@ impl WsConnection {
         ))
     }
 
-    fn get_max_fee(tx: &L1Tx, gas_limit: u128, num_fragments: usize) -> u128 {
-        tx.max_fee.saturating_mul(gas_limit).saturating_add(
-            tx.blob_fee
+    fn get_max_fee(tx: &EthereumDASubmission, gas_limit: u128, num_fragments: usize) -> u128 {
+        tx.details.max_fee.saturating_mul(gas_limit).saturating_add(
+            tx.details.blob_fee
                 .saturating_mul(num_fragments as u128)
                 .saturating_mul(DATA_GAS_PER_BLOB as u128),
         )
@@ -271,8 +271,8 @@ impl EthApi for WsConnection {
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-        previous_tx: Option<L1Tx>,
-    ) -> Result<(L1Tx, services::types::FragmentsSubmitted)> {
+        previous_tx: Option<EthereumDASubmission>,
+    ) -> Result<(EthereumDASubmission, services::types::FragmentsSubmitted)> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
                 (Some(provider), Some(address)) => (provider, address),
@@ -296,7 +296,7 @@ impl EthApi for WsConnection {
                     .with_max_fee_per_gas(max_fee_per_gas)
                     .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
                     .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
-                    .with_nonce(previous_tx.nonce as u64)
+                    .with_nonce(previous_tx.details.nonce as u64)
                     .with_blob_sidecar(sidecar)
                     .with_to(*blob_signer_address)
             }
@@ -324,9 +324,10 @@ impl EthApi for WsConnection {
             )
         })?;
 
-        let l1_tx = L1Tx {
+        let l1_tx = EthereumDASubmission {
             hash: tx_id.0,
-            nonce,
+            details: EthereumDetails {
+                nonce,
             max_fee: blob_tx.max_fee_per_gas(),
             priority_fee: blob_tx
                 .max_priority_fee_per_gas()
@@ -334,10 +335,11 @@ impl EthApi for WsConnection {
             blob_fee: blob_tx
                 .max_fee_per_blob_gas()
                 .expect("eip4844 tx to have blob fee"),
+            },
             ..Default::default()
         };
 
-        info!("sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
+        info!("sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.details.nonce, l1_tx.details.max_fee, l1_tx.details.priority_fee, l1_tx.details.blob_fee);
 
         let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
         if max_fee > self.tx_max_fee {
@@ -565,12 +567,14 @@ mod tests {
         let SendableTx::Envelope(tx) = tx else {
             panic!("Expected an envelope. This is a bug.");
         };
-        let previous_tx = L1Tx {
+        let previous_tx = EthereumDASubmission {
             hash: tx.tx_hash().0,
-            nonce: tx.nonce() as u32,
-            max_fee: tx.max_fee_per_gas(),
-            priority_fee: tx.max_priority_fee_per_gas().unwrap(),
-            blob_fee: tx.max_fee_per_blob_gas().unwrap(),
+            details: EthereumDetails {
+                nonce: tx.nonce() as u32,
+                max_fee: tx.max_fee_per_gas(),
+                priority_fee: tx.max_priority_fee_per_gas().unwrap(),
+                blob_fee: tx.max_fee_per_blob_gas().unwrap(),
+            },
             ..Default::default()
         };
 
@@ -581,10 +585,10 @@ mod tests {
             .unwrap();
 
         // then
-        assert_eq!(submitted_tx.nonce, previous_tx.nonce);
-        assert_eq!(submitted_tx.max_fee, 2 * previous_tx.max_fee);
-        assert_eq!(submitted_tx.priority_fee, 2 * previous_tx.priority_fee);
-        assert_eq!(submitted_tx.blob_fee, 2 * previous_tx.blob_fee);
+        assert_eq!(submitted_tx.details.nonce, previous_tx.details.nonce);
+        assert_eq!(submitted_tx.details.max_fee, 2 * previous_tx.details.max_fee);
+        assert_eq!(submitted_tx.details.priority_fee, 2 * previous_tx.details.priority_fee);
+        assert_eq!(submitted_tx.details.blob_fee, 2 * previous_tx.details.blob_fee);
     }
 
     #[tokio::test]

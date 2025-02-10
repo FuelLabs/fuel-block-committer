@@ -27,7 +27,9 @@ impl AwsSigner {
             .client
             .sign_prehash(&self.key_id, message)
             .await
-            .map_err(|e| EigenDAError::Other(format!("failed to sign message: {}", e.to_string())))?;
+            .map_err(|e| {
+                EigenDAError::Other(format!("failed to sign message: {}", e.to_string()))
+            })?;
 
         Ok(signed)
     }

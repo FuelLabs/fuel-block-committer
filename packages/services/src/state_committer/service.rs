@@ -9,7 +9,7 @@ use tracing::info;
 
 use super::{fee_algo::SmaFeeAlgo, AlgoConfig};
 use crate::{
-    types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
+    types::{storage::BundleFragment, CollectNonEmpty, DateTime, EthereumDASubmission, NonEmpty, Utc},
     Result, Runner,
 };
 
@@ -55,8 +55,8 @@ impl Default for Metrics {
     }
 }
 
-impl<L1, FuelApi, Db, Clock, D, DALayer> RegistersMetrics
-    for StateCommitter<L1, FuelApi, Db, Clock, D, DALayer>
+impl<DALayer, FuelApi, Db, Clock, D> RegistersMetrics
+    for StateCommitter<DALayer, FuelApi, Db, Clock, D>
 {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![Box::new(self.metrics.current_height_to_commit.clone())]
@@ -64,8 +64,8 @@ impl<L1, FuelApi, Db, Clock, D, DALayer> RegistersMetrics
 }
 
 /// The `StateCommitter` is responsible for committing state fragments to L1.
-pub struct StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer> {
-    l1_adapter: L1,
+pub struct StateCommitter<DALayer, FuelApi, Db, Clock, FeeProvider> {
+    da_layer: DALayer,
     fuel_api: FuelApi,
     storage: Db,
     config: Config,
@@ -73,49 +73,45 @@ pub struct StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer> {
     startup_time: DateTime<Utc>,
     metrics: Metrics,
     fee_algo: SmaFeeAlgo<FeeProvider>,
-    eigenda: Option<DALayer>,
 }
 
-impl<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
-    StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
+impl<DALayer, FuelApi, Db, Clock, FeeProvider>
+    StateCommitter<DALayer, FuelApi, Db, Clock, FeeProvider>
 where
     Clock: crate::state_committer::port::Clock,
 {
     /// Creates a new `StateCommitter`.
     pub fn new(
-        l1_adapter: L1,
+        da_layer: DALayer,
         fuel_api: FuelApi,
         storage: Db,
         config: Config,
         clock: Clock,
         fee_provider: FeeProvider,
-        eigenda: Option<DALayer>,
     ) -> Self {
         let startup_time = clock.now();
 
         Self {
             fee_algo: SmaFeeAlgo::new(fee_provider, config.fee_algo),
-            l1_adapter,
+            da_layer,
             fuel_api,
             storage,
             config,
             clock,
             startup_time,
             metrics: Metrics::default(),
-            eigenda,
         }
     }
 }
 
-impl<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
-    StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
+impl<DALayer, FuelApi, Db, Clock, FeeProvider>
+    StateCommitter<DALayer, FuelApi, Db, Clock, FeeProvider>
 where
-    L1: crate::state_committer::port::l1::Api + Send + Sync,
+    DALayer: crate::state_committer::port::da_layer::Api + Send + Sync,
     FuelApi: crate::state_committer::port::fuel::Api,
     Db: crate::state_committer::port::Storage,
     Clock: crate::state_committer::port::Clock,
     FeeProvider: crate::fees::Api + Sync,
-    DALayer: crate::state_committer::port::l1::DALayerApi + Send + Sync,
 {
     async fn get_reference_time(&self) -> Result<DateTime<Utc>> {
         Ok(self
@@ -135,7 +131,7 @@ where
     }
 
     async fn fees_acceptable(&self, fragments: &NonEmpty<BundleFragment>) -> Result<bool> {
-        let l1_height = self.l1_adapter.current_height().await?;
+        let l1_height = self.da_layer.current_height().await?;
         let l2_height = self.fuel_api.latest_height().await?;
 
         let oldest_l2_block = Self::oldest_l2_block_in_fragments(fragments);
@@ -161,14 +157,14 @@ where
     async fn submit_fragments(
         &self,
         fragments: NonEmpty<BundleFragment>,
-        previous_tx: Option<L1Tx>,
+        previous_tx: Option<EthereumDASubmission>,
     ) -> Result<()> {
         info!("about to send at most {} fragments", fragments.len());
 
         let data = fragments.clone().map(|f| f.fragment);
 
         match self
-            .l1_adapter
+            .da_layer
             .submit_state_fragments(data.clone(), previous_tx)
             .await
         {
@@ -191,15 +187,6 @@ where
                     .await?;
 
                 tracing::info!("Submitted fragments {ids} with tx {}", hex::encode(tx_hash));
-
-                if let Some(eigenda) = &self.eigenda {
-                    let request_id = eigenda.submit_state_fragments(data).await?;
-                    tracing::info!(
-                        "Submitted fragments {ids} to eigenDA with request id {}",
-                        hex::encode(request_id)
-                    );
-                }
-
                 Ok(())
             }
             Err(e) => {
@@ -215,7 +202,7 @@ where
         }
     }
 
-    async fn latest_pending_transaction(&self) -> Result<Option<L1Tx>> {
+    async fn latest_pending_transaction(&self) -> Result<Option<EthereumDASubmission>> {
         let tx = self.storage.get_latest_pending_txs().await?;
         Ok(tx)
     }
@@ -274,36 +261,10 @@ where
         };
 
         // wrapped in closures so that we short-circuit *and* reduce redundant logs
-        Ok((enough_fragments() || expired().await?) && self.fees_acceptable(fragments).await?)
+        Ok(enough_fragments() || expired().await?)
     }
 
-    async fn submit_fragments_if_ready(&self) -> Result<()> {
-        if let Some(fragments) = self.next_fragments_to_submit().await? {
-            if self.should_submit_fragments(&fragments).await? {
-                self.submit_fragments(fragments, None).await?;
-            }
-        } else {
-            // if we have no fragments to submit, that means that we're up to date and new
-            // blocks haven't been bundled yet
-            let current_height_to_commit =
-                if let Some(height) = self.storage.latest_bundled_height().await? {
-                    height.saturating_add(1)
-                } else {
-                    self.fuel_api
-                        .latest_height()
-                        .await?
-                        .saturating_sub(self.config.lookback_window)
-                };
-
-            self.metrics
-                .current_height_to_commit
-                .set(current_height_to_commit.into());
-        }
-
-        Ok(())
-    }
-
-    fn elapsed_since_tx_submitted(&self, tx: &L1Tx) -> Result<Duration> {
+    fn elapsed_since_tx_submitted(&self, tx: &EthereumDASubmission) -> Result<Duration> {
         let created_at = tx.created_at.expect("tx to have timestamp");
 
         self.clock.elapsed(created_at)
@@ -323,45 +284,83 @@ where
         })
     }
 
-    async fn resubmit_fragments_if_stalled(&self) -> Result<()> {
-        let Some(previous_tx) = self.latest_pending_transaction().await? else {
-            return Ok(());
+    async fn submit_fragments_if_ready(&self, fragments: NonEmpty<BundleFragment>) -> Result<()> {
+        if self.should_submit_fragments(&fragments).await? && self.fees_acceptable(&fragments).await? {
+            self.submit_fragments(fragments, None).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn fetch_stalled_submission(&self) -> Result<Option<EthereumDASubmission>> {
+        if let Some(submission) = self.latest_pending_transaction().await? {
+            let elapsed = self.elapsed_since_tx_submitted(&submission)?;
+
+            if elapsed >= self.config.gas_bump_timeout {
+                info!(
+                    "tx {} needs to be replaced because it was pending for {}s",
+                    hex::encode(submission.hash),
+                    elapsed.as_secs()
+                );
+
+                return Ok(Some(submission));
+            }
         };
 
-        let elapsed = self.elapsed_since_tx_submitted(&previous_tx)?;
+        Ok(None)
+    }
 
-        if elapsed >= self.config.gas_bump_timeout {
-            info!(
-                "replacing tx {} because it was pending for {}s",
-                hex::encode(previous_tx.hash),
-                elapsed.as_secs()
-            );
+    async fn resubmit_fragments(&self, previos_submission: EthereumDASubmission) -> Result<()> {
+        let fragments = self
+            .fragments_submitted_by_tx(previos_submission.hash)
+            .await?;
 
-            let fragments = self.fragments_submitted_by_tx(previous_tx.hash).await?;
-            if self.fees_acceptable(&fragments).await? {
-                self.submit_fragments(fragments, Some(previous_tx)).await?;
-            }
+        if self.fees_acceptable(&fragments).await? {
+            self.submit_fragments(fragments, Some(previos_submission))
+                .await?;
         }
+
+        Ok(())
+    }
+
+    async fn update_current_height_to_commit_metric(&self) -> Result<()> {
+        let current_height_to_commit =
+            if let Some(height) = self.storage.latest_bundled_height().await? {
+                height.saturating_add(1)
+            } else {
+                self.fuel_api
+                    .latest_height()
+                    .await?
+                    .saturating_sub(self.config.lookback_window)
+            };
+
+        self.metrics
+            .current_height_to_commit
+            .set(current_height_to_commit.into());
 
         Ok(())
     }
 }
 
-impl<L1, FuelApi, Db, Clock, FeeProvider, DALayer> Runner
-    for StateCommitter<L1, FuelApi, Db, Clock, FeeProvider, DALayer>
+impl<DALayer, FuelApi, Db, Clock, FeeProvider> Runner
+    for StateCommitter<DALayer, FuelApi, Db, Clock, FeeProvider>
 where
-    L1: crate::state_committer::port::l1::Api + Send + Sync,
+    DALayer: crate::state_committer::port::da_layer::Api + Send + Sync,
     FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
     Db: crate::state_committer::port::Storage + Clone + Send + Sync,
     Clock: crate::state_committer::port::Clock + Send + Sync,
     FeeProvider: crate::fees::Api + Send + Sync,
-    DALayer: crate::state_committer::port::l1::DALayerApi + Send + Sync,
 {
     async fn run(&mut self) -> Result<()> {
-        if self.storage.has_nonfinalized_txs().await? {
-            self.resubmit_fragments_if_stalled().await?;
+        if let Some(submission) = self.fetch_stalled_submission().await? {
+            // if we have a stalled submission, we need to resubmit it
+            self.resubmit_fragments(submission).await?;
+        } else if let Some(fragments) = self.next_fragments_to_submit().await? {
+            // else if we have fragments to submit, we should do so
+            self.submit_fragments_if_ready(fragments).await?;
         } else {
-            self.submit_fragments_if_ready().await?;
+            // else we're up to date with submissions and new blocks haven't been bundled yet
+            self.update_current_height_to_commit_metric().await?;
         };
 
         Ok(())

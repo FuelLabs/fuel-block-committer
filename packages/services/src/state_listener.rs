@@ -8,7 +8,7 @@ pub mod service {
     use tracing::info;
 
     use crate::{
-        types::{L1Tx, TransactionCostUpdate, TransactionState},
+        types::{EthereumDASubmission, TransactionCostUpdate, TransactionState},
         Runner,
     };
 
@@ -44,7 +44,7 @@ pub mod service {
         Db: crate::state_listener::port::Storage,
         Clock: crate::state_listener::port::Clock,
     {
-        async fn check_non_finalized_txs(&self, non_finalized_txs: Vec<L1Tx>) -> crate::Result<()> {
+        async fn check_non_finalized_txs(&self, non_finalized_txs: Vec<EthereumDASubmission>) -> crate::Result<()> {
             let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
             // we need to accumulate all the changes and then update the db atomically
@@ -56,7 +56,7 @@ pub mod service {
             let mut cost_per_tx = vec![];
 
             for tx in non_finalized_txs {
-                if skip_nonces.contains(&tx.nonce) {
+                if skip_nonces.contains(&tx.details.nonce) {
                     continue;
                 }
 
@@ -68,7 +68,7 @@ pub mod service {
                     match (tx.state, self.l1_adapter.is_squeezed_out(tx.hash).await?) {
                         (TransactionState::Pending | TransactionState::IncludedInBlock, true) => {
                             // not in the mempool anymore set it to failed
-                            selective_change.push((tx.hash, tx.nonce, TransactionState::Failed));
+                            selective_change.push((tx.hash, tx.details.nonce, TransactionState::Failed));
 
                             info!(
                                 "blob tx {} not found in mempool. Setting to failed",
@@ -78,7 +78,7 @@ pub mod service {
 
                         (TransactionState::IncludedInBlock, false) => {
                             // if tx was in block and reorg happened now it is in the mempool - we need to set the tx to pending
-                            selective_change.push((tx.hash, tx.nonce, TransactionState::Pending));
+                            selective_change.push((tx.hash, tx.details.nonce, TransactionState::Pending));
 
                             info!(
                                 "blob tx {} returned to mempool. Setting to pending",
@@ -91,11 +91,11 @@ pub mod service {
                     continue;
                 };
 
-                skip_nonces.insert(tx.nonce);
+                skip_nonces.insert(tx.details.nonce);
 
                 if !tx_response.succeeded() {
                     // set tx to failed all txs with the same nonce to failed
-                    noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Failed));
+                    noncewide_changes.push((tx.hash, tx.details.nonce, TransactionState::Failed));
 
                     info!("failed blob tx {}", hex::encode(tx.hash));
                     continue;
@@ -109,7 +109,7 @@ pub mod service {
                         // set tx to included and all txs with the same nonce to failed
                         noncewide_changes.push((
                             tx.hash,
-                            tx.nonce,
+                            tx.details.nonce,
                             TransactionState::IncludedInBlock,
                         ));
 
@@ -125,7 +125,7 @@ pub mod service {
 
                 // st tx to finalized and all txs with the same nonce to failed
                 let now = self.clock.now();
-                noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Finalized(now)));
+                noncewide_changes.push((tx.hash, tx.details.nonce, TransactionState::Finalized(now)));
                 cost_per_tx.push(TransactionCostUpdate {
                     tx_hash: tx.hash,
                     total_fee: tx_response.total_fee(),
@@ -137,7 +137,7 @@ pub mod service {
                 info!("blob tx {} finalized", hex::encode(tx.hash));
 
                 let earliest_submission_attempt =
-                    self.storage.earliest_submission_attempt(tx.nonce).await?;
+                    self.storage.earliest_submission_attempt(tx.details.nonce).await?;
 
                 self.metrics.last_finalization_interval.set(
                     earliest_submission_attempt
@@ -229,7 +229,7 @@ pub mod service {
 
 pub mod port {
     use crate::{
-        types::{DateTime, L1Tx, TransactionCostUpdate, TransactionState, Utc},
+        types::{DateTime, EthereumDASubmission, TransactionCostUpdate, TransactionState, Utc},
         Result,
     };
 
@@ -255,7 +255,7 @@ pub mod port {
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Sync {
-        async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
+        async fn get_non_finalized_txs(&self) -> Result<Vec<EthereumDASubmission>>;
         async fn update_tx_states_and_costs(
             &self,
             selective_changes: Vec<([u8; 32], TransactionState)>,

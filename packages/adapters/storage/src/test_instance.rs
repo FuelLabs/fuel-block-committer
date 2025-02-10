@@ -10,7 +10,7 @@ use services::{
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        EthereumDASubmission, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -182,7 +182,7 @@ impl services::state_pruner::port::Storage for DbWithProcess {
 }
 
 impl services::state_listener::port::Storage for DbWithProcess {
-    async fn get_non_finalized_txs(&self) -> services::Result<Vec<L1Tx>> {
+    async fn get_non_finalized_txs(&self) -> services::Result<Vec<EthereumDASubmission>> {
         self.db._get_non_finalized_txs().await.map_err(Into::into)
     }
 
@@ -308,7 +308,7 @@ impl services::state_committer::port::Storage for DbWithProcess {
     }
     async fn record_pending_tx(
         &self,
-        tx: L1Tx,
+        tx: EthereumDASubmission,
         fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> services::Result<()> {
@@ -336,7 +336,7 @@ impl services::state_committer::port::Storage for DbWithProcess {
             .await
             .map_err(Into::into)
     }
-    async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::L1Tx>> {
+    async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::EthereumDASubmission>> {
         self.db._get_latest_pending_txs().await.map_err(Into::into)
     }
 

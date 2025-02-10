@@ -6404,6 +6404,7 @@ dependencies = [
  "num-bigint",
  "rand",
  "serde",
+ "serde_json",
  "services",
  "sqlx",
  "storage",

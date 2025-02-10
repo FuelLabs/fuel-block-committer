@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1 OR state = $2) AS has_nonfinalized_transactions;",
+  "query": "SELECT EXISTS (SELECT 1 FROM da_submission WHERE state = $1 OR state = $2) AS has_nonfinalized_transactions;",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "2096d1ddfd76357493610c7d1a11022ce99ec1d9fd603fb10d4723ca05267627"
+  "hash": "fdb4a4e814578fffe8387e05448ca27ee151c7cf8b22a38c2fcf63c8bf1c0e6e"
 }

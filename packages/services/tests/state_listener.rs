@@ -5,7 +5,7 @@ use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use services::{
     state_listener::{port::Storage, service::StateListener},
-    types::{L1Height, L1Tx, TransactionResponse},
+    types::{DASubmission, EthereumDetails, L1Height, TransactionResponse},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_case::test_case;
@@ -427,19 +427,22 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
     let nonce = 0;
 
     let orig_tx_hash = [0; 32];
-    let orig_tx = L1Tx {
+    let orig_tx = DASubmission {
         hash: orig_tx_hash,
         created_at: Some(start_time),
-        nonce,
+        details: Default::default(),
         ..Default::default()
     };
 
     let replacement_tx_time = start_time + Duration::from_secs(1);
     let replacement_tx_hash = [1; 32];
-    let replacement_tx = L1Tx {
+    let replacement_tx = DASubmission {
         hash: replacement_tx_hash,
         created_at: Some(replacement_tx_time),
-        nonce,
+        details: EthereumDetails {
+            nonce,
+            ..Default::default()
+        },
         ..Default::default()
     };
     let mut l1_mock =
@@ -458,7 +461,6 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // Orig tx
@@ -532,7 +534,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
     let start_time = test_clock.now();
     let nonce = 0;
     let orig_tx_hash = [0; 32];
-    let orig_tx = L1Tx {
+    let orig_tx = DASubmission {
         hash: orig_tx_hash,
         created_at: Some(start_time),
         ..Default::default()
@@ -540,10 +542,13 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
 
     let replacement_tx_time = start_time + Duration::from_secs(1);
     let replacement_tx_hash = [1; 32];
-    let replacement_tx = L1Tx {
+    let replacement_tx = DASubmission {
         hash: replacement_tx_hash,
         created_at: Some(replacement_tx_time),
-        nonce,
+        details: EthereumDetails {
+            nonce,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -563,7 +568,6 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // Orig tx

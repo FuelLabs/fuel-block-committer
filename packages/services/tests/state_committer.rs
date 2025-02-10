@@ -6,7 +6,7 @@ use metrics::{prometheus, RegistersMetrics};
 use services::{
     fees::Fees,
     state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
-    types::{L1Tx, NonEmpty},
+    types::{DASubmission, EthereumDetails, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_helpers::{mocks, noop_fees, preconfigured_fees};
@@ -20,7 +20,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx::default(),
+        DASubmission::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -39,7 +39,6 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
         },
         setup.test_clock(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // when
@@ -61,9 +60,12 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
     let tx_hash = [1; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx {
+        DASubmission {
             hash: tx_hash,
-            nonce: 0,
+            details: EthereumDetails {
+                nonce: 0,
+                ..Default::default()
+            },
             ..Default::default()
         },
     )]);
@@ -84,7 +86,6 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // Advance time beyond the timeout
@@ -121,7 +122,6 @@ async fn does_not_submit_fragments_before_required_count_or_timeout() -> Result<
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // Advance time less than the timeout
@@ -145,9 +145,12 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
     let tx_hash = [3; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments).unwrap()),
-        L1Tx {
+        DASubmission {
             hash: tx_hash,
-            nonce: 0,
+            details: EthereumDetails {
+                nonce: 0,
+                ..Default::default()
+            },
             ..Default::default()
         },
     )]);
@@ -168,7 +171,6 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
         },
         setup.test_clock(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // when
@@ -193,9 +195,12 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
     let tx_hash = [4; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments_to_submit).unwrap()),
-        L1Tx {
+        DASubmission {
             hash: tx_hash,
-            nonce: 0,
+            details: EthereumDetails {
+                nonce: 0,
+                ..Default::default()
+            },
             ..Default::default()
         },
     )]);
@@ -216,7 +221,6 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // Advance time to exceed the timeout since last finalized fragment
@@ -241,9 +245,12 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
     let tx_hash = [5; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx {
+        DASubmission {
             hash: tx_hash,
-            nonce: 0,
+            details: EthereumDetails {
+                nonce: 0,
+                ..Default::default()
+            },
             ..Default::default()
         },
     )]);
@@ -264,7 +271,6 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // Advance time beyond the timeout from startup
@@ -291,17 +297,23 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            L1Tx {
+            DASubmission {
                 hash: tx_hash_1,
-                nonce: 0,
+                details: EthereumDetails {
+                    nonce: 0,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         ),
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            L1Tx {
+            DASubmission {
                 hash: tx_hash_2,
-                nonce: 1,
+                details: EthereumDetails {
+                    nonce: 1,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         ),
@@ -325,7 +337,6 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     // Submit the initial fragments
@@ -384,7 +395,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx::default(),
+        DASubmission::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -404,7 +415,6 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
-        None::<EigenDAClient>,
     );
 
     // when
@@ -474,7 +484,6 @@ async fn does_not_send_transaction_when_short_term_fee_unfavorable() -> Result<(
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
-        None::<EigenDAClient>,
     );
 
     // when
@@ -523,7 +532,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx::default(),
+        DASubmission::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -543,7 +552,6 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
-        None::<EigenDAClient>,
     );
 
     // when
@@ -597,7 +605,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        L1Tx::default(),
+        DASubmission::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -618,7 +626,6 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
         },
         setup.test_clock(),
         preconfigured_fees(fee_sequence),
-        None::<EigenDAClient>,
     );
 
     // when
@@ -655,7 +662,6 @@ async fn updates_current_height_to_commit_metric_with_latest_bundled_height() ->
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     state_committer.register_metrics(&registry);
@@ -712,7 +718,6 @@ async fn updates_current_height_to_commit_metric_without_latest_bundled_height()
         },
         test_clock.clone(),
         noop_fees(),
-        None::<EigenDAClient>,
     );
 
     state_committer.register_metrics(&registry);

@@ -14,13 +14,13 @@ use services::{
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        EthereumDASubmission, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
     },
     Result,
 };
 
 impl services::state_listener::port::Storage for Postgres {
-    async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
+    async fn get_non_finalized_txs(&self) -> Result<Vec<EthereumDASubmission>> {
         self._get_non_finalized_txs().await.map_err(Into::into)
     }
 
@@ -153,7 +153,7 @@ impl services::state_committer::port::Storage for Postgres {
     }
     async fn record_pending_tx(
         &self,
-        tx: L1Tx,
+        tx: EthereumDASubmission,
         fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> Result<()> {
@@ -175,7 +175,7 @@ impl services::state_committer::port::Storage for Postgres {
             .await
             .map_err(Into::into)
     }
-    async fn get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
+    async fn get_latest_pending_txs(&self) -> Result<Option<services::types::EthereumDASubmission>> {
         self._get_latest_pending_txs().await.map_err(Into::into)
     }
 
@@ -209,7 +209,7 @@ mod tests {
         cost_reporter::port::Storage as CostStorage,
         state_committer::port::Storage as CommitterStorage,
         state_listener::port::Storage as ListenerStorage,
-        types::{nonempty, CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState},
+        types::{nonempty, CollectNonEmpty, DASubmission, EthereumDetails, TransactionCostUpdate, TransactionState},
     };
 
     use super::*;
@@ -472,12 +472,13 @@ mod tests {
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
-        let tx = L1Tx {
+        let tx = DASubmission {
             hash: rand::random::<[u8; 32]>(),
+            details: EthereumDetails::default(),
             ..Default::default()
         };
         let hash = tx.hash;
-        let nonce = tx.nonce;
+        let nonce = tx.details.nonce;
 
         storage
             .record_pending_tx(tx, fragment_ids, TestClock::default().now())
@@ -875,7 +876,7 @@ mod tests {
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
         let hash = rand::random::<[u8; 32]>();
-        let tx = L1Tx {
+        let tx = DASubmission {
             hash,
             ..Default::default()
         };
@@ -899,16 +900,19 @@ mod tests {
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
         let (fragment_1, fragment_2) = (fragment_ids[0], fragment_ids[1]);
-        let inserted_1 = L1Tx {
+        let inserted_1 = DASubmission {
             hash: rand::random::<[u8; 32]>(),
             ..Default::default()
         };
-        let mut inserted_2 = L1Tx {
+        let mut inserted_2 = DASubmission {
             hash: rand::random::<[u8; 32]>(),
-            nonce: 1,
-            max_fee: 2000000000000,
-            priority_fee: 1500000000,
-            blob_fee: 100,
+            details: EthereumDetails {
+                nonce: 1,
+                max_fee: 2000000000000,
+                priority_fee: 1500000000,
+                blob_fee: 100,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -941,12 +945,13 @@ mod tests {
         let storage = start_db().await;
 
         let fragment_ids = ensure_some_fragments_exists_in_the_db(storage.clone(), 0..=0).await;
-        let tx = L1Tx {
+        let tx = DASubmission {
             hash: rand::random::<[u8; 32]>(),
+            details: EthereumDetails::default(),
             ..Default::default()
         };
         let hash = tx.hash;
-        let nonce = tx.nonce;
+        let nonce = tx.details.nonce;
 
         storage
             .record_pending_tx(tx, fragment_ids, TestClock::default().now())
@@ -983,9 +988,12 @@ mod tests {
         state: TransactionState,
     ) -> [u8; 32] {
         let tx_hash = rand::random::<[u8; 32]>();
-        let tx = L1Tx {
+        let tx = DASubmission {
             hash: tx_hash,
-            nonce: rand::random(),
+            details: EthereumDetails {
+                nonce: (rand::random::<u32>() % i32::MAX as u32) as u32, // TODO we'll get a db error if nonce is out of range
+                ..Default::default()
+            },
             ..Default::default()
         };
         storage
@@ -993,7 +1001,7 @@ mod tests {
             .await
             .unwrap();
 
-        let changes = vec![(tx.hash, tx.nonce, state)];
+        let changes = vec![(tx.hash, tx.details.nonce, state)];
         storage
             .update_tx_states_and_costs(vec![], changes, vec![])
             .await
@@ -1270,7 +1278,7 @@ mod tests {
         let fragment_b3_id = find_id(&b_fragments[2].data);
 
         let tx_hash = [0; 32];
-        let tx = L1Tx {
+        let tx = DASubmission {
             hash: tx_hash,
             ..Default::default()
         };
@@ -1287,7 +1295,7 @@ mod tests {
             .unwrap();
 
         let total_fee = 1000u128;
-        let changes = vec![(tx.hash, tx.nonce, TransactionState::Finalized(Utc::now()))];
+        let changes = vec![(tx.hash, tx.details.nonce, TransactionState::Finalized(Utc::now()))];
         let cost_update = TransactionCostUpdate {
             tx_hash,
             total_fee,

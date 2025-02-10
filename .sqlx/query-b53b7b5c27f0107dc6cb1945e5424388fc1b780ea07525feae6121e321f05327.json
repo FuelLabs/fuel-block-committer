@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE da_submission \n             SET state = $1, finalized_at = $2 \n             WHERE (details->>'nonce')::integer = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b53b7b5c27f0107dc6cb1945e5424388fc1b780ea07525feae6121e321f05327"
+}

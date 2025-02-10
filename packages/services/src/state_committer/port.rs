@@ -1,23 +1,27 @@
 use nonempty::NonEmpty;
 
 use crate::{
-    types::{storage::BundleFragment, DateTime, L1Tx, NonNegative, Utc},
+    types::{storage::BundleFragment, DateTime, EthereumDASubmission, NonNegative, Utc},
     Error, Result,
 };
 
 pub mod l1 {
-    use nonempty::NonEmpty;
-
-    use crate::{
-        types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
-        Result,
-    };
+    use crate::{types::BlockSubmissionTx, Result};
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
     pub trait Contract: Sync {
         async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     }
+}
+
+pub mod da_layer {
+    use nonempty::NonEmpty;
+
+    use crate::{
+        types::{Fragment, FragmentsSubmitted, EthereumDASubmission},
+        Result,
+    };
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
@@ -27,15 +31,8 @@ pub mod l1 {
         async fn submit_state_fragments(
             &self,
             fragments: NonEmpty<Fragment>,
-            previous_tx: Option<L1Tx>,
-        ) -> Result<(L1Tx, FragmentsSubmitted)>;
-    }
-
-    #[allow(async_fn_in_trait)]
-    #[trait_variant::make(Send)]
-    #[cfg_attr(feature = "test-helpers", mockall::automock)]
-    pub trait DALayerApi {
-        async fn submit_state_fragments(&self, fragments: NonEmpty<Fragment>) -> Result<Vec<u8>>;
+            previous_tx: Option<EthereumDASubmission>,
+        ) -> Result<(EthereumDASubmission, FragmentsSubmitted)>;
     }
 }
 
@@ -59,7 +56,7 @@ pub trait Storage: Sync {
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
     async fn record_pending_tx(
         &self,
-        tx: L1Tx,
+        tx: EthereumDASubmission,
         fragment_id: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> Result<()>;
@@ -70,7 +67,7 @@ pub trait Storage: Sync {
     ) -> Result<Vec<BundleFragment>>;
     async fn latest_bundled_height(&self) -> Result<Option<u32>>;
     async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
-    async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
+    async fn get_latest_pending_txs(&self) -> Result<Option<EthereumDASubmission>>;
 }
 
 pub trait Clock {

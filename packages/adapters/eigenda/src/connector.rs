@@ -50,24 +50,24 @@ pub(crate) fn serialize_fragments(fragments: impl IntoIterator<Item = Fragment>)
     })
 }
 
-impl services::state_committer::port::l1::DALayerApi for EigenDAClient {
-    async fn submit_state_fragments(
-        &self,
-        fragments: NonEmpty<Fragment>,
-    ) -> ServiceResult<Vec<u8>> {
-        let num_fragments = min(fragments.len(), 6);
-        let fragments = fragments.into_iter().take(num_fragments);
-        let data = serialize_fragments(fragments);
+// impl services::state_committer::port::l1::EigenDAApi for EigenDAClient {
+//     async fn submit_state_fragments(
+//         &self,
+//         fragments: NonEmpty<Fragment>,
+//     ) -> ServiceResult<Vec<u8>> {
+//         let num_fragments = min(fragments.len(), 6);
+//         let fragments = fragments.into_iter().take(num_fragments);
+//         let data = serialize_fragments(fragments);
 
-        let data = convert_by_padding_empty_byte(&data);
+//         let data = convert_by_padding_empty_byte(&data);
 
-        let mut client = self.clone();
-        client
-            .handle_authenticated_dispersal(data)
-            .map_err(|e| ServiceError::Other(format!("Failed to disperse state fragments: {e}")))
-            .await
-    }
-}
+//         let mut client = self.clone();
+//         client
+//             .handle_authenticated_dispersal(data)
+//             .map_err(|e| ServiceError::Other(format!("Failed to disperse state fragments: {e}")))
+//             .await
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub struct EigenDAClient {
@@ -165,7 +165,9 @@ impl EigenDAClient {
                     return Ok(reply.request_id);
                 }
                 None => {
-                    return Err(EigenDAError::Other("received unexpected response".to_string()));
+                    return Err(EigenDAError::Other(
+                        "received unexpected response".to_string(),
+                    ));
                 }
             }
         }
@@ -217,7 +219,9 @@ impl DataAvailabilityConnector for EigenDAClient {
 
         loop {
             if start.elapsed() > timeout {
-                return Err(EigenDAError::Other("timeout waiting for finalization".to_string()));
+                return Err(EigenDAError::Other(
+                    "timeout waiting for finalization".to_string(),
+                ));
             }
 
             let status = self.check_status(request_id.clone()).await?;

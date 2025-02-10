@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use clock::SystemClock;
-use eigenda::EigenDAClient;
 use eth::{BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -116,16 +115,15 @@ pub fn block_bundler(
 
 pub fn state_committer(
     fuel: FuelApi,
-    l1: L1,
+    da_layer: L1,
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
     fee_api: CachingApi<L1>,
-    eigenda: Option<EigenDAClient>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
-        l1,
+        da_layer,
         fuel,
         storage,
         services::StateCommitterConfig {
@@ -137,7 +135,6 @@ pub fn state_committer(
         },
         SystemClock,
         fee_api,
-        eigenda,
     );
 
     state_committer.register_metrics(registry);

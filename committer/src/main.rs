@@ -86,14 +86,14 @@ async fn main() -> Result<()> {
             &metrics_registry,
         )?;
 
-        // if EigenDA is enabled, start a service committing to EigenDA
-        let da_layer = match config.da_layer.clone() {
-            Some(DALayer::EigenDA(EigenDA { key, rpc })) => {
-                let client = EigenDAClient::new(key, rpc).await.unwrap();
-                Some(client)
-            }
-            _ => None,
-        };
+        // // if EigenDA is enabled, start a service committing to EigenDA
+        // let da_layer = match config.da_layer.clone() {
+        //     Some(DALayer::EigenDA(EigenDA { key, rpc })) => {
+        //         let client = EigenDAClient::new(key, rpc).await.unwrap();
+        //         Some(client)
+        //     }
+        //     _ => None,
+        // };
 
         let state_committer_handle = setup::state_committer(
             fuel_adapter.clone(),
@@ -103,7 +103,6 @@ async fn main() -> Result<()> {
             &config,
             &metrics_registry,
             fee_api,
-            da_layer,
         )?;
 
         let state_importer_handle =

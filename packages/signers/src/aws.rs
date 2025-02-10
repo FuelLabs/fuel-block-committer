@@ -2,7 +2,10 @@ use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region,
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{config::BehaviorVersion, Client};
-use k256::{ecdsa::{RecoveryId, Signature, VerifyingKey}, pkcs8::DecodePublicKey};
+use k256::{
+    ecdsa::{RecoveryId, Signature, VerifyingKey},
+    pkcs8::DecodePublicKey,
+};
 
 #[cfg(feature = "test-helpers")]
 use crate::KeySource;
@@ -74,40 +77,37 @@ impl AwsKmsClient {
     }
 
     #[cfg(feature = "test-helpers")]
-pub async fn create_key(
-    &self,
-) -> anyhow::Result<KeySource> {
-    use std::ops::Deref;
+    pub async fn create_key(&self) -> anyhow::Result<KeySource> {
+        use std::ops::Deref;
 
-    // Convert hex private key to DER format
-    let private_key = hex::decode("8a229ef1d1f528787e14656c424e1c8710402cb0b0329d3091f11aaf854151e1")?;
-    let der = k256::SecretKey::from_slice(&private_key)?
-        .to_sec1_der()?;
-    let der = der.deref().clone();
+        // Convert hex private key to DER format
+        let private_key =
+            hex::decode("8a229ef1d1f528787e14656c424e1c8710402cb0b0329d3091f11aaf854151e1")?;
+        let der = k256::SecretKey::from_slice(&private_key)?.to_sec1_der()?;
+        let der = der.deref().clone();
 
-    // Create custom key with explicit material
-    let response = self.client
-        .create_key()
-        .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
-        .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
-        .customize()
-        .mutate_request(move |req| {
-            // LocalStack-specific parameter
-            req.headers_mut().insert(
-                "X-LocalStack-KMS-KeyMaterial",
-                base64::encode(der.clone())
-            );
-        })
-        .send()
-        .await?;
+        // Create custom key with explicit material
+        let response = self
+            .client
+            .create_key()
+            .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
+            .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
+            .customize()
+            .mutate_request(move |req| {
+                // LocalStack-specific parameter
+                req.headers_mut()
+                    .insert("X-LocalStack-KMS-KeyMaterial", base64::encode(der.clone()));
+            })
+            .send()
+            .await?;
 
-    let id = response
-        .key_metadata
-        .and_then(|metadata| metadata.arn)
-        .ok_or_else(|| anyhow::anyhow!("key arn missing"))?;
+        let id = response
+            .key_metadata
+            .and_then(|metadata| metadata.arn)
+            .ok_or_else(|| anyhow::anyhow!("key arn missing"))?;
 
-    Ok(KeySource::Kms(id))
-}
+        Ok(KeySource::Kms(id))
+    }
 
     // #[cfg(feature = "test-helpers")]
     // pub async fn create_key(&self) -> anyhow::Result<KeySource> {
@@ -174,16 +174,15 @@ pub async fn create_key(
     pub async fn sign_prehash(&self, key_id: &str, prehash: &[u8]) -> anyhow::Result<Vec<u8>> {
         let public_key = self.get_public_key(key_id).await?;
         let signature = self.get_raw_signature(key_id, prehash).await?;
-        
+
         let recovery_id = self.determine_recovery_id(prehash, &signature, &public_key)?;
-        
+
         // combine into final signature
         let mut signature_bytes = signature.to_bytes().to_vec();
         signature_bytes.push(recovery_id);
-        
+
         Ok(signature_bytes)
     }
-
 
     pub async fn get_public_key(&self, key_id: &str) -> anyhow::Result<Vec<u8>> {
         let key_info = self.client.get_public_key().key_id(key_id).send().await?;
