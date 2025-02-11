@@ -9,8 +9,9 @@ use services::{
     block_bundler, block_committer, block_importer,
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        EthereumDASubmission, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        EthereumDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+        TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -173,7 +174,7 @@ impl services::state_pruner::port::Storage for DbWithProcess {
             async fn prune_entries_older_than(
                 &self,
                 date: DateTime<Utc>,
-            ) -> services::Result<()>;
+            ) -> services::Result<services::state_pruner::port::PrunedBlocksRange>;
             async fn table_sizes(
                 &self,
             ) -> services::Result<services::state_pruner::port::TableSizes>;
@@ -336,7 +337,9 @@ impl services::state_committer::port::Storage for DbWithProcess {
             .await
             .map_err(Into::into)
     }
-    async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::EthereumDASubmission>> {
+    async fn get_latest_pending_txs(
+        &self,
+    ) -> services::Result<Option<services::types::EthereumDASubmission>> {
         self.db._get_latest_pending_txs().await.map_err(Into::into)
     }
 

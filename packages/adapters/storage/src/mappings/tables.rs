@@ -4,7 +4,7 @@ use num_bigint::BigInt;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use services::types::{
-    BlockSubmissionTx, CompressedFuelBlock, DateTime, NonEmpty, NonNegative, TransactionState, Utc
+    BlockSubmissionTx, CompressedFuelBlock, DateTime, NonEmpty, NonNegative, TransactionState, Utc,
 };
 use sqlx::types::BigDecimal;
 
@@ -371,7 +371,8 @@ impl<D: Serialize> From<services::types::DASubmission<D>> for DASubmission {
 }
 
 impl<D> TryFrom<DASubmission> for services::types::DASubmission<D>
-where D: DeserializeOwned + Serialize
+where
+    D: DeserializeOwned + Serialize,
 {
     type Error = crate::error::Error;
 
@@ -398,7 +399,7 @@ where D: DeserializeOwned + Serialize
             hash,
             state,
             created_at: value.created_at,
-            details
+            details,
         })
     }
 }

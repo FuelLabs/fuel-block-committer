@@ -44,7 +44,10 @@ pub mod service {
         Db: crate::state_listener::port::Storage,
         Clock: crate::state_listener::port::Clock,
     {
-        async fn check_non_finalized_txs(&self, non_finalized_txs: Vec<EthereumDASubmission>) -> crate::Result<()> {
+        async fn check_non_finalized_txs(
+            &self,
+            non_finalized_txs: Vec<EthereumDASubmission>,
+        ) -> crate::Result<()> {
             let current_block_number: u64 = self.l1_adapter.get_block_number().await?.into();
 
             // we need to accumulate all the changes and then update the db atomically
@@ -68,7 +71,11 @@ pub mod service {
                     match (tx.state, self.l1_adapter.is_squeezed_out(tx.hash).await?) {
                         (TransactionState::Pending | TransactionState::IncludedInBlock, true) => {
                             // not in the mempool anymore set it to failed
-                            selective_change.push((tx.hash, tx.details.nonce, TransactionState::Failed));
+                            selective_change.push((
+                                tx.hash,
+                                tx.details.nonce,
+                                TransactionState::Failed,
+                            ));
 
                             info!(
                                 "blob tx {} not found in mempool. Setting to failed",
@@ -78,7 +85,11 @@ pub mod service {
 
                         (TransactionState::IncludedInBlock, false) => {
                             // if tx was in block and reorg happened now it is in the mempool - we need to set the tx to pending
-                            selective_change.push((tx.hash, tx.details.nonce, TransactionState::Pending));
+                            selective_change.push((
+                                tx.hash,
+                                tx.details.nonce,
+                                TransactionState::Pending,
+                            ));
 
                             info!(
                                 "blob tx {} returned to mempool. Setting to pending",
@@ -125,7 +136,11 @@ pub mod service {
 
                 // st tx to finalized and all txs with the same nonce to failed
                 let now = self.clock.now();
-                noncewide_changes.push((tx.hash, tx.details.nonce, TransactionState::Finalized(now)));
+                noncewide_changes.push((
+                    tx.hash,
+                    tx.details.nonce,
+                    TransactionState::Finalized(now),
+                ));
                 cost_per_tx.push(TransactionCostUpdate {
                     tx_hash: tx.hash,
                     total_fee: tx_response.total_fee(),
@@ -136,8 +151,10 @@ pub mod service {
 
                 info!("blob tx {} finalized", hex::encode(tx.hash));
 
-                let earliest_submission_attempt =
-                    self.storage.earliest_submission_attempt(tx.details.nonce).await?;
+                let earliest_submission_attempt = self
+                    .storage
+                    .earliest_submission_attempt(tx.details.nonce)
+                    .await?;
 
                 self.metrics.last_finalization_interval.set(
                     earliest_submission_attempt

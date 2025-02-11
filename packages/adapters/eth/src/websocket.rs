@@ -11,8 +11,9 @@ use alloy::{
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
+    state_committer::port::da_layer::Priority,
     types::{
-        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, EthereumDASubmission, NonEmpty,
+        BlockSubmissionTx, EthereumDASubmission, Fragment, FragmentsSubmitted, L1Height, NonEmpty,
         TransactionResponse, U256,
     },
     Result,
@@ -111,7 +112,33 @@ impl services::state_committer::port::da_layer::Api for WebsocketClient {
                 &self,
                 fragments: NonEmpty<Fragment>,
                 previous_tx: Option<services::types::EthereumDASubmission>,
+                priority: Priority
             ) -> Result<(EthereumDASubmission, FragmentsSubmitted)>;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum L1Key {
+    Kms(String),
+    Private(String),
+}
+
+impl<'a> serde::Deserialize<'a> for L1Key {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
+            Ok(L1Key::Kms(k.to_string()))
+        } else if let Some(k) = value
+            .strip_prefix("Private(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            Ok(L1Key::Private(k.to_string()))
+        } else {
+            Err(serde::de::Error::custom("invalid L1Key format"))
         }
     }
 }
@@ -134,6 +161,58 @@ impl L1Keys {
 pub struct TxConfig {
     pub tx_max_fee: u128,
     pub send_tx_request_timeout: Duration,
+    pub acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages,
+}
+
+#[cfg(feature = "test-helpers")]
+impl Default for TxConfig {
+    fn default() -> Self {
+        Self {
+            tx_max_fee: u128::MAX,
+            send_tx_request_timeout: Duration::from_secs(10),
+            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AcceptablePriorityFeePercentages {
+    min: f64,
+    max: f64,
+}
+
+#[cfg(feature = "test-helpers")]
+impl Default for AcceptablePriorityFeePercentages {
+    fn default() -> Self {
+        Self::new(20., 20.).expect("valid reward percentile range")
+    }
+}
+
+impl AcceptablePriorityFeePercentages {
+    pub fn new(min: f64, max: f64) -> Result<Self> {
+        if min > max {
+            return Err(services::Error::Other(
+                "min reward percentile must be less than or equal to max reward percentile"
+                    .to_string(),
+            ));
+        }
+
+        if min <= 0.0 || max > 100.0 {
+            return Err(services::Error::Other(
+                "reward percentiles must be > 0 and <= 100".to_string(),
+            ));
+        }
+
+        Ok(Self { min, max })
+    }
+
+    pub fn apply(&self, priority: Priority) -> f64 {
+        let min = self.min;
+
+        let increase = (self.max - min) * priority.get() / 100.;
+
+        (min + increase).min(self.max)
+    }
 }
 
 // This trait is needed because you cannot write `dyn TraitA + TraitB` except when TraitB is an
@@ -248,14 +327,7 @@ impl WebsocketClient {
             .map(|signer| TxSigner::address(&signer));
         let contract_caller_address = TxSigner::address(&signers.main);
 
-        let provider = WsConnection::connect(
-            url,
-            contract_address,
-            signers,
-            tx_config.tx_max_fee,
-            tx_config.send_tx_request_timeout,
-        )
-        .await?;
+        let provider = WsConnection::connect(url, contract_address, signers, tx_config).await?;
 
         Ok(Self {
             inner: HealthTrackingMiddleware::new(provider, unhealthy_after_n_errors),
@@ -307,10 +379,11 @@ impl WebsocketClient {
         &self,
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<services::types::EthereumDASubmission>,
+        priority: Priority,
     ) -> Result<(EthereumDASubmission, FragmentsSubmitted)> {
         Ok(self
             .inner
-            .submit_state_fragments(fragments, previous_tx)
+            .submit_state_fragments(fragments, previous_tx, priority)
             .await?)
     }
 

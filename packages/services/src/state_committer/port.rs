@@ -6,7 +6,7 @@ use crate::{
 };
 
 pub mod l1 {
-    use crate::{types::BlockSubmissionTx, Result};
+    use crate::{types::BlockSubmissionTx, Error, Result};
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
@@ -16,12 +16,36 @@ pub mod l1 {
 }
 
 pub mod da_layer {
+    use crate::Error;
     use nonempty::NonEmpty;
 
     use crate::{
-        types::{Fragment, FragmentsSubmitted, EthereumDASubmission},
+        types::{EthereumDASubmission, Fragment, FragmentsSubmitted},
         Result,
     };
+
+    // TODO whats the right place for this?
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+    pub struct Priority(f64);
+
+    impl Priority {
+        pub const MIN: Self = Self(0.);
+        pub const MAX: Self = Self(100.);
+
+        pub fn new(percent: f64) -> Result<Self> {
+            if !(0. ..=100.).contains(&percent) {
+                return Err(Error::Other(
+                    "priority must be between 0 and 100".to_string(),
+                ));
+            }
+
+            Ok(Self(percent))
+        }
+
+        pub fn get(&self) -> f64 {
+            self.0
+        }
+    }
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
@@ -32,6 +56,7 @@ pub mod da_layer {
             &self,
             fragments: NonEmpty<Fragment>,
             previous_tx: Option<EthereumDASubmission>,
+            priority: Priority,
         ) -> Result<(EthereumDASubmission, FragmentsSubmitted)>;
     }
 }

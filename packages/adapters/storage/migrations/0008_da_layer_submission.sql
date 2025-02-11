@@ -20,4 +20,7 @@ ALTER TABLE da_submission
     DROP COLUMN priority_fee,
     DROP COLUMN blob_fee;
 
+ALTER TABLE l1_transaction_fragments RENAME COLUMN transaction_id TO da_submission_id;
+ALTER TABLE l1_transaction_fragments RENAME TO da_submission_fragments;
+
 COMMIT;

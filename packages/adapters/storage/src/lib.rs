@@ -13,8 +13,9 @@ pub use postgres::{DbConfig, Postgres};
 use services::{
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        EthereumDASubmission, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        EthereumDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+        TransactionState, Utc,
     },
     Result,
 };
@@ -175,7 +176,9 @@ impl services::state_committer::port::Storage for Postgres {
             .await
             .map_err(Into::into)
     }
-    async fn get_latest_pending_txs(&self) -> Result<Option<services::types::EthereumDASubmission>> {
+    async fn get_latest_pending_txs(
+        &self,
+    ) -> Result<Option<services::types::EthereumDASubmission>> {
         self._get_latest_pending_txs().await.map_err(Into::into)
     }
 
@@ -185,7 +188,10 @@ impl services::state_committer::port::Storage for Postgres {
 }
 
 impl services::state_pruner::port::Storage for Postgres {
-    async fn prune_entries_older_than(&self, date: DateTime<Utc>) -> Result<()> {
+    async fn prune_entries_older_than(
+        &self,
+        date: DateTime<Utc>,
+    ) -> Result<services::state_pruner::port::PrunedBlocksRange> {
         self._prune_entries_older_than(date)
             .await
             .map_err(Into::into)
@@ -209,7 +215,10 @@ mod tests {
         cost_reporter::port::Storage as CostStorage,
         state_committer::port::Storage as CommitterStorage,
         state_listener::port::Storage as ListenerStorage,
-        types::{nonempty, CollectNonEmpty, DASubmission, EthereumDetails, TransactionCostUpdate, TransactionState},
+        types::{
+            nonempty, CollectNonEmpty, DASubmission, EthereumDetails, TransactionCostUpdate,
+            TransactionState,
+        },
     };
 
     use super::*;
@@ -1295,7 +1304,11 @@ mod tests {
             .unwrap();
 
         let total_fee = 1000u128;
-        let changes = vec![(tx.hash, tx.details.nonce, TransactionState::Finalized(Utc::now()))];
+        let changes = vec![(
+            tx.hash,
+            tx.details.nonce,
+            TransactionState::Finalized(Utc::now()),
+        )];
         let cost_update = TransactionCostUpdate {
             tx_hash,
             total_fee,

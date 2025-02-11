@@ -17,7 +17,10 @@ use services::{
         Fees,
     },
     state_listener::service::StateListener,
-    types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, DASubmission, EthereumDetails, Fragment, NonEmpty},
+    types::{
+        BlockSubmission, CollectNonEmpty, CompressedFuelBlock, DASubmission, EthereumDetails,
+        Fragment, NonEmpty,
+    },
     BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
 };
 use storage::{DbWithProcess, PostgresProcess};
@@ -41,7 +44,8 @@ pub mod mocks {
         use delegate::delegate;
         use mockall::{predicate::eq, Sequence};
         use services::types::{
-            BlockSubmissionTx, DASubmission, EthereumDetails, Fragment, FragmentsSubmitted, L1Height, NonEmpty, TransactionResponse
+            BlockSubmissionTx, DASubmission, EthereumDetails, Fragment, FragmentsSubmitted,
+            L1Height, NonEmpty, TransactionResponse,
         };
 
         pub struct FullL1Mock {
@@ -155,7 +159,9 @@ pub mod mocks {
         }
 
         pub fn expects_state_submissions(
-            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, DASubmission<EthereumDetails>)>,
+            expectations: impl IntoIterator<
+                Item = (Option<NonEmpty<Fragment>>, DASubmission<EthereumDetails>),
+            >,
         ) -> services::state_committer::port::da_layer::MockApi {
             let mut sequence = Sequence::new();
 
@@ -164,7 +170,7 @@ pub mod mocks {
             for (fragment, tx) in expectations {
                 l1_mock
                     .expect_submit_state_fragments()
-                    .withf(move |data, _previous_tx| {
+                    .withf(move |data, _previous_tx, _| {
                         if let Some(fragment) = &fragment {
                             data == fragment
                         } else {
@@ -172,7 +178,7 @@ pub mod mocks {
                         }
                     })
                     .once()
-                    .return_once(move |fragments, _previous_tx| {
+                    .return_once(move |fragments, _previous_tx, _| {
                         Box::pin(async move {
                             Ok((
                                 tx,

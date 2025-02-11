@@ -1,9 +1,6 @@
-use std::{
-    cmp::{max, min},
-    num::NonZeroU32,
-    ops::RangeInclusive,
-    time::Duration,
-};
+mod estimation;
+
+use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
 
 use alloy::{
     consensus::Transaction,
@@ -13,23 +10,31 @@ use alloy::{
     },
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
-    providers::{utils::Eip1559Estimation, Provider, ProviderBuilder, SendableTx, WsConnect},
+    providers::{
+        utils::{Eip1559Estimation, EIP1559_FEE_ESTIMATION_PAST_BLOCKS},
+        Provider, ProviderBuilder, SendableTx, WsConnect,
+    },
     pubsub::PubSubFrontend,
     rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
     sol,
 };
+use estimation::{MaxTxFeesPerGas, TransactionRequestExt};
 use itertools::Itertools;
 use metrics::{
     prometheus::{self, histogram_opts},
     RegistersMetrics,
 };
-use services::types::{
-    BlockSubmissionTx, EthereumDASubmission, EthereumDetails, Fragment, FragmentsSubmitted, NonEmpty, TransactionResponse
+use services::{
+    state_committer::port::da_layer::Priority,
+    types::{
+        BlockSubmissionTx, EthereumDASubmission, EthereumDetails, Fragment, FragmentsSubmitted,
+        NonEmpty, TransactionResponse,
+    },
 };
 use tracing::info;
 use url::Url;
 
-use super::{health_tracking_middleware::EthApi, Signers};
+use super::{health_tracking_middleware::EthApi, Signers, TxConfig};
 use crate::{
     blob_encoder::{self},
     error::{Error, Result},
@@ -77,64 +82,40 @@ pub struct WsConnection {
     blob_signer_address: Option<Address>,
     contract: FuelStateContract,
     commit_interval: NonZeroU32,
-    tx_max_fee: u128,
-    send_tx_request_timeout: Duration,
     metrics: Metrics,
+    tx_config: TxConfig,
 }
 
-const MAX_BLOB_FEE_HORIZON: u32 = 5;
-
 impl WsConnection {
-    async fn get_next_blob_fee(&self, horizon: u32) -> Result<u128> {
-        let mut next_block_blob_fee = self
+    async fn estimate_fees_at_horizon(&self, priority: Priority) -> Result<MaxTxFeesPerGas> {
+        const BLOB_FEE_HORIZON: u32 = 5;
+        const FEE_HORIZON: u32 = 6;
+
+        let priority_perc = self
+            .tx_config
+            .acceptable_priority_fee_percentage
+            .apply(priority);
+
+        let fee_history = self
             .provider
-            .get_block_by_number(BlockNumberOrTag::Latest, false)
-            .await?
-            .ok_or(Error::Network(
-                "get_block_by_number returned None".to_string(),
-            ))?
-            .header
-            .next_block_blob_fee()
-            .ok_or(Error::Network(
-                "next_block_blob_fee returned None".to_string(),
-            ))?;
+            .get_fee_history(
+                EIP1559_FEE_ESTIMATION_PAST_BLOCKS,
+                BlockNumberOrTag::Latest,
+                &[priority_perc],
+            )
+            .await?;
 
-        for _ in 0..horizon {
-            // multiply by 1.125 = multiply by 9, then divide by 8
-            next_block_blob_fee = next_block_blob_fee.saturating_mul(9).saturating_div(8);
-        }
-        Ok(next_block_blob_fee)
-    }
+        let mut fees_w_horizon = MaxTxFeesPerGas::try_from(fee_history)?;
+        fees_w_horizon.blob = estimation::at_horizon(fees_w_horizon.blob, BLOB_FEE_HORIZON);
+        fees_w_horizon.normal = estimation::at_horizon(fees_w_horizon.normal, FEE_HORIZON);
 
-    async fn get_bumped_fees(
-        &self,
-        previous_tx: &EthereumDASubmission,
-        provider: &WsProvider,
-    ) -> Result<(u128, u128, u128)> {
-        let next_blob_fee = self.get_next_blob_fee(MAX_BLOB_FEE_HORIZON).await?;
-        let max_fee_per_blob_gas = max(next_blob_fee, previous_tx.details.blob_fee.saturating_mul(2));
-
-        let Eip1559Estimation {
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
-        } = provider.estimate_eip1559_fees(None).await?;
-
-        let max_fee_per_gas = max(max_fee_per_gas, previous_tx.details.max_fee.saturating_mul(2));
-        let max_priority_fee_per_gas = max(
-            max_priority_fee_per_gas,
-            previous_tx.details.priority_fee.saturating_mul(2),
-        );
-
-        Ok((
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
-            max_fee_per_blob_gas,
-        ))
+        Ok(fees_w_horizon)
     }
 
     fn get_max_fee(tx: &EthereumDASubmission, gas_limit: u128, num_fragments: usize) -> u128 {
         tx.details.max_fee.saturating_mul(gas_limit).saturating_add(
-            tx.details.blob_fee
+            tx.details
+                .blob_fee
                 .saturating_mul(num_fragments as u128)
                 .saturating_mul(DATA_GAS_PER_BLOB as u128),
         )
@@ -199,7 +180,7 @@ impl EthApi for WsConnection {
             .nonce(nonce);
 
         let send_fut = self.provider.send_transaction(tx_request);
-        let tx = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+        let tx = tokio::time::timeout(self.tx_config.send_tx_request_timeout, send_fut)
             .await
             .map_err(|_| Error::Network("timed out trying to submit block".to_string()))??;
         tracing::info!("tx: {} submitted", tx.tx_hash());
@@ -272,6 +253,7 @@ impl EthApi for WsConnection {
         &self,
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<EthereumDASubmission>,
+        priority: Priority,
     ) -> Result<(EthereumDASubmission, services::types::FragmentsSubmitted)> {
         let (blob_provider, blob_signer_address) =
             match (&self.blob_provider, &self.blob_signer_address) {
@@ -287,27 +269,21 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = blob_encoder::BlobEncoder::sidecar_from_fragments(limited_fragments)?;
 
-        let blob_tx = match previous_tx {
-            Some(previous_tx) => {
-                let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-                    self.get_bumped_fees(&previous_tx, blob_provider).await?;
+        let fees = self.estimate_fees_at_horizon(priority).await?;
 
-                TransactionRequest::default()
-                    .with_max_fee_per_gas(max_fee_per_gas)
-                    .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
-                    .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
-                    .with_nonce(previous_tx.details.nonce as u64)
-                    .with_blob_sidecar(sidecar)
-                    .with_to(*blob_signer_address)
-            }
-            _ => {
-                let blob_fee = self.get_next_blob_fee(MAX_BLOB_FEE_HORIZON).await?;
+        let blob_tx = TransactionRequest::default()
+            .with_blob_sidecar(sidecar)
+            .with_to(*blob_signer_address);
 
-                TransactionRequest::default()
-                    .with_blob_sidecar(sidecar)
-                    .with_max_fee_per_blob_gas(blob_fee)
-                    .with_to(*blob_signer_address)
-            }
+        let blob_tx = if let Some(previous_tx) = previous_tx {
+            let minimum_replacement_fees = MaxTxFeesPerGas::from(&previous_tx.details).double();
+            let fees = fees.retain_max(minimum_replacement_fees);
+
+            blob_tx
+                .with_max_fees(fees)
+                .with_nonce(previous_tx.details.nonce as u64)
+        } else {
+            blob_tx.with_max_fees(fees)
         };
 
         let blob_tx = blob_provider.fill(blob_tx).await?;
@@ -328,13 +304,13 @@ impl EthApi for WsConnection {
             hash: tx_id.0,
             details: EthereumDetails {
                 nonce,
-            max_fee: blob_tx.max_fee_per_gas(),
-            priority_fee: blob_tx
-                .max_priority_fee_per_gas()
-                .expect("eip4844 tx to have priority fee"),
-            blob_fee: blob_tx
-                .max_fee_per_blob_gas()
-                .expect("eip4844 tx to have blob fee"),
+                max_fee: blob_tx.max_fee_per_gas(),
+                priority_fee: blob_tx
+                    .max_priority_fee_per_gas()
+                    .expect("eip4844 tx to have priority fee"),
+                blob_fee: blob_tx
+                    .max_fee_per_blob_gas()
+                    .expect("eip4844 tx to have blob fee"),
             },
             ..Default::default()
         };
@@ -342,18 +318,18 @@ impl EthApi for WsConnection {
         info!("sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.details.nonce, l1_tx.details.max_fee, l1_tx.details.priority_fee, l1_tx.details.blob_fee);
 
         let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
-        if max_fee > self.tx_max_fee {
+        if max_fee > self.tx_config.tx_max_fee {
             return Err(Error::Other(
                 format!(
                     "max fee exceeded: tried {}, limit {}",
-                    max_fee, self.tx_max_fee
+                    max_fee, self.tx_config.tx_max_fee
                 )
                 .to_string(),
             ));
         }
 
         let send_fut = blob_provider.send_tx_envelope(blob_tx);
-        let _ = tokio::time::timeout(self.send_tx_request_timeout, send_fut)
+        let _ = tokio::time::timeout(self.tx_config.send_tx_request_timeout, send_fut)
             .await
             .map_err(|_| Error::Network("timed out trying to send blob tx".to_string()))??;
 
@@ -397,8 +373,7 @@ impl WsConnection {
         url: Url,
         contract_address: Address,
         signers: Signers,
-        tx_max_fee: u128,
-        send_tx_request_timeout: Duration,
+        tx_config: TxConfig,
     ) -> Result<Self> {
         let address = TxSigner::address(&signers.main);
         let ws = WsConnect::new(url);
@@ -432,8 +407,7 @@ impl WsConnection {
             blob_signer_address,
             contract,
             commit_interval,
-            tx_max_fee,
-            send_tx_request_timeout,
+            tx_config,
             metrics: Default::default(),
         })
     }
@@ -550,8 +524,7 @@ mod tests {
                 provider.clone(),
             ),
             commit_interval: 3.try_into().unwrap(),
-            tx_max_fee: u128::MAX,
-            send_tx_request_timeout: Duration::from_secs(10),
+            tx_config: TxConfig::default(),
             metrics: Default::default(),
         };
 
@@ -580,15 +553,24 @@ mod tests {
 
         // when
         let (submitted_tx, _) = connection
-            .submit_state_fragments(fragments, Some(previous_tx.clone()))
+            .submit_state_fragments(fragments, Some(previous_tx.clone()), Priority::MIN)
             .await
             .unwrap();
 
         // then
         assert_eq!(submitted_tx.details.nonce, previous_tx.details.nonce);
-        assert_eq!(submitted_tx.details.max_fee, 2 * previous_tx.details.max_fee);
-        assert_eq!(submitted_tx.details.priority_fee, 2 * previous_tx.details.priority_fee);
-        assert_eq!(submitted_tx.details.blob_fee, 2 * previous_tx.details.blob_fee);
+        assert_eq!(
+            submitted_tx.details.max_fee,
+            2 * previous_tx.details.max_fee
+        );
+        assert_eq!(
+            submitted_tx.details.priority_fee,
+            2 * previous_tx.details.priority_fee
+        );
+        assert_eq!(
+            submitted_tx.details.blob_fee,
+            2 * previous_tx.details.blob_fee
+        );
     }
 
     #[tokio::test]
@@ -630,8 +612,10 @@ mod tests {
                 provider.clone(),
             ),
             commit_interval: 3.try_into().unwrap(),
-            tx_max_fee,
-            send_tx_request_timeout: Duration::from_secs(10),
+            tx_config: TxConfig {
+                tx_max_fee,
+                ..Default::default()
+            },
             metrics: Default::default(),
         };
 
@@ -641,10 +625,13 @@ mod tests {
             .unwrap();
 
         // when
-        let result = connection.submit_state_fragments(fragment, None).await;
+        let result = connection
+            .submit_state_fragments(fragment, None, Priority::MIN)
+            .await;
 
         // then
         let result = result.expect_err("should return an error");
+        dbg!(result.to_string());
         assert!(result
             .to_string()
             .contains(&format!("limit {}", tx_max_fee)));

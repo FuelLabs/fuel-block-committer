@@ -5,7 +5,10 @@ use ::metrics::{
 };
 use alloy::rpc::types::FeeHistory;
 use delegate::delegate;
-use services::types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256};
+use services::{
+    state_committer::port::da_layer::Priority,
+    types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256},
+};
 
 use crate::{
     error::{Error, Result},
@@ -33,7 +36,11 @@ pub trait EthApi {
         &self,
         fragments: NonEmpty<services::types::Fragment>,
         previous_tx: Option<services::types::EthereumDASubmission>,
-    ) -> Result<(services::types::EthereumDASubmission, services::types::FragmentsSubmitted)>;
+        priority: Priority,
+    ) -> Result<(
+        services::types::EthereumDASubmission,
+        services::types::FragmentsSubmitted,
+    )>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -149,10 +156,14 @@ where
         &self,
         fragments: NonEmpty<Fragment>,
         previous: Option<services::types::EthereumDASubmission>,
-    ) -> Result<(services::types::EthereumDASubmission, services::types::FragmentsSubmitted)> {
+        priority: Priority,
+    ) -> Result<(
+        services::types::EthereumDASubmission,
+        services::types::FragmentsSubmitted,
+    )> {
         let response = self
             .adapter
-            .submit_state_fragments(fragments, previous)
+            .submit_state_fragments(fragments, previous, priority)
             .await;
         self.note_network_status(&response);
         response
