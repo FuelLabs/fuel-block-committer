@@ -335,13 +335,13 @@ where
         Ok(None)
     }
 
-    async fn resubmit_fragments(&self, previos_submission: EthereumDASubmission) -> Result<()> {
+    async fn resubmit_fragments(&self, previous_submission: EthereumDASubmission) -> Result<()> {
         let fragments = self
-            .fragments_submitted_by_tx(previos_submission.hash)
+            .fragments_submitted_by_tx(previous_submission.hash)
             .await?;
 
         if self.fees_acceptable(&fragments).await? {
-            self.submit_fragments(fragments, Some(previos_submission))
+            self.submit_fragments(fragments, Some(previous_submission))
                 .await?;
         }
 
