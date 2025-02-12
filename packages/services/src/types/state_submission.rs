@@ -33,4 +33,10 @@ pub struct EthereumDetails {
     pub blob_fee: u128,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct EigenDetails {
+    // TODO
+}
+
 pub type EthereumDASubmission = DASubmission<EthereumDetails>;
+pub type EigenDASubmission = DASubmission<EigenDetails>;

@@ -6,25 +6,19 @@ use crate::{
 };
 
 pub mod l1 {
-    use crate::{types::BlockSubmissionTx, Error, Result};
+    use nonempty::NonEmpty;
+
+    use crate::{
+        types::{BlockSubmissionTx, EthereumDASubmission, Fragment, FragmentsSubmitted},
+        Error, Result,
+    };
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
     pub trait Contract: Sync {
         async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
     }
-}
 
-pub mod da_layer {
-    use crate::Error;
-    use nonempty::NonEmpty;
-
-    use crate::{
-        types::{EthereumDASubmission, Fragment, FragmentsSubmitted},
-        Result,
-    };
-
-    // TODO whats the right place for this?
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
     pub struct Priority(f64);
 
@@ -58,6 +52,23 @@ pub mod da_layer {
             previous_tx: Option<EthereumDASubmission>,
             priority: Priority,
         ) -> Result<(EthereumDASubmission, FragmentsSubmitted)>;
+    }
+}
+
+pub mod eigen_da {
+    use crate::{
+        types::{EigenDASubmission, Fragment, FragmentsSubmitted},
+        Result,
+    };
+
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    #[cfg_attr(feature = "test-helpers", mockall::automock)]
+    pub trait Api {
+        async fn submit_state_fragment(
+            &self,
+            fragment: Fragment,
+        ) -> Result<(EigenDASubmission, FragmentsSubmitted)>;
     }
 }
 
