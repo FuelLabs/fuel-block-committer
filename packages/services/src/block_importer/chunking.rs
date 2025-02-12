@@ -54,7 +54,7 @@ impl<S> TryChunkBlocks<S> {
             num_blocks,
             max_size,
             leftover: None,
-            current_chunk: Vec::with_capacity(num_blocks),
+            current_chunk: Vec::new(),
             accumulated_size: 0,
             finished: false,
         }

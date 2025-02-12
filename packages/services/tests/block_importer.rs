@@ -3,7 +3,7 @@ use itertools::Itertools;
 use mockall::{predicate::eq, Sequence};
 use services::{
     block_bundler::port::Storage,
-    block_importer::service::BlockImporter,
+    block_importer::{port::fuel::Api, service::BlockImporter},
     types::{nonempty, CollectNonEmpty},
     Result, Runner,
 };
@@ -274,7 +274,7 @@ async fn chunks_blocks_correctly_by_count() -> Result<()> {
         .unwrap();
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks.clone(), true);
     // Set chunking thresholds so that only 3 blocks per chunk are allowed.
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, 3, usize::MAX);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, u32::MAX, 3, usize::MAX);
 
     // when
     importer.run().await?;
@@ -305,7 +305,7 @@ async fn chunks_blocks_correctly_by_size() -> Result<()> {
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks.clone(), true);
     // Set thresholds so that the max cumulative size is 250 bytes.
     // Since each block is 100 bytes, only 2 blocks (200 bytes) will be accumulated per chunk.
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, usize::MAX, 250);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, u32::MAX, usize::MAX, 250);
 
     // when
     importer.run().await?;
