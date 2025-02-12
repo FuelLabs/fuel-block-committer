@@ -704,7 +704,10 @@ impl Setup {
 
                 let mock = mocks::fuel::these_blocks_exist(fuel_blocks.clone(), false);
 
-                (BlockImporter::new(self.db(), mock, 1000), fuel_blocks)
+                (
+                    BlockImporter::new(self.db(), mock, 1000, usize::MAX, usize::MAX),
+                    fuel_blocks,
+                )
             }
         }
     }

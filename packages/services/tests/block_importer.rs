@@ -18,7 +18,7 @@ async fn imports_first_block_when_db_is_empty() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -63,7 +63,7 @@ async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 1000);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 1000, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -102,7 +102,7 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 5);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 5, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -134,7 +134,7 @@ async fn handles_chain_with_no_new_blocks() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(fuel_blocks.clone(), true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -164,7 +164,13 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks_to_import, true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, lookback_window);
+    let mut importer = BlockImporter::new(
+        setup.db(),
+        fuel_mock,
+        lookback_window,
+        usize::MAX,
+        usize::MAX,
+    );
 
     // when
     importer.run().await?;
@@ -229,7 +235,7 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
         .once()
         .return_once(|| Box::pin(async { Ok(100) }));
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 101);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 101, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;

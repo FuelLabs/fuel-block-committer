@@ -160,6 +160,9 @@ pub fn block_importer(
         storage,
         fuel,
         config.app.bundle.block_height_lookback,
+        // TODO: segfault
+        3600,
+        20_000_000,
     );
 
     schedule_polling(
