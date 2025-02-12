@@ -631,7 +631,6 @@ mod tests {
 
         // then
         let result = result.expect_err("should return an error");
-        dbg!(result.to_string());
         assert!(result
             .to_string()
             .contains(&format!("limit {}", tx_max_fee)));
