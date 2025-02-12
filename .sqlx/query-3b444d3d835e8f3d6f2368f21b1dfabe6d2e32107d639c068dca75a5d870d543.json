@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    f.*,\n                    b.start_height\n                FROM l1_fragments f\n                JOIN da_submission_fragments tf ON tf.fragment_id = f.id\n                JOIN da_submission t ON t.id = tf.da_submission_id\n                JOIN bundles b ON b.id = f.bundle_id\n                WHERE t.hash = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "idx",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "total_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "unused_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "bundle_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "start_height",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3b444d3d835e8f3d6f2368f21b1dfabe6d2e32107d639c068dca75a5d870d543"
+}

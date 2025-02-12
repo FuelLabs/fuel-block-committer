@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COUNT(*) = 0 AS \"is_finalized!\"\n            FROM l1_fragments f\n            WHERE f.bundle_id = $1 AND NOT EXISTS (\n                SELECT 1\n                FROM da_submission_fragments tf\n                JOIN da_submission t ON tf.da_submission_id = t.id\n                WHERE tf.fragment_id = f.id AND t.state = $2\n            )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_finalized!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fc1edf475d9f4b88891e2a1329953a10343db3a3f988d97431d65eb3b1084555"
+}
