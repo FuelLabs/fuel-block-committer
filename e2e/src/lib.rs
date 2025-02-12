@@ -127,8 +127,8 @@ mod tests {
             contract_submissions: 2,
         };
         let table_sizes = stack.db.table_sizes().await?;
-        if table_sizes >= expected_table_sizes_before_pruning {
-            panic!("Expected {table_sizes:#?} < {expected_table_sizes_before_pruning:#?}");
+        if table_sizes < expected_table_sizes_before_pruning {
+            panic!("Expected {table_sizes:#?} >= {expected_table_sizes_before_pruning:#?}");
         }
 
         // Sleep to make sure the pruner service had time to run
