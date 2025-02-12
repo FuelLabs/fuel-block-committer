@@ -293,6 +293,22 @@ pub struct Internal {
     pub balance_update_interval: Duration,
     pub cost_request_limit: usize,
     pub l1_blocks_cached_for_fee_metrics_tracker: usize,
+    pub import_batches: ImportBatches,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ImportBatches {
+    pub max_blocks: usize,
+    pub max_cumulative_size: usize,
+}
+
+impl Default for ImportBatches {
+    fn default() -> Self {
+        Self {
+            max_blocks: 4000,
+            max_cumulative_size: 20_000_000,
+        }
+    }
 }
 
 impl Default for Internal {
@@ -305,6 +321,7 @@ impl Default for Internal {
             balance_update_interval: Duration::from_secs(10),
             cost_request_limit: 1000,
             l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
+            import_batches: ImportBatches::default(),
         }
     }
 }

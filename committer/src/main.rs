@@ -95,8 +95,13 @@ async fn main() -> Result<()> {
             fee_api,
         )?;
 
-        let state_importer_handle =
-            setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
+        let state_importer_handle = setup::block_importer(
+            fuel_adapter,
+            storage.clone(),
+            cancel_token.clone(),
+            &config,
+            &internal_config,
+        );
 
         let state_listener_handle = setup::state_listener(
             ethereum_rpc,

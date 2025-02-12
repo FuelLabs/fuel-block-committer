@@ -155,14 +155,14 @@ pub fn block_importer(
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
+    internal_config: &config::Internal,
 ) -> tokio::task::JoinHandle<()> {
     let block_importer = services::block_importer::service::BlockImporter::new(
         storage,
         fuel,
         config.app.bundle.block_height_lookback,
-        // TODO: segfault
-        3600,
-        20_000_000,
+        internal_config.import_batches.max_blocks,
+        internal_config.import_batches.max_cumulative_size,
     );
 
     schedule_polling(

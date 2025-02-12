@@ -262,3 +262,62 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn chunks_blocks_correctly_by_count() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    // Generate 10 blocks (each with 100 bytes of data).
+    let blocks = (0..10)
+        .map(|height| test_helpers::mocks::fuel::generate_block(height, 100))
+        .collect_nonempty()
+        .unwrap();
+    let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks.clone(), true);
+    // Set chunking thresholds so that only 3 blocks per chunk are allowed.
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, 3, usize::MAX);
+
+    // when
+    importer.run().await?;
+
+    // then
+    let stored_blocks = setup
+        .db()
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
+        .await?
+        .unwrap()
+        .oldest;
+    // Even though the importer internally processes the blocks in chunks,
+    // the final state of the database should include all blocks in order.
+    pretty_assertions::assert_eq!(stored_blocks.into_inner(), blocks);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunks_blocks_correctly_by_size() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    // Generate 10 blocks, each with 100 bytes.
+    let blocks = (0..10)
+        .map(|height| test_helpers::mocks::fuel::generate_block(height, 100))
+        .collect_nonempty()
+        .unwrap();
+    let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks.clone(), true);
+    // Set thresholds so that the max cumulative size is 250 bytes.
+    // Since each block is 100 bytes, only 2 blocks (200 bytes) will be accumulated per chunk.
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, usize::MAX, 250);
+
+    // when
+    importer.run().await?;
+
+    // then
+    let stored_blocks = setup
+        .db()
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
+        .await?
+        .unwrap()
+        .oldest;
+    pretty_assertions::assert_eq!(stored_blocks.into_inner(), blocks);
+
+    Ok(())
+}
