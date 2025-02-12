@@ -3,7 +3,7 @@ use itertools::Itertools;
 use mockall::{predicate::eq, Sequence};
 use services::{
     block_bundler::port::Storage,
-    block_importer::{port::fuel::Api, service::BlockImporter},
+    block_importer::service::BlockImporter,
     types::{nonempty, CollectNonEmpty},
     Result, Runner,
 };
