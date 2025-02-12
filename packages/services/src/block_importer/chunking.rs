@@ -12,7 +12,6 @@ pub struct ChunkError<E> {
     pub error: E,
 }
 
-/// Extension trait that adds the `try_chunk_blocks` method to streams that yield blocks.
 pub trait TryChunkBlocksExt<E>: Stream<Item = Result<CompressedFuelBlock, E>> + Sized {
     /// Returns a stream that groups blocks into chunks based on the provided thresholds.
     ///
@@ -62,13 +61,11 @@ impl<S> TryChunkBlocks<S> {
         }
     }
 
-    /// Adds a block to the current chunk and updates the accumulated size.
     fn add_block(&mut self, block: CompressedFuelBlock) {
         self.accumulated_size += block.data.len();
         self.current_chunk.push(block);
     }
 
-    /// Returns true if adding a block with `block_size` would exceed one of the thresholds.
     fn would_exceed(&self, block_size: usize) -> bool {
         // Only check thresholds if we already have items.
         !self.current_chunk.is_empty()
@@ -76,8 +73,6 @@ impl<S> TryChunkBlocks<S> {
                 || (self.accumulated_size + block_size) > self.max_size)
     }
 
-    /// Flushes the current chunk into a NonEmpty value, if nonempty.
-    /// Resets the accumulator.
     fn flush_chunk(&mut self) -> Option<NonEmpty<CompressedFuelBlock>> {
         if self.current_chunk.is_empty() {
             None
@@ -87,70 +82,79 @@ impl<S> TryChunkBlocks<S> {
             NonEmpty::from_vec(chunk)
         }
     }
+
+    /// Returns true if the block did not fit and should cause the loop to break.
+    fn process_block(&mut self, block: CompressedFuelBlock) -> bool {
+        let block_size = block.data.len();
+        if self.would_exceed(block_size) {
+            self.leftover = Some(block);
+            true
+        } else {
+            self.add_block(block);
+            false
+        }
+    }
+
+    fn handle_error(
+        &mut self,
+        e: crate::Error,
+    ) -> Poll<Option<Result<NonEmpty<CompressedFuelBlock>, ChunkError<crate::Error>>>> {
+        if !self.current_chunk.is_empty() {
+            let chunk = std::mem::take(&mut self.current_chunk);
+            self.accumulated_size = 0;
+            self.finished = true;
+            Poll::Ready(Some(Err(ChunkError {
+                blocks: NonEmpty::from_vec(chunk),
+                error: e,
+            })))
+        } else {
+            self.finished = true;
+            Poll::Ready(Some(Err(ChunkError {
+                blocks: None,
+                error: e,
+            })))
+        }
+    }
 }
 
 impl<S> Unpin for TryChunkBlocks<S> {}
 
-impl<S, E> Stream for TryChunkBlocks<S>
+impl<S> Stream for TryChunkBlocks<S>
 where
-    S: Stream<Item = Result<CompressedFuelBlock, E>> + Unpin,
+    S: Stream<Item = Result<CompressedFuelBlock, crate::Error>> + Unpin,
 {
-    type Item = Result<NonEmpty<CompressedFuelBlock>, ChunkError<E>>;
+    type Item = Result<NonEmpty<CompressedFuelBlock>, ChunkError<crate::Error>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        // If we've already finished, flush any remaining accumulated chunk.
         if this.finished {
             return Poll::Ready(this.flush_chunk().map(Ok));
         }
 
-        // If there is a leftover block from a previous poll, add it.
         if let Some(block) = this.leftover.take() {
             this.add_block(block);
         }
 
         // Accumulate blocks until a threshold is met or the underlying stream is exhausted.
         loop {
-            // If we already have a chunk meeting a threshold, exit the loop.
             if this.would_exceed(0) {
+                // already exceeded the limit, time to return a chunk
                 break;
             }
 
             match Pin::new(&mut this.stream).poll_next(cx) {
                 Poll::Pending => {
-                    // Don't yield partial chunk on Pending; wait for more.
                     return Poll::Pending;
                 }
                 Poll::Ready(Some(item)) => match item {
                     Ok(block) => {
-                        let block_size = block.data.len();
-                        if this.would_exceed(block_size) {
-                            // Save the block for the next chunk and break.
-                            this.leftover = Some(block);
+                        if this.process_block(block) {
                             break;
                         }
-                        this.add_block(block);
                     }
                     Err(e) => {
-                        // On error, if we've accumulated any blocks, yield them with the error.
-                        if !this.current_chunk.is_empty() {
-                            let chunk = std::mem::take(&mut this.current_chunk);
-                            this.accumulated_size = 0;
-                            // Mark finished so no further items are polled.
-                            this.finished = true;
-                            return Poll::Ready(Some(Err(ChunkError {
-                                blocks: NonEmpty::from_vec(chunk),
-                                error: e,
-                            })));
-                        } else {
-                            // No blocks accumulated—yield error immediately and finish.
-                            this.finished = true;
-                            return Poll::Ready(Some(Err(ChunkError {
-                                blocks: None,
-                                error: e,
-                            })));
-                        }
+                        return this.handle_error(e);
                     }
                 },
                 Poll::Ready(None) => {
@@ -161,7 +165,6 @@ where
             }
         }
 
-        // Flush the accumulated chunk if any.
         if let Some(chunk) = this.flush_chunk() {
             Poll::Ready(Some(Ok(chunk)))
         } else {
@@ -174,7 +177,6 @@ where
 mod tests {
     use futures::stream;
     use futures::StreamExt;
-    use itertools::Itertools;
     use nonempty::NonEmpty;
 
     use crate::block_importer::chunking::{ChunkError, TryChunkBlocksExt};
@@ -260,13 +262,15 @@ mod tests {
     #[tokio::test]
     async fn test_error_without_accumulated_blocks() {
         // Create a stream that yields an error immediately.
-        let s = stream::iter(vec![Err("immediate error")]);
+        let s = stream::iter(vec![Err(crate::Error::Other(
+            "immediate error".to_string(),
+        ))]);
         let mut chunked = s.try_chunk_blocks(10, 100);
         if let Some(item) = chunked.next().await {
             match item {
                 Err(ChunkError { blocks, error }) => {
                     assert!(blocks.is_none());
-                    assert_eq!(error, "immediate error");
+                    assert_eq!(error, crate::Error::Other("immediate error".to_string()));
                 }
                 Ok(_) => panic!("Expected immediate error"),
             }
