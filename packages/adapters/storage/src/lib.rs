@@ -1376,7 +1376,6 @@ mod tests {
             "We should get blocks 0..=2 under a 7-byte cumulative limit"
         );
 
-        //    TODO: segfault this needs to change
         //    Case B: If the first block alone exceeds the limit, we should get no blocks.
         //    Try max_cumulative_bytes = 1 => even block 0 has 2 bytes, so we skip everything.
         assert_eq!(
