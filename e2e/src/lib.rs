@@ -11,7 +11,7 @@ mod whole_stack;
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use anyhow::Result;
     use tokio::time::sleep_until;
@@ -116,26 +116,31 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
-        let expected_table_sizes_before_pruning = services::state_pruner::port::TableSizes {
-            blob_transactions: 2,
-            fragments: 2,
-            transaction_fragments: 2,
-            bundles: 2,
-            bundle_costs: 2,
-            blocks: 1300,
-            contract_transactions: 2,
-            contract_submissions: 2,
-        };
-        let table_sizes = stack.db.table_sizes().await?;
-        if table_sizes < expected_table_sizes_before_pruning {
-            panic!("Expected {table_sizes:#?} >= {expected_table_sizes_before_pruning:#?}");
+        let pre_pruning_table_sizes = stack.db.table_sizes().await?;
+
+        let start = Instant::now();
+        loop {
+            let blocks_in_db = stack
+                .committer
+                .fetch_metric_value("tsize_blocks")
+                .await
+                .unwrap();
+
+            if blocks_in_db == 0 {
+                break;
+            }
+            if start.elapsed() > Duration::from_secs(60) {
+                panic!("Expected blocks_in_db == 0");
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
 
-        // Sleep to make sure the pruner service had time to run
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        let pruned_table_sizes = stack.db.table_sizes().await?;
 
-        let table_sizes = stack.db.table_sizes().await?;
-        assert!(table_sizes < expected_table_sizes_before_pruning);
+        if pruned_table_sizes >= pre_pruning_table_sizes {
+            panic!("Expected {pruned_table_sizes:#?} < {pre_pruning_table_sizes:#?}");
+        }
 
         Ok(())
     }

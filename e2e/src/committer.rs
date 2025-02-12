@@ -285,7 +285,7 @@ impl CommitterProcess {
         Ok(metric)
     }
 
-    async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
+    pub async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
         let response = reqwest::get(format!("http://localhost:{}/metrics", self.port))
             .await?
             .error_for_status()?

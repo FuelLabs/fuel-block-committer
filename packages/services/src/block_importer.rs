@@ -1,5 +1,5 @@
 pub mod service {
-    use futures::TryStreamExt;
+    use futures::{StreamExt, TryStreamExt};
     use tracing::info;
 
     use crate::{
@@ -14,6 +14,10 @@ pub mod service {
         storage: Db,
         fuel_api: FuelApi,
         lookback_window: u32,
+        /// Maximum number of blocks to accumulate before importing.
+        max_blocks: usize,
+        /// Maximum total size (in bytes) to accumulate before importing.
+        max_size: usize,
     }
 
     impl<Db, FuelApi> BlockImporter<Db, FuelApi> {
@@ -23,6 +27,8 @@ pub mod service {
                 storage,
                 fuel_api,
                 lookback_window,
+                max_blocks: 3600,
+                max_size: 20_000_000,
             }
         }
     }
@@ -58,15 +64,25 @@ pub mod service {
                 .missing_blocks(starting_height, chain_height)
                 .await?
             {
-                self.fuel_api
+                let mut block_stream = self
+                    .fuel_api
                     .compressed_blocks_in_height_range(range)
                     .map_err(crate::Error::from)
-                    .try_for_each(|block| async {
-                        self.import_blocks(nonempty![block]).await?;
+                    .try_chunks(100)
+                    .map(|res| match res {
+                        Ok(blocks) => (blocks, None),
+                        Err(err) => (err.0, Some(err.1)),
+                    });
 
-                        Ok(())
-                    })
-                    .await?;
+                while let Some((blocks_until_error, maybe_err)) = block_stream.next().await {
+                    if let Some(blocks) = NonEmpty::from_vec(blocks_until_error) {
+                        self.import_blocks(blocks).await?;
+                    }
+
+                    if let Some(err) = maybe_err {
+                        return Err(err);
+                    }
+                }
             }
 
             Ok(())
