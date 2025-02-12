@@ -48,7 +48,6 @@ pub struct TryChunkBlocks<S> {
 }
 
 impl<S> TryChunkBlocks<S> {
-    /// Create a new instance of the chunking stream.
     pub fn new(stream: S, num_blocks: usize, max_size: usize) -> Self {
         Self {
             stream,
@@ -296,5 +295,33 @@ mod tests {
             }
         }
         assert_eq!(total, num_blocks);
+    }
+
+    #[tokio::test]
+    async fn test_single_ok_item() {
+        // Generate a single block.
+        let item = gen_block(0, 10);
+        // Create a stream with just that one Ok item.
+        let s = futures::stream::iter(vec![Result::Ok(item.clone())]);
+        // Use try_chunk_blocks with thresholds that exceed this single item.
+        let mut chunked = s.try_chunk_blocks(5, 100);
+
+        // Expect a single chunk containing the one item.
+        let chunk = chunked
+            .next()
+            .await
+            .expect("Expected one chunk")
+            .expect("Chunk should be Ok");
+        assert_eq!(chunk.len(), 1, "Chunk should contain exactly one block");
+
+        // Verify that the chunk contains the original block.
+        assert_eq!(
+            chunk,
+            nonempty::nonempty![item],
+            "Chunk contents do not match expected value"
+        );
+
+        // Verify that the stream is exhausted after yielding the single chunk.
+        assert!(chunked.next().await.is_none(), "Stream should be finished");
     }
 }
