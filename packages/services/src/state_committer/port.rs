@@ -1,7 +1,10 @@
 use nonempty::NonEmpty;
+use serde::Serialize;
 
 use crate::{
-    types::{storage::BundleFragment, DateTime, EthereumDASubmission, NonNegative, Utc},
+    types::{
+        storage::BundleFragment, DASubmission, DateTime, EthereumDASubmission, NonNegative, Utc,
+    },
     Error, Result,
 };
 
@@ -57,7 +60,7 @@ pub mod l1 {
 
 pub mod eigen_da {
     use crate::{
-        types::{EigenDASubmission, Fragment, FragmentsSubmitted},
+        types::{EigenDASubmission, Fragment},
         Result,
     };
 
@@ -65,10 +68,7 @@ pub mod eigen_da {
     #[trait_variant::make(Send)]
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
     pub trait Api {
-        async fn submit_state_fragment(
-            &self,
-            fragment: Fragment,
-        ) -> Result<(EigenDASubmission, FragmentsSubmitted)>;
+        async fn submit_state_fragment(&self, fragment: Fragment) -> Result<EigenDASubmission>;
     }
 }
 
@@ -90,9 +90,9 @@ pub mod fuel {
 pub trait Storage: Sync {
     async fn has_nonfinalized_txs(&self) -> Result<bool>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
-    async fn record_pending_tx(
+    async fn record_da_submission<D: Serialize + Send>(
         &self,
-        tx: EthereumDASubmission,
+        da_submission: DASubmission<D>,
         fragment_id: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> Result<()>;

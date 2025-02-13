@@ -25,7 +25,7 @@ use metrics::{
     RegistersMetrics,
 };
 use services::{
-    state_committer::port::da_layer::Priority,
+    state_committer::port::l1::Priority,
     types::{
         BlockSubmissionTx, EthereumDASubmission, EthereumDetails, Fragment, FragmentsSubmitted,
         NonEmpty, TransactionResponse,

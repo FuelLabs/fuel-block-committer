@@ -5,12 +5,13 @@ use std::{
 };
 
 use delegate::delegate;
+use serde::Serialize;
 use services::{
     block_bundler, block_committer, block_importer,
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
-        EthereumDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DASubmission,
+        DateTime, EthereumDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
         TransactionState, Utc,
     },
 };
@@ -307,14 +308,14 @@ impl services::state_committer::port::Storage for DbWithProcess {
             .await
             .map_err(Into::into)
     }
-    async fn record_pending_tx(
+    async fn record_da_submission<D: Serialize + Send>(
         &self,
-        tx: EthereumDASubmission,
+        da_submission: DASubmission<D>,
         fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> services::Result<()> {
         self.db
-            ._record_pending_tx(tx, fragment_ids, created_at)
+            ._record_da_submission(da_submission, fragment_ids, created_at)
             .await
             .map_err(Into::into)
     }

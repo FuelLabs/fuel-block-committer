@@ -6,7 +6,7 @@ use ::metrics::{
 use alloy::rpc::types::FeeHistory;
 use delegate::delegate;
 use services::{
-    state_committer::port::da_layer::Priority,
+    state_committer::port::l1::Priority,
     types::{Address, BlockSubmissionTx, Fragment, NonEmpty, TransactionResponse, U256},
 };
 

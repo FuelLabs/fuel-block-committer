@@ -11,7 +11,7 @@ use alloy::{
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
-    state_committer::port::da_layer::Priority,
+    state_committer::port::l1::Priority,
     types::{
         BlockSubmissionTx, EthereumDASubmission, Fragment, FragmentsSubmitted, L1Height, NonEmpty,
         TransactionResponse, U256,
@@ -101,7 +101,7 @@ impl services::fees::Api for WebsocketClient {
     }
 }
 
-impl services::state_committer::port::da_layer::Api for WebsocketClient {
+impl services::state_committer::port::l1::Api for WebsocketClient {
     async fn current_height(&self) -> Result<u64> {
         self._get_block_number().await
     }

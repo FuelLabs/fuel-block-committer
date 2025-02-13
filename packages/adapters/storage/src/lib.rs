@@ -4,6 +4,7 @@ mod test_instance;
 
 use std::ops::RangeInclusive;
 
+use serde::Serialize;
 #[cfg(feature = "test-helpers")]
 pub use test_instance::*;
 
@@ -13,8 +14,8 @@ pub use postgres::{DbConfig, Postgres};
 use services::{
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
-        EthereumDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DASubmission,
+        DateTime, EthereumDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
         TransactionState, Utc,
     },
     Result,
@@ -152,13 +153,13 @@ impl services::state_committer::port::Storage for Postgres {
             .await
             .map_err(Into::into)
     }
-    async fn record_pending_tx(
+    async fn record_da_submission<D: Serialize + Send>(
         &self,
-        tx: EthereumDASubmission,
+        da_submission: DASubmission<D>,
         fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> Result<()> {
-        self._record_pending_tx(tx, fragment_ids, created_at)
+        self._record_da_submission(da_submission, fragment_ids, created_at)
             .await
             .map_err(Into::into)
     }
@@ -490,7 +491,7 @@ mod tests {
         let nonce = tx.details.nonce;
 
         storage
-            .record_pending_tx(tx, fragment_ids, TestClock::default().now())
+            .record_da_submission(tx, fragment_ids, TestClock::default().now())
             .await
             .unwrap();
 
@@ -887,10 +888,11 @@ mod tests {
         let hash = rand::random::<[u8; 32]>();
         let tx = DASubmission {
             hash,
+            details: EthereumDetails::default(),
             ..Default::default()
         };
         storage
-            .record_pending_tx(tx, fragment_ids, TestClock::default().now())
+            .record_da_submission(tx, fragment_ids, TestClock::default().now())
             .await?;
 
         // when
@@ -911,6 +913,7 @@ mod tests {
         let (fragment_1, fragment_2) = (fragment_ids[0], fragment_ids[1]);
         let inserted_1 = DASubmission {
             hash: rand::random::<[u8; 32]>(),
+            details: EthereumDetails::default(),
             ..Default::default()
         };
         let mut inserted_2 = DASubmission {
@@ -928,13 +931,13 @@ mod tests {
         let test_clock = TestClock::default();
         let now = test_clock.now();
         storage
-            .record_pending_tx(inserted_1, nonempty![fragment_1], now)
+            .record_da_submission(inserted_1, nonempty![fragment_1], now)
             .await?;
 
         test_clock.advance_time(Duration::from_millis(1));
         let now = test_clock.now();
         storage
-            .record_pending_tx(inserted_2.clone(), nonempty![fragment_2], now)
+            .record_da_submission(inserted_2.clone(), nonempty![fragment_2], now)
             .await?;
 
         // when
@@ -963,7 +966,7 @@ mod tests {
         let nonce = tx.details.nonce;
 
         storage
-            .record_pending_tx(tx, fragment_ids, TestClock::default().now())
+            .record_da_submission(tx, fragment_ids, TestClock::default().now())
             .await
             .unwrap();
 
@@ -1006,7 +1009,7 @@ mod tests {
             ..Default::default()
         };
         storage
-            .record_pending_tx(tx.clone(), fragment_ids, TestClock::default().now())
+            .record_da_submission(tx.clone(), fragment_ids, TestClock::default().now())
             .await
             .unwrap();
 
@@ -1289,6 +1292,7 @@ mod tests {
         let tx_hash = [0; 32];
         let tx = DASubmission {
             hash: tx_hash,
+            details: EthereumDetails::default(),
             ..Default::default()
         };
 
@@ -1299,7 +1303,7 @@ mod tests {
             fragment_b3_id
         ];
         storage
-            .record_pending_tx(tx.clone(), all_frag_ids, Utc::now())
+            .record_da_submission(tx.clone(), all_frag_ids, Utc::now())
             .await
             .unwrap();
 

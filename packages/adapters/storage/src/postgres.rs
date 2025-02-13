@@ -538,7 +538,7 @@ impl Postgres {
         }
     }
 
-    pub(crate) async fn _record_pending_tx<D>(
+    pub(crate) async fn _record_da_submission<D>(
         &self,
         submission_tx: services::types::DASubmission<D>,
         fragment_ids: NonEmpty<NonNegative<i32>>,
@@ -1579,7 +1579,7 @@ mod tests {
                 };
 
                 storage
-                    .record_pending_tx(tx.clone(), fragment_ids.clone(), Utc::now())
+                    .record_da_submission(tx.clone(), fragment_ids.clone(), Utc::now())
                     .await
                     .unwrap();
 

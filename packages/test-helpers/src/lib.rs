@@ -162,10 +162,10 @@ pub mod mocks {
             expectations: impl IntoIterator<
                 Item = (Option<NonEmpty<Fragment>>, DASubmission<EthereumDetails>),
             >,
-        ) -> services::state_committer::port::da_layer::MockApi {
+        ) -> services::state_committer::port::l1::MockApi {
             let mut sequence = Sequence::new();
 
-            let mut l1_mock = services::state_committer::port::da_layer::MockApi::new();
+            let mut l1_mock = services::state_committer::port::l1::MockApi::new();
 
             for (fragment, tx) in expectations {
                 l1_mock

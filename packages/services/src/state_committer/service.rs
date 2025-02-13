@@ -7,9 +7,9 @@ use metrics::{
 };
 use tracing::info;
 
-use super::{fee_algo::SmaFeeAlgo, AlgoConfig};
+use super::{commit_helpers::next_fragments_to_submit, fee_algo::SmaFeeAlgo, AlgoConfig};
 use crate::{
-    state_committer::port::da_layer::Priority,
+    state_committer::port::l1::Priority,
     types::{
         storage::BundleFragment, CollectNonEmpty, DateTime, EthereumDASubmission, NonEmpty, Utc,
     },
@@ -110,7 +110,7 @@ where
 impl<DALayer, FuelApi, Db, Clock, FeeProvider>
     StateCommitter<DALayer, FuelApi, Db, Clock, FeeProvider>
 where
-    DALayer: crate::state_committer::port::da_layer::Api + Send + Sync,
+    DALayer: crate::state_committer::port::l1::Api + Send + Sync,
     FuelApi: crate::state_committer::port::fuel::Api,
     Db: crate::state_committer::port::Storage,
     Clock: crate::state_committer::port::Clock,
@@ -206,7 +206,7 @@ where
 
                 let tx_hash = submitted_tx.hash;
                 self.storage
-                    .record_pending_tx(submitted_tx, fragment_ids, self.clock.now())
+                    .record_da_submission(submitted_tx, fragment_ids, self.clock.now())
                     .await?;
 
                 tracing::info!("Submitted fragments {ids} with tx {}", hex::encode(tx_hash));
@@ -231,17 +231,14 @@ where
     }
 
     async fn next_fragments_to_submit(&self) -> Result<Option<NonEmpty<BundleFragment>>> {
-        let latest_height = self.fuel_api.latest_height().await?;
-        let starting_height = latest_height.saturating_sub(self.config.lookback_window);
-
-        // although we shouldn't know at this layer how many fragments the L1 can accept, we ignore
-        // this for now and put the eth value of max blobs per block (6).
-        let existing_fragments = self
-            .storage
-            .oldest_nonfinalized_fragments(starting_height, 6)
-            .await?;
-
-        let fragments = NonEmpty::collect(existing_fragments);
+        // delegate to shared helper, specifying 6 fragments per submission for Ethereum.
+        let fragments = next_fragments_to_submit(
+            &self.fuel_api,
+            &self.storage,
+            self.config.lookback_window,
+            6,
+        )
+        .await?;
 
         if let Some(fragments) = fragments.as_ref() {
             // Tracking the metric here as well to get updates more often -- because
@@ -370,7 +367,7 @@ where
 impl<DALayer, FuelApi, Db, Clock, FeeProvider> Runner
     for StateCommitter<DALayer, FuelApi, Db, Clock, FeeProvider>
 where
-    DALayer: crate::state_committer::port::da_layer::Api + Send + Sync,
+    DALayer: crate::state_committer::port::l1::Api + Send + Sync,
     FuelApi: crate::state_committer::port::fuel::Api + Send + Sync,
     Db: crate::state_committer::port::Storage + Clone + Send + Sync,
     Clock: crate::state_committer::port::Clock + Send + Sync,
