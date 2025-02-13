@@ -296,6 +296,8 @@ pub struct Internal {
     pub import_batches: ImportBatches,
 }
 
+/// Manages batching of incoming fuel blocks before importing them into the database, optimizing memory usage
+/// and reducing the number of generated logs.
 #[derive(Debug, Clone, Copy)]
 pub struct ImportBatches {
     pub max_blocks: usize,
