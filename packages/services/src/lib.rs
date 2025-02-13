@@ -22,6 +22,9 @@ pub use block_bundler::{
     bundler::{Bundle, BundleProposal, Bundler, Metadata},
     test_helpers::ControllableBundlerFactory,
 };
+pub use state_committer::eigen_service::{
+    Config as EigenStatecommitterConfig, StateCommitter as EigenStateCommitter,
+};
 pub use state_committer::service::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
 

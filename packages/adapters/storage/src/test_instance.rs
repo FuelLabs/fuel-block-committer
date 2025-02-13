@@ -188,6 +188,10 @@ impl services::state_listener::port::Storage for DbWithProcess {
         self.db._get_non_finalized_txs().await.map_err(Into::into)
     }
 
+    async  fn get_non_finalized_submissions(&self) -> services::Result<Vec<services::types::EigenDASubmission> > {
+        self.db._get_non_finalized_txs().await.map_err(Into::into)
+    }
+
     async fn update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,

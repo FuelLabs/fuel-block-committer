@@ -1,6 +1,5 @@
 use std::{iter::repeat, num::NonZeroU32, time::Duration};
 
-use eigenda::EigenDAClient;
 use itertools::Itertools;
 use metrics::{prometheus, RegistersMetrics};
 use services::{
@@ -753,7 +752,7 @@ async fn propagates_correct_priority_not_capped() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let mut l1_mock = services::state_committer::port::da_layer::MockApi::new();
+    let mut l1_mock = services::state_committer::port::l1::MockApi::new();
 
     l1_mock
         .expect_current_height()
@@ -816,7 +815,7 @@ async fn propagates_correct_priority_capped_at_100() -> Result<()> {
     let setup = test_helpers::Setup::init().await;
     let test_clock = setup.test_clock();
 
-    let mut l1_mock = services::state_committer::port::da_layer::MockApi::new();
+    let mut l1_mock = services::state_committer::port::l1::MockApi::new();
     l1_mock
         .expect_current_height()
         .returning(|| Box::pin(async { Ok(0u64) }));

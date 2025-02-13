@@ -3,7 +3,6 @@
 use std::{ops::RangeInclusive, time::Duration};
 
 use clock::TestClock;
-use eigenda::EigenDAClient;
 use eth::BlobEncoder;
 use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use metrics::prometheus::IntGauge;

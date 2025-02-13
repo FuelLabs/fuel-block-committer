@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clock::SystemClock;
+use eigenda::EigenDAClient;
 use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -21,7 +22,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{config, errors::Result, Database, FuelApi, L1};
+use crate::{
+    config::{self, EigenDA},
+    errors::Result,
+    Database, FuelApi, L1,
+};
 
 pub fn wallet_balance_tracker(
     internal_config: &config::Internal,
@@ -115,7 +120,7 @@ pub fn block_bundler(
 
 pub fn state_committer(
     fuel: FuelApi,
-    da_layer: L1,
+    l1: L1,
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
@@ -123,7 +128,7 @@ pub fn state_committer(
     fee_api: CachingApi<L1>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let state_committer = services::StateCommitter::new(
-        da_layer,
+        l1,
         fuel,
         storage,
         services::StateCommitterConfig {
@@ -135,6 +140,35 @@ pub fn state_committer(
         },
         SystemClock,
         fee_api,
+    );
+
+    state_committer.register_metrics(registry);
+
+    Ok(schedule_polling(
+        config.app.tx_finalization_check_interval,
+        state_committer,
+        "State Committer",
+        cancel_token,
+    ))
+}
+
+pub fn eigen_state_committer(
+    fuel: FuelApi,
+    eigen_da: EigenDAClient,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let state_committer = services::EigenStateCommitter::new(
+        eigen_da,
+        fuel,
+        storage,
+        services::EigenStatecommitterConfig {
+            api_throughput: 16, // TODO
+            lookback_window: config.app.bundle.block_height_lookback,
+        },
+        SystemClock,
     );
 
     state_committer.register_metrics(registry);
@@ -245,6 +279,19 @@ pub async fn l1_adapter(
     let health_check = l1.connection_health_checker();
 
     Ok((l1, health_check))
+}
+
+pub async fn eigen_adapter(
+    config: &EigenDA,
+    _internal_config: &config::Internal,
+) -> Result<EigenDAClient> {
+    // TODO add health tracking
+
+    let eigen_da = EigenDAClient::new(config.key.clone(), config.rpc.clone())
+        .await
+        .expect("TODO add err conversion");
+
+    Ok(eigen_da)
 }
 
 fn schedule_polling(

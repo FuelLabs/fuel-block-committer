@@ -26,6 +26,11 @@ impl services::state_listener::port::Storage for Postgres {
         self._get_non_finalized_txs().await.map_err(Into::into)
     }
 
+    // TODO separate
+    async  fn get_non_finalized_submissions(&self) -> Result<Vec<services::types::EigenDASubmission> > {
+        self._get_non_finalized_txs().await.map_err(Into::into)
+    }
+
     async fn update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,

@@ -40,3 +40,28 @@ pub struct EigenDetails {
 
 pub type EthereumDASubmission = DASubmission<EthereumDetails>;
 pub type EigenDASubmission = DASubmission<EigenDetails>;
+
+pub enum DispersalStatus {
+    Processing,
+    Confirmed,
+    Finalized,
+    Failed,
+}
+
+impl DispersalStatus {
+    pub fn is_failed(&self) -> bool {
+        matches!(self, DispersalStatus::Failed)
+    }
+
+    pub fn is_processing(&self) -> bool {
+        matches!(self, DispersalStatus::Processing)
+    }
+
+    pub fn is_confirmed(&self) -> bool {
+        matches!(self, DispersalStatus::Confirmed)
+    }
+
+    pub fn is_finalized(&self) -> bool {
+        matches!(self, DispersalStatus::Finalized)
+    }
+}

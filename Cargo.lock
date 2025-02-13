@@ -2604,6 +2604,7 @@ dependencies = [
  "futures",
  "hex",
  "k256",
+ "metrics",
  "prost",
  "services",
  "sha3",
@@ -6683,7 +6684,6 @@ version = "0.10.5"
 dependencies = [
  "clock",
  "delegate",
- "eigenda",
  "eth",
  "fuel-block-committer-encoding",
  "fuel-crypto",

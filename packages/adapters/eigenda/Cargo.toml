@@ -16,6 +16,7 @@ sha3 = { workspace = true }
 hex = { workspace = true }
 k256 = { workspace = true, features = ["ecdsa"] }
 futures = { workspace = true }
+metrics = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

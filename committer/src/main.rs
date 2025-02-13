@@ -5,7 +5,7 @@ mod errors;
 mod setup;
 
 use api::launch_api_server;
-use config::{DALayer, EigenDA};
+use config::DALayer ;
 use eigenda::EigenDAClient;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
@@ -18,6 +18,7 @@ use crate::setup::shut_down;
 pub type L1 = eth::WebsocketClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
+pub type EigenDA = EigenDAClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -86,24 +87,31 @@ async fn main() -> Result<()> {
             &metrics_registry,
         )?;
 
-        // // if EigenDA is enabled, start a service committing to EigenDA
-        // let da_layer = match config.da_layer.clone() {
-        //     Some(DALayer::EigenDA(EigenDA { key, rpc })) => {
-        //         let client = EigenDAClient::new(key, rpc).await.unwrap();
-        //         Some(client)
-        //     }
-        //     _ => None,
-        // };
-
-        let state_committer_handle = setup::state_committer(
-            fuel_adapter.clone(),
-            ethereum_rpc.clone(),
-            storage.clone(),
-            cancel_token.clone(),
-            &config,
-            &metrics_registry,
-            fee_api,
-        )?;
+        // start the right committer based on the config
+        let state_committer_handle = match config.da_layer.clone() {
+            Some(DALayer::EigenDA(eigen_config)) => {
+                let eigen_da = setup::eigen_adapter(&eigen_config, &internal_config).await?;
+                setup::eigen_state_committer(
+                    fuel_adapter.clone(),
+                    eigen_da,
+                    storage.clone(),
+                    cancel_token.clone(),
+                    &config,
+                    &metrics_registry,
+                )?
+            }
+            _ => {
+                setup::state_committer(
+                    fuel_adapter.clone(),
+                    ethereum_rpc.clone(),
+                    storage.clone(),
+                    cancel_token.clone(),
+                    &config,
+                    &metrics_registry,
+                    fee_api,
+                )?
+            },
+        };
 
         let state_importer_handle =
             setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
