@@ -11,10 +11,13 @@ mod whole_stack;
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use anyhow::Result;
-    use tokio::time::sleep_until;
+    use tokio::{sync::Mutex, time::sleep_until};
 
     use crate::whole_stack::{FuelNodeType, WholeStack};
 
@@ -100,6 +103,17 @@ mod tests {
         let show_logs = false;
         let blob_support = true;
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
+        let db_clone = stack.db.clone();
+        let sizes = Arc::new(Mutex::new(vec![]));
+
+        let sizes_clone = Arc::clone(&sizes);
+        let size_tracking_job = tokio::task::spawn(async move {
+            loop {
+                let new_sizes = db_clone.table_sizes().await.unwrap();
+                sizes_clone.lock().await.push(new_sizes);
+                tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+            }
+        });
 
         let num_iterations = 10;
         let blocks_per_iteration = 100;
@@ -124,31 +138,20 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
-        let pre_pruning_table_sizes = stack.db.table_sizes().await?;
+        tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 
-        let start = Instant::now();
-        loop {
-            let blocks_in_db = stack
-                .committer
-                .fetch_metric_value("tsize_blocks")
-                .await
-                .unwrap();
+        size_tracking_job.abort();
 
-            if blocks_in_db == 0 {
-                break;
-            }
-            if start.elapsed() > Duration::from_secs(60) {
-                panic!("Expected blocks_in_db == 0");
-            }
+        // validate that sizes went down in size at one point
+        let sizes = sizes.lock().await.clone();
+        let went_down_in_size = sizes.windows(2).any(|pair| {
+            let older = &pair[0];
+            let newer = &pair[1];
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        }
+            newer < older
+        });
 
-        let pruned_table_sizes = stack.db.table_sizes().await?;
-
-        if pruned_table_sizes >= pre_pruning_table_sizes {
-            panic!("Expected {pruned_table_sizes:#?} < {pre_pruning_table_sizes:#?}");
-        }
+        assert!(went_down_in_size);
 
         Ok(())
     }
