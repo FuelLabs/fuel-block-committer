@@ -2,7 +2,6 @@ use std::{collections::HashMap, ops::RangeInclusive};
 
 use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
-use serde::{de::DeserializeOwned, Serialize};
 use services::types::{
     storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
     CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
@@ -292,7 +291,7 @@ impl Postgres {
             b.end_height >= $2
             AND NOT EXISTS (
                 SELECT 1
-                FROM da_submission_fragments tf
+                FROM l1_transaction_fragments tf
                 JOIN da_submission t ON t.id = tf.da_submission_id
                 WHERE tf.fragment_id = f.id
                   AND t.state <> $1
