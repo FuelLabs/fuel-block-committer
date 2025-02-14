@@ -292,7 +292,7 @@ impl Postgres {
             AND NOT EXISTS (
                 SELECT 1
                 FROM l1_transaction_fragments tf
-                JOIN da_submission t ON t.id = tf.da_submission_id
+                JOIN l1_blob_transaction t ON t.id = tf.transaction_id
                 WHERE tf.fragment_id = f.id
                   AND t.state <> $1
             )
@@ -330,8 +330,8 @@ impl Postgres {
                     f.*,
                     b.start_height
                 FROM l1_fragments f
-                JOIN da_submission_fragments tf ON tf.fragment_id = f.id
-                JOIN da_submission t ON t.id = tf.da_submission_id
+                JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
+                JOIN l1_blob_transaction t ON t.id = tf.l1_transaction_id
                 JOIN bundles b ON b.id = f.bundle_id
                 WHERE t.hash = $1
         "#,
@@ -437,13 +437,13 @@ impl Postgres {
     ) -> crate::error::Result<Option<DateTime<Utc>>> {
         let response = sqlx::query!(
             r#"SELECT
-            MAX(da_submission.finalized_at) AS last_fragment_time
+            MAX(l1_blob_transaction.finalized_at) AS last_fragment_time
         FROM
-            da_submission_fragments
+            l1_transaction_fragments
         JOIN
-            da_submission ON da_submission.id = da_submission_fragments.da_submission_id
+            l1_blob_transaction ON l1_blob_transaction.id = l1_transaction_fragments.l1_blob_transaction_id
         WHERE
-            da_submission.state = $1;
+            l1_blob_transaction.state = $1;
         "#,
             i16::from(L1TxState::Finalized)
         )
@@ -460,9 +460,9 @@ impl Postgres {
     ) -> Result<Option<DateTime<Utc>>> {
         let response = sqlx::query!(
             r#"SELECT
-            MIN(da_submission.created_at) AS earliest_tx_time
+            MIN(l1_blob_transaction.created_at) AS earliest_tx_time
         FROM
-            da_submission
+            l1_blob_transaction
         WHERE
             (details->>'nonce')::integer = $1;
         "#,
@@ -537,7 +537,7 @@ impl Postgres {
         }
     }
 
-    pub(crate) async fn _record_da_submission<D>(
+    pub(crate) async fn _record_l1_blob_transaction<D>(
         &self,
         submission_tx: services::types::DASubmission<D>,
         fragment_ids: NonEmpty<NonNegative<i32>>,
@@ -550,7 +550,7 @@ impl Postgres {
 
         let row = tables::DASubmission::from(submission_tx);
         let tx_id = sqlx::query!(
-            "INSERT INTO da_submission (hash, state, details, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+            "INSERT INTO l1_blob_transaction (hash, state, details, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
             row.hash,
             i16::from(L1TxState::Pending),
             row.details,
@@ -562,7 +562,7 @@ impl Postgres {
 
         for id in fragment_ids {
             sqlx::query!(
-            "INSERT INTO da_submission_fragments (da_submission_id, fragment_id) VALUES ($1, $2)",
+            "INSERT INTO l1_transaction_fragments (l1_blob_transaction_id, fragment_id) VALUES ($1, $2)",
             tx_id,
             id.as_i32()
             )
@@ -576,7 +576,7 @@ impl Postgres {
 
     pub(crate) async fn _has_pending_txs(&self) -> Result<bool> {
         Ok(sqlx::query!(
-            "SELECT EXISTS (SELECT 1 FROM da_submission WHERE state = $1) AS has_pending_transactions;",
+            "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1) AS has_pending_transactions;",
             i16::from(L1TxState::Pending)
         )
         .fetch_one(&self.connection_pool)
@@ -586,7 +586,7 @@ impl Postgres {
 
     pub(crate) async fn _has_nonfinalized_txs(&self) -> Result<bool> {
         Ok(sqlx::query!(
-            "SELECT EXISTS (SELECT 1 FROM da_submission WHERE state = $1 OR state = $2) AS has_nonfinalized_transactions;",
+            "SELECT EXISTS (SELECT 1 FROM l1_blob_transaction WHERE state = $1 OR state = $2) AS has_nonfinalized_transactions;",
             i16::from(L1TxState::Pending),
             i16::from(L1TxState::IncludedInBlock)
         )
@@ -600,7 +600,7 @@ impl Postgres {
     ) -> Result<Vec<services::types::DASubmission<D>>> {
         sqlx::query_as!(
             tables::DASubmission,
-            "SELECT id, hash, details, created_at, state, finalized_at FROM da_submission WHERE state = $1 or state = $2",
+            "SELECT id, hash, details, created_at, state, finalized_at FROM l1_blob_transaction WHERE state = $1 or state = $2",
             i16::from(L1TxState::IncludedInBlock),
             i16::from(L1TxState::Pending)
         )
@@ -616,7 +616,7 @@ impl Postgres {
     ) -> Result<Option<services::types::DASubmission<D>>> {
         sqlx::query_as!(
             tables::DASubmission,
-            "SELECT id, hash, details, created_at, state, finalized_at FROM da_submission WHERE state = $1 ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, hash, details, created_at, state, finalized_at FROM l1_blob_transaction WHERE state = $1 ORDER BY created_at DESC LIMIT 1",
             i16::from(L1TxState::Pending)
         )
         .fetch_optional(&self.connection_pool)
@@ -650,7 +650,7 @@ impl Postgres {
         let state = i16::from(L1TxState::from(&state));
 
         sqlx::query!(
-            "UPDATE da_submission SET state = $1, finalized_at = $2 WHERE hash = $3",
+            "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
             state,
             finalized_at,
             hash.as_slice(),
@@ -710,7 +710,7 @@ impl Postgres {
         let state_int = i16::from(L1TxState::from(state));
 
         sqlx::query!(
-            "UPDATE da_submission SET state = $1, finalized_at = $2 WHERE hash = $3",
+            "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
             state_int,
             finalized_at,
             hash.as_slice(),
@@ -736,7 +736,7 @@ impl Postgres {
 
         // Set all transactions with the same nonce (extracted from the JSON "details" column) to Failed.
         sqlx::query!(
-            "UPDATE da_submission 
+            "UPDATE l1_blob_transaction 
              SET state = $1, finalized_at = $2 
              WHERE (details->>'nonce')::integer = $3",
             i16::from(L1TxState::Failed),
@@ -748,7 +748,7 @@ impl Postgres {
 
         // Update the specific transaction identified by hash.
         sqlx::query!(
-            "UPDATE da_submission 
+            "UPDATE l1_blob_transaction 
              SET state = $1, finalized_at = $2 
              WHERE hash = $3",
             state_int,
@@ -795,8 +795,8 @@ impl Postgres {
                 SUM(f.total_bytes)::BIGINT       AS total_bytes,
                 SUM(f.unused_bytes)::BIGINT      AS unused_bytes,
                 COUNT(*)::BIGINT                 AS fragment_count
-            FROM da_submission t
-            JOIN da_submission_fragments tf ON t.id = tf.da_submission_id
+            FROM l1_blob_transaction t
+            JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id
             JOIN l1_fragments f              ON tf.fragment_id = f.id
             WHERE t.hash = $1
             GROUP BY f.bundle_id
@@ -860,8 +860,8 @@ impl Postgres {
             FROM l1_fragments f
             WHERE f.bundle_id = $1 AND NOT EXISTS (
                 SELECT 1
-                FROM da_submission_fragments tf
-                JOIN da_submission t ON tf.da_submission_id = t.id
+                FROM l1_transaction_fragments tf
+                JOIN l1_blob_transaction t ON tf.transaction_id = t.id
                 WHERE tf.fragment_id = f.id AND t.state = $2
             )
             "#,
@@ -1076,24 +1076,24 @@ impl Postgres {
             r#"
             WITH
 
-            -- Delete from da_submission
+            -- Delete from l1_blob_transaction
             deleted_blob_transactions AS (
-                DELETE FROM da_submission
+                DELETE FROM l1_blob_transaction
                 WHERE created_at < $1
                 RETURNING id
             ),
 
-            -- Delete from da_submission_fragments
+            -- Delete from l1_transaction_fragments
             deleted_transaction_fragments AS (
-                DELETE FROM da_submission_fragments
-                WHERE da_submission_id IN (SELECT id FROM deleted_blob_transactions)
-                RETURNING da_submission_id, fragment_id
+                DELETE FROM l1_transaction_fragments
+                WHERE l1_blob_transaction_id IN (SELECT id FROM deleted_blob_transactions)
+                RETURNING l1_blob_transaction_id, fragment_id
             ),
 
             -- Build updated_transaction_fragments that represent the state after deletions
             updated_transaction_fragments AS (
-                SELECT fragment_id FROM da_submission_fragments
-                WHERE da_submission_id NOT IN (SELECT da_submission_id FROM deleted_transaction_fragments)
+                SELECT fragment_id FROM l1_transaction_fragments
+                WHERE l1_blob_transaction_id NOT IN (SELECT l1_blob_transaction_id FROM deleted_transaction_fragments)
             ),
 
             -- Delete fragments that are not referenced by any other transaction
@@ -1189,8 +1189,8 @@ impl Postgres {
         let response = sqlx::query!(
             r#"
             SELECT
-                (SELECT COUNT(*) FROM da_submission) AS size_blob_transactions,
-                (SELECT COUNT(*) FROM da_submission_fragments) AS size_transaction_fragments,
+                (SELECT COUNT(*) FROM l1_blob_transaction) AS size_blob_transactions,
+                (SELECT COUNT(*) FROM l1_transaction_fragments) AS size_transaction_fragments,
                 (SELECT COUNT(*) FROM l1_fragments) AS size_fragments,
                 (SELECT COUNT(*) FROM bundles) AS size_bundles,
                 (SELECT COUNT(*) FROM bundle_cost) AS size_bundle_costs,
@@ -1339,12 +1339,12 @@ mod tests {
             .unwrap();
         let fragment_id: i32 = row.try_get("id").unwrap();
 
-        // Insert into da_submission_fragments
-        let insert_da_submission_fragments = r#"
+        // Insert into l1_transaction_fragments
+        let insert_l1_transaction_fragments = r#"
         INSERT INTO l1_transaction_fragments (transaction_id, fragment_id)
         VALUES ($1, $2)
     "#;
-        sqlx::query(insert_da_submission_fragments)
+        sqlx::query(insert_l1_transaction_fragments)
             .bind(transaction_id)
             .bind(fragment_id)
             .execute(&db.db.pool())
@@ -1431,7 +1431,7 @@ mod tests {
         )
         .await;
 
-        // Verify that l1_fragments and da_submission_fragments are empty after migration
+        // Verify that l1_fragments and l1_transaction_fragments are empty after migration
         let count_l1_fragments = sqlx::query_scalar::<_, i64>(
             r#"
         SELECT COUNT(*) FROM l1_fragments
@@ -1578,7 +1578,7 @@ mod tests {
                 };
 
                 storage
-                    .record_da_submission(tx.clone(), fragment_ids.clone(), Utc::now())
+                    .record_l1_blob_transaction(tx.clone(), fragment_ids.clone(), Utc::now())
                     .await
                     .unwrap();
 
