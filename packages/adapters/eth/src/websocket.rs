@@ -13,7 +13,7 @@ use serde::Deserialize;
 use services::{
     state_committer::port::l1::Priority,
     types::{
-        BlockSubmissionTx, EthereumDASubmission, Fragment, FragmentsSubmitted, L1Height, NonEmpty,
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
         TransactionResponse, U256,
     },
     Result,
@@ -111,9 +111,9 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
             async fn submit_state_fragments(
                 &self,
                 fragments: NonEmpty<Fragment>,
-                previous_tx: Option<services::types::EthereumDASubmission>,
+                previous_tx: Option<services::types::L1Tx>,
                 priority: Priority
-            ) -> Result<(EthereumDASubmission, FragmentsSubmitted)>;
+            ) -> Result<(L1Tx, FragmentsSubmitted)>;
         }
     }
 }
@@ -378,9 +378,9 @@ impl WebsocketClient {
     pub(crate) async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-        previous_tx: Option<services::types::EthereumDASubmission>,
+        previous_tx: Option<services::types::L1Tx>,
         priority: Priority,
-    ) -> Result<(EthereumDASubmission, FragmentsSubmitted)> {
+    ) -> Result<(L1Tx, FragmentsSubmitted)> {
         Ok(self
             .inner
             .submit_state_fragments(fragments, previous_tx, priority)

@@ -1,4 +1,3 @@
-
 use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
@@ -6,38 +5,30 @@ use metrics::{
 use tracing::info;
 
 use crate::{
-    types::{EigenDASubmission, TransactionState},
+    types::{DispersalStatus, EigenDASubmission},
     Runner,
 };
 
-pub struct StateListener<EigenDA, Db, Clock> {
+pub struct StateListener<EigenDA, Db> {
     eigenda_adapter: EigenDA,
     storage: Db,
     metrics: Metrics,
-    clock: Clock,
 }
 
-impl<EigenDA, Db, Clock> StateListener<EigenDA, Db, Clock> {
-    pub fn new(
-        l1_adapter: EigenDA,
-        storage: Db,
-        clock: Clock,
-        last_finalization_time_metric: IntGauge,
-    ) -> Self {
+impl<EigenDA, Db> StateListener<EigenDA, Db> {
+    pub fn new(l1_adapter: EigenDA, storage: Db, last_finalization_time_metric: IntGauge) -> Self {
         Self {
             eigenda_adapter: l1_adapter,
             storage,
             metrics: Metrics::new(last_finalization_time_metric),
-            clock,
         }
     }
 }
 
-impl<EigenDA, Db, Clock> StateListener<EigenDA, Db, Clock>
+impl<EigenDA, Db> StateListener<EigenDA, Db>
 where
     EigenDA: crate::state_listener::port::eigen_da::Api,
     Db: crate::state_listener::port::Storage,
-    Clock: crate::state_listener::port::Clock,
 {
     async fn check_non_finalized(
         &self,
@@ -48,36 +39,37 @@ where
         for submission in non_finalized {
             let status = self.eigenda_adapter.get_blob_status(vec![]).await?;
 
-            if status.is_processing() {
-                // TODO: maybe log how long it was in processing
-                continue;
-            } else if status.is_confirmed() { 
-                changes.push((submission.hash, TransactionState::IncludedInBlock));
-                // TODO confirmed handling
-            } else if status.is_finalized() {
-                // log finalization
-                changes.push((submission.hash, TransactionState::Finalized(self.clock.now())));
-            } else {
-                changes.push((submission.hash, TransactionState::Failed));
-                // TODO log failure
+            match status {
+                DispersalStatus::Processing => {
+                    // log processing
+                    continue;
+                }
+                DispersalStatus::Confirmed => {
+                    changes.push((submission.request_id, DispersalStatus::Confirmed));
+                }
+                DispersalStatus::Finalized => {
+                    changes.push((submission.request_id, DispersalStatus::Finalized));
+                }
+                _ => {
+                    // log got bad status
+                    changes.push((submission.request_id, DispersalStatus::Failed));
+                }
             }
         }
 
-        // TODO: cost calculation and maybe don't reuse the tx update method
-                self.storage.update_tx_states_and_costs(changes, vec![], vec![]).await?;
+        self.storage.update_eigen_submissions(changes).await?;
 
         Ok(())
     }
 }
 
-impl<EigenDA, Db, Clock> Runner for StateListener<EigenDA, Db, Clock>
+impl<EigenDA, Db> Runner for StateListener<EigenDA, Db>
 where
-EigenDA: crate::state_listener::port::eigen_da::Api + Send + Sync,
+    EigenDA: crate::state_listener::port::eigen_da::Api + Send + Sync,
     Db: crate::state_listener::port::Storage,
-    Clock: crate::state_listener::port::Clock + Send + Sync,
 {
     async fn run(&mut self) -> crate::Result<()> {
-        let non_finalized = self.storage.get_non_finalized_submissions().await?;
+        let non_finalized = self.storage.get_non_finalized_eigen_submission().await?;
 
         if non_finalized.is_empty() {
             return Ok(());
@@ -96,7 +88,7 @@ struct Metrics {
     last_finalization_interval: IntGauge,
 }
 
-impl<L1, Db, Clock> RegistersMetrics for StateListener<L1, Db, Clock> {
+impl<L1, Db> RegistersMetrics for StateListener<L1, Db> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![
             Box::new(self.metrics.last_eth_block_w_blob.clone()),

@@ -5,7 +5,7 @@ use metrics::{prometheus, RegistersMetrics};
 use services::{
     fees::Fees,
     state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
-    types::{DASubmission, EthereumDetails, Fragment, FragmentsSubmitted, NonEmpty},
+    types::{Fragment, FragmentsSubmitted, L1Tx, NonEmpty},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_helpers::{mocks, noop_fees, preconfigured_fees};
@@ -19,7 +19,7 @@ async fn submits_fragments_when_required_count_accumulated() -> Result<()> {
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        DASubmission::default(),
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -59,12 +59,9 @@ async fn submits_fragments_on_timeout_before_accumulation() -> Result<()> {
     let tx_hash = [1; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        DASubmission {
+        L1Tx {
             hash: tx_hash,
-            details: EthereumDetails {
-                nonce: 0,
-                ..Default::default()
-            },
+            nonce: 0,
             ..Default::default()
         },
     )]);
@@ -144,12 +141,9 @@ async fn submits_fragments_when_required_count_before_timeout() -> Result<()> {
     let tx_hash = [3; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments).unwrap()),
-        DASubmission {
+        L1Tx {
             hash: tx_hash,
-            details: EthereumDetails {
-                nonce: 0,
-                ..Default::default()
-            },
+            nonce: 0,
             ..Default::default()
         },
     )]);
@@ -194,12 +188,9 @@ async fn timeout_measured_from_last_finalized_fragment() -> Result<()> {
     let tx_hash = [4; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments_to_submit).unwrap()),
-        DASubmission {
+        L1Tx {
             hash: tx_hash,
-            details: EthereumDetails {
-                nonce: 0,
-                ..Default::default()
-            },
+            nonce: 0,
             ..Default::default()
         },
     )]);
@@ -244,12 +235,9 @@ async fn timeout_measured_from_startup_if_no_finalized_fragment() -> Result<()> 
     let tx_hash = [5; 32];
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        DASubmission {
+        L1Tx {
             hash: tx_hash,
-            details: EthereumDetails {
-                nonce: 0,
-                ..Default::default()
-            },
+            nonce: 0,
             ..Default::default()
         },
     )]);
@@ -296,23 +284,17 @@ async fn resubmits_fragments_when_gas_bump_timeout_exceeded() -> Result<()> {
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            DASubmission {
+            L1Tx {
                 hash: tx_hash_1,
-                details: EthereumDetails {
-                    nonce: 0,
-                    ..Default::default()
-                },
+                nonce: 0,
                 ..Default::default()
             },
         ),
         (
             Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-            DASubmission {
+            L1Tx {
                 hash: tx_hash_2,
-                details: EthereumDetails {
-                    nonce: 1,
-                    ..Default::default()
-                },
+                nonce: 1,
                 ..Default::default()
             },
         ),
@@ -394,7 +376,7 @@ async fn sends_transaction_when_short_term_fee_favorable() -> Result<()> {
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        DASubmission::default(),
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -531,7 +513,7 @@ async fn sends_transaction_when_l2_blocks_behind_exceeds_max() -> Result<()> {
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        DASubmission::default(),
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -604,7 +586,7 @@ async fn sends_transaction_when_nearing_max_blocks_behind_with_increased_toleran
 
     let mut l1_mock_submit = test_helpers::mocks::l1::expects_state_submissions([(
         Some(NonEmpty::from_vec(fragments.clone()).unwrap()),
-        DASubmission::default(),
+        L1Tx::default(),
     )]);
     l1_mock_submit
         .expect_current_height()
@@ -762,12 +744,10 @@ async fn propagates_correct_priority_not_capped() -> Result<()> {
         .expect_submit_state_fragments()
         .withf(|_, _, priority| priority.get() == 50.)
         .return_once(
-            |fragments: NonEmpty<Fragment>,
-             _prev_tx: Option<DASubmission<EthereumDetails>>,
-             _priority| {
+            |fragments: NonEmpty<Fragment>, _prev_tx: Option<L1Tx>, _priority| {
                 Box::pin(async move {
                     Ok((
-                        DASubmission::default(),
+                        L1Tx::default(),
                         FragmentsSubmitted {
                             num_fragments: fragments.len_nonzero(),
                         },
@@ -824,12 +804,10 @@ async fn propagates_correct_priority_capped_at_100() -> Result<()> {
         .expect_submit_state_fragments()
         .withf(|_, _, priority| priority.get() == 100.0)
         .returning(
-            |fragments: NonEmpty<Fragment>,
-             _prev_tx: Option<DASubmission<EthereumDetails>>,
-             _priority| {
+            |fragments: NonEmpty<Fragment>, _prev_tx: Option<L1Tx>, _priority| {
                 Box::pin(async move {
                     Ok((
-                        DASubmission::default(),
+                        L1Tx::default(),
                         FragmentsSubmitted {
                             num_fragments: fragments.len_nonzero(),
                         },

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                (SELECT COUNT(*) FROM da_submission) AS size_blob_transactions,\n                (SELECT COUNT(*) FROM da_submission_fragments) AS size_transaction_fragments,\n                (SELECT COUNT(*) FROM l1_fragments) AS size_fragments,\n                (SELECT COUNT(*) FROM bundles) AS size_bundles,\n                (SELECT COUNT(*) FROM bundle_cost) AS size_bundle_costs,\n                (SELECT COUNT(*) FROM fuel_blocks) AS size_fuel_blocks,\n                (SELECT COUNT(*) FROM l1_transaction) AS size_contract_transactions,\n                (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions\n            ",
+  "query": "\n            SELECT\n                (SELECT COUNT(*) FROM l1_blob_transaction) AS size_blob_transactions,\n                (SELECT COUNT(*) FROM l1_transaction_fragments) AS size_transaction_fragments,\n                (SELECT COUNT(*) FROM l1_fragments) AS size_fragments,\n                (SELECT COUNT(*) FROM bundles) AS size_bundles,\n                (SELECT COUNT(*) FROM bundle_cost) AS size_bundle_costs,\n                (SELECT COUNT(*) FROM fuel_blocks) AS size_fuel_blocks,\n                (SELECT COUNT(*) FROM l1_transaction) AS size_contract_transactions,\n                (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions\n            ",
   "describe": {
     "columns": [
       {
@@ -58,5 +58,5 @@
       null
     ]
   },
-  "hash": "23fea22d8435113eb8e57cbb447318418d8ad803d003c06bea3e3af1781a0f19"
+  "hash": "929907037c938dbcbf56b066b42652a95c25dcf271f5144fd931afbda3a20b8b"
 }

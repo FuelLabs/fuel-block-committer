@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, hash, details, created_at, state, finalized_at FROM da_submission WHERE state = $1 or state = $2",
+  "query": "SELECT * FROM eigen_submission WHERE status = $1 or status = $2",
   "describe": {
     "columns": [
       {
@@ -10,28 +10,18 @@
       },
       {
         "ordinal": 1,
-        "name": "hash",
+        "name": "request_id",
         "type_info": "Bytea"
       },
       {
         "ordinal": 2,
-        "name": "details",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 3,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
-        "name": "state",
+        "ordinal": 3,
+        "name": "status",
         "type_info": "Int2"
-      },
-      {
-        "ordinal": 5,
-        "name": "finalized_at",
-        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -44,10 +34,8 @@
       false,
       false,
       false,
-      false,
-      false,
-      true
+      false
     ]
   },
-  "hash": "c8033e80a85fd3be5b61f313024fb9300b73dea25b4d44533ea6d6cacfba4037"
+  "hash": "2502a8cec8e562082f3e990e73934a2bf55e0ea2347c2c58323c4aa951f18d0e"
 }

@@ -1,6 +1,8 @@
-
 use crate::{
-    types::{DateTime, EigenDASubmission, EthereumDASubmission, TransactionCostUpdate, TransactionState, Utc},
+    types::{
+        DateTime, DispersalStatus, EigenDASubmission, L1Tx, TransactionCostUpdate,
+        TransactionState, Utc,
+    },
     Result,
 };
 
@@ -24,9 +26,7 @@ pub mod l1 {
 }
 
 pub mod eigen_da {
-    use crate::{
-        types::DispersalStatus, Result
-    };
+    use crate::{types::DispersalStatus, Result};
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
@@ -39,8 +39,7 @@ pub mod eigen_da {
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 pub trait Storage: Sync {
-    async fn get_non_finalized_txs(&self) -> Result<Vec<EthereumDASubmission>>;
-    async fn get_non_finalized_submissions(&self) -> Result<Vec<EigenDASubmission>>; // TODO
+    async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>>;
     async fn update_tx_states_and_costs(
         &self,
         selective_changes: Vec<([u8; 32], TransactionState)>,
@@ -49,6 +48,13 @@ pub trait Storage: Sync {
     ) -> Result<()>;
     async fn has_pending_txs(&self) -> Result<bool>;
     async fn earliest_submission_attempt(&self, nonce: u32) -> Result<Option<DateTime<Utc>>>;
+
+    // EigenDA
+    async fn get_non_finalized_eigen_submission(&self) -> Result<Vec<EigenDASubmission>>;
+    async fn update_eigen_submissions(
+        &self,
+        changes: Vec<(Vec<u8>, DispersalStatus)>,
+    ) -> Result<()>;
 }
 
 pub trait Clock {

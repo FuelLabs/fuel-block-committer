@@ -4,8 +4,8 @@ use itertools::Itertools;
 use metrics::{prometheus::IntGauge, RegistersMetrics};
 use services::types::{
     storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-    CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-    TransactionState, TryCollectNonEmpty, Utc,
+    CompressedFuelBlock, DateTime, DispersalStatus, EigenDASubmission, Fragment, NonEmpty,
+    NonNegative, TransactionCostUpdate, TransactionState, TryCollectNonEmpty, Utc,
 };
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -14,7 +14,10 @@ use sqlx::{
 
 use super::error::{Error, Result};
 use crate::{
-    mappings::tables::{self, L1TxState},
+    mappings::{
+        eigen_tables::{self, SubmissionStatus},
+        tables::{self, L1TxState},
+    },
     postgres::tables::u128_to_bigdecimal,
 };
 
@@ -331,7 +334,7 @@ impl Postgres {
                     b.start_height
                 FROM l1_fragments f
                 JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id
-                JOIN l1_blob_transaction t ON t.id = tf.l1_transaction_id
+                JOIN l1_blob_transaction t ON t.id = tf.transaction_id
                 JOIN bundles b ON b.id = f.bundle_id
                 WHERE t.hash = $1
         "#,
@@ -441,7 +444,7 @@ impl Postgres {
         FROM
             l1_transaction_fragments
         JOIN
-            l1_blob_transaction ON l1_blob_transaction.id = l1_transaction_fragments.l1_blob_transaction_id
+            l1_blob_transaction ON l1_blob_transaction.id = l1_transaction_fragments.transaction_id
         WHERE
             l1_blob_transaction.state = $1;
         "#,
@@ -464,7 +467,7 @@ impl Postgres {
         FROM
             l1_blob_transaction
         WHERE
-            (details->>'nonce')::integer = $1;
+            l1_blob_transaction.nonce = $1;
         "#,
             nonce as i64
         )
@@ -537,24 +540,24 @@ impl Postgres {
         }
     }
 
-    pub(crate) async fn _record_l1_blob_transaction<D>(
+    pub(crate) async fn _record_pending_tx(
         &self,
-        submission_tx: services::types::DASubmission<D>,
+        submission_tx: services::types::L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
-    ) -> Result<()>
-    where
-        D: serde::Serialize,
-    {
+    ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
-        let row = tables::DASubmission::from(submission_tx);
+        let row = tables::L1Tx::from(submission_tx);
         let tx_id = sqlx::query!(
-            "INSERT INTO l1_blob_transaction (hash, state, details, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+            "INSERT INTO l1_blob_transaction (hash, state, nonce, max_fee, priority_fee, blob_fee, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
             row.hash,
             i16::from(L1TxState::Pending),
-            row.details,
-            created_at,
+            row.nonce,
+            row.max_fee,
+            row.priority_fee,
+            row.blob_fee,
+            created_at
         )
         .fetch_one(&mut *tx)
         .await?
@@ -562,7 +565,7 @@ impl Postgres {
 
         for id in fragment_ids {
             sqlx::query!(
-            "INSERT INTO l1_transaction_fragments (l1_blob_transaction_id, fragment_id) VALUES ($1, $2)",
+            "INSERT INTO l1_transaction_fragments (transaction_id, fragment_id) VALUES ($1, $2)",
             tx_id,
             id.as_i32()
             )
@@ -595,12 +598,10 @@ impl Postgres {
         .has_nonfinalized_transactions.unwrap_or(false))
     }
 
-    pub(crate) async fn _get_non_finalized_txs<D: DeserializeOwned + Serialize>(
-        &self,
-    ) -> Result<Vec<services::types::DASubmission<D>>> {
+    pub(crate) async fn _get_non_finalized_txs(&self) -> Result<Vec<services::types::L1Tx>> {
         sqlx::query_as!(
-            tables::DASubmission,
-            "SELECT id, hash, details, created_at, state, finalized_at FROM l1_blob_transaction WHERE state = $1 or state = $2",
+            tables::L1Tx,
+            "SELECT * FROM l1_blob_transaction WHERE state = $1 or state = $2",
             i16::from(L1TxState::IncludedInBlock),
             i16::from(L1TxState::Pending)
         )
@@ -611,12 +612,10 @@ impl Postgres {
         .collect::<Result<Vec<_>>>()
     }
 
-    pub(crate) async fn _get_latest_pending_txs<D: DeserializeOwned + Serialize>(
-        &self,
-    ) -> Result<Option<services::types::DASubmission<D>>> {
+    pub(crate) async fn _get_latest_pending_txs(&self) -> Result<Option<services::types::L1Tx>> {
         sqlx::query_as!(
-            tables::DASubmission,
-            "SELECT id, hash, details, created_at, state, finalized_at FROM l1_blob_transaction WHERE state = $1 ORDER BY created_at DESC LIMIT 1",
+            tables::L1Tx,
+            "SELECT * FROM l1_blob_transaction WHERE state = $1 ORDER BY created_at DESC LIMIT 1",
             i16::from(L1TxState::Pending)
         )
         .fetch_optional(&self.connection_pool)
@@ -734,23 +733,19 @@ impl Postgres {
         };
         let state_int = i16::from(L1TxState::from(state));
 
-        // Set all transactions with the same nonce (extracted from the JSON "details" column) to Failed.
+        // set all transactions with the same nonce to Failed
         sqlx::query!(
-            "UPDATE l1_blob_transaction 
-             SET state = $1, finalized_at = $2 
-             WHERE (details->>'nonce')::integer = $3",
+            "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE nonce = $3",
             i16::from(L1TxState::Failed),
             Option::<DateTime<Utc>>::None,
-            nonce as i32, // casting nonce to i32 for the comparison
+            nonce as i64,
         )
         .execute(&mut *tx)
         .await?;
 
-        // Update the specific transaction identified by hash.
+        // update the specific transaction
         sqlx::query!(
-            "UPDATE l1_blob_transaction 
-             SET state = $1, finalized_at = $2 
-             WHERE hash = $3",
+            "UPDATE l1_blob_transaction SET state = $1, finalized_at = $2 WHERE hash = $3",
             state_int,
             finalized_at,
             hash.as_slice(),
@@ -1086,14 +1081,14 @@ impl Postgres {
             -- Delete from l1_transaction_fragments
             deleted_transaction_fragments AS (
                 DELETE FROM l1_transaction_fragments
-                WHERE l1_blob_transaction_id IN (SELECT id FROM deleted_blob_transactions)
-                RETURNING l1_blob_transaction_id, fragment_id
+                WHERE transaction_id IN (SELECT id FROM deleted_blob_transactions)
+                RETURNING transaction_id, fragment_id
             ),
 
             -- Build updated_transaction_fragments that represent the state after deletions
             updated_transaction_fragments AS (
                 SELECT fragment_id FROM l1_transaction_fragments
-                WHERE l1_blob_transaction_id NOT IN (SELECT l1_blob_transaction_id FROM deleted_transaction_fragments)
+                WHERE transaction_id NOT IN (SELECT transaction_id FROM deleted_transaction_fragments)
             ),
 
             -- Delete fragments that are not referenced by any other transaction
@@ -1213,6 +1208,77 @@ impl Postgres {
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
         })
     }
+
+    pub(crate) async fn _record_eigenda_submission(
+        &self,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        let row = eigen_tables::EigenDASubmission::from(submission);
+        let submission_id = sqlx::query!(
+            "INSERT INTO eigen_submission (request_id, status, created_at) VALUES ($1, $2, $3) RETURNING id",
+            row.request_id,
+            i16::from(eigen_tables::SubmissionStatus::Processing),
+            created_at
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .id;
+
+        sqlx::query!(
+            "INSERT INTO eigen_submission_fragments (submission_id, fragment_id) VALUES ($1, $2)",
+            submission_id,
+            fragment_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_non_finalized_eigen_submission(
+        &self,
+    ) -> Result<Vec<EigenDASubmission>> {
+        sqlx::query_as!(
+            eigen_tables::EigenDASubmission,
+            "SELECT * FROM eigen_submission WHERE status = $1 or status = $2",
+            i16::from(eigen_tables::SubmissionStatus::Processing),
+            i16::from(eigen_tables::SubmissionStatus::Confirmed),
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _update_eigen_submissions(
+        &self,
+        changes: Vec<(Vec<u8>, DispersalStatus)>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        for (request_id, status) in changes {
+            let status: i16 = SubmissionStatus::from(status).into();
+
+            sqlx::query!(
+                "UPDATE eigen_submission SET status = $1 WHERE request_id = $2",
+                status,
+                request_id
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
+    }
 }
 
 fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
@@ -1245,9 +1311,7 @@ mod tests {
     use std::{env, fs, path::Path};
 
     use rand::Rng;
-    use services::types::{
-        CollectNonEmpty, DASubmission, EthereumDetails, Fragment, TransactionState,
-    };
+    use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
     use sqlx::{Executor, PgPool, Row};
     use tokio::time::Instant;
 
@@ -1568,17 +1632,14 @@ mod tests {
         for _id in fragment_ids.iter() {
             for _ in 0..txs_per_fragment {
                 let tx_hash = rng.gen::<[u8; 32]>();
-                let tx = DASubmission {
+                let tx = L1Tx {
                     hash: tx_hash,
-                    details: EthereumDetails {
-                        nonce: rng.gen(),
-                        ..Default::default()
-                    },
+                    nonce: rng.gen(),
                     ..Default::default()
                 };
 
                 storage
-                    .record_l1_blob_transaction(tx.clone(), fragment_ids.clone(), Utc::now())
+                    .record_pending_tx(tx.clone(), fragment_ids.clone(), Utc::now())
                     .await
                     .unwrap();
 

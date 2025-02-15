@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO da_submission (hash, state, details, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+  "query": "INSERT INTO eigen_submission (request_id, status, created_at) VALUES ($1, $2, $3) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -13,7 +13,6 @@
       "Left": [
         "Bytea",
         "Int2",
-        "Jsonb",
         "Timestamptz"
       ]
     },
@@ -21,5 +20,5 @@
       false
     ]
   },
-  "hash": "e9b345d90e609def3941c2dcba2006fdb2d1760b897416f7bd8c70bf126665e5"
+  "hash": "a2673e2e158bbaf129a8c5cb2f0891f2c073841f52ae893e7590562d574609c4"
 }

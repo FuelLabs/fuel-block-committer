@@ -35,12 +35,9 @@ pub trait EthApi {
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<services::types::Fragment>,
-        previous_tx: Option<services::types::EthereumDASubmission>,
+        previous_tx: Option<services::types::L1Tx>,
         priority: Priority,
-    ) -> Result<(
-        services::types::EthereumDASubmission,
-        services::types::FragmentsSubmitted,
-    )>;
+    ) -> Result<(services::types::L1Tx, services::types::FragmentsSubmitted)>;
     #[cfg(feature = "test-helpers")]
     async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool>;
     #[cfg(feature = "test-helpers")]
@@ -155,12 +152,9 @@ where
     async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
-        previous: Option<services::types::EthereumDASubmission>,
+        previous: Option<services::types::L1Tx>,
         priority: Priority,
-    ) -> Result<(
-        services::types::EthereumDASubmission,
-        services::types::FragmentsSubmitted,
-    )> {
+    ) -> Result<(services::types::L1Tx, services::types::FragmentsSubmitted)> {
         let response = self
             .adapter
             .submit_state_fragments(fragments, previous, priority)

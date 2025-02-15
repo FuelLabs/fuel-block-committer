@@ -5,7 +5,7 @@ mod errors;
 mod setup;
 
 use api::launch_api_server;
-use config::DALayer ;
+use config::DALayer;
 use eigenda::EigenDAClient;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
@@ -100,17 +100,15 @@ async fn main() -> Result<()> {
                     &metrics_registry,
                 )?
             }
-            _ => {
-                setup::state_committer(
-                    fuel_adapter.clone(),
-                    ethereum_rpc.clone(),
-                    storage.clone(),
-                    cancel_token.clone(),
-                    &config,
-                    &metrics_registry,
-                    fee_api,
-                )?
-            },
+            _ => setup::state_committer(
+                fuel_adapter.clone(),
+                ethereum_rpc.clone(),
+                storage.clone(),
+                cancel_token.clone(),
+                &config,
+                &metrics_registry,
+                fee_api,
+            )?,
         };
 
         let state_importer_handle =

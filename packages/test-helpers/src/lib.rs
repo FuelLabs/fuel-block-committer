@@ -16,10 +16,7 @@ use services::{
         Fees,
     },
     state_listener::service::StateListener,
-    types::{
-        BlockSubmission, CollectNonEmpty, CompressedFuelBlock, DASubmission, EthereumDetails,
-        Fragment, NonEmpty,
-    },
+    types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
     BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
 };
 use storage::{DbWithProcess, PostgresProcess};
@@ -43,8 +40,8 @@ pub mod mocks {
         use delegate::delegate;
         use mockall::{predicate::eq, Sequence};
         use services::types::{
-            BlockSubmissionTx, DASubmission, EthereumDetails, Fragment, FragmentsSubmitted,
-            L1Height, NonEmpty, TransactionResponse,
+            BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
+            TransactionResponse,
         };
 
         pub struct FullL1Mock {
@@ -158,9 +155,7 @@ pub mod mocks {
         }
 
         pub fn expects_state_submissions(
-            expectations: impl IntoIterator<
-                Item = (Option<NonEmpty<Fragment>>, DASubmission<EthereumDetails>),
-            >,
+            expectations: impl IntoIterator<Item = (Option<NonEmpty<Fragment>>, L1Tx)>,
         ) -> services::state_committer::port::l1::MockApi {
             let mut sequence = Sequence::new();
 
@@ -550,12 +545,9 @@ impl Setup {
     pub async fn send_fragments(&self, eth_tx: [u8; 32], eth_nonce: u32) {
         let mut l1_mock = mocks::l1::expects_state_submissions(vec![(
             None,
-            DASubmission {
+            L1Tx {
                 hash: eth_tx,
-                details: EthereumDetails {
-                    nonce: eth_nonce,
-                    ..Default::default()
-                },
+                nonce: eth_nonce,
                 ..Default::default()
             },
         )]);
@@ -591,12 +583,9 @@ impl Setup {
 
         let mut l1_mock = mocks::l1::expects_state_submissions(vec![(
             None,
-            DASubmission {
+            L1Tx {
                 hash: eth_tx,
-                details: EthereumDetails {
-                    nonce: eth_nonce,
-                    ..Default::default()
-                },
+                nonce: eth_nonce,
                 ..Default::default()
             },
         )]);

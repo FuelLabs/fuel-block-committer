@@ -6,7 +6,7 @@ use alloy::{
     rpc::types::{FeeHistory, TransactionRequest},
 };
 use itertools::Itertools;
-use services::types::EthereumDetails;
+use services::types::L1Tx;
 
 use crate::error::{Error, Result};
 
@@ -17,8 +17,8 @@ pub struct MaxTxFeesPerGas {
     pub blob: u128,
 }
 
-impl<'a> From<&'a EthereumDetails> for MaxTxFeesPerGas {
-    fn from(value: &'a EthereumDetails) -> Self {
+impl<'a> From<&'a L1Tx> for MaxTxFeesPerGas {
+    fn from(value: &'a L1Tx) -> Self {
         Self {
             normal: value.max_fee,
             priority: value.blob_fee,

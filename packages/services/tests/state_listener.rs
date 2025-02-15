@@ -1,11 +1,10 @@
 use std::time::Duration;
 
-use eigenda::EigenDAClient;
 use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use services::{
     state_listener::{port::Storage, service::StateListener},
-    types::{DASubmission, EthereumDetails, L1Height, TransactionResponse},
+    types::{L1Height, L1Tx, TransactionResponse},
     Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_case::test_case;
@@ -427,22 +426,19 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
     let nonce = 0;
 
     let orig_tx_hash = [0; 32];
-    let orig_tx = DASubmission {
+    let orig_tx = L1Tx {
         hash: orig_tx_hash,
         created_at: Some(start_time),
-        details: Default::default(),
+        nonce,
         ..Default::default()
     };
 
     let replacement_tx_time = start_time + Duration::from_secs(1);
     let replacement_tx_hash = [1; 32];
-    let replacement_tx = DASubmission {
+    let replacement_tx = L1Tx {
         hash: replacement_tx_hash,
         created_at: Some(replacement_tx_time),
-        details: EthereumDetails {
-            nonce,
-            ..Default::default()
-        },
+        nonce,
         ..Default::default()
     };
     let mut l1_mock =
@@ -534,7 +530,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
     let start_time = test_clock.now();
     let nonce = 0;
     let orig_tx_hash = [0; 32];
-    let orig_tx = DASubmission {
+    let orig_tx = L1Tx {
         hash: orig_tx_hash,
         created_at: Some(start_time),
         ..Default::default()
@@ -542,13 +538,10 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
 
     let replacement_tx_time = start_time + Duration::from_secs(1);
     let replacement_tx_hash = [1; 32];
-    let replacement_tx = DASubmission {
+    let replacement_tx = L1Tx {
         hash: replacement_tx_hash,
         created_at: Some(replacement_tx_time),
-        details: EthereumDetails {
-            nonce,
-            ..Default::default()
-        },
+        nonce,
         ..Default::default()
     };
 

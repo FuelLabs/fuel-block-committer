@@ -5,7 +5,6 @@ pub enum TransactionState {
     Pending,
     IncludedInBlock,
     Finalized(DateTime<Utc>),
-    SqueezedOut,
     Failed,
 }
 

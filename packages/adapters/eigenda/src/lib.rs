@@ -14,8 +14,8 @@ impl From<BlobStatus> for DispersalStatus {
             BlobStatus::Processing => DispersalStatus::Processing,
             BlobStatus::Confirmed => DispersalStatus::Confirmed,
             BlobStatus::Finalized => DispersalStatus::Finalized,
-            // TODO find a way to at least log a strange status
-            _ => DispersalStatus::Failed,
+            BlobStatus::Failed => DispersalStatus::Failed,
+            _ => DispersalStatus::Other(status.as_str_name().to_string()),
         }
     }
 }

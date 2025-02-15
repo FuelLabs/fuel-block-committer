@@ -2,12 +2,11 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS eigen_submission (
     id              SERIAL PRIMARY KEY,
-    request_id      TEXT NOT NULL UNIQUE,
+    request_id      BYTEA NOT NULL UNIQUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    finalized_at    TIMESTAMPTZ,
-    state           SMALLINT NOT NULL,
-    CONSTRAINT eigen_submission_state_check 
-        CHECK (state IN (0, 1, 2, 3) AND (state != 1 OR finalized_at IS NOT NULL))
+    status          SMALLINT NOT NULL,
+    CONSTRAINT eigen_submission_status_check 
+        CHECK (status IN (0, 1, 2, 3))
 );
 
 CREATE TABLE IF NOT EXISTS eigen_submission_fragments (

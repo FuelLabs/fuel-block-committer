@@ -10,9 +10,9 @@ use services::{
     block_bundler, block_committer, block_importer,
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DASubmission,
-        DateTime, EthereumDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-        TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        DispersalStatus, EigenDASubmission, Fragment, L1Tx, NonEmpty, NonNegative,
+        TransactionCostUpdate, TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -184,11 +184,7 @@ impl services::state_pruner::port::Storage for DbWithProcess {
 }
 
 impl services::state_listener::port::Storage for DbWithProcess {
-    async fn get_non_finalized_txs(&self) -> services::Result<Vec<EthereumDASubmission>> {
-        self.db._get_non_finalized_txs().await.map_err(Into::into)
-    }
-
-    async  fn get_non_finalized_submissions(&self) -> services::Result<Vec<services::types::EigenDASubmission> > {
+    async fn get_non_finalized_txs(&self) -> services::Result<Vec<L1Tx>> {
         self.db._get_non_finalized_txs().await.map_err(Into::into)
     }
 
@@ -216,6 +212,16 @@ impl services::state_listener::port::Storage for DbWithProcess {
             ._earliest_submission_attempt(nonce)
             .await
             .map_err(Into::into)
+    }
+
+    async fn get_non_finalized_eigen_submission(&self) -> services::Result<Vec<EigenDASubmission>> {
+        unimplemented!();
+    }
+    async fn update_eigen_submissions(
+        &self,
+        changes: Vec<(Vec<u8>, DispersalStatus)>,
+    ) -> services::Result<()> {
+        unimplemented!();
     }
 }
 
@@ -312,14 +318,14 @@ impl services::state_committer::port::Storage for DbWithProcess {
             .await
             .map_err(Into::into)
     }
-    async fn record_da_submission<D: Serialize + Send>(
+    async fn record_pending_tx(
         &self,
-        da_submission: DASubmission<D>,
+        tx: L1Tx,
         fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> services::Result<()> {
         self.db
-            ._record_da_submission(da_submission, fragment_ids, created_at)
+            ._record_pending_tx(tx, fragment_ids, created_at)
             .await
             .map_err(Into::into)
     }
@@ -342,14 +348,21 @@ impl services::state_committer::port::Storage for DbWithProcess {
             .await
             .map_err(Into::into)
     }
-    async fn get_latest_pending_txs(
-        &self,
-    ) -> services::Result<Option<services::types::EthereumDASubmission>> {
+    async fn get_latest_pending_txs(&self) -> services::Result<Option<services::types::L1Tx>> {
         self.db._get_latest_pending_txs().await.map_err(Into::into)
     }
 
     async fn latest_bundled_height(&self) -> services::Result<Option<u32>> {
         self.db._latest_bundled_height().await.map_err(Into::into)
+    }
+
+    async fn record_eigenda_submission(
+        &self,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
+    ) -> services::Result<()> {
+        unimplemented!()
     }
 }
 

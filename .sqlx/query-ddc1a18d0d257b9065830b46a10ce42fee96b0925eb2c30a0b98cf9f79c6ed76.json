@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    f.*,\n                    b.start_height\n                FROM l1_fragments f\n                JOIN da_submission_fragments tf ON tf.fragment_id = f.id\n                JOIN da_submission t ON t.id = tf.da_submission_id\n                JOIN bundles b ON b.id = f.bundle_id\n                WHERE t.hash = $1\n        ",
+  "query": "\n                SELECT\n                    f.*,\n                    b.start_height\n                FROM l1_fragments f\n                JOIN l1_transaction_fragments tf ON tf.fragment_id = f.id\n                JOIN l1_blob_transaction t ON t.id = tf.transaction_id\n                JOIN bundles b ON b.id = f.bundle_id\n                WHERE t.hash = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -54,5 +54,5 @@
       false
     ]
   },
-  "hash": "3b444d3d835e8f3d6f2368f21b1dfabe6d2e32107d639c068dca75a5d870d543"
+  "hash": "ddc1a18d0d257b9065830b46a10ce42fee96b0925eb2c30a0b98cf9f79c6ed76"
 }

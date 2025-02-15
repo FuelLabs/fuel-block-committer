@@ -1,10 +1,7 @@
 use nonempty::NonEmpty;
-use serde::Serialize;
 
 use crate::{
-    types::{
-        storage::BundleFragment, DASubmission, DateTime, EthereumDASubmission, NonNegative, Utc,
-    },
+    types::{storage::BundleFragment, DateTime, EigenDASubmission, L1Tx, NonNegative, Utc},
     Error, Result,
 };
 
@@ -12,7 +9,7 @@ pub mod l1 {
     use nonempty::NonEmpty;
 
     use crate::{
-        types::{BlockSubmissionTx, EthereumDASubmission, Fragment, FragmentsSubmitted},
+        types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
         Error, Result,
     };
     #[allow(async_fn_in_trait)]
@@ -52,9 +49,9 @@ pub mod l1 {
         async fn submit_state_fragments(
             &self,
             fragments: NonEmpty<Fragment>,
-            previous_tx: Option<EthereumDASubmission>,
+            previous_tx: Option<L1Tx>,
             priority: Priority,
-        ) -> Result<(EthereumDASubmission, FragmentsSubmitted)>;
+        ) -> Result<(L1Tx, FragmentsSubmitted)>;
     }
 }
 
@@ -90,10 +87,10 @@ pub mod fuel {
 pub trait Storage: Sync {
     async fn has_nonfinalized_txs(&self) -> Result<bool>;
     async fn last_time_a_fragment_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
-    async fn record_da_submission<D: Serialize + Send>(
+    async fn record_pending_tx(
         &self,
-        da_submission: DASubmission<D>,
-        fragment_id: NonEmpty<NonNegative<i32>>,
+        tx: L1Tx,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> Result<()>;
     async fn oldest_nonfinalized_fragments(
@@ -103,7 +100,15 @@ pub trait Storage: Sync {
     ) -> Result<Vec<BundleFragment>>;
     async fn latest_bundled_height(&self) -> Result<Option<u32>>;
     async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
-    async fn get_latest_pending_txs(&self) -> Result<Option<EthereumDASubmission>>;
+    async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
+
+    // EigenDA
+    async fn record_eigenda_submission(
+        &self,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
+    ) -> Result<()>;
 }
 
 pub trait Clock {

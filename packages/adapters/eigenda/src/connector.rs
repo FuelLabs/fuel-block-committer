@@ -1,5 +1,4 @@
 use futures::{stream, StreamExt, TryFutureExt};
-use metrics::RegistersMetrics;
 use services::{
     types::{DispersalStatus, EigenDASubmission, Fragment},
     Error as ServiceError, Result as ServiceResult,
@@ -38,17 +37,19 @@ impl services::state_committer::port::eigen_da::Api for EigenDAClient {
             .await?;
 
         Ok(EigenDASubmission {
-            hash: request_id,
-            id: todo!(),
-            created_at: todo!(),
-            state: todo!(),
-            details: todo!(),
+            request_id,
+            created_at: None,
+            status: DispersalStatus::Processing,
+            ..Default::default()
         })
     }
 }
 
 impl services::state_listener::port::eigen_da::Api for EigenDAClient {
-    fn get_blob_status(&self, id: Vec<u8>) -> impl ::core::future::Future<Output = ServiceResult<DispersalStatus> > + Send {
+    fn get_blob_status(
+        &self,
+        id: Vec<u8>,
+    ) -> impl ::core::future::Future<Output = ServiceResult<DispersalStatus>> + Send {
         async move {
             let status = self.check_status(id).await?;
             Ok(status)
@@ -94,10 +95,7 @@ impl EigenDAClient {
         Ok(signature)
     }
 
-    async fn handle_authenticated_dispersal(
-        &mut self,
-        data: Vec<u8>,
-    ) -> Result<Vec<u8>> {
+    async fn handle_authenticated_dispersal(&mut self, data: Vec<u8>) -> Result<Vec<u8>> {
         let disperse_request = AuthenticatedRequest {
             payload: Some(authenticated_request::Payload::DisperseRequest(
                 DisperseBlobRequest {
@@ -152,9 +150,7 @@ impl EigenDAClient {
                     return Ok(reply.request_id);
                 }
                 None => {
-                    return Err(Error::Other(
-                        "received unexpected response".to_string(),
-                    ));
+                    return Err(Error::Other("received unexpected response".to_string()));
                 }
             }
         }
@@ -162,10 +158,7 @@ impl EigenDAClient {
         Err(Error::AuthenticationFailed)
     }
 
-    async fn handle_unauthenticated_dispersal(
-        &mut self,
-        data: Vec<u8>,
-    ) -> Result<Vec<u8>> {
+    async fn handle_unauthenticated_dispersal(&mut self, data: Vec<u8>) -> Result<Vec<u8>> {
         let reply = self
             .client
             .disperse_blob(Request::new(DisperseBlobRequest {
@@ -180,7 +173,7 @@ impl EigenDAClient {
     }
 
     async fn check_status(&self, request_id: Vec<u8>) -> Result<DispersalStatus> {
-        let mut  client = self.client.clone();
+        let mut client = self.client.clone();
         let status = client
             .get_blob_status(Request::new(BlobStatusRequest { request_id }))
             .await?
@@ -189,7 +182,6 @@ impl EigenDAClient {
 
         let status = BlobStatus::try_from(status).unwrap_or(BlobStatus::Unknown);
 
-    
         Ok(status.into())
     }
 }

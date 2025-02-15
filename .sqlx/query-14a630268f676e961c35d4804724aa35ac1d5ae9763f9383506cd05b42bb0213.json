@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                f.bundle_id,\n                SUM(f.total_bytes)::BIGINT       AS total_bytes,\n                SUM(f.unused_bytes)::BIGINT      AS unused_bytes,\n                COUNT(*)::BIGINT                 AS fragment_count\n            FROM da_submission t\n            JOIN da_submission_fragments tf ON t.id = tf.da_submission_id\n            JOIN l1_fragments f              ON tf.fragment_id = f.id\n            WHERE t.hash = $1\n            GROUP BY f.bundle_id\n            ",
+  "query": "\n            SELECT\n                f.bundle_id,\n                SUM(f.total_bytes)::BIGINT       AS total_bytes,\n                SUM(f.unused_bytes)::BIGINT      AS unused_bytes,\n                COUNT(*)::BIGINT                 AS fragment_count\n            FROM l1_blob_transaction t\n            JOIN l1_transaction_fragments tf ON t.id = tf.transaction_id\n            JOIN l1_fragments f              ON tf.fragment_id = f.id\n            WHERE t.hash = $1\n            GROUP BY f.bundle_id\n            ",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       null
     ]
   },
-  "hash": "229378fb46537ae6e0767c22358ff9e2a14be2efe12d71b33faa16ced88dfa2a"
+  "hash": "14a630268f676e961c35d4804724aa35ac1d5ae9763f9383506cd05b42bb0213"
 }

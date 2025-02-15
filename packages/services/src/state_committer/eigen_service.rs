@@ -2,7 +2,6 @@ use metrics::{
     prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
 };
-use nonempty::nonempty;
 use tracing::info;
 
 use crate::{types::storage::BundleFragment, Result, Runner};
@@ -12,7 +11,7 @@ use super::commit_helpers::{next_fragments_to_submit, update_current_height_to_c
 // src/config.rs
 #[derive(Debug, Clone)]
 pub struct Config {
-    // The throughput of the eigen API in MiB/s.
+    // The throughput of the da layer API in MB/s.
     pub api_throughput: u32,
     /// The lookback window in blocks to determine the starting height.
     pub lookback_window: u32,
@@ -101,14 +100,14 @@ where
         let fragment_id = fragment.id;
         match self.da_layer.submit_state_fragment(fragment.fragment).await {
             Ok(submitted_tx) => {
-                let tx_hash = submitted_tx.hash;
+                let request_id = submitted_tx.request_id.clone();
                 self.storage
-                    .record_da_submission(submitted_tx, nonempty![fragment.id], self.clock.now())
+                    .record_eigenda_submission(submitted_tx, fragment.id.as_i32(), self.clock.now())
                     .await?;
 
                 tracing::info!(
-                    "Submitted fragment {fragment_id} with tx {}",
-                    hex::encode(tx_hash)
+                    "Submitted fragment {fragment_id} with request {}",
+                    hex::encode(request_id)
                 );
                 Ok(())
             }
