@@ -88,19 +88,31 @@ async fn main() -> Result<()> {
         )?;
 
         // start the right committer based on the config
-        let state_committer_handle = match config.da_layer.clone() {
+        let (state_committer_handle, state_listener_handle) = match config.da_layer.clone() {
             Some(DALayer::EigenDA(eigen_config)) => {
                 let eigen_da = setup::eigen_adapter(&eigen_config, &internal_config).await?;
-                setup::eigen_state_committer(
+                let committer = setup::eigen_state_committer(
                     fuel_adapter.clone(),
+                    eigen_da.clone(),
+                    storage.clone(),
+                    cancel_token.clone(),
+                    &config,
+                    &metrics_registry,
+                )?;
+
+                let listener = setup::eigen_state_listener(
                     eigen_da,
                     storage.clone(),
                     cancel_token.clone(),
                     &config,
                     &metrics_registry,
-                )?
+                    finalization_metric,
+                )?;
+
+                (committer, listener)
             }
-            _ => setup::state_committer(
+            _ => {
+                let committer = setup::state_committer(
                 fuel_adapter.clone(),
                 ethereum_rpc.clone(),
                 storage.clone(),
@@ -108,20 +120,23 @@ async fn main() -> Result<()> {
                 &config,
                 &metrics_registry,
                 fee_api,
-            )?,
+            )?;
+
+            let listener = setup::state_listener(
+                ethereum_rpc,
+                storage.clone(),
+                cancel_token.clone(),
+                &metrics_registry,
+                &config,
+                finalization_metric,
+            );
+
+            (committer, listener)
+        }
         };
 
         let state_importer_handle =
             setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
-
-        let state_listener_handle = setup::state_listener(
-            ethereum_rpc,
-            storage.clone(),
-            cancel_token.clone(),
-            &metrics_registry,
-            &config,
-            finalization_metric,
-        );
 
         let state_pruner_handle = setup::state_pruner(
             storage.clone(),

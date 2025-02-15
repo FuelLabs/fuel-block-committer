@@ -13,7 +13,7 @@ use services::{
     fee_metrics_tracker::service::FeeMetricsTracker,
     fees::cache::CachingApi,
     state_committer::port::Storage,
-    state_listener::service::StateListener,
+    state_listener::{service::StateListener, eigen_service::StateListener as EigenStateListener},
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
     BlockBundler, BlockBundlerConfig, Runner,
@@ -177,6 +177,30 @@ pub fn eigen_state_committer(
         config.app.tx_finalization_check_interval,
         state_committer,
         "State Committer",
+        cancel_token,
+    ))
+}
+
+pub fn eigen_state_listener(
+    eigen_da: EigenDAClient,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+    last_finalization: IntGauge,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let state_committer = EigenStateListener::new(
+        eigen_da,
+        storage,
+        last_finalization
+    );
+
+    state_committer.register_metrics(registry);
+
+    Ok(schedule_polling(
+        config.app.tx_finalization_check_interval,
+        state_committer,
+        "State Listener",
         cancel_token,
     ))
 }
