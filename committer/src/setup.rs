@@ -13,7 +13,7 @@ use services::{
     fee_metrics_tracker::service::FeeMetricsTracker,
     fees::cache::CachingApi,
     state_committer::port::Storage,
-    state_listener::{service::StateListener, eigen_service::StateListener as EigenStateListener},
+    state_listener::{eigen_service::StateListener as EigenStateListener, service::StateListener},
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
     BlockBundler, BlockBundlerConfig, Runner,
@@ -189,11 +189,7 @@ pub fn eigen_state_listener(
     registry: &Registry,
     last_finalization: IntGauge,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let state_committer = EigenStateListener::new(
-        eigen_da,
-        storage,
-        last_finalization
-    );
+    let state_committer = EigenStateListener::new(eigen_da, storage, last_finalization);
 
     state_committer.register_metrics(registry);
 

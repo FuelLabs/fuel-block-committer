@@ -1115,12 +1115,8 @@ mod tests {
         )
         .await;
         // simulate replaced txs
-        ensure_fragments_have_transaction(
-            storage.clone(),
-            fragment_ids,
-            TransactionState::Failed,
-        )
-        .await;
+        ensure_fragments_have_transaction(storage.clone(), fragment_ids, TransactionState::Failed)
+            .await;
         ensure_some_fragments_exists_in_the_db(storage.clone(), 6..=10).await;
 
         // when

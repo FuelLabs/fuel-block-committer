@@ -113,26 +113,26 @@ async fn main() -> Result<()> {
             }
             _ => {
                 let committer = setup::state_committer(
-                fuel_adapter.clone(),
-                ethereum_rpc.clone(),
-                storage.clone(),
-                cancel_token.clone(),
-                &config,
-                &metrics_registry,
-                fee_api,
-            )?;
+                    fuel_adapter.clone(),
+                    ethereum_rpc.clone(),
+                    storage.clone(),
+                    cancel_token.clone(),
+                    &config,
+                    &metrics_registry,
+                    fee_api,
+                )?;
 
-            let listener = setup::state_listener(
-                ethereum_rpc,
-                storage.clone(),
-                cancel_token.clone(),
-                &metrics_registry,
-                &config,
-                finalization_metric,
-            );
+                let listener = setup::state_listener(
+                    ethereum_rpc,
+                    storage.clone(),
+                    cancel_token.clone(),
+                    &metrics_registry,
+                    &config,
+                    finalization_metric,
+                );
 
-            (committer, listener)
-        }
+                (committer, listener)
+            }
         };
 
         let state_importer_handle =
