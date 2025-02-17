@@ -1,88 +1,17 @@
-use std::{cmp::min, collections::VecDeque, fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
+use std::{cmp::min, collections::VecDeque, num::NonZeroUsize};
 
-use bytesize::ByteSize;
 use fuel_block_committer_encoding::bundle::{self, BundleV1};
 use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::{
+    block_bundler::common::{Bundle, BundleProposal, BundlerFactory, Metadata},
+    block_bundler::port::l1::FragmentEncoder,
     types::{
-        storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty,
-        NonNegative,
+        storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, NonEmpty, NonNegative,
     },
     Result,
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Metadata {
-    pub block_heights: RangeInclusive<u32>,
-    pub known_to_be_optimal: bool,
-    pub optimization_attempts: u64,
-    pub gas_usage: u64,
-    pub compressed_data_size: NonZeroUsize,
-    pub uncompressed_data_size: NonZeroUsize,
-    pub num_fragments: NonZeroUsize,
-}
-
-impl Metadata {
-    pub fn num_blocks(&self) -> usize {
-        self.block_heights.clone().count()
-    }
-
-    // This is for metrics anyway, precision loss is ok
-    #[allow(clippy::cast_precision_loss)]
-    pub fn compression_ratio(&self) -> f64 {
-        self.uncompressed_data_size.get() as f64 / self.compressed_data_size.get() as f64
-    }
-}
-
-impl Display for Metadata {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Metadata")
-            .field("num_blocks", &self.num_blocks())
-            .field("block_heights", &self.block_heights)
-            .field("known_to_be_optimal", &self.known_to_be_optimal)
-            .field("optimization_attempts", &self.optimization_attempts)
-            .field("gas_usage", &self.gas_usage)
-            .field(
-                "compressed_data_size",
-                &ByteSize(self.compressed_data_size.get() as u64),
-            )
-            .field(
-                "uncompressed_data_size",
-                &ByteSize(self.uncompressed_data_size.get() as u64),
-            )
-            .field("compression_ratio", &self.compression_ratio())
-            .field("num_fragments", &self.num_fragments.get())
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BundleProposal {
-    pub fragments: NonEmpty<Fragment>,
-    pub metadata: Metadata,
-}
-
-#[trait_variant::make(Send)]
-#[cfg_attr(feature = "test-helpers", mockall::automock)]
-pub trait Bundle {
-    /// Attempts to advance the bundler by trying out a new bundle configuration.
-    ///
-    /// Returns `true` if there are more configurations to process, or `false` otherwise.
-    async fn advance(&mut self, num_concurrent: NonZeroUsize) -> Result<bool>;
-
-    /// Finalizes the bundling process by selecting the best bundle based on current gas prices.
-    ///
-    /// Consumes the bundler.
-    async fn finish(self) -> Result<BundleProposal>;
-}
-
-#[trait_variant::make(Send)]
-pub trait BundlerFactory {
-    type Bundler: Bundle + Send + Sync;
-    async fn build(&self, blocks: SequentialFuelBlocks, id: NonNegative<i32>) -> Self::Bundler;
-}
 
 pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
@@ -102,7 +31,7 @@ impl<L1> Factory<L1> {
 
 impl<GasCalculator> BundlerFactory for Factory<GasCalculator>
 where
-    GasCalculator: crate::block_bundler::port::l1::FragmentEncoder + Clone + Send + Sync + 'static,
+    GasCalculator: FragmentEncoder + Clone + Send + Sync + 'static,
 {
     type Bundler = Bundler<GasCalculator>;
 
@@ -119,7 +48,7 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Proposal {
-    block_heights: RangeInclusive<u32>,
+    block_heights: std::ops::RangeInclusive<u32>,
     uncompressed_data_size: NonZeroUsize,
     compressed_data: NonEmpty<u8>,
     gas_usage: u64,
@@ -150,9 +79,7 @@ impl<T> Bundler<T> {
         bundle_id: NonNegative<i32>,
     ) -> Self {
         let max_blocks = blocks.len();
-        let initial_step = initial_step_size;
-
-        let attempts = generate_attempts(max_blocks, initial_step);
+        let attempts = generate_attempts(max_blocks, initial_step_size);
 
         Self {
             fragment_encoder: cost_calculator,
@@ -189,7 +116,7 @@ impl<T> Bundler<T> {
 
     fn blocks_bundles_for_analyzing(
         &mut self,
-        num_concurrent: std::num::NonZero<usize>,
+        num_concurrent: NonZeroUsize,
     ) -> Vec<NonEmpty<CompressedFuelBlock>> {
         let mut blocks_for_attempts = vec![];
 
@@ -201,16 +128,15 @@ impl<T> Bundler<T> {
         blocks_for_attempts
     }
 
-    async fn analyze(&mut self, num_concurrent: std::num::NonZero<usize>) -> Result<Vec<Proposal>>
+    async fn analyze(&mut self, num_concurrent: NonZeroUsize) -> Result<Vec<Proposal>>
     where
-        T: crate::block_bundler::port::l1::FragmentEncoder + Send + Sync + Clone + 'static,
+        T: FragmentEncoder + Send + Sync + Clone + 'static,
     {
         let blocks_for_analyzing = self.blocks_bundles_for_analyzing(num_concurrent);
 
         let bundle_encoder = self.bundle_encoder.clone();
         let fragment_encoder = self.fragment_encoder.clone();
 
-        // Needs to be wrapped in a blocking task to avoid blocking the executor
         tokio::task::spawn_blocking(move || {
             blocks_for_analyzing
                 .into_par_iter()
@@ -228,7 +154,7 @@ impl<T> Bundler<T> {
 
 impl<T> Bundle for Bundler<T>
 where
-    T: crate::block_bundler::port::l1::FragmentEncoder + Send + Sync + Clone + 'static,
+    T: FragmentEncoder + Send + Sync + Clone + 'static,
 {
     async fn advance(&mut self, optimization_runs: NonZeroUsize) -> Result<bool> {
         if self.attempts.is_empty() {
@@ -279,13 +205,6 @@ where
     }
 }
 
-// The step sizes are progressively halved, starting from the largest step, in order to explore
-// bundling opportunities more efficiently. Larger steps attempt to bundle more blocks together,
-// which can result in significant gas savings or better compression ratios early on.
-// By starting with the largest step, we cover more ground and are more likely to encounter
-// major improvements quickly. As the step size decreases, the search becomes more fine-tuned,
-// focusing on incremental changes. This ensures that even if we stop optimizing early, we will
-// have tested configurations that likely provide substantial benefits to the overall gas per byte.
 fn generate_attempts(
     max_blocks: NonZeroUsize,
     initial_step: NonZeroUsize,
@@ -301,7 +220,7 @@ fn generate_attempts(
 
 fn create_proposal(
     bundle_encoder: bundle::Encoder,
-    fragment_encoder: impl crate::block_bundler::port::l1::FragmentEncoder,
+    fragment_encoder: impl FragmentEncoder,
     bundle_blocks: NonEmpty<CompressedFuelBlock>,
 ) -> Result<Proposal> {
     let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;

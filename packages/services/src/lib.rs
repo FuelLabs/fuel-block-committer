@@ -13,14 +13,15 @@ pub mod wallet_balance_tracker;
 
 pub mod fees;
 
+#[cfg(feature = "test-helpers")]
+pub use block_bundler::{
+    bundler::Bundler,
+    common::{Bundle, BundleProposal, Metadata},
+    test_helpers::ControllableBundlerFactory,
+};
 pub use block_bundler::{
     bundler::Factory as BundlerFactory,
     service::{BlockBundler, Config as BlockBundlerConfig},
-};
-#[cfg(feature = "test-helpers")]
-pub use block_bundler::{
-    bundler::{Bundle, BundleProposal, Bundler, Metadata},
-    test_helpers::ControllableBundlerFactory,
 };
 pub use state_committer::eigen_service::{
     Config as EigenStatecommitterConfig, StateCommitter as EigenStateCommitter,

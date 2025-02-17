@@ -3,33 +3,10 @@ use std::num::{NonZeroU32, NonZeroUsize};
 use fuel_block_committer_encoding::bundle;
 
 use crate::{
+    block_bundler::common::{Bundle, BundleProposal, BundlerFactory, Metadata},
     types::{storage::SequentialFuelBlocks, CompressedFuelBlock, Fragment, NonEmpty, NonNegative},
     Result,
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EigenMetadata {
-    pub block_heights: std::ops::RangeInclusive<u32>,
-    pub compressed_data_size: NonZeroUsize,
-    pub uncompressed_data_size: NonZeroUsize,
-    pub num_fragments: NonZeroUsize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EigenBundleProposal {
-    pub fragments: NonEmpty<Fragment>,
-    pub metadata: EigenMetadata,
-}
-
-pub trait EigenBundlerFactory {
-    type Bundler: EigenBundle + Send + Sync;
-    async fn build(&self, blocks: SequentialFuelBlocks, id: NonNegative<i32>) -> Self::Bundler;
-}
-
-#[async_trait::async_trait]
-pub trait EigenBundle {
-    async fn process(&mut self) -> Result<EigenBundleProposal>;
-}
 
 pub struct EigenFactory {
     fragment_size: NonZeroU32,
@@ -45,11 +22,11 @@ impl EigenFactory {
     }
 }
 
-impl EigenBundlerFactory for EigenFactory {
+impl BundlerFactory for EigenFactory {
     type Bundler = EigenBundler;
 
-    async fn build(&self, blocks: SequentialFuelBlocks, id: NonNegative<i32>) -> Self::Bundler {
-        EigenBundler::new(self.bundle_encoder.clone(), blocks, self.fragment_size, id)
+    async fn build(&self, blocks: SequentialFuelBlocks, _id: NonNegative<i32>) -> Self::Bundler {
+        EigenBundler::new(self.bundle_encoder.clone(), blocks, self.fragment_size)
     }
 }
 
@@ -57,14 +34,12 @@ struct CompressedBundle {
     data: Vec<u8>,
     block_heights: std::ops::RangeInclusive<u32>,
     uncompressed_size: usize,
-    compressed_size: usize,
 }
 
 pub struct EigenBundler {
     bundle_encoder: bundle::Encoder,
     blocks: NonEmpty<CompressedFuelBlock>,
     fragment_size: NonZeroU32,
-    bundle_id: NonNegative<i32>,
 }
 
 impl EigenBundler {
@@ -72,13 +47,11 @@ impl EigenBundler {
         bundle_encoder: bundle::Encoder,
         blocks: SequentialFuelBlocks,
         fragment_size: NonZeroU32,
-        bundle_id: NonNegative<i32>,
     ) -> Self {
         Self {
             bundle_encoder,
             blocks: blocks.into_inner(),
             fragment_size,
-            bundle_id,
         }
     }
 
@@ -96,8 +69,15 @@ impl EigenBundler {
         NonEmpty::from_vec(fragments)
             .ok_or_else(|| crate::Error::Other("no fragments created".to_string()))
     }
+}
 
-    async fn process(&mut self) -> Result<EigenBundleProposal> {
+impl Bundle for EigenBundler {
+    async fn advance(&mut self, _num_concurrent: NonZeroUsize) -> Result<bool> {
+        // EigenDA bundler processes everything in one go
+        Ok(true)
+    }
+
+    async fn finish(self) -> Result<BundleProposal> {
         let bundle = encode_blocks(self.bundle_encoder.clone(), self.blocks.clone())?;
 
         let uncompressed_data_size = NonZeroUsize::new(bundle.uncompressed_size)
@@ -108,12 +88,16 @@ impl EigenBundler {
 
         let fragments = self.create_fragments(bundle.data)?;
 
-        Ok(EigenBundleProposal {
-            metadata: EigenMetadata {
+        Ok(BundleProposal {
+            metadata: Metadata {
+                block_heights: bundle.block_heights,
                 compressed_data_size,
                 uncompressed_data_size,
-                block_heights: bundle.block_heights,
                 num_fragments: fragments.len_nonzero(),
+                // TODO: These fields can be ignored for now until we refactor the bundler
+                known_to_be_optimal: true,
+                optimization_attempts: 1,
+                gas_usage: 0,
             },
             fragments,
         })
@@ -137,34 +121,8 @@ fn encode_blocks(
         .map_err(|e| crate::Error::Other(e.to_string()))?;
 
     Ok(CompressedBundle {
-        compressed_size: data.len(),
         uncompressed_size,
         data,
         block_heights,
     })
-}
-
-#[async_trait::async_trait]
-impl EigenBundle for EigenBundler {
-    async fn process(&mut self) -> Result<EigenBundleProposal> {
-        let bundle = encode_blocks(self.bundle_encoder.clone(), self.blocks.clone())?;
-
-        let uncompressed_data_size = NonZeroUsize::new(bundle.uncompressed_size)
-            .expect("at least one block should be present");
-
-        let compressed_data_size = NonZeroUsize::new(bundle.data.len())
-            .ok_or_else(|| crate::Error::Other("compressed data is empty".to_string()))?;
-
-        let fragments = self.create_fragments(bundle.data)?;
-
-        Ok(EigenBundleProposal {
-            metadata: EigenMetadata {
-                compressed_data_size,
-                uncompressed_data_size,
-                block_heights: bundle.block_heights,
-                num_fragments: fragments.len_nonzero(),
-            },
-            fragments,
-        })
-    }
 }
