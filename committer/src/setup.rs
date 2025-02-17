@@ -23,8 +23,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::{
-    config::{self, EigenDA},
-    errors::Result,
+    config::{self, DALayer, EigenDA},
+    errors::{Error, Result},
     Database, FuelApi, L1,
 };
 
@@ -77,6 +77,128 @@ pub fn block_committer(
         "Block Committer",
         cancel_token,
     )
+}
+
+pub fn ethereum_da_services(
+    fuel: FuelApi,
+    ethereum_rpc: L1,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+    registry: &Registry,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
+    let block_bundler = block_bundler(
+        fuel.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &registry,
+    );
+
+    let fee_api = CachingApi::new(
+        ethereum_rpc.clone(),
+        internal_config.l1_blocks_cached_for_fee_metrics_tracker,
+    );
+
+    let fee_metrics_updater_handle =
+        fee_metrics_tracker(fee_api.clone(), cancel_token.clone(), &config, &registry)?;
+
+    let committer = state_committer(
+        fuel.clone(),
+        ethereum_rpc.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &registry,
+        fee_api,
+    )?;
+
+    let listener = state_listener(
+        ethereum_rpc,
+        storage.clone(),
+        cancel_token.clone(),
+        &registry,
+        &config,
+        last_finalization_metric(), // TODO: will this match on the metric name?
+    );
+
+    let state_importer_handle =
+        block_importer(fuel, storage.clone(), cancel_token.clone(), &config);
+
+    // TODO: state pruner currently only works with the Ethereum DA
+    let state_pruner_handle =
+        state_pruner(storage.clone(), cancel_token.clone(), &registry, &config);
+
+    let handles = vec![
+        committer,
+        state_importer_handle,
+        block_bundler,
+        listener,
+        fee_metrics_updater_handle,
+        state_pruner_handle,
+    ];
+
+    Ok(handles)
+}
+
+pub async fn eigen_da_services(
+    fuel: FuelApi,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+    registry: &Registry,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
+    let block_bundler = block_bundler(
+        fuel.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &registry,
+    );
+
+    let (state_committer_handle, state_listener_handle) = match config.da_layer.clone() {
+        Some(DALayer::EigenDA(eigen_config)) => {
+            let eigen_da = eigen_adapter(&eigen_config, &internal_config).await?;
+            let committer = eigen_state_committer(
+                fuel.clone(),
+                eigen_da.clone(),
+                storage.clone(),
+                cancel_token.clone(),
+                &config,
+                &registry,
+            )?;
+
+            let listener = eigen_state_listener(
+                eigen_da,
+                storage.clone(),
+                cancel_token.clone(),
+                &config,
+                &registry,
+                last_finalization_metric(), // TODO will this match on name
+            )?;
+
+            (committer, listener)
+        }
+        _ => {
+            return Err(Error::Other("Invalid da layer config".to_string()));
+        }
+    };
+
+    let state_importer_handle =
+        block_importer(fuel, storage.clone(), cancel_token.clone(), &config);
+
+    // TODO: no pruner or fee metric handle
+
+    let handles = vec![
+        state_committer_handle,
+        state_importer_handle,
+        block_bundler,
+        state_listener_handle,
+    ];
+
+    Ok(handles)
 }
 
 pub fn block_bundler(

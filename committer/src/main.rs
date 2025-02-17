@@ -5,11 +5,9 @@ mod errors;
 mod setup;
 
 use api::launch_api_server;
-use config::DALayer;
 use eigenda::EigenDAClient;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
-use services::fees::cache::CachingApi;
 use setup::last_finalization_metric;
 use tokio_util::sync::CancellationToken;
 
@@ -66,92 +64,31 @@ async fn main() -> Result<()> {
 
     // If the blob pool wallet key is set, we need to start
     // the state committer and state importer
-    if config.eth.l1_keys.blob.is_some() {
-        let block_bundler = setup::block_bundler(
-            fuel_adapter.clone(),
+    let da_handles = if config.eth.l1_keys.blob.is_some() {
+        setup::ethereum_da_services(
+            fuel_adapter,
+            ethereum_rpc,
             storage.clone(),
             cancel_token.clone(),
             &config,
+            &internal_config,
             &metrics_registry,
-        );
-
-        let fee_api = CachingApi::new(
-            ethereum_rpc.clone(),
-            internal_config.l1_blocks_cached_for_fee_metrics_tracker,
-        );
-
-        let fee_metrics_updater_handle = setup::fee_metrics_tracker(
-            fee_api.clone(),
-            cancel_token.clone(),
-            &config,
-            &metrics_registry,
-        )?;
-
-        // start the right committer based on the config
-        let (state_committer_handle, state_listener_handle) = match config.da_layer.clone() {
-            Some(DALayer::EigenDA(eigen_config)) => {
-                let eigen_da = setup::eigen_adapter(&eigen_config, &internal_config).await?;
-                let committer = setup::eigen_state_committer(
-                    fuel_adapter.clone(),
-                    eigen_da.clone(),
-                    storage.clone(),
-                    cancel_token.clone(),
-                    &config,
-                    &metrics_registry,
-                )?;
-
-                let listener = setup::eigen_state_listener(
-                    eigen_da,
-                    storage.clone(),
-                    cancel_token.clone(),
-                    &config,
-                    &metrics_registry,
-                    finalization_metric,
-                )?;
-
-                (committer, listener)
-            }
-            _ => {
-                let committer = setup::state_committer(
-                    fuel_adapter.clone(),
-                    ethereum_rpc.clone(),
-                    storage.clone(),
-                    cancel_token.clone(),
-                    &config,
-                    &metrics_registry,
-                    fee_api,
-                )?;
-
-                let listener = setup::state_listener(
-                    ethereum_rpc,
-                    storage.clone(),
-                    cancel_token.clone(),
-                    &metrics_registry,
-                    &config,
-                    finalization_metric,
-                );
-
-                (committer, listener)
-            }
-        };
-
-        let state_importer_handle =
-            setup::block_importer(fuel_adapter, storage.clone(), cancel_token.clone(), &config);
-
-        let state_pruner_handle = setup::state_pruner(
+        )?
+    } else if config.da_layer.is_some() {
+        setup::eigen_da_services(
+            fuel_adapter,
             storage.clone(),
             cancel_token.clone(),
-            &metrics_registry,
             &config,
-        );
+            &internal_config,
+            &metrics_registry,
+        )
+        .await?
+    } else {
+        vec![]
+    };
 
-        handles.push(state_committer_handle);
-        handles.push(state_importer_handle);
-        handles.push(block_bundler);
-        handles.push(state_listener_handle);
-        handles.push(fee_metrics_updater_handle);
-        handles.push(state_pruner_handle);
-    }
+    handles.extend(da_handles);
 
     launch_api_server(
         &config,
