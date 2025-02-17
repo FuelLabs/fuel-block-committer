@@ -76,7 +76,7 @@ impl EigenDAClient {
 
         let client = DisperserClient::new(endpoint);
 
-        let signer = EigenDASigner::new(key).await;
+        let signer = EigenDASigner::new(key).await?;
         let account_id = signer.account_id().await;
 
         Ok(Self {
