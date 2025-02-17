@@ -118,31 +118,6 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum L1Key {
-    Kms(String),
-    Private(String),
-}
-
-impl<'a> serde::Deserialize<'a> for L1Key {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
-            Ok(L1Key::Kms(k.to_string()))
-        } else if let Some(k) = value
-            .strip_prefix("Private(")
-            .and_then(|s| s.strip_suffix(')'))
-        {
-            Ok(L1Key::Private(k.to_string()))
-        } else {
-            Err(serde::de::Error::custom("invalid L1Key format"))
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1Keys {
     /// The eth key authorized by the L1 bridging contracts to post block commitments.
@@ -258,6 +233,20 @@ impl alloy::signers::Signer<Signature> for Signer {
 }
 
 impl Signer {
+    pub async fn for_key(key: KeySource) -> Result<Self> {
+        match key {
+            KeySource::Kms(key) => {
+                let client = AwsKmsClient::new().await;
+                let signer = Signer::make_aws_signer(&client, key).await?;
+                Ok(signer)
+            }
+            KeySource::Private(key) => {
+                let signer = Signer::make_private_key_signer(&key)?;
+                Ok(signer)
+            }
+        }
+    }
+
     pub async fn make_aws_signer(client: &AwsKmsClient, key: String) -> Result<Self> {
         let signer = AwsSigner::new(client.inner().clone(), key, None)
             .await
