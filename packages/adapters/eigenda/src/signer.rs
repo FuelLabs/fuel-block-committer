@@ -60,7 +60,7 @@ impl PrivateKeySigner {
     pub fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage> {
         let (sig, recid) = self
             .signing_key
-            .sign_prehash_recoverable(&hash)
+            .sign_prehash_recoverable(&message)
             .map_err(|e| Error::Other(format!("message signing failed: {}", e.to_string())))?;
 
         let mut signature = sig.to_vec();

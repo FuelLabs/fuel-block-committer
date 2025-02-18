@@ -146,7 +146,10 @@ impl Committer {
                     "COMMITTER__DA_LAYER__RPC",
                     "https://disperser-holesky.eigenda.xyz",
                 )
-                .env("COMMITTER__DA_LAYER__KEY", key);
+                .env(
+                    "COMMITTER__DA_LAYER__KEY",
+                    "Private(***REMOVED***)",
+                );
         }
 
         let sink = if self.show_logs {
