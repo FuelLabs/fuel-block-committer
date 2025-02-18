@@ -58,8 +58,6 @@ impl PrivateKeySigner {
     }
 
     pub fn sign_prehash(&self, message: &[u8]) -> Result<SignedMessage> {
-        let hash = Keccak256::digest(message);
-
         let (sig, recid) = self
             .signing_key
             .sign_prehash_recoverable(&hash)
