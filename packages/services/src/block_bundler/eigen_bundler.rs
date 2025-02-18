@@ -8,12 +8,12 @@ use crate::{
     Result,
 };
 
-pub struct EigenFactory {
+pub struct Factory {
     fragment_size: NonZeroU32,
     bundle_encoder: bundle::Encoder,
 }
 
-impl EigenFactory {
+impl Factory {
     pub fn new(bundle_encoder: bundle::Encoder, fragment_size: NonZeroU32) -> Self {
         Self {
             bundle_encoder,
@@ -22,7 +22,7 @@ impl EigenFactory {
     }
 }
 
-impl BundlerFactory for EigenFactory {
+impl BundlerFactory for Factory {
     type Bundler = EigenBundler;
 
     async fn build(&self, blocks: SequentialFuelBlocks, _id: NonNegative<i32>) -> Self::Bundler {

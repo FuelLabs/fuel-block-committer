@@ -12,6 +12,7 @@ rust-version = { workspace = true }
 [dependencies]
 alloy = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 bytesize = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
 fuel-core-client = { workspace = true }

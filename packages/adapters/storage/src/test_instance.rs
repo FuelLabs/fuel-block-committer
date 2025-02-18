@@ -219,7 +219,7 @@ impl services::state_listener::port::Storage for DbWithProcess {
     }
     async fn update_eigen_submissions(
         &self,
-        changes: Vec<(Vec<u8>, DispersalStatus)>,
+        changes: Vec<(u32, DispersalStatus)>,
     ) -> services::Result<()> {
         unimplemented!();
     }
@@ -362,6 +362,14 @@ impl services::state_committer::port::Storage for DbWithProcess {
         fragment_id: i32,
         created_at: DateTime<Utc>,
     ) -> services::Result<()> {
+        unimplemented!()
+    }
+
+    async fn oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> services::Result<Vec<BundleFragment>> {
         unimplemented!()
     }
 }

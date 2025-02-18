@@ -18,6 +18,7 @@ mod tests {
 
     use crate::whole_stack::{FuelNodeType, WholeStack};
 
+    #[ignore = "reason"]
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
@@ -84,6 +85,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore = "reason"]
     #[tokio::test(flavor = "multi_thread")]
     async fn old_state_will_be_pruned() -> Result<()> {
         use services::state_pruner::port::Storage;

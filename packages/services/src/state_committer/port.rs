@@ -109,6 +109,12 @@ pub trait Storage: Sync {
         fragment_id: i32,
         created_at: DateTime<Utc>,
     ) -> Result<()>;
+
+    async fn oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleFragment>>;
 }
 
 pub trait Clock {

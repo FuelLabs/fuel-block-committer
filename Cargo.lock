@@ -5983,6 +5983,7 @@ version = "0.10.5"
 dependencies = [
  "alloy",
  "async-trait",
+ "base64 0.22.1",
  "bytesize",
  "clock",
  "eigenda",

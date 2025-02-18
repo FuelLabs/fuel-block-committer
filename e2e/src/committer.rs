@@ -138,7 +138,7 @@ impl Committer {
             .kill_on_drop(true);
 
         if let Some(key) = blob_key {
-            cmd.env("COMMITTER__ETH__L1_KEYS__BLOB", key.clone());
+            //cmd.env("COMMITTER__ETH__L1_KEYS__BLOB", key.clone());
 
             // alt da
             cmd.env("COMMITTER__DA_LAYER__TYPE", "EigenDA")

@@ -21,6 +21,7 @@ pub use block_bundler::{
 };
 pub use block_bundler::{
     bundler::Factory as BundlerFactory,
+    eigen_bundler::Factory as EigenBundlerFactory,
     service::{BlockBundler, Config as BlockBundlerConfig},
 };
 pub use state_committer::eigen_service::{

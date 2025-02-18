@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
 use eigenda::EigenDAClient;
@@ -150,7 +150,7 @@ pub async fn eigen_da_services(
     internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<Vec<tokio::task::JoinHandle<()>>> {
-    let block_bundler = block_bundler(
+    let block_bundler = eigen_block_bundler(
         fuel.clone(),
         storage.clone(),
         cancel_token.clone(),
@@ -199,6 +199,44 @@ pub async fn eigen_da_services(
     ];
 
     Ok(handles)
+}
+
+pub fn eigen_block_bundler(
+    fuel: FuelApi,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> tokio::task::JoinHandle<()> {
+    let bundler_factory = services::EigenBundlerFactory::new(
+        bundle::Encoder::new(config.app.bundle.compression_level),
+        NonZeroU32::new(15_000_000).unwrap(), // TODO pass this via config
+    );
+
+    let block_bundler = BlockBundler::new(
+        fuel,
+        storage,
+        SystemClock,
+        bundler_factory,
+        BlockBundlerConfig {
+            optimization_time_limit: Duration::from_secs(0),
+            block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            lookback_window: config.app.bundle.block_height_lookback,
+            max_bundles_per_optimization_run: num_cpus::get()
+                .try_into()
+                .expect("num cpus not zero"),
+        },
+    );
+
+    block_bundler.register_metrics(registry);
+
+    schedule_polling(
+        config.app.bundle.new_bundle_check_interval,
+        block_bundler,
+        "Block Bundler",
+        cancel_token,
+    )
 }
 
 pub fn block_bundler(

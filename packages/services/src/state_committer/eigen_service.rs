@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::{types::storage::BundleFragment, Result, Runner};
 
-use super::commit_helpers::{next_fragments_to_submit, update_current_height_to_commit_metric};
+use super::commit_helpers::update_current_height_to_commit_metric;
 
 // src/config.rs
 #[derive(Debug, Clone)]
@@ -106,8 +106,8 @@ where
                     .await?;
 
                 tracing::info!(
-                    "Submitted fragment {fragment_id} with request {}",
-                    hex::encode(request_id)
+                    "Submitted fragment {fragment_id} with request id {}",
+                    base64::encode(request_id),
                 );
                 Ok(())
             }
@@ -125,15 +125,15 @@ where
     }
 
     async fn next_fragment_to_submit(&self) -> Result<Option<BundleFragment>> {
-        // Eigen accepts one fragment (blob) per submission.
-        let fragment = next_fragments_to_submit(
-            &self.fuel_api,
-            &self.storage,
-            self.config.lookback_window,
-            1,
-        )
-        .await?
-        .map(|frags| frags.head);
+        let latest_height = self.fuel_api.latest_height().await?;
+        let starting_height = latest_height.saturating_sub(self.config.lookback_window);
+
+        let fragment = self
+            .storage
+            .oldest_unsubmitted_fragments(starting_height, 1)
+            .await?
+            .first()
+            .cloned();
 
         if let Some(ref frag) = fragment {
             self.update_oldest_block_metric(frag.oldest_block_in_bundle);

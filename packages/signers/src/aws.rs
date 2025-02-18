@@ -78,55 +78,22 @@ impl AwsKmsClient {
 
     #[cfg(feature = "test-helpers")]
     pub async fn create_key(&self) -> anyhow::Result<KeySource> {
-        use std::ops::Deref;
-
-        // Convert hex private key to DER format
-        let private_key =
-            hex::decode("8a229ef1d1f528787e14656c424e1c8710402cb0b0329d3091f11aaf854151e1")?;
-        let der = k256::SecretKey::from_slice(&private_key)?.to_sec1_der()?;
-        let der = der.deref().clone();
-
-        // Create custom key with explicit material
         let response = self
             .client
             .create_key()
             .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
             .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
-            .customize()
-            .mutate_request(move |req| {
-                // LocalStack-specific parameter
-                req.headers_mut()
-                    .insert("X-LocalStack-KMS-KeyMaterial", base64::encode(der.clone()));
-            })
             .send()
             .await?;
 
+        // use arn as id to closer imitate prod behavior
         let id = response
             .key_metadata
             .and_then(|metadata| metadata.arn)
-            .ok_or_else(|| anyhow::anyhow!("key arn missing"))?;
+            .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
 
         Ok(KeySource::Kms(id))
     }
-
-    // #[cfg(feature = "test-helpers")]
-    // pub async fn create_key(&self) -> anyhow::Result<KeySource> {
-    //     let response = self
-    //         .client
-    //         .create_key()
-    //         .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
-    //         .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
-    //         .send()
-    //         .await?;
-
-    //     // use arn as id to closer imitate prod behavior
-    //     let id = response
-    //         .key_metadata
-    //         .and_then(|metadata| metadata.arn)
-    //         .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
-
-    //     Ok(KeySource::Kms(id))
-    // }
 
     async fn get_raw_signature(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Signature> {
         let response = self

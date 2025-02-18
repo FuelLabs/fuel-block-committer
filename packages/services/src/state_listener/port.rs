@@ -51,10 +51,7 @@ pub trait Storage: Sync {
 
     // EigenDA
     async fn get_non_finalized_eigen_submission(&self) -> Result<Vec<EigenDASubmission>>;
-    async fn update_eigen_submissions(
-        &self,
-        changes: Vec<(Vec<u8>, DispersalStatus)>,
-    ) -> Result<()>;
+    async fn update_eigen_submissions(&self, changes: Vec<(u32, DispersalStatus)>) -> Result<()>;
 }
 
 pub trait Clock {

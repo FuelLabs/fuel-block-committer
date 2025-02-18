@@ -37,22 +37,47 @@ where
         let mut changes = Vec::with_capacity(non_finalized.len());
 
         for submission in non_finalized {
-            let status = self.eigenda_adapter.get_blob_status(vec![]).await?;
+            let status = self
+                .eigenda_adapter
+                .get_blob_status(submission.request_id.clone())
+                .await?;
+            let submission_id = submission.id.expect("submission id to be present") as u32;
+
+            // skip if status didn't change
+            if status == submission.status {
+                continue;
+            }
 
             match status {
                 DispersalStatus::Processing => {
                     // log processing
+                    tracing::info!(
+                        "Processing submission with request_id: {}",
+                        base64::encode(submission.request_id)
+                    );
                     continue;
                 }
                 DispersalStatus::Confirmed => {
-                    changes.push((submission.request_id, DispersalStatus::Confirmed));
+                    tracing::info!(
+                        "Confirmed submission with request_id: {}",
+                        base64::encode(submission.request_id)
+                    );
+                    changes.push((submission_id, DispersalStatus::Confirmed));
                 }
                 DispersalStatus::Finalized => {
-                    changes.push((submission.request_id, DispersalStatus::Finalized));
+                    tracing::info!(
+                        "Finalized submission with request_id: {}",
+                        base64::encode(submission.request_id)
+                    );
+                    changes.push((submission_id, DispersalStatus::Finalized));
                 }
                 _ => {
                     // log got bad status
-                    changes.push((submission.request_id, DispersalStatus::Failed));
+                    tracing::info!(
+                        "Unexpected status - submission with request_id: {}",
+                        base64::encode(submission.request_id)
+                    );
+                    changes.push((submission_id, DispersalStatus::Failed));
                 }
             }
         }

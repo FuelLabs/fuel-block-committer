@@ -268,6 +268,60 @@ impl Postgres {
         Ok(submission_row)
     }
 
+    pub(crate) async fn _oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<services::types::storage::BundleFragment>> {
+        let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
+        let fragments = sqlx::query_as!(
+            tables::BundleFragment,
+            r#"SELECT
+        sub.id,
+        sub.idx,
+        sub.bundle_id,
+        sub.data,
+        sub.unused_bytes,
+        sub.total_bytes,
+        sub.start_height
+    FROM (
+        SELECT DISTINCT ON (f.id)
+            f.*,
+            b.start_height
+        FROM l1_fragments f
+        JOIN bundles b ON b.id = f.bundle_id
+        WHERE
+            b.end_height >= $2
+            AND NOT EXISTS (
+                SELECT 1
+                FROM eigen_submission_fragments tf
+                JOIN eigen_submission t ON t.id = tf.submission_id
+                WHERE tf.fragment_id = f.id
+                  AND t.status <> $1
+            )
+        ORDER BY
+            f.id,
+            b.start_height ASC,
+            f.idx ASC
+    ) AS sub
+    ORDER BY
+        sub.start_height ASC,
+        sub.idx ASC
+    LIMIT $3;
+"#,
+            i16::from(SubmissionStatus::Failed),
+            i64::from(starting_height),
+            limit
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .try_collect()?;
+
+        Ok(fragments)
+    }
+
     pub(crate) async fn _oldest_nonfinalized_fragments(
         &self,
         starting_height: u32,
@@ -1259,17 +1313,17 @@ impl Postgres {
 
     pub(crate) async fn _update_eigen_submissions(
         &self,
-        changes: Vec<(Vec<u8>, DispersalStatus)>,
+        changes: Vec<(u32, DispersalStatus)>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
-        for (request_id, status) in changes {
+        for (id, status) in changes {
             let status: i16 = SubmissionStatus::from(status).into();
 
             sqlx::query!(
-                "UPDATE eigen_submission SET status = $1 WHERE request_id = $2",
+                "UPDATE eigen_submission SET status = $1 WHERE id = $2",
                 status,
-                request_id
+                id as i32
             )
             .execute(&mut *tx)
             .await?;

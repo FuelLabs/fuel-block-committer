@@ -54,7 +54,7 @@ impl services::state_listener::port::Storage for Postgres {
 
     async fn update_eigen_submissions(
         &self,
-        changes: Vec<(Vec<u8>, DispersalStatus)>,
+        changes: Vec<(u32, DispersalStatus)>,
     ) -> services::Result<()> {
         self._update_eigen_submissions(changes)
             .await
@@ -206,6 +206,16 @@ impl services::state_committer::port::Storage for Postgres {
         created_at: DateTime<Utc>,
     ) -> services::Result<()> {
         self._record_eigenda_submission(submission, fragment_id, created_at)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleFragment>> {
+        self._oldest_unsubmitted_fragments(starting_height, limit)
             .await
             .map_err(Into::into)
     }
