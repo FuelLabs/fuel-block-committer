@@ -13,12 +13,20 @@ use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
 use services::{
+    block_committer::port::fuel::FuelBlock,
     types::{CompressedFuelBlock, NonEmpty},
     Error, Result,
 };
 use url::Url;
 
 use crate::metrics::Metrics;
+
+mod custom_queries {
+    #[cynic::schema("fuelcore")]
+    mod schema {}
+
+    pub mod latest_block {}
+}
 
 #[derive(Clone)]
 pub struct HttpClient {
@@ -93,11 +101,14 @@ impl HttpClient {
         }
     }
 
-    pub(crate) async fn block_at_height(&self, height: u32) -> Result<Option<Block>> {
+    pub(crate) async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>> {
         match self.client.block_by_height(height.into()).await {
             Ok(maybe_block) => {
                 self.handle_network_success();
-                Ok(maybe_block.map(Into::into))
+                Ok(maybe_block.map(|block| FuelBlock {
+                    id: *block.id,
+                    height: block.header.height,
+                }))
             }
             Err(err) => {
                 self.handle_network_error();
@@ -150,13 +161,18 @@ impl HttpClient {
             .filter_map(|result| async move { result.transpose() })
     }
 
-    pub async fn latest_block(&self) -> Result<Block> {
+    pub async fn latest_block(&self) -> Result<FuelBlock> {
         match self.client.chain_info().await {
             Ok(chain_info) => {
                 self.handle_network_success();
-                let height = chain_info.latest_block.header.height;
-                self.metrics.fuel_height.set(height.into());
-                Ok(chain_info.latest_block)
+                let latest_block = chain_info.latest_block;
+                self.metrics
+                    .fuel_height
+                    .set(latest_block.header.height as i64);
+                Ok(FuelBlock {
+                    id: *latest_block.id,
+                    height: latest_block.header.height,
+                })
             }
             Err(err) => {
                 self.handle_network_error();

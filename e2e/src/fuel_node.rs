@@ -12,7 +12,6 @@ use fuel_core_types::{
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use rand::Rng;
-use services::types::fuel::FuelPublicKey;
 use url::Url;
 
 #[derive(Default, Debug)]
@@ -31,15 +30,9 @@ pub struct FuelNodeProcess {
 impl FuelNode {
     fn create_state_config(
         path: impl Into<PathBuf>,
-        consensus_key: &FuelPublicKey,
         num_wallets: usize,
     ) -> anyhow::Result<Vec<FuelSecretKey>> {
-        let chain_config = ChainConfig {
-            consensus: ConsensusConfig::PoA {
-                signing_key: Input::owner(consensus_key),
-            },
-            ..ChainConfig::local_testnet()
-        };
+        let chain_config = ChainConfig::local_testnet();
 
         let mut rng = &mut rand::thread_rng();
         let keys = std::iter::repeat_with(|| FuelSecretKey::random(&mut rng))
@@ -82,11 +75,8 @@ impl FuelNode {
 
         let mut cmd = tokio::process::Command::new("fuel-core");
 
-        let secret_key = FuelSecretKey::random(&mut rand::thread_rng());
-        let public_key = secret_key.public_key();
-
         let snapshot_dir = tempfile::tempdir()?;
-        let wallet_keys = Self::create_state_config(snapshot_dir.path(), &public_key, 1000)?;
+        let wallet_keys = Self::create_state_config(snapshot_dir.path(), 1000)?;
 
         // This ensures forward compatibility when running against a newer node with a different native executor version.
         // If the node detects our older version in the chain configuration, it defaults to using the wasm executor.
@@ -106,7 +96,6 @@ impl FuelNode {
             .arg(db_dir.path())
             .arg("--debug")
             .arg(format!("--native-executor-version={executor_version}"))
-            .env("CONSENSUS_KEY_SECRET", format!("{}", secret_key))
             .arg("--da-compression")
             .arg("1hr")
             .kill_on_drop(true)

@@ -17,11 +17,13 @@ futures = { workspace = true }
 metrics = { workspace = true }
 services = { workspace = true }
 url = { workspace = true }
+cynic = { workspace = true, features = ["default"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }
 
 [build-dependencies]
+cynic-codegen = { workspace = true }
 fuel-core-client = { workspace = true }
 
 [features]

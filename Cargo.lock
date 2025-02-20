@@ -2856,6 +2856,8 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 name = "fuel"
 version = "0.10.7"
 dependencies = [
+ "cynic",
+ "cynic-codegen",
  "delegate",
  "fuel-core-client",
  "fuel-core-types",
@@ -5862,8 +5864,6 @@ dependencies = [
  "clock",
  "eth",
  "fuel-block-committer-encoding",
- "fuel-core-client",
- "fuel-crypto",
  "futures",
  "hex",
  "itertools 0.13.0",
@@ -6536,7 +6536,6 @@ dependencies = [
  "delegate",
  "eth",
  "fuel-block-committer-encoding",
- "fuel-crypto",
  "futures",
  "itertools 0.13.0",
  "metrics",
@@ -6544,7 +6543,6 @@ dependencies = [
  "rand",
  "services",
  "storage",
- "tai64",
 ]
 
 [[package]]

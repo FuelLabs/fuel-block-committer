@@ -39,9 +39,12 @@ pub mod mocks {
 
         use delegate::delegate;
         use mockall::{predicate::eq, Sequence};
-        use services::types::{
-            BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
-            TransactionResponse,
+        use services::{
+            block_committer::port::fuel::FuelBlock,
+            types::{
+                BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
+                TransactionResponse,
+            },
         };
 
         pub struct FullL1Mock {
@@ -107,10 +110,7 @@ pub mod mocks {
             Failure,
         }
 
-        pub fn expects_contract_submission(
-            block: services::types::fuel::FuelBlock,
-            eth_tx: [u8; 32],
-        ) -> FullL1Mock {
+        pub fn expects_contract_submission(block: FuelBlock, eth_tx: [u8; 32]) -> FullL1Mock {
             let mut l1 = FullL1Mock::new();
 
             let submission_tx = BlockSubmissionTx {
@@ -119,7 +119,7 @@ pub mod mocks {
             };
             l1.block_committer_contract
                 .expect_submit()
-                .withf(move |hash, height| *hash == *block.id && *height == block.header.height)
+                .withf(move |hash, height| *hash == block.id && *height == block.height)
                 .return_once(move |_, _| Box::pin(async { Ok(submission_tx) }))
                 .once();
 
@@ -310,13 +310,15 @@ pub mod mocks {
     pub mod fuel {
         use std::ops::RangeInclusive;
 
-        use fuel_crypto::{Message, SecretKey, Signature};
         use futures::{stream, StreamExt};
         use itertools::Itertools;
         use mockall::predicate::eq;
-        use rand::{rngs::StdRng, RngCore, SeedableRng};
-        use services::types::{
-            storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, NonEmpty,
+        use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
+        use services::{
+            block_committer::port::fuel::FuelBlock,
+            types::{
+                storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, NonEmpty,
+            },
         };
 
         pub fn generate_block(height: u32, data_size: usize) -> CompressedFuelBlock {
@@ -403,84 +405,28 @@ pub mod mocks {
         }
 
         pub fn given_fetcher(
-            available_blocks: Vec<services::types::fuel::FuelBlock>,
+            available_blocks: Vec<FuelBlock>,
         ) -> services::block_committer::port::fuel::MockApi {
             let mut fetcher = services::block_committer::port::fuel::MockApi::new();
             for block in available_blocks.clone() {
                 fetcher
                     .expect_block_at_height()
-                    .with(eq(block.header.height))
-                    .returning(move |_| {
-                        let block = block.clone();
-                        Box::pin(async move { Ok(Some(block)) })
-                    });
+                    .with(eq(block.height))
+                    .returning(move |_| Box::pin(async move { Ok(Some(block)) }));
             }
-            if let Some(block) = available_blocks
-                .into_iter()
-                .max_by_key(|el| el.header.height)
-            {
-                fetcher.expect_latest_block().returning(move || {
-                    let block = block.clone();
-                    Box::pin(async { Ok(block) })
-                });
+            if let Some(block) = available_blocks.into_iter().max_by_key(|el| el.height) {
+                fetcher
+                    .expect_latest_block()
+                    .returning(move || Box::pin(async move { Ok(block) }));
             }
 
             fetcher
         }
 
-        fn given_header(height: u32) -> services::types::fuel::FuelHeader {
-            let application_hash =
-                "0x017ab4b70ea129c29e932d44baddc185ad136bf719c4ada63a10b5bf796af91e"
-                    .parse()
-                    .unwrap();
-
-            services::types::fuel::FuelHeader {
-                id: Default::default(),
-                da_height: Default::default(),
-                consensus_parameters_version: Default::default(),
-                state_transition_bytecode_version: Default::default(),
-                transactions_count: Default::default(),
-                message_receipt_count: Default::default(),
-                transactions_root: Default::default(),
-                message_outbox_root: Default::default(),
-                event_inbox_root: Default::default(),
+        pub fn given_a_block(height: u32) -> FuelBlock {
+            FuelBlock {
+                id: rand::thread_rng().gen(),
                 height,
-                prev_root: Default::default(),
-                time: tai64::Tai64(0),
-                application_hash,
-            }
-        }
-
-        pub fn given_secret_key() -> SecretKey {
-            let mut rng = StdRng::seed_from_u64(42);
-
-            SecretKey::random(&mut rng)
-        }
-
-        pub fn given_a_block(
-            height: u32,
-            secret_key: &SecretKey,
-        ) -> services::types::fuel::FuelBlock {
-            let header = given_header(height);
-
-            let mut hasher = fuel_crypto::Hasher::default();
-            hasher.input(header.prev_root.as_ref());
-            hasher.input(header.height.to_be_bytes());
-            hasher.input(header.time.0.to_be_bytes());
-            hasher.input(header.application_hash.as_ref());
-
-            let id = hasher.digest();
-            let id_message = Message::from_bytes(*id);
-            let signature = Signature::sign(secret_key, &id_message);
-
-            services::types::fuel::FuelBlock {
-                id,
-                header,
-                consensus: services::types::fuel::FuelConsensus::PoAConsensus(
-                    services::types::fuel::FuelPoAConsensus { signature },
-                ),
-                transactions: vec![],
-                block_producer: Some(secret_key.public_key()),
             }
         }
     }
@@ -525,8 +471,7 @@ impl Setup {
     }
 
     pub async fn submit_contract_transaction(&self, height: u32, eth_tx: [u8; 32]) {
-        let secret_key = mocks::fuel::given_secret_key();
-        let latest_block = mocks::fuel::given_a_block(height, &secret_key);
+        let latest_block = mocks::fuel::given_a_block(height);
         let fuel_adapter = mocks::fuel::given_fetcher(vec![latest_block.clone()]);
 
         let l1 = mocks::l1::expects_contract_submission(latest_block, eth_tx);
