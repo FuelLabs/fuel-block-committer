@@ -18,7 +18,6 @@ metrics = { workspace = true }
 services = { workspace = true }
 url = { workspace = true }
 cynic = { workspace = true, features = ["default"] }
-# hex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }
