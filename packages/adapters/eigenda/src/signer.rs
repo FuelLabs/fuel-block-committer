@@ -36,7 +36,7 @@ impl AwsSigner {
     }
 
     async fn account_id(&self) -> String {
-        let pk = self.client.get_public_key(&self.key_id).await.unwrap();
+        let pk = self.client.get_public_key(&self.key_id).await.unwrap(); // TODO
         format!("0x{}", hex::encode(pk))
     }
 }

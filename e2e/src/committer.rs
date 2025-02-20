@@ -9,6 +9,7 @@ pub struct Committer {
     show_logs: bool,
     main_key_arn: Option<String>,
     blob_key_arn: Option<String>,
+    alt_da_key_arn: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
@@ -139,6 +140,18 @@ impl Committer {
 
         if let Some(key) = blob_key {
             cmd.env("COMMITTER__ETH__L1_KEYS__BLOB", key.clone());
+        } else if let Some(key) = self.alt_da_key_arn {
+            let key = format!("Kms({key})");
+
+            cmd.env("COMMITTER__DA_LAYER__TYPE", "EigenDA")
+             .env(
+                 "COMMITTER__DA_LAYER__RPC",
+                 "https://disperser-holesky.eigenda.xyz",
+             )
+             .env(
+                 "COMMITTER__DA_LAYER__KEY",
+                 key,
+            );
         }
 
         let sink = if self.show_logs {
@@ -223,6 +236,11 @@ impl Committer {
 
     pub fn with_blob_key_arn(mut self, blob_wallet_arn: String) -> Self {
         self.blob_key_arn = Some(blob_wallet_arn);
+        self
+    }
+
+    pub fn with_alt_da_key_arn(mut self, alt_da_key_arn: String) -> Self {
+        self.alt_da_key_arn = Some(alt_da_key_arn);
         self
     }
 

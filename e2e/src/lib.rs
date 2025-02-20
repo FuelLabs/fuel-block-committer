@@ -1,13 +1,8 @@
-#[cfg(test)]
-mod committer;
-#[cfg(test)]
-mod eth_node;
-#[cfg(test)]
-mod fuel_node;
-#[cfg(test)]
-mod kms;
-#[cfg(test)]
-mod whole_stack;
+pub mod committer;
+pub mod eth_node;
+pub mod fuel_node;
+pub mod kms;
+pub mod whole_stack;
 
 #[cfg(test)]
 mod tests {
