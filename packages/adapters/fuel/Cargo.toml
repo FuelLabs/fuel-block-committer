@@ -12,12 +12,13 @@ rust-version = { workspace = true }
 [dependencies]
 delegate = { workspace = true }
 fuel-core-client = { workspace = true, features = ["subscriptions"] }
-fuel-core-types = { workspace = true, optional = true }
+fuel-core-types = { workspace = true }
 futures = { workspace = true }
 metrics = { workspace = true }
 services = { workspace = true }
 url = { workspace = true }
 cynic = { workspace = true, features = ["default"] }
+# hex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }
@@ -27,4 +28,4 @@ cynic-codegen = { workspace = true }
 fuel-core-client = { workspace = true }
 
 [features]
-test-helpers = ["dep:fuel-core-types"]
+test-helpers = []

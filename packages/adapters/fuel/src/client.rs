@@ -1,11 +1,13 @@
-use std::{num::NonZeroU32, ops::RangeInclusive};
+use std::{fmt::format, num::NonZeroU32, ops::RangeInclusive, str::FromStr};
 
+use cynic::QueryBuilder;
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
     Coin, CoinType,
 };
-use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
+use fuel_core_client::client::FuelClient as GqlClient;
+use fuel_core_types::fuel_tx::Bytes32;
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
 use futures::{stream, Stream, StreamExt};
@@ -25,7 +27,32 @@ mod custom_queries {
     #[cynic::schema("fuelcore")]
     mod schema {}
 
-    pub mod latest_block {}
+    pub mod latest_block {
+        use super::schema;
+
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(graphql_type = "Query")]
+        pub struct LatestBlockQuery {
+            pub chain: ChainInfo,
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        pub struct ChainInfo {
+            pub latest_block: Block,
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        pub struct Block {
+            pub height: U32,
+            pub id: BlockId,
+        }
+
+        #[derive(cynic::Scalar, Debug, Clone)]
+        pub struct BlockId(pub String);
+
+        #[derive(cynic::Scalar, Debug, Clone)]
+        pub struct U32(pub String);
+    }
 }
 
 #[derive(Clone)]
@@ -162,17 +189,27 @@ impl HttpClient {
     }
 
     pub async fn latest_block(&self) -> Result<FuelBlock> {
-        match self.client.chain_info().await {
+        let query = custom_queries::latest_block::LatestBlockQuery::build(());
+
+        match self.client.query(query).await {
             Ok(chain_info) => {
                 self.handle_network_success();
-                let latest_block = chain_info.latest_block;
-                self.metrics
-                    .fuel_height
-                    .set(latest_block.header.height as i64);
-                Ok(FuelBlock {
-                    id: *latest_block.id,
-                    height: latest_block.header.height,
-                })
+                let block = chain_info.chain.latest_block;
+                let id = *Bytes32::from_str(&block.id.0).map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode latest fuel block, invalid id: {e}"
+                    ))
+                })?;
+                let data = block.height.0.trim_start_matches("0x");
+                let height = u32::from_str(data).map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode latest fuel block, invalid height: {e}"
+                    ))
+                })?;
+
+                self.metrics.fuel_height.set(height as i64);
+
+                Ok(FuelBlock { id, height })
             }
             Err(err) => {
                 self.handle_network_error();
