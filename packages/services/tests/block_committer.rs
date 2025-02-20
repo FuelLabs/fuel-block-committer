@@ -14,7 +14,7 @@ async fn will_do_nothing_if_latest_block_is_completed_and_not_stale() {
     let setup = test_helpers::Setup::init().await;
 
     let latest_block = given_a_block(10);
-    let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
+    let fuel_adapter = given_fetcher(vec![latest_block]);
 
     setup.add_submissions(vec![6, 8, 10]).await;
     setup // TODO: do this through block committer and not directly
@@ -47,7 +47,7 @@ async fn will_submit_on_latest_epoch() {
     let setup = test_helpers::Setup::init().await;
 
     let latest_block = given_a_block(10);
-    let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
+    let fuel_adapter = given_fetcher(vec![latest_block]);
 
     let l1 = expects_contract_submission(latest_block, [0; 32]);
     let mut block_committer = BlockCommitter::new(
@@ -71,7 +71,7 @@ async fn will_skip_incomplete_submission_to_submit_latest() {
     let setup = test_helpers::Setup::init().await;
 
     let latest_block = given_a_block(10);
-    let all_blocks = vec![given_a_block(8), given_a_block(9), latest_block.clone()];
+    let all_blocks = vec![given_a_block(8), given_a_block(9), latest_block];
     let fuel_adapter = given_fetcher(all_blocks);
 
     let l1 = expects_contract_submission(latest_block, [0; 32]);
@@ -99,7 +99,7 @@ async fn will_fetch_and_submit_missed_block() {
 
     let missed_block = given_a_block(4);
     let latest_block = given_a_block(5);
-    let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
+    let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
     let l1 = expects_contract_submission(missed_block, [3; 32]);
     setup.add_submissions(vec![0, 2]).await;
@@ -155,7 +155,7 @@ async fn propagates_block_if_epoch_reached() {
     let setup = test_helpers::Setup::init().await;
 
     let block = given_a_block(4);
-    let fuel_adapter = given_fetcher(vec![block.clone()]);
+    let fuel_adapter = given_fetcher(vec![block]);
 
     setup.add_submissions(vec![0, 2]).await;
     let l1 = expects_contract_submission(block, [1; 32]);

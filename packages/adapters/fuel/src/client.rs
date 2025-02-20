@@ -1,5 +1,6 @@
-use std::{fmt::format, num::NonZeroU32, ops::RangeInclusive, str::FromStr};
+use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr};
 
+use custom_queries::block_at_height::{BlockAtHeightQuery, BlockAtHeightVariables};
 use cynic::QueryBuilder;
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
@@ -27,8 +28,20 @@ mod custom_queries {
     #[cynic::schema("fuelcore")]
     mod schema {}
 
+    #[derive(cynic::Scalar, Debug, Clone)]
+    pub struct BlockId(pub String);
+
+    #[derive(cynic::Scalar, Debug, Clone)]
+    pub struct U32(pub String);
+
+    #[derive(cynic::QueryFragment, Debug)]
+    pub struct Block {
+        pub height: U32,
+        pub id: BlockId,
+    }
+
     pub mod latest_block {
-        use super::schema;
+        use super::*;
 
         #[derive(cynic::QueryFragment, Debug)]
         #[cynic(graphql_type = "Query")]
@@ -40,18 +53,22 @@ mod custom_queries {
         pub struct ChainInfo {
             pub latest_block: Block,
         }
+    }
 
-        #[derive(cynic::QueryFragment, Debug)]
-        pub struct Block {
+    pub mod block_at_height {
+        use super::*;
+
+        #[derive(cynic::QueryVariables, Debug)]
+        pub struct BlockAtHeightVariables {
             pub height: U32,
-            pub id: BlockId,
         }
 
-        #[derive(cynic::Scalar, Debug, Clone)]
-        pub struct BlockId(pub String);
-
-        #[derive(cynic::Scalar, Debug, Clone)]
-        pub struct U32(pub String);
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(graphql_type = "Query", variables = "BlockAtHeightVariables")]
+        pub struct BlockAtHeightQuery {
+            #[arguments(height: $height)]
+            pub block: Option<Block>,
+        }
     }
 }
 
@@ -129,13 +146,30 @@ impl HttpClient {
     }
 
     pub(crate) async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>> {
-        match self.client.block_by_height(height.into()).await {
+        let query = BlockAtHeightQuery::build(BlockAtHeightVariables {
+            height: custom_queries::U32(height.to_string()),
+        });
+
+        match self.client.query(query).await {
             Ok(maybe_block) => {
                 self.handle_network_success();
-                Ok(maybe_block.map(|block| FuelBlock {
-                    id: *block.id,
-                    height: block.header.height,
-                }))
+                let Some(block) = maybe_block.block else {
+                    return Ok(None);
+                };
+
+                let height = block.height.0.parse().map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode fuel block at height: {height}, invalid height: {e}"
+                    ))
+                })?;
+
+                let id = *Bytes32::from_str(&block.id.0).map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode fuel block at height: {height}, invalid id: {e}"
+                    ))
+                })?;
+
+                Ok(Some(FuelBlock { id, height }))
             }
             Err(err) => {
                 self.handle_network_error();

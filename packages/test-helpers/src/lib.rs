@@ -313,7 +313,7 @@ pub mod mocks {
         use futures::{stream, StreamExt};
         use itertools::Itertools;
         use mockall::predicate::eq;
-        use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
+        use rand::{Rng, RngCore, SeedableRng};
         use services::{
             block_committer::port::fuel::FuelBlock,
             types::{
@@ -472,7 +472,7 @@ impl Setup {
 
     pub async fn submit_contract_transaction(&self, height: u32, eth_tx: [u8; 32]) {
         let latest_block = mocks::fuel::given_a_block(height);
-        let fuel_adapter = mocks::fuel::given_fetcher(vec![latest_block.clone()]);
+        let fuel_adapter = mocks::fuel::given_fetcher(vec![latest_block]);
 
         let l1 = mocks::l1::expects_contract_submission(latest_block, eth_tx);
         let mut block_committer = BlockCommitter::new(

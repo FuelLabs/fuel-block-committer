@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
 use fuel::HttpClient;
-use fuel_core_chain_config::{
-    ChainConfig, CoinConfig, ConsensusConfig, SnapshotWriter, StateConfig,
-};
+use fuel_core_chain_config::{ChainConfig, CoinConfig, SnapshotWriter, StateConfig};
 use fuel_core_types::{
     fuel_crypto::SecretKey as FuelSecretKey,
     fuel_tx::{AssetId, Finalizable, Input, Output, TransactionBuilder, TxPointer},
