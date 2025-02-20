@@ -189,8 +189,7 @@ impl HttpClient {
                     Some(data) => {
                         let non_empty_data = NonEmpty::collect(data).ok_or_else(|| {
                             Error::Other(format!(
-                                "encountered empty compressed block at height: {}",
-                                height
+                                "encountered empty compressed block at height: {height}",
                             ))
                         })?;
 
@@ -200,8 +199,7 @@ impl HttpClient {
                         }))
                     }
                     None => Err(Error::Other(format!(
-                        "compressed block not found at height: {}",
-                        height
+                        "compressed block not found at height: {height}",
                     ))),
                 }
             }
@@ -241,7 +239,7 @@ impl HttpClient {
                     ))
                 })?;
 
-                self.metrics.fuel_height.set(height as i64);
+                self.metrics.fuel_height.set(height.into());
 
                 Ok(FuelBlock { id, height })
             }

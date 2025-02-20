@@ -23,9 +23,7 @@ use storage::{DbWithProcess, PostgresProcess};
 
 pub fn random_data(size: impl Into<usize>) -> NonEmpty<u8> {
     let size = size.into();
-    if size == 0 {
-        panic!("random data size must be greater than 0");
-    }
+    assert_ne!(size, 0, "random data size must be greater than 0");
 
     let mut buffer = vec![0; size];
     rand::thread_rng().fill_bytes(&mut buffer[..]);
