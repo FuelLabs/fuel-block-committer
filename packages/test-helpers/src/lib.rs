@@ -469,7 +469,7 @@ pub mod mocks {
             hasher.input(header.time.0.to_be_bytes());
             hasher.input(header.application_hash.as_ref());
 
-            let id = services::types::fuel::FuelBlockId::from(hasher.digest());
+            let id = hasher.digest();
             let id_message = Message::from_bytes(*id);
             let signature = Signature::sign(secret_key, &id_message);
 
