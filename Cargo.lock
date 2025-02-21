@@ -1611,6 +1611,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1"
 
 [[package]]
+name = "benches"
+version = "0.10.7"
+dependencies = [
+ "anyhow",
+ "clap",
+ "e2e-helpers",
+ "env_logger",
+ "tokio",
+]
+
+[[package]]
 name = "bigdecimal"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2539,13 +2550,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
-name = "e2e"
+name = "e2e-helpers"
 version = "0.10.7"
 dependencies = [
  "alloy",
  "anyhow",
+ "async-graphql",
+ "async-graphql-warp",
  "aws-config",
  "aws-sdk-kms",
+ "clap",
+ "env_logger",
  "eth",
  "fs_extra",
  "fuel",
@@ -2567,7 +2582,19 @@ dependencies = [
  "tokio",
  "url",
  "walkdir",
+ "warp",
  "zip",
+]
+
+[[package]]
+name = "e2e-tests"
+version = "0.10.7"
+dependencies = [
+ "anyhow",
+ "e2e-helpers",
+ "services",
+ "storage",
+ "tokio",
 ]
 
 [[package]]
@@ -3253,20 +3280,6 @@ dependencies = [
  "strum 0.24.1",
  "substrate-bn",
  "tai64",
-]
-
-[[package]]
-name = "fuel_simulator"
-version = "0.1.0"
-dependencies = [
- "async-graphql",
- "async-graphql-warp",
- "clap",
- "env_logger",
- "hex",
- "rand",
- "tokio",
- "warp",
 ]
 
 [[package]]

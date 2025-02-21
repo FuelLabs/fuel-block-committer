@@ -1,0 +1,17 @@
+[package]
+name = "benches"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+e2e-helpers = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+anyhow = { workspace = true }
+env_logger = { workspace = true }
+clap = { workspace = true, features = ["std", "derive"] }

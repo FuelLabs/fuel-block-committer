@@ -7,7 +7,7 @@ use tokio::time::{sleep, Duration};
 use warp::{http::Response, Filter};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HexString(pub String);
+struct HexString(pub String);
 
 #[async_graphql::Scalar(name = "HexString")]
 impl async_graphql::ScalarType for HexString {
@@ -24,7 +24,7 @@ impl async_graphql::ScalarType for HexString {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct U32(pub u32);
+struct U32(pub u32);
 
 #[async_graphql::Scalar(name = "U32")]
 impl async_graphql::ScalarType for U32 {
@@ -51,13 +51,13 @@ impl async_graphql::ScalarType for U32 {
 }
 
 #[derive(Clone)]
-pub struct InternalBlock {
+struct InternalBlock {
     pub height: u32,
     pub id: String,
     pub data: Vec<u8>,
 }
 
-pub struct AppState {
+struct AppState {
     pub blocks: Mutex<Vec<InternalBlock>>,
     pub block_size: usize,
 }
@@ -73,7 +73,7 @@ impl AppState {
 
 #[derive(SimpleObject, Clone)]
 #[graphql(name = "Block")]
-pub struct Block {
+struct Block {
     pub height: U32,
     pub id: String,
 }
@@ -89,17 +89,17 @@ impl From<InternalBlock> for Block {
 
 #[derive(async_graphql::SimpleObject)]
 #[graphql(name = "DaCompressedBlock")]
-pub struct DaCompressedBlock {
+struct DaCompressedBlock {
     pub bytes: HexString,
 }
 
 #[derive(SimpleObject)]
 #[graphql(name = "ChainInfo")]
-pub struct ChainInfo {
+struct ChainInfo {
     pub latest_block: Block,
 }
 
-pub struct QueryRoot;
+struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
