@@ -4,6 +4,7 @@ members = [
   "committer",
   "e2e",
   "fee_algo_simulation",
+  "fuel_simulator",
   "packages/adapters/clock",
   "packages/adapters/eth",
   "packages/adapters/fuel",
