@@ -10,7 +10,7 @@ use services::types::L1Tx;
 
 use crate::error::{Error, Result};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaxTxFeesPerGas {
     pub normal: u128,
     pub priority: u128,
@@ -21,8 +21,8 @@ impl<'a> From<&'a L1Tx> for MaxTxFeesPerGas {
     fn from(value: &'a L1Tx) -> Self {
         Self {
             normal: value.max_fee,
-            priority: value.blob_fee,
-            blob: value.priority_fee,
+            priority: value.priority_fee,
+            blob: value.blob_fee,
         }
     }
 }
@@ -112,4 +112,96 @@ fn estimate_max_priority_fee_per_gas(fee_history: &FeeHistory) -> Result<u128> {
     };
 
     Ok(std::cmp::max(median, EIP1559_MIN_PRIORITY_FEE))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn correctly_reads_fees_from_l1_tx() {
+        // given
+        let normal = 100;
+        let blob = 50;
+        let priority = 25;
+        let l1tx = gen_l1_tx(normal, blob, priority);
+
+        // when
+        let fees: MaxTxFeesPerGas = (&l1tx).into();
+
+        // then
+        assert_eq!(
+            fees,
+            MaxTxFeesPerGas {
+                normal,
+                priority,
+                blob,
+            }
+        );
+    }
+
+    #[test]
+    fn double_method_doubles_all_fees() {
+        // given
+        let fees = MaxTxFeesPerGas {
+            normal: 100,
+            priority: 50,
+            blob: 25,
+        };
+
+        // when
+        let doubled = fees.double();
+
+        // then
+        assert_eq!(
+            doubled,
+            MaxTxFeesPerGas {
+                normal: 200,
+                priority: 100,
+                blob: 50,
+            }
+        );
+    }
+
+    #[test]
+    fn retain_max_method_returns_max_of_each_fee() {
+        // given
+        let fees1 = MaxTxFeesPerGas {
+            normal: 100,
+            priority: 50,
+            blob: 25,
+        };
+        let fees2 = MaxTxFeesPerGas {
+            normal: 150,
+            priority: 40,
+            blob: 30,
+        };
+
+        // when
+        let retained = fees1.retain_max(fees2);
+        // normal: max(100, 150) = 150
+        // priority: max(50, 40) = 50
+        // blob: max(25, 30) = 30
+        assert_eq!(
+            retained,
+            MaxTxFeesPerGas {
+                normal: 150,
+                priority: 50,
+                blob: 30,
+            },
+        );
+    }
+
+    fn gen_l1_tx(max_fee: u128, blob_fee: u128, priority_fee: u128) -> L1Tx {
+        L1Tx {
+            max_fee,
+            blob_fee,
+            priority_fee,
+            id: None,
+            hash: Default::default(),
+            nonce: Default::default(),
+            created_at: Default::default(),
+            state: services::types::TransactionState::Pending,
+        }
+    }
 }

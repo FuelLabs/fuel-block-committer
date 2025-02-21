@@ -1937,7 +1937,7 @@ checksum = "afb84c814227b90d6895e01398aee0d8033c00e7466aca416fb6a8e0eb19d8a7"
 
 [[package]]
 name = "clock"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "clock",
  "services",
@@ -2623,7 +2623,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "e2e"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "alloy",
  "anyhow",
@@ -2818,7 +2818,7 @@ dependencies = [
 
 [[package]]
 name = "eth"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "alloy",
  "async-trait",
@@ -2902,7 +2902,7 @@ dependencies = [
 
 [[package]]
 name = "fee_algo_simulation"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3024,7 +3024,7 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fuel"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "delegate",
  "fuel-core-client",
@@ -3050,7 +3050,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3079,7 +3079,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer-encoding"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "alloy",
  "anyhow",
@@ -4556,7 +4556,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "metrics"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "prometheus",
 ]
@@ -6221,7 +6221,7 @@ dependencies = [
 
 [[package]]
 name = "services"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "alloy",
  "async-trait",
@@ -6645,7 +6645,7 @@ checksum = "d7beae5182595e9a8b683fa98c4317f956c9a2dec3b9716990d20023cc60c766"
 
 [[package]]
 name = "storage"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "clock",
  "delegate",
@@ -6929,7 +6929,7 @@ dependencies = [
 
 [[package]]
 name = "test-helpers"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "clock",
  "delegate",
