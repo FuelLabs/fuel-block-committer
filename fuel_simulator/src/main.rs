@@ -6,16 +6,23 @@ use server::run_server;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// block size in bytes for each produced block.
     #[arg(long, default_value_t = 128)]
     block_size: usize,
 
-    #[arg(long, default_value_t = 4000)]
+    #[arg(long, default_value_t = 8000)]
     port: u16,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "debug");
+    }
+
+    env_logger::init();
     let args = Args::parse();
-    run_server(args.block_size, args.port).await;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(run_server(args.block_size, args.port));
 }
