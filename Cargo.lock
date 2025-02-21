@@ -1618,6 +1618,7 @@ dependencies = [
  "clap",
  "e2e-helpers",
  "env_logger",
+ "fuel",
  "tokio",
 ]
 

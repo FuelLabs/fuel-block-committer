@@ -2,8 +2,9 @@ use async_graphql::{Context, Object, Schema, SimpleObject};
 use hex;
 use rand::Rng;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
+use url::Url;
 use warp::{http::Response, Filter};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,50 +165,114 @@ async fn produce_blocks(state: Arc<AppState>) {
     }
 }
 
-//
-// Run the GraphQL server with warp on /v1/graphql.
-//
-pub async fn run_server(block_size: usize, port: u16) {
-    let state = Arc::new(AppState::new(block_size));
-    let state_clone = state.clone();
-    tokio::spawn(async move {
-        produce_blocks(state_clone).await;
-    });
+/// A RAII wrapper for the GraphQL server.
+pub struct GraphQLServer {
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    join_handle: Option<tokio::task::JoinHandle<()>>,
+    port: u16,
+}
 
-    let schema = Schema::build(
-        QueryRoot,
-        async_graphql::EmptyMutation,
-        async_graphql::EmptySubscription,
-    )
-    .data(state)
-    .finish();
+impl GraphQLServer {
+    /// Creates a new instance with the specified port.
+    pub fn new(port: u16) -> Self {
+        Self {
+            shutdown_tx: None,
+            join_handle: None,
+            port,
+        }
+    }
 
-    let graphql_post = warp::path!("v1" / "graphql")
-        .and(warp::post())
-        .and(async_graphql_warp::graphql(schema.clone()))
-        .and_then(
-            |(schema, request): (
-                Schema<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription>,
-                async_graphql::Request,
-            )| async move {
-                Ok::<_, std::convert::Infallible>(warp::reply::json(&schema.execute(request).await))
-            },
+    pub fn url(&self) -> Url {
+        Url::parse(&format!("http://localhost:{}/v1/graphql", self.port)).unwrap()
+    }
+
+    /// Runs the server. This spawns the GraphQL server and block producer in background tasks.
+    pub fn run(&mut self, block_size: usize) {
+        let state = Arc::new(AppState::new(block_size));
+        let state_clone = state.clone();
+        // Spawn the block production in a background task.
+        tokio::spawn(async move {
+            produce_blocks(state_clone).await;
+        });
+
+        let schema = Schema::build(
+            QueryRoot,
+            async_graphql::EmptyMutation,
+            async_graphql::EmptySubscription,
+        )
+        .data(state)
+        .finish();
+
+        let graphql_post = warp::path!("v1" / "graphql")
+            .and(warp::post())
+            .and(async_graphql_warp::graphql(schema.clone()))
+            .and_then(
+                |(schema, request): (
+                    Schema<
+                        QueryRoot,
+                        async_graphql::EmptyMutation,
+                        async_graphql::EmptySubscription,
+                    >,
+                    async_graphql::Request,
+                )| async move {
+                    Ok::<_, std::convert::Infallible>(warp::reply::json(
+                        &schema.execute(request).await,
+                    ))
+                },
+            );
+
+        // GraphQL Playground for GET requests at /v1/graphql.
+        let playground = warp::path!("v1" / "graphql").and(warp::get()).map(|| {
+            Response::builder()
+                .header("content-type", "text/html")
+                .body(async_graphql::http::playground_source(
+                    async_graphql::http::GraphQLPlaygroundConfig::new("/v1/graphql"),
+                ))
+        });
+
+        let routes = graphql_post.or(playground).with(warp::log("fake_l2_node"));
+
+        // Create a oneshot channel for graceful shutdown.
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        self.shutdown_tx = Some(shutdown_tx);
+
+        let port = self.port;
+        println!(
+            "GraphQL server running on http://localhost:{}/v1/graphql",
+            port
         );
 
-    // GraphQL Playground for GET requests at /v1/graphql
-    let playground = warp::path!("v1" / "graphql").and(warp::get()).map(|| {
-        Response::builder()
-            .header("content-type", "text/html")
-            .body(async_graphql::http::playground_source(
-                async_graphql::http::GraphQLPlaygroundConfig::new("/v1/graphql"),
-            ))
-    });
+        let (_, fut) =
+            warp::serve(routes).bind_with_graceful_shutdown(([0, 0, 0, 0], port), async {
+                // Wait for the shutdown signal.
+                let _ = shutdown_rx.await;
+            });
 
-    let routes = graphql_post.or(playground).with(warp::log("fake_l2_node"));
+        // Spawn the server using `bind_with_graceful_shutdown`.
+        let join_handle = tokio::spawn(fut);
+        self.join_handle = Some(join_handle);
+    }
 
-    println!(
-        "GraphQL server running on http://localhost:{}/v1/graphql",
-        port
-    );
-    warp::serve(routes).run(([0, 0, 0, 0], port)).await;
+    /// Signals the server to shut down and waits for it to finish.
+    pub async fn stop(&mut self) {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.await;
+        }
+    }
+}
+
+impl Drop for GraphQLServer {
+    fn drop(&mut self) {
+        // If the server is still running, try to signal shutdown.
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        // Abort the task if it has not finished.
+        if let Some(handle) = self.join_handle.take() {
+            handle.abort();
+        }
+    }
 }

@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use clap::Parser;
+use fuel::{HttpClient, Url};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -18,7 +21,21 @@ async fn main() -> anyhow::Result<()> {
 
     env_logger::init();
     let args = Args::parse();
-    e2e_helpers::fuel_node_simulated::run_server(args.block_size, args.port).await;
+
+    let mut server = e2e_helpers::fuel_node_simulated::GraphQLServer::new(args.port);
+
+    server.run(args.block_size);
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let client = HttpClient::new(&server.url(), 100, 1.try_into().unwrap());
+
+    let block = client.latest_block().await?;
+    let da_block = client
+        .compressed_block_at_height(block.height)
+        .await?
+        .unwrap();
+    let block_at_height = client.block_at_height(block.height).await?.unwrap();
 
     Ok(())
 }

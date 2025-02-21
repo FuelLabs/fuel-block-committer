@@ -15,3 +15,4 @@ tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
 env_logger = { workspace = true }
 clap = { workspace = true, features = ["std", "derive"] }
+fuel = { workspace = true }
