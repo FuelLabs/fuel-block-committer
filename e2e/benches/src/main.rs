@@ -1,6 +1,10 @@
 use std::time::Duration;
 
 use clap::Parser;
+use e2e_helpers::whole_stack::{
+    create_and_fund_kms_keys, deploy_contract, start_committer, start_db, start_eth,
+    start_fuel_node, start_kms, FuelNodeType,
+};
 use fuel::{HttpClient, Url};
 
 #[derive(Parser, Debug)]
@@ -9,33 +13,51 @@ struct Args {
     #[arg(long, default_value_t = 128)]
     block_size: usize,
 
-    #[arg(long, default_value_t = 8000)]
+    #[arg(long, default_value_t = 4000)]
     port: u16,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "debug");
-    }
+    // if std::env::var("RUST_LOG").is_err() {
+    //     std::env::set_var("RUST_LOG", "info");
+    // }
 
-    env_logger::init();
+    // env_logger::init();
     let args = Args::parse();
 
-    let mut server = e2e_helpers::fuel_node_simulated::GraphQLServer::new(args.port);
+    let mut fuel_node = e2e_helpers::fuel_node_simulated::FuelNode::new(args.port);
+    fuel_node.run(args.block_size);
+    // let client = HttpClient::new(&fuel_node.url(), 100, 1.try_into().unwrap());
 
-    server.run(args.block_size);
+    let logs = false;
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    let kms = start_kms(logs).await?;
 
-    let client = HttpClient::new(&server.url(), 100, 1.try_into().unwrap());
+    let eth_node = start_eth(logs).await?;
+    let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
 
-    let block = client.latest_block().await?;
-    let da_block = client
-        .compressed_block_at_height(block.height)
-        .await?
-        .unwrap();
-    let block_at_height = client.block_at_height(block.height).await?.unwrap();
+    let request_timeout = Duration::from_secs(50);
+    let max_fee = 1_000_000_000_000;
+
+    let (_contract_args, deployed_contract) =
+        deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
+
+    let db = start_db().await?;
+
+    let _committer = start_committer(
+        true,
+        true,
+        db.clone(),
+        &eth_node,
+        fuel_node.url(),
+        &deployed_contract,
+        &main_key,
+        &secondary_key,
+    )
+    .await?;
+
+    tokio::time::sleep(Duration::from_secs(300)).await;
 
     Ok(())
 }

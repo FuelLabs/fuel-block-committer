@@ -143,15 +143,15 @@ impl WholeStack {
     }
 }
 
-async fn start_kms(logs: bool) -> anyhow::Result<KmsProcess> {
+pub async fn start_kms(logs: bool) -> anyhow::Result<KmsProcess> {
     Kms::default().with_show_logs(logs).start().await
 }
 
-async fn start_eth(logs: bool) -> anyhow::Result<EthNodeProcess> {
+pub async fn start_eth(logs: bool) -> anyhow::Result<EthNodeProcess> {
     EthNode::default().with_show_logs(logs).start().await
 }
 
-async fn create_and_fund_kms_keys(
+pub async fn create_and_fund_kms_keys(
     kms: &KmsProcess,
     eth_node: &EthNodeProcess,
 ) -> anyhow::Result<(KmsKey, KmsKey)> {
@@ -166,7 +166,7 @@ async fn create_and_fund_kms_keys(
     Ok((create_and_fund().await?, create_and_fund().await?))
 }
 
-async fn deploy_contract(
+pub async fn deploy_contract(
     eth_node: &EthNodeProcess,
     main_wallet_key: &KmsKey,
     tx_max_fee: u128,
@@ -190,11 +190,11 @@ async fn deploy_contract(
     Ok((contract_args, deployed_contract))
 }
 
-async fn start_fuel_node(logs: bool) -> anyhow::Result<FuelNodeProcess> {
+pub async fn start_fuel_node(logs: bool) -> anyhow::Result<FuelNodeProcess> {
     FuelNode::default().with_show_logs(logs).start().await
 }
 
-async fn start_db() -> anyhow::Result<DbWithProcess> {
+pub async fn start_db() -> anyhow::Result<DbWithProcess> {
     storage::PostgresProcess::shared()
         .await?
         .create_random_db()
@@ -203,7 +203,7 @@ async fn start_db() -> anyhow::Result<DbWithProcess> {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn start_committer(
+pub async fn start_committer(
     logs: bool,
     blob_support: bool,
     random_db: DbWithProcess,

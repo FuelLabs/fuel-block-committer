@@ -1,8 +1,11 @@
 use async_graphql::{Context, Object, Schema, SimpleObject};
+use fuel_core_types::fuel_crypto::Hasher;
 use hex;
-use rand::Rng;
+use rand::rngs::SmallRng;
+use rand::{RngCore, SeedableRng};
+use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::oneshot;
 use tokio::time::{sleep, Duration};
 use url::Url;
 use warp::{http::Response, Filter};
@@ -51,23 +54,50 @@ impl async_graphql::ScalarType for U32 {
     }
 }
 
-#[derive(Clone)]
-struct InternalBlock {
-    pub height: u32,
-    pub id: String,
-    pub data: Vec<u8>,
+struct AppState {
+    pub current_height: AtomicU32,
+    pub block_contents: Vec<u8>,
 }
 
-struct AppState {
-    pub blocks: Mutex<Vec<InternalBlock>>,
-    pub block_size: usize,
+impl AppState {
+    pub fn latest_block(&self) -> Block {
+        block_at_height(
+            self.current_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+
+    pub fn compressed_block(&self, _height: u32) -> DaCompressedBlock {
+        let compressed = format!("0x{}", hex::encode(&self.block_contents));
+        DaCompressedBlock {
+            bytes: HexString(compressed),
+        }
+    }
+}
+
+fn block_at_height(height: u32) -> Block {
+    Block {
+        height: U32(height),
+        id: id_for_height(height),
+    }
+}
+
+fn id_for_height(height: u32) -> String {
+    let mut hasher = Hasher::default();
+    hasher.input(height.to_be_bytes());
+    let digest = hasher.finalize();
+    hex::encode(*digest)
 }
 
 impl AppState {
     pub fn new(block_size: usize) -> Self {
+        let mut rng = SmallRng::from_seed([0; 32]);
+        let mut block_contents = vec![0; block_size];
+        rng.fill_bytes(&mut block_contents);
+
         Self {
-            blocks: Mutex::new(Vec::new()),
-            block_size,
+            current_height: AtomicU32::new(0),
+            block_contents,
         }
     }
 }
@@ -77,15 +107,6 @@ impl AppState {
 struct Block {
     pub height: U32,
     pub id: String,
-}
-
-impl From<InternalBlock> for Block {
-    fn from(b: InternalBlock) -> Self {
-        Block {
-            height: U32(b.height),
-            id: b.id,
-        }
-    }
 }
 
 #[derive(async_graphql::SimpleObject)]
@@ -105,27 +126,16 @@ struct QueryRoot;
 #[Object]
 impl QueryRoot {
     // Returns chain { latestBlock { height, id } }
-    async fn chain(&self, ctx: &Context<'_>) -> Option<ChainInfo> {
+    async fn chain(&self, ctx: &Context<'_>) -> ChainInfo {
         let state = ctx.data::<Arc<AppState>>().unwrap();
-        let blocks = state.blocks.lock().await;
-        blocks.last().cloned().map(|b| ChainInfo {
-            latest_block: b.into(),
-        })
+        ChainInfo {
+            latest_block: state.latest_block(),
+        }
     }
 
     // Returns block(height: $height) { height, id }
-    async fn block(&self, ctx: &Context<'_>, height: Option<U32>) -> Option<Block> {
-        let state = ctx.data::<Arc<AppState>>().unwrap();
-        let blocks = state.blocks.lock().await;
-        if let Some(U32(h)) = height {
-            blocks
-                .iter()
-                .find(|b| b.height == h)
-                .cloned()
-                .map(|b| b.into())
-        } else {
-            None
-        }
+    async fn block(&self, _ctx: &Context<'_>, height: Option<U32>) -> Option<Block> {
+        height.map(|h| block_at_height(h.0))
     }
 
     // Returns daCompressedBlock(height: $height) { bytes }
@@ -135,44 +145,28 @@ impl QueryRoot {
         height: Option<U32>,
     ) -> Option<DaCompressedBlock> {
         let state = ctx.data::<Arc<AppState>>().unwrap();
-        let blocks = state.blocks.lock().await;
-        if let Some(U32(h)) = height {
-            if let Some(b) = blocks.iter().find(|b| b.height == h) {
-                let compressed = format!("0x{}", hex::encode(&b.data));
-                return Some(DaCompressedBlock {
-                    bytes: HexString(compressed),
-                });
-            }
-        }
-        None
+
+        height.map(|h| state.compressed_block(h.0))
     }
 }
 
 async fn produce_blocks(state: Arc<AppState>) {
     loop {
         sleep(Duration::from_secs(1)).await;
-        let mut blocks = state.blocks.lock().await;
-        let new_height = blocks.len() as u32 + 1;
-        let block_id = hex::encode(rand::thread_rng().gen::<[u8; 32]>());
-        let data = vec![0u8; state.block_size];
-        let new_block = InternalBlock {
-            height: new_height,
-            id: block_id,
-            data,
-        };
-        blocks.push(new_block);
-        println!("Produced block {}", new_height);
+        state
+            .current_height
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
 /// A RAII wrapper for the GraphQL server.
-pub struct GraphQLServer {
+pub struct FuelNode {
     shutdown_tx: Option<oneshot::Sender<()>>,
     join_handle: Option<tokio::task::JoinHandle<()>>,
     port: u16,
 }
 
-impl GraphQLServer {
+impl FuelNode {
     /// Creates a new instance with the specified port.
     pub fn new(port: u16) -> Self {
         Self {
@@ -237,7 +231,7 @@ impl GraphQLServer {
         self.shutdown_tx = Some(shutdown_tx);
 
         let port = self.port;
-        println!(
+        eprintln!(
             "GraphQL server running on http://localhost:{}/v1/graphql",
             port
         );
@@ -264,7 +258,7 @@ impl GraphQLServer {
     }
 }
 
-impl Drop for GraphQLServer {
+impl Drop for FuelNode {
     fn drop(&mut self) {
         // If the server is still running, try to signal shutdown.
         if let Some(tx) = self.shutdown_tx.take() {
