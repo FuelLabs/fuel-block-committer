@@ -1,7 +1,8 @@
+use std::sync::Arc;
+
 use async_graphql::{Context, InputValueError, Object, Schema, SchemaBuilder, SimpleObject, Value};
 use fuel_core_types::fuel_crypto::Hasher;
 use hex;
-use std::sync::Arc;
 
 // Import the AppState and types from the simulation module.
 use super::simulation::AppState;

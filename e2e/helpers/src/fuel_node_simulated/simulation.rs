@@ -1,9 +1,13 @@
-use rand::rngs::SmallRng;
-use rand::{thread_rng, Rng, RngCore, SeedableRng};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
+
+use rand::{rngs::SmallRng, thread_rng, Rng, RngCore, SeedableRng};
+use tokio::{
+    sync::Mutex,
+    time::{sleep, Duration},
+};
 
 // Import types from the graphql module.
 use super::graphql::{block_at_height, Block, DaCompressedBlock, HexString};

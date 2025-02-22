@@ -1,9 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
-use tokio::{sync::Mutex, time::sleep_until};
-
 use e2e_helpers::whole_stack::{FuelNodeType, WholeStack};
+use tokio::{sync::Mutex, time::sleep_until};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn submitted_correct_block_and_was_finalized() -> Result<()> {

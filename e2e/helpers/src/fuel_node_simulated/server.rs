@@ -1,12 +1,15 @@
+use std::sync::Arc;
+
 use actix_web::{guard, web, App, HttpResponse, HttpServer};
 use async_graphql::Schema;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
-use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
-use super::graphql::{build_schema, QueryRoot};
-use super::simulation::{produce_blocks, AppState, SimulationConfig};
+use super::{
+    graphql::{build_schema, QueryRoot},
+    simulation::{produce_blocks, AppState, SimulationConfig},
+};
 
 /// The FuelNode encapsulates the Actix‑Web server and holds simulation configuration.
 pub struct FuelNode {

@@ -3,12 +3,11 @@ pub mod service {
 
     use tracing::info;
 
+    use super::port::fuel::FuelBlock;
     use crate::{
         types::{BlockSubmission, NonNegative, TransactionState},
         Error, Result, Runner,
     };
-
-    use super::port::fuel::FuelBlock;
 
     pub struct BlockCommitter<L1, Db, Fuel, Clock> {
         l1_adapter: L1,
