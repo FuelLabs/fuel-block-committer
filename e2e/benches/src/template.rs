@@ -1,6 +1,5 @@
 static CONTROL_PANEL_TEMPLATE: &str = include_str!("../templates/control_panel.html");
 
-/// Renders the control panel template by replacing the placeholders.
 pub fn render_control_panel(current_block_size: usize, current_compress: &str) -> String {
     let sel_random = if current_compress == "random" {
         "selected"
