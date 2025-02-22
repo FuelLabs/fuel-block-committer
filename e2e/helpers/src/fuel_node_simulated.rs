@@ -2,10 +2,11 @@ use async_graphql::{Context, Object, Schema, SimpleObject};
 use fuel_core_types::fuel_crypto::Hasher;
 use hex;
 use rand::rngs::SmallRng;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
+use std::str::FromStr;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
 use url::Url;
 use warp::{http::Response, Filter};
@@ -54,12 +55,14 @@ impl async_graphql::ScalarType for U32 {
     }
 }
 
-struct AppState {
+/// Application state now holds the block contents in an async mutex.
+pub struct AppState {
     pub current_height: AtomicU32,
-    pub block_contents: Vec<u8>,
+    pub block_contents: Mutex<Vec<u8>>,
 }
 
 impl AppState {
+    /// Returns the latest block (based solely on height).
     pub fn latest_block(&self) -> Block {
         block_at_height(
             self.current_height
@@ -67,37 +70,24 @@ impl AppState {
         )
     }
 
-    pub fn compressed_block(&self, _height: u32) -> DaCompressedBlock {
-        let compressed = format!("0x{}", hex::encode(&self.block_contents));
+    /// Returns a compressed representation of the current block.
+    /// (In this example, we simply hex-encode the raw block data.)
+    pub async fn compressed_block(&self, _height: u32) -> DaCompressedBlock {
+        let block_contents = self.block_contents.lock().await;
+        let compressed = format!("0x{}", hex::encode(&*block_contents));
         DaCompressedBlock {
             bytes: HexString(compressed),
         }
     }
-}
 
-fn block_at_height(height: u32) -> Block {
-    Block {
-        height: U32(height),
-        id: id_for_height(height),
-    }
-}
-
-fn id_for_height(height: u32) -> String {
-    let mut hasher = Hasher::default();
-    hasher.input(height.to_be_bytes());
-    let digest = hasher.finalize();
-    hex::encode(*digest)
-}
-
-impl AppState {
+    /// Creates a new AppState with an initial block generated from the given block size.
     pub fn new(block_size: usize) -> Self {
         let mut rng = SmallRng::from_seed([0; 32]);
-        let mut block_contents = vec![0; block_size];
-        rng.fill_bytes(&mut block_contents);
-
+        let mut block = vec![0; block_size];
+        rng.fill_bytes(&mut block);
         Self {
             current_height: AtomicU32::new(0),
-            block_contents,
+            block_contents: Mutex::new(block),
         }
     }
 }
@@ -145,14 +135,88 @@ impl QueryRoot {
         height: Option<U32>,
     ) -> Option<DaCompressedBlock> {
         let state = ctx.data::<Arc<AppState>>().unwrap();
-
-        height.map(|h| state.compressed_block(h.0))
+        // For simplicity, we ignore the provided height.
+        Some(state.compressed_block(height.unwrap_or(U32(0)).0).await)
     }
 }
 
-async fn produce_blocks(state: Arc<AppState>) {
+fn block_at_height(height: u32) -> Block {
+    Block {
+        height: U32(height),
+        id: id_for_height(height),
+    }
+}
+
+fn id_for_height(height: u32) -> String {
+    let mut hasher = Hasher::default();
+    hasher.input(height.to_be_bytes());
+    let digest = hasher.finalize();
+    hex::encode(*digest)
+}
+
+/// Helper function to generate block contents based on the given configuration.
+/// For "Random", all bytes are random. For "Full", all bytes are zero.
+/// For intermediate levels, a certain percentage of the bytes are zeroed.
+fn generate_block_contents(block_size: usize, compressibility: &Compressibility) -> Vec<u8> {
+    let mut rng = rand::thread_rng();
+    let mut block = vec![0u8; block_size];
+    match compressibility {
+        Compressibility::Random => {
+            rng.fill_bytes(&mut block);
+        }
+        Compressibility::Full => {
+            // Leave all as zero.
+        }
+        Compressibility::Low => {
+            rng.fill_bytes(&mut block);
+            // Approximately 25% zeros.
+            for byte in block.iter_mut() {
+                if rng.gen_bool(0.25) {
+                    *byte = 0;
+                }
+            }
+        }
+        Compressibility::Medium => {
+            rng.fill_bytes(&mut block);
+            // Approximately 50% zeros.
+            for byte in block.iter_mut() {
+                if rng.gen_bool(0.50) {
+                    *byte = 0;
+                }
+            }
+        }
+        Compressibility::High => {
+            rng.fill_bytes(&mut block);
+            // Approximately 75% zeros.
+            for byte in block.iter_mut() {
+                if rng.gen_bool(0.75) {
+                    *byte = 0;
+                }
+            }
+        }
+    }
+    block
+}
+
+/// The block production loop now re-reads the simulation configuration at every iteration
+/// and regenerates the block contents accordingly.
+async fn produce_blocks(state: Arc<AppState>, config: Arc<Mutex<SimulationConfig>>) {
     loop {
         sleep(Duration::from_secs(1)).await;
+
+        // Obtain current simulation parameters.
+        let current_config = {
+            let cfg = config.lock().await;
+            (cfg.block_size, cfg.compressibility.clone())
+        };
+
+        // Generate new block contents based on the current config.
+        let new_block = generate_block_contents(current_config.0, &current_config.1);
+        {
+            let mut block_contents = state.block_contents.lock().await;
+            *block_contents = new_block;
+        }
+
         state
             .current_height
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -164,15 +228,70 @@ pub struct FuelNode {
     shutdown_tx: Option<oneshot::Sender<()>>,
     join_handle: Option<tokio::task::JoinHandle<()>>,
     port: u16,
+    config: Arc<Mutex<SimulationConfig>>,
+}
+
+/// Shared simulation configuration.
+#[derive(Clone)]
+pub struct SimulationConfig {
+    pub block_size: usize,
+    pub compressibility: Compressibility,
+}
+
+/// Define compressibility options.
+#[derive(Debug, Clone)]
+pub enum Compressibility {
+    Random,
+    Low,
+    Medium,
+    High,
+    Full,
+}
+
+impl FromStr for Compressibility {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "random" => Ok(Compressibility::Random),
+            "low" => Ok(Compressibility::Low),
+            "medium" => Ok(Compressibility::Medium),
+            "high" => Ok(Compressibility::High),
+            "full" => Ok(Compressibility::Full),
+            _ => Err(format!("Invalid compressibility option: {}", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for Compressibility {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Compressibility::Random => "Random",
+            Compressibility::Low => "Low",
+            Compressibility::Medium => "Medium",
+            Compressibility::High => "High",
+            Compressibility::Full => "Full",
+        };
+        write!(f, "{}", label)
+    }
+}
+
+impl SimulationConfig {
+    pub fn new(block_size: usize, compressibility: Compressibility) -> Self {
+        Self {
+            block_size,
+            compressibility,
+        }
+    }
 }
 
 impl FuelNode {
     /// Creates a new instance with the specified port.
-    pub fn new(port: u16) -> Self {
+    pub fn new(port: u16, config: Arc<Mutex<SimulationConfig>>) -> Self {
         Self {
             shutdown_tx: None,
             join_handle: None,
             port,
+            config,
         }
     }
 
@@ -180,13 +299,17 @@ impl FuelNode {
         Url::parse(&format!("http://localhost:{}/v1/graphql", self.port)).unwrap()
     }
 
-    /// Runs the server. This spawns the GraphQL server and block producer in background tasks.
-    pub fn run(&mut self, block_size: usize) {
-        let state = Arc::new(AppState::new(block_size));
+    /// Runs the server. This spawns the GraphQL server and the block producer in background tasks.
+    pub async fn run(&mut self) {
+        // Lock the configuration to get the initial block size.
+        let initial_block_size = { self.config.lock().await.block_size };
+        let state = Arc::new(AppState::new(initial_block_size));
         let state_clone = state.clone();
-        // Spawn the block production in a background task.
+        let config_clone = self.config.clone();
+
+        // Spawn the block production loop.
         tokio::spawn(async move {
-            produce_blocks(state_clone).await;
+            produce_blocks(state_clone, config_clone).await;
         });
 
         let schema = Schema::build(
