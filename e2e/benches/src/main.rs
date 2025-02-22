@@ -18,15 +18,12 @@ mod template;
 
 #[actix_web::main]
 async fn main() -> Result<()> {
-    // Initialize configuration with default values.
     let simulation_config = Arc::new(Mutex::new(SimulationConfig::new(
         150_000,
         Compressibility::Medium,
     )));
 
-    // Start the simulated fuel node in a separate asynchronous task.
     let mut fuel_node = FuelNode::new(4000, simulation_config.clone());
-    let fuel_node_url = fuel_node.url();
     fuel_node.run().await?;
 
     let logs = false;
@@ -38,30 +35,27 @@ async fn main() -> Result<()> {
     let (_contract_args, deployed_contract) =
         deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
     let db = start_db().await?;
+
+    let logs = true;
     let committer = start_committer(
-        true,
+        logs,
         true,
         db.clone(),
         &eth_node,
-        &fuel_node_url,
+        &fuel_node.url(),
         &deployed_contract,
         &main_key,
         &secondary_key,
     )
     .await?;
 
-    // Get the committer's metrics URL.
-    let committer_metrics_url = committer.metrics_url();
-
-    // Create shared AppData.
     let app_data = web::Data::new(data::AppData {
         simulation_config: simulation_config.clone(),
-        metrics_url: committer_metrics_url.to_string(),
+        metrics_url: committer.metrics_url().to_string(),
     });
 
     println!("Control panel available at http://localhost:3030");
 
-    // Build and run the Actix‑Web server.
     HttpServer::new(move || {
         App::new()
             .app_data(app_data.clone())
