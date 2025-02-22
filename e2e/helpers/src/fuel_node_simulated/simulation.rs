@@ -46,6 +46,15 @@ pub struct SimulationConfig {
     pub compressibility: Compressibility,
 }
 
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        Self {
+            block_size: 40_000,
+            compressibility: Compressibility::Medium,
+        }
+    }
+}
+
 impl SimulationConfig {
     pub fn new(block_size: usize, compressibility: Compressibility) -> Self {
         Self {

@@ -2653,6 +2653,7 @@ dependencies = [
  "async-graphql-actix-web",
  "aws-config",
  "aws-sdk-kms",
+ "e2e-helpers",
  "eth",
  "fs_extra",
  "fuel",

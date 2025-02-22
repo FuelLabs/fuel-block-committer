@@ -66,6 +66,9 @@ async-graphql = { workspace = true, optional = true }
 async-graphql-actix-web = { workspace = true, optional = true }
 actix-web = { workspace = true, optional = true }
 
+[dev-dependencies]
+e2e-helpers = { workspace = true, features = ["fuel-core-simulated"] }
+
 [features]
 fuel-core-simulated = [
   "dep:async-graphql",
