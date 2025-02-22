@@ -9,17 +9,14 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-// Import types from the graphql module.
 use super::graphql::{block_at_height, Block, DaCompressedBlock, HexString};
 
-/// Application state containing the current block height and block data.
 pub struct AppState {
     pub current_height: AtomicU32,
     pub block_contents: Mutex<Vec<u8>>,
 }
 
 impl AppState {
-    /// Creates a new AppState with an initial block generated with the given size.
     pub fn new(block_size: usize) -> Self {
         let mut rng = SmallRng::from_seed([0; 32]);
         let mut block = vec![0; block_size];
@@ -30,12 +27,10 @@ impl AppState {
         }
     }
 
-    /// Returns the latest block.
     pub fn latest_block(&self) -> Block {
         block_at_height(self.current_height.load(Ordering::Relaxed))
     }
 
-    /// Returns a compressed representation of the block.
     pub async fn compressed_block(&self, _height: u32) -> DaCompressedBlock {
         let block_contents = self.block_contents.lock().await;
         let compressed = format!("0x{}", hex::encode(&*block_contents));
@@ -45,7 +40,6 @@ impl AppState {
     }
 }
 
-/// Simulation configuration shared across the system.
 #[derive(Clone)]
 pub struct SimulationConfig {
     pub block_size: usize,
@@ -61,7 +55,6 @@ impl SimulationConfig {
     }
 }
 
-/// Defines various compressibility options for blocks.
 #[derive(Debug, Clone)]
 pub enum Compressibility {
     Random,
@@ -98,7 +91,6 @@ impl std::fmt::Display for Compressibility {
     }
 }
 
-/// Generates block contents based on the block size and compressibility setting.
 pub fn generate_block_contents(block_size: usize, compressibility: &Compressibility) -> Vec<u8> {
     let mut rng = thread_rng();
     let mut block = vec![0u8; block_size];
@@ -137,7 +129,6 @@ pub fn generate_block_contents(block_size: usize, compressibility: &Compressibil
     block
 }
 
-/// Continuously produces blocks based on the current simulation configuration.
 pub async fn produce_blocks(state: Arc<AppState>, config: Arc<Mutex<SimulationConfig>>) {
     loop {
         sleep(Duration::from_secs(1)).await;
