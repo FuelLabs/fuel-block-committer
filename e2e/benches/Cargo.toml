@@ -18,3 +18,4 @@ clap = { workspace = true, features = ["std", "derive"] }
 fuel = { workspace = true }
 serde = { workspace = true }
 warp = { workspace = true }
+reqwest = { workspace = true }

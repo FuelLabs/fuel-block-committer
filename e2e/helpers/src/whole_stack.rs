@@ -64,7 +64,7 @@ impl WholeStack {
             blob_support,
             db.clone(),
             &eth_node,
-            fuel_node.url(),
+            &fuel_node.url(),
             &deployed_contract,
             &main_key,
             &secondary_key,
@@ -208,7 +208,7 @@ pub async fn start_committer(
     blob_support: bool,
     random_db: DbWithProcess,
     eth_node: &EthNodeProcess,
-    fuel_node_url: Url,
+    fuel_node_url: &Url,
     deployed_contract: &DeployedContract,
     main_key: &KmsKey,
     secondary_key: &KmsKey,
@@ -216,7 +216,7 @@ pub async fn start_committer(
     let committer_builder = Committer::default()
         .with_show_logs(logs)
         .with_eth_rpc((eth_node).ws_url().clone())
-        .with_fuel_rpc(fuel_node_url)
+        .with_fuel_rpc(fuel_node_url.clone())
         .with_db_port(random_db.port())
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())

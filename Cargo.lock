@@ -1619,6 +1619,7 @@ dependencies = [
  "e2e-helpers",
  "env_logger",
  "fuel",
+ "reqwest",
  "serde",
  "tokio",
  "warp",
