@@ -13,10 +13,7 @@ publish.workspace = true
 e2e-helpers = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
-env_logger = { workspace = true }
-clap = { workspace = true, features = ["std", "derive"] }
 fuel = { workspace = true }
 serde = { workspace = true }
-warp = { workspace = true }
 actix-web = { workspace = true }
 reqwest = { workspace = true }

@@ -72,7 +72,7 @@ pub struct AppState {
 
 impl AppState {
     /// Returns the latest block (based solely on height).
-    pub fn latest_block(&self) -> Block {
+    fn latest_block(&self) -> Block {
         block_at_height(
             self.current_height
                 .load(std::sync::atomic::Ordering::Relaxed),
@@ -81,7 +81,7 @@ impl AppState {
 
     /// Returns a compressed representation of the current block.
     /// (In this example, we simply hex-encode the raw block data.)
-    pub async fn compressed_block(&self, _height: u32) -> DaCompressedBlock {
+    async fn compressed_block(&self, _height: u32) -> DaCompressedBlock {
         let block_contents = self.block_contents.lock().await;
         let compressed = format!("0x{}", hex::encode(&*block_contents));
         DaCompressedBlock {
