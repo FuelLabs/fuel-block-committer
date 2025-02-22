@@ -1,4 +1,7 @@
-use async_graphql::{Context, Object, Schema, SimpleObject};
+use actix_web::{guard, web, App, HttpResponse, HttpServer};
+use async_graphql::http::GraphQLPlaygroundConfig;
+use async_graphql::{Context, InputValueError, Object, Schema, SimpleObject, Value};
+use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
 use fuel_core_types::fuel_crypto::Hasher;
 use hex;
 use rand::rngs::SmallRng;
@@ -6,25 +9,28 @@ use rand::{Rng, RngCore, SeedableRng};
 use std::str::FromStr;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use url::Url;
-use warp::{http::Response, Filter};
+
+// -------------------------
+// GraphQL Scalar Definitions
+// -------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HexString(pub String);
 
 #[async_graphql::Scalar(name = "HexString")]
 impl async_graphql::ScalarType for HexString {
-    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+    fn parse(value: Value) -> async_graphql::InputValueResult<Self> {
         match value {
-            async_graphql::Value::String(s) => Ok(HexString(s)),
-            _ => Err(async_graphql::InputValueError::expected_type(value)),
+            Value::String(s) => Ok(HexString(s)),
+            _ => Err(InputValueError::expected_type(value)),
         }
     }
 
-    fn to_value(&self) -> async_graphql::Value {
-        async_graphql::Value::String(self.0.clone())
+    fn to_value(&self) -> Value {
+        Value::String(self.0.clone())
     }
 }
 
@@ -33,29 +39,32 @@ struct U32(pub u32);
 
 #[async_graphql::Scalar(name = "U32")]
 impl async_graphql::ScalarType for U32 {
-    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+    fn parse(value: Value) -> async_graphql::InputValueResult<Self> {
         match value {
-            async_graphql::Value::Number(n) => {
+            Value::Number(n) => {
                 if let Some(v) = n.as_u64() {
                     Ok(U32(v as u32))
                 } else {
-                    Err(async_graphql::InputValueError::custom("Invalid number"))
+                    Err(InputValueError::custom("Invalid number"))
                 }
             }
-            async_graphql::Value::String(s) => s
+            Value::String(s) => s
                 .parse::<u32>()
                 .map(U32)
-                .map_err(|_| async_graphql::InputValueError::custom("Invalid u32 string")),
-            _ => Err(async_graphql::InputValueError::expected_type(value)),
+                .map_err(|_| InputValueError::custom("Invalid u32 string")),
+            _ => Err(InputValueError::expected_type(value)),
         }
     }
 
-    fn to_value(&self) -> async_graphql::Value {
-        async_graphql::Value::String(self.0.to_string())
+    fn to_value(&self) -> Value {
+        Value::String(self.0.to_string())
     }
 }
 
-/// Application state now holds the block contents in an async mutex.
+// -------------------------
+// Application State & Block Logic
+// -------------------------
+
 pub struct AppState {
     pub current_height: AtomicU32,
     pub block_contents: Mutex<Vec<u8>>,
@@ -99,7 +108,7 @@ struct Block {
     pub id: String,
 }
 
-#[derive(async_graphql::SimpleObject)]
+#[derive(SimpleObject, Clone)]
 #[graphql(name = "DaCompressedBlock")]
 struct DaCompressedBlock {
     pub bytes: HexString,
@@ -110,6 +119,10 @@ struct DaCompressedBlock {
 struct ChainInfo {
     pub latest_block: Block,
 }
+
+// -------------------------
+// GraphQL Query Root
+// -------------------------
 
 struct QueryRoot;
 
@@ -135,7 +148,6 @@ impl QueryRoot {
         height: Option<U32>,
     ) -> Option<DaCompressedBlock> {
         let state = ctx.data::<Arc<AppState>>().unwrap();
-        // For simplicity, we ignore the provided height.
         Some(state.compressed_block(height.unwrap_or(U32(0)).0).await)
     }
 }
@@ -154,9 +166,11 @@ fn id_for_height(height: u32) -> String {
     hex::encode(*digest)
 }
 
+// -------------------------
+// Block Production & Simulation Config
+// -------------------------
+
 /// Helper function to generate block contents based on the given configuration.
-/// For "Random", all bytes are random. For "Full", all bytes are zero.
-/// For intermediate levels, a certain percentage of the bytes are zeroed.
 fn generate_block_contents(block_size: usize, compressibility: &Compressibility) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let mut block = vec![0u8; block_size];
@@ -165,7 +179,7 @@ fn generate_block_contents(block_size: usize, compressibility: &Compressibility)
             rng.fill_bytes(&mut block);
         }
         Compressibility::Full => {
-            // Leave all as zero.
+            // All bytes remain zero.
         }
         Compressibility::Low => {
             rng.fill_bytes(&mut block);
@@ -198,8 +212,7 @@ fn generate_block_contents(block_size: usize, compressibility: &Compressibility)
     block
 }
 
-/// The block production loop now re-reads the simulation configuration at every iteration
-/// and regenerates the block contents accordingly.
+/// The block production loop that re-reads the simulation configuration at every iteration.
 async fn produce_blocks(state: Arc<AppState>, config: Arc<Mutex<SimulationConfig>>) {
     loop {
         sleep(Duration::from_secs(1)).await;
@@ -221,14 +234,6 @@ async fn produce_blocks(state: Arc<AppState>, config: Arc<Mutex<SimulationConfig
             .current_height
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
-}
-
-/// A RAII wrapper for the GraphQL server.
-pub struct FuelNode {
-    shutdown_tx: Option<oneshot::Sender<()>>,
-    join_handle: Option<tokio::task::JoinHandle<()>>,
-    port: u16,
-    config: Arc<Mutex<SimulationConfig>>,
 }
 
 /// Shared simulation configuration.
@@ -284,24 +289,34 @@ impl SimulationConfig {
     }
 }
 
+// -------------------------
+// Actix-Web FuelNode Implementation
+// -------------------------
+
+pub struct FuelNode {
+    shutdown_handle: Option<actix_web::dev::ServerHandle>,
+    port: u16,
+    config: Arc<Mutex<SimulationConfig>>,
+}
+
 impl FuelNode {
-    /// Creates a new instance with the specified port.
+    /// Creates a new FuelNode using Actix-Web.
     pub fn new(port: u16, config: Arc<Mutex<SimulationConfig>>) -> Self {
         Self {
-            shutdown_tx: None,
-            join_handle: None,
+            shutdown_handle: None,
             port,
             config,
         }
     }
 
+    /// Returns the GraphQL URL.
     pub fn url(&self) -> Url {
         Url::parse(&format!("http://localhost:{}/v1/graphql", self.port)).unwrap()
     }
 
-    /// Runs the server. This spawns the GraphQL server and the block producer in background tasks.
-    pub async fn run(&mut self) {
-        // Lock the configuration to get the initial block size.
+    /// Runs the Actix-Web server and block producer concurrently.
+    pub async fn run(&mut self) -> std::io::Result<()> {
+        // Initialize state using the current block size.
         let initial_block_size = { self.config.lock().await.block_size };
         let state = Arc::new(AppState::new(initial_block_size));
         let state_clone = state.clone();
@@ -312,6 +327,7 @@ impl FuelNode {
             produce_blocks(state_clone, config_clone).await;
         });
 
+        // Build the GraphQL schema.
         let schema = Schema::build(
             QueryRoot,
             async_graphql::EmptyMutation,
@@ -320,76 +336,62 @@ impl FuelNode {
         .data(state)
         .finish();
 
-        let graphql_post = warp::path!("v1" / "graphql")
-            .and(warp::post())
-            .and(async_graphql_warp::graphql(schema.clone()))
-            .and_then(
-                |(schema, request): (
-                    Schema<
-                        QueryRoot,
-                        async_graphql::EmptyMutation,
-                        async_graphql::EmptySubscription,
-                    >,
-                    async_graphql::Request,
-                )| async move {
-                    Ok::<_, std::convert::Infallible>(warp::reply::json(
-                        &schema.execute(request).await,
-                    ))
-                },
-            );
-
-        // GraphQL Playground for GET requests at /v1/graphql.
-        let playground = warp::path!("v1" / "graphql").and(warp::get()).map(|| {
-            Response::builder()
-                .header("content-type", "text/html")
-                .body(async_graphql::http::playground_source(
-                    async_graphql::http::GraphQLPlaygroundConfig::new("/v1/graphql"),
-                ))
-        });
-
-        let routes = graphql_post.or(playground).with(warp::log("fake_l2_node"));
-
-        // Create a oneshot channel for graceful shutdown.
-        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-        self.shutdown_tx = Some(shutdown_tx);
-
         let port = self.port;
-        eprintln!(
+        // Create and run the Actix-Web server.
+        let server = HttpServer::new(move || {
+            App::new()
+                .app_data(web::Data::new(schema.clone()))
+                .service(
+                    // POST requests for GraphQL queries/mutations.
+                    web::resource("/v1/graphql")
+                        .guard(guard::Post())
+                        .to(graphql_handler),
+                )
+                .service(
+                    // GET requests serve the GraphQL Playground.
+                    web::resource("/v1/graphql")
+                        .guard(guard::Get())
+                        .to(graphql_playground),
+                )
+        })
+        .bind(("0.0.0.0", port))?
+        .run();
+
+        // Save the server handle for graceful shutdown.
+        self.shutdown_handle = Some(server.handle());
+
+        println!(
             "GraphQL server running on http://localhost:{}/v1/graphql",
             port
         );
+        tokio::task::spawn(server);
 
-        let (_, fut) =
-            warp::serve(routes).bind_with_graceful_shutdown(([0, 0, 0, 0], port), async {
-                // Wait for the shutdown signal.
-                let _ = shutdown_rx.await;
-            });
-
-        // Spawn the server using `bind_with_graceful_shutdown`.
-        let join_handle = tokio::spawn(fut);
-        self.join_handle = Some(join_handle);
+        Ok(())
     }
 
-    /// Signals the server to shut down and waits for it to finish.
+    /// Signals the server to shut down gracefully.
     pub async fn stop(&mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        if let Some(handle) = self.join_handle.take() {
-            let _ = handle.await;
+        if let Some(handle) = self.shutdown_handle.take() {
+            handle.stop(true).await;
         }
     }
 }
 
-impl Drop for FuelNode {
-    fn drop(&mut self) {
-        // If the server is still running, try to signal shutdown.
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        // Abort the task if it has not finished.
-        if let Some(handle) = self.join_handle.take() {
-            handle.abort();
-        }
-    }
+// GraphQL request handler for Actix-Web.
+async fn graphql_handler(
+    schema: web::Data<
+        Schema<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription>,
+    >,
+    req: GraphQLRequest,
+) -> GraphQLResponse {
+    schema.execute(req.into_inner()).await.into()
+}
+
+// GraphQL Playground handler.
+async fn graphql_playground() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(async_graphql::http::playground_source(
+            GraphQLPlaygroundConfig::new("/v1/graphql"),
+        ))
 }

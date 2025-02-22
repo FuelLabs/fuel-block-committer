@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     // Start the simulated fuel node in a separate asynchronous task.
     let mut fuel_node = FuelNode::new(4000, simulation_config.clone());
     let fuel_node_url = fuel_node.url();
-    fuel_node.run().await;
+    fuel_node.run().await?;
 
     let logs = false;
 
