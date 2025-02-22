@@ -1689,7 +1689,6 @@ version = "0.10.7"
 dependencies = [
  "actix-web",
  "anyhow",
- "clap",
  "e2e-helpers",
  "fuel",
  "reqwest",
@@ -2654,7 +2653,6 @@ dependencies = [
  "async-graphql-actix-web",
  "aws-config",
  "aws-sdk-kms",
- "clap",
  "eth",
  "fs_extra",
  "fuel",
