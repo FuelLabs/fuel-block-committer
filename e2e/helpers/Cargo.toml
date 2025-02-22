@@ -62,6 +62,14 @@ tokio = { workspace = true, features = [
   "fs",
 ] }
 url = { workspace = true }
-async-graphql = { workspace = true, features = ["playground"] }
-async-graphql-actix-web = { workspace = true }
-actix-web = { workspace = true }
+async-graphql = { workspace = true, optional = true }
+async-graphql-actix-web = { workspace = true, optional = true }
+actix-web = { workspace = true, optional = true }
+
+[features]
+fuel-core-simulated = [
+  "dep:async-graphql",
+  "dep:async-graphql-actix-web",
+  "dep:actix-web",
+  "rand/small_rng",
+]

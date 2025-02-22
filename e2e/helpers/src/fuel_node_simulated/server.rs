@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use actix_web::{guard, web, App, HttpResponse, HttpServer};
+use actix_web::{guard, web, App, HttpServer};
 use async_graphql::Schema;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
 use tokio::sync::Mutex;
@@ -11,7 +11,6 @@ use super::{
     simulation::{produce_blocks, AppState, SimulationConfig},
 };
 
-/// The FuelNode encapsulates the Actix‑Web server and holds simulation configuration.
 pub struct FuelNode {
     shutdown_handle: Option<actix_web::dev::ServerHandle>,
     port: u16,
@@ -19,7 +18,6 @@ pub struct FuelNode {
 }
 
 impl FuelNode {
-    /// Create a new FuelNode.
     pub fn new(port: u16, config: Arc<Mutex<SimulationConfig>>) -> Self {
         Self {
             shutdown_handle: None,
@@ -50,33 +48,21 @@ impl FuelNode {
 
         let port = self.port;
         let server = HttpServer::new(move || {
-            App::new()
-                .app_data(web::Data::new(schema.clone()))
-                .service(
-                    web::resource("/v1/graphql")
-                        .guard(guard::Post())
-                        .to(graphql_handler),
-                )
-                .service(
-                    web::resource("/v1/graphql")
-                        .guard(guard::Get())
-                        .to(graphql_playground),
-                )
+            App::new().app_data(web::Data::new(schema.clone())).service(
+                web::resource("/v1/graphql")
+                    .guard(guard::Post())
+                    .to(graphql_handler),
+            )
         })
         .bind(("0.0.0.0", port))?
         .run();
 
         self.shutdown_handle = Some(server.handle());
-        println!(
-            "GraphQL server running on http://localhost:{}/v1/graphql",
-            port
-        );
         tokio::spawn(server);
 
         Ok(())
     }
 
-    /// Gracefully stops the server.
     pub async fn stop(&mut self) {
         if let Some(handle) = self.shutdown_handle.take() {
             handle.stop(true).await;
@@ -84,7 +70,6 @@ impl FuelNode {
     }
 }
 
-/// Handler for GraphQL requests.
 async fn graphql_handler(
     schema: web::Data<
         Schema<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription>,
@@ -92,13 +77,4 @@ async fn graphql_handler(
     req: GraphQLRequest,
 ) -> GraphQLResponse {
     schema.execute(req.into_inner()).await.into()
-}
-
-/// Handler for serving the GraphQL Playground.
-async fn graphql_playground() -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(async_graphql::http::playground_source(
-            async_graphql::http::GraphQLPlaygroundConfig::new("/v1/graphql"),
-        ))
 }

@@ -10,10 +10,10 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-e2e-helpers = { workspace = true }
+e2e-helpers = { workspace = true, features = ["fuel-core-simulated"] }
 tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
 fuel = { workspace = true }
 serde = { workspace = true }
-actix-web = { workspace = true }
+actix-web = { workspace = true, features = ["macros"] }
 reqwest = { workspace = true }
