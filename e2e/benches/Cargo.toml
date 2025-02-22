@@ -18,4 +18,5 @@ clap = { workspace = true, features = ["std", "derive"] }
 fuel = { workspace = true }
 serde = { workspace = true }
 warp = { workspace = true }
+actix-web = { workspace = true }
 reqwest = { workspace = true }

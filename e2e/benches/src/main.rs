@@ -2,6 +2,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use actix_web::{web, App, HttpResponse, HttpServer};
+use anyhow::Result;
 use e2e_helpers::{
     fuel_node_simulated::{Compressibility, FuelNode, SimulationConfig},
     whole_stack::{
@@ -10,104 +12,29 @@ use e2e_helpers::{
 };
 use serde::Deserialize;
 use tokio::sync::Mutex;
-use warp::Filter;
 
-// A custom error type for metrics proxy failures.
-#[derive(Debug)]
-struct MetricsProxyError(String);
-impl warp::reject::Reject for MetricsProxyError {}
+// ---------- Application Data ----------
 
-// Structure to capture form submissions.
+/// Shared application data for the control panel.
+struct AppData {
+    simulation_config: Arc<Mutex<SimulationConfig>>,
+    metrics_url: String,
+}
+
+// ---------- Form Definition ----------
+
 #[derive(Debug, Deserialize)]
 struct ConfigForm {
     block_size: usize,
     compressibility: String,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Initialize configuration with default values.
-    let simulation_config = Arc::new(Mutex::new(SimulationConfig::new(
-        128,
-        Compressibility::Medium,
-    )));
-
-    // Start the simulated fuel node in a separate asynchronous task.
-    let mut fuel_node = FuelNode::new(4000, simulation_config.clone());
-    let fuel_node_url = fuel_node.url();
-    fuel_node.run().await?;
-
-    let logs = false;
-
-    let kms = start_kms(logs).await?;
-    let eth_node = start_eth(logs).await?;
-    let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
-
-    let request_timeout = Duration::from_secs(50);
-    let max_fee = 1_000_000_000_000;
-
-    let (_contract_args, deployed_contract) =
-        deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
-
-    let db = start_db().await?;
-
-    let committer = start_committer(
-        true,
-        true,
-        db.clone(),
-        &eth_node,
-        &fuel_node_url,
-        &deployed_contract,
-        &main_key,
-        &secondary_key,
-    )
-    .await?;
-
-    // Get the committer's metrics URL.
-    let committer_metrics_url = committer.metrics_url();
-
-    // --- Build the web server for the control panel ---
-
-    // A filter that always supplies the simulation config.
-    let config_filter = warp::any().map(move || simulation_config.clone());
-
-    // GET / -> Serve the control panel page (with live graph preview).
-    let control_panel = warp::path::end()
-        .and(warp::get())
-        .and(config_filter.clone())
-        .and_then(serve_control_panel);
-
-    // POST /update -> Accept updates from the form.
-    let update_config = warp::path("update")
-        .and(warp::post())
-        .and(warp::body::form())
-        .and(config_filter.clone())
-        .and_then(handle_update);
-
-    // Proxy /proxy/metrics to the committer metrics URL.
-    let metrics_url = committer_metrics_url.clone();
-    let metrics_proxy = warp::path!("proxy" / "metrics")
-        .and(warp::get())
-        .and_then(move || {
-            let metrics_url = metrics_url.clone();
-            async move { proxy_metrics(metrics_url.to_string()).await }
-        });
-
-    // Combine all routes.
-    let routes = control_panel.or(update_config).or(metrics_proxy);
-
-    println!("Control panel available at http://localhost:3030");
-    warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
-
-    Ok(())
-}
+// ---------- HTTP Handlers ----------
 
 /// Serves the control panel page with a prefilled form and a live chart.
-/// A Chart.js–based graph (in a canvas element) displays live metrics fetched from /proxy/metrics.
-async fn serve_control_panel(
-    config: Arc<Mutex<SimulationConfig>>,
-) -> Result<impl warp::Reply, warp::Rejection> {
-    let cfg = config.lock().await;
+async fn serve_control_panel(data: web::Data<AppData>) -> HttpResponse {
+    // Read current configuration.
+    let cfg = data.simulation_config.lock().await;
     let current_block_size = cfg.block_size;
     let current_compress = cfg.compressibility.to_string().to_lowercase();
     drop(cfg); // release lock early
@@ -278,15 +205,13 @@ async fn serve_control_panel(
             ""
         },
     );
-    Ok(warp::reply::html(html))
+
+    HttpResponse::Ok().content_type("text/html").body(html)
 }
 
-/// Handles form submission to update the simulation parameters.
-/// After updating, it sends a 303 See Other redirect back to the control panel.
-async fn handle_update(
-    form: ConfigForm,
-    config: Arc<Mutex<SimulationConfig>>,
-) -> Result<impl warp::Reply, warp::Rejection> {
+/// Handles form submission to update the simulation configuration.
+/// After updating, it returns a 303 See Other redirect back to the control panel.
+async fn update_config(form: web::Form<ConfigForm>, data: web::Data<AppData>) -> HttpResponse {
     println!("Received update: {:?}", form);
     let compressibility = match form.compressibility.parse::<Compressibility>() {
         Ok(c) => c,
@@ -295,8 +220,9 @@ async fn handle_update(
             Compressibility::Medium // fallback default
         }
     };
+
     {
-        let mut cfg = config.lock().await;
+        let mut cfg = data.simulation_config.lock().await;
         cfg.block_size = form.block_size;
         cfg.compressibility = compressibility;
         println!(
@@ -304,28 +230,89 @@ async fn handle_update(
             cfg.block_size, cfg.compressibility
         );
     }
-    // Build a 303 See Other redirect response.
-    let redirect = warp::http::Response::builder()
-        .status(warp::http::StatusCode::SEE_OTHER)
-        .header("location", "/")
-        .body("")
-        .unwrap();
-    Ok(redirect)
+    // Return a 303 See Other redirect.
+    HttpResponse::SeeOther()
+        .append_header(("location", "/"))
+        .finish()
 }
 
 /// Proxies a GET request for /proxy/metrics to the committer metrics URL.
-async fn proxy_metrics(metrics_url: String) -> Result<impl warp::Reply, warp::Rejection> {
-    match reqwest::get(&metrics_url).await {
+async fn proxy_metrics(data: web::Data<AppData>) -> HttpResponse {
+    let url = data.metrics_url.clone();
+    match reqwest::get(&url).await {
         Ok(resp) => match resp.text().await {
-            Ok(body) => Ok(warp::reply::with_header(body, "Content-Type", "text/plain")),
+            Ok(body) => HttpResponse::Ok().content_type("text/plain").body(body),
             Err(e) => {
                 eprintln!("Error reading metrics response: {}", e);
-                Err(warp::reject::custom(MetricsProxyError(e.to_string())))
+                HttpResponse::InternalServerError()
+                    .body(format!("Error reading metrics response: {}", e))
             }
         },
         Err(e) => {
             eprintln!("Error fetching metrics: {}", e);
-            Err(warp::reject::custom(MetricsProxyError(e.to_string())))
+            HttpResponse::InternalServerError().body(format!("Error fetching metrics: {}", e))
         }
     }
+}
+
+// ---------- Main Function ----------
+
+#[actix_web::main]
+async fn main() -> Result<()> {
+    // Initialize configuration with default values.
+    let simulation_config = Arc::new(Mutex::new(SimulationConfig::new(
+        128,
+        Compressibility::Medium,
+    )));
+
+    // Start the simulated fuel node in a separate asynchronous task.
+    let mut fuel_node = FuelNode::new(4000, simulation_config.clone());
+    let fuel_node_url = fuel_node.url();
+    fuel_node.run().await?;
+
+    let logs = false;
+    let kms = start_kms(logs).await?;
+    let eth_node = start_eth(logs).await?;
+    let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
+    let request_timeout = Duration::from_secs(50);
+    let max_fee = 1_000_000_000_000;
+    let (_contract_args, deployed_contract) =
+        deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
+    let db = start_db().await?;
+    let committer = start_committer(
+        true,
+        true,
+        db.clone(),
+        &eth_node,
+        &fuel_node_url,
+        &deployed_contract,
+        &main_key,
+        &secondary_key,
+    )
+    .await?;
+
+    // Get the committer's metrics URL.
+    let committer_metrics_url = committer.metrics_url();
+
+    // Create shared AppData.
+    let app_data = web::Data::new(AppData {
+        simulation_config: simulation_config.clone(),
+        metrics_url: committer_metrics_url.to_string(),
+    });
+
+    println!("Control panel available at http://localhost:3030");
+
+    // Build and run the Actix-Web server.
+    HttpServer::new(move || {
+        App::new()
+            .app_data(app_data.clone())
+            .route("/", web::get().to(serve_control_panel))
+            .route("/update", web::post().to(update_config))
+            .route("/proxy/metrics", web::get().to(proxy_metrics))
+    })
+    .bind("0.0.0.0:3030")?
+    .run()
+    .await?;
+
+    Ok(())
 }
