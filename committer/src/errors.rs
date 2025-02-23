@@ -64,15 +64,15 @@ impl<T> WithContext<T> for Result<T> {
         C: Display + Send + Sync + 'static,
         F: FnOnce() -> C,
     {
-        match self { Err(err) => {
+        if let Err(err) = self {
             let new_err = match err {
                 Error::Other(e) => Error::Other(format!("{}: {}", context(), e)),
                 Error::Network(e) => Error::Network(format!("{}: {}", context(), e)),
                 Error::Storage(e) => Error::Storage(format!("{}: {}", context(), e)),
             };
             Err(new_err)
-        } _ => {
+        } else {
             self
-        }}
+        }
     }
 }
