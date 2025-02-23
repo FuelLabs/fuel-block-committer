@@ -2,16 +2,16 @@ use std::{num::NonZeroUsize, time::Duration};
 
 use itertools::Itertools;
 use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
+    prometheus::{IntGauge, Opts, core::Collector},
 };
 use tracing::info;
 
-use super::{fee_algo::SmaFeeAlgo, AlgoConfig};
+use super::{AlgoConfig, fee_algo::SmaFeeAlgo};
 use crate::{
-    state_committer::port::l1::Priority,
-    types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
     Result, Runner,
+    state_committer::port::l1::Priority,
+    types::{CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc, storage::BundleFragment},
 };
 
 // src/config.rs
@@ -282,27 +282,27 @@ where
     }
 
     async fn submit_fragments_if_ready(&self) -> Result<()> {
-        match self.next_fragments_to_submit().await? { Some(fragments) => {
+        if let Some(fragments) = self.next_fragments_to_submit().await? {
             if self.should_submit_fragments(&fragments).await? {
                 self.submit_fragments(fragments, None).await?;
             }
-        } _ => {
+        } else {
             // if we have no fragments to submit, that means that we're up to date and new
             // blocks haven't been bundled yet
             let current_height_to_commit =
-                match self.storage.latest_bundled_height().await? { Some(height) => {
+                if let Some(height) = self.storage.latest_bundled_height().await? {
                     height.saturating_add(1)
-                } _ => {
+                } else {
                     self.fuel_api
                         .latest_height()
                         .await?
                         .saturating_sub(self.config.lookback_window)
-                }};
+                };
 
             self.metrics
                 .current_height_to_commit
                 .set(current_height_to_commit.into());
-        }}
+        }
 
         Ok(())
     }

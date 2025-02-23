@@ -1,7 +1,6 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use actix_web::{web, App, HttpResponse, HttpServer};
+use actix_web::{App, HttpResponse, HttpServer, web};
 use anyhow::Result;
 use e2e_helpers::{
     fuel_node_simulated::{Compressibility, FuelNode, SimulationConfig},

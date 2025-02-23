@@ -10,7 +10,7 @@ use alloy::{
 use eth::{
     AcceptablePriorityFeePercentages, AwsClient, AwsConfig, Signer, Signers, WebsocketClient,
 };
-use fs_extra::dir::{copy, CopyOptions};
+use fs_extra::dir::{CopyOptions, copy};
 use serde::Deserialize;
 use services::{block_committer::port::fuel::FuelBlock, types::Address};
 use tokio::process::Command;

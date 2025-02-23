@@ -126,7 +126,7 @@ impl TryFrom<NonEmpty<CompressedFuelBlock>> for SequentialFuelBlocks {
 
 #[cfg(test)]
 mod tests {
-    use nonempty::{nonempty, NonEmpty};
+    use nonempty::{NonEmpty, nonempty};
 
     use super::*;
 

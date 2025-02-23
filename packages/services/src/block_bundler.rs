@@ -4,16 +4,15 @@ pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
 
     use metrics::{
-        custom_exponential_buckets,
-        prometheus::{histogram_opts, linear_buckets, Histogram, IntGauge},
-        RegistersMetrics,
+        RegistersMetrics, custom_exponential_buckets,
+        prometheus::{Histogram, IntGauge, histogram_opts, linear_buckets},
     };
     use tracing::info;
 
     use super::bundler::{Bundle, BundleProposal, BundlerFactory, Metadata};
     use crate::{
-        types::{DateTime, Utc},
         Error, Result, Runner,
+        types::{DateTime, Utc},
     };
 
     #[derive(Debug, Clone, Copy)]
@@ -274,8 +273,8 @@ pub mod port {
     use nonempty::NonEmpty;
 
     use crate::{
-        types::{storage::SequentialFuelBlocks, DateTime, Fragment, NonNegative, Utc},
         Result,
+        types::{DateTime, Fragment, NonNegative, Utc, storage::SequentialFuelBlocks},
     };
 
     pub mod fuel {
@@ -293,8 +292,8 @@ pub mod port {
         use nonempty::NonEmpty;
 
         use crate::{
-            types::{Fragment, NonNegative},
             Result,
+            types::{Fragment, NonNegative},
         };
 
         pub trait FragmentEncoder {
@@ -334,12 +333,12 @@ pub mod test_helpers {
     use std::num::NonZeroUsize;
 
     use tokio::sync::{
-        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
         Mutex,
+        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     };
 
     use super::bundler::{Bundle, BundleProposal, BundlerFactory};
-    use crate::types::{storage::SequentialFuelBlocks, NonNegative};
+    use crate::types::{NonNegative, storage::SequentialFuelBlocks};
 
     pub struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use actix_web::{guard, web, App, HttpServer};
+use actix_web::{App, HttpServer, guard, web};
 use async_graphql::Schema;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
 use tokio::sync::Mutex;
 use url::Url;
 
 use super::{
-    graphql::{build_schema, QueryRoot},
-    simulation::{produce_blocks, AppState, SimulationConfig},
+    graphql::{QueryRoot, build_schema},
+    simulation::{AppState, SimulationConfig, produce_blocks},
 };
 
 pub struct FuelNode {

@@ -1,6 +1,6 @@
 pub mod service {
 
-    use crate::{types::BundleCost, Error, Result};
+    use crate::{Error, Result, types::BundleCost};
 
     pub struct CostReporter<Db> {
         storage: Db,
@@ -51,7 +51,7 @@ pub mod service {
 }
 
 pub mod port {
-    use crate::{types::BundleCost, Result};
+    use crate::{Result, types::BundleCost};
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]

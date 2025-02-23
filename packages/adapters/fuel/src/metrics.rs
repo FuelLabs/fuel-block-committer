@@ -1,6 +1,6 @@
 use metrics::{
-    prometheus::{core::Collector, IntCounter, IntGauge, Opts},
     RegistersMetrics,
+    prometheus::{IntCounter, IntGauge, Opts, core::Collector},
 };
 
 #[derive(Clone)]

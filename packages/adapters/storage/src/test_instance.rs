@@ -8,16 +8,16 @@ use delegate::delegate;
 use services::{
     block_bundler, block_committer, block_importer,
     types::{
-        storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
         L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        storage::{BundleFragment, SequentialFuelBlocks},
     },
 };
 use sqlx::Executor;
 use testcontainers::{
+    Image,
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
-    Image,
 };
 
 use super::postgres::{DbConfig, Postgres};
@@ -75,13 +75,13 @@ impl PostgresProcess {
             tokio::sync::Mutex::const_new(Weak::new());
         let mut shared_process = LOCK.lock().await;
 
-        let process = match shared_process.upgrade() { Some(running_process) => {
+        let process = if let Some(running_process) = shared_process.upgrade() {
             running_process
-        } _ => {
+        } else {
             let process = Arc::new(Self::start().await?);
             *shared_process = Arc::downgrade(&process);
             process
-        }};
+        };
 
         Ok(process)
     }

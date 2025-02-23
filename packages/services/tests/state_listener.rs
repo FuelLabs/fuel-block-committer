@@ -3,9 +3,9 @@ use std::time::Duration;
 use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use services::{
+    Result, Runner, StateCommitter, StateCommitterConfig,
     state_listener::{port::Storage, service::StateListener},
     types::{L1Height, L1Tx, TransactionResponse},
-    Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_case::test_case;
 use test_helpers::{
@@ -101,11 +101,13 @@ async fn successful_tx_in_block_not_finalized() -> Result<()> {
     // then
     assert!(!setup.db().has_pending_txs().await?);
     assert_eq!(setup.db().get_non_finalized_txs().await?.len(), 1);
-    assert!(setup
-        .db()
-        .last_time_a_fragment_was_finalized()
-        .await?
-        .is_none());
+    assert!(
+        setup
+            .db()
+            .last_time_a_fragment_was_finalized()
+            .await?
+            .is_none()
+    );
 
     Ok(())
 }
@@ -152,11 +154,13 @@ async fn from_pending_to_included_to_success_finalized_tx() -> Result<()> {
         // then
         assert!(!setup.db().has_pending_txs().await?);
         assert_eq!(setup.db().get_non_finalized_txs().await?.len(), 1);
-        assert!(setup
-            .db()
-            .last_time_a_fragment_was_finalized()
-            .await?
-            .is_none());
+        assert!(
+            setup
+                .db()
+                .last_time_a_fragment_was_finalized()
+                .await?
+                .is_none()
+        );
     }
     {
         let now = test_clock.now();
@@ -221,11 +225,13 @@ async fn reorg_threw_out_tx_from_block_into_pool() -> Result<()> {
         // then
         assert!(!setup.db().has_pending_txs().await?);
         assert_eq!(setup.db().get_non_finalized_txs().await?.len(), 1);
-        assert!(setup
-            .db()
-            .last_time_a_fragment_was_finalized()
-            .await?
-            .is_none());
+        assert!(
+            setup
+                .db()
+                .last_time_a_fragment_was_finalized()
+                .await?
+                .is_none()
+        );
     }
     {
         // when second run - included to pending
@@ -233,11 +239,13 @@ async fn reorg_threw_out_tx_from_block_into_pool() -> Result<()> {
 
         // then
         assert!(setup.db().has_pending_txs().await?);
-        assert!(setup
-            .db()
-            .last_time_a_fragment_was_finalized()
-            .await?
-            .is_none());
+        assert!(
+            setup
+                .db()
+                .last_time_a_fragment_was_finalized()
+                .await?
+                .is_none()
+        );
     }
 
     Ok(())
@@ -319,9 +327,9 @@ async fn tx_failed() -> Result<()> {
 
     let tx_height = current_height - 2;
     assert!(
-            current_height - tx_height < num_blocks_to_finalize,
-            "we should choose the tx height such that it's not finalized to showcase that we don't wait for finalization for failed txs"
-        );
+        current_height - tx_height < num_blocks_to_finalize,
+        "we should choose the tx height such that it's not finalized to showcase that we don't wait for finalization for failed txs"
+    );
 
     let l1_mock = mocks::l1::txs_finished(
         current_height as u32,
@@ -342,11 +350,13 @@ async fn tx_failed() -> Result<()> {
 
     // then
     assert!(!setup.db().has_pending_txs().await?);
-    assert!(setup
-        .db()
-        .last_time_a_fragment_was_finalized()
-        .await?
-        .is_none());
+    assert!(
+        setup
+            .db()
+            .last_time_a_fragment_was_finalized()
+            .await?
+            .is_none()
+    );
 
     Ok(())
 }

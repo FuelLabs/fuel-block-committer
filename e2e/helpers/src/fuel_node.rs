@@ -7,7 +7,7 @@ use fuel_core_types::{
     fuel_tx::{AssetId, Finalizable, Input, Output, TransactionBuilder, TxPointer},
     fuel_types::Address,
 };
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use itertools::Itertools;
 use rand::Rng;
 use url::Url;

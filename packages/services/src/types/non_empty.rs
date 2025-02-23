@@ -1,4 +1,4 @@
-pub use nonempty::{nonempty, NonEmpty};
+pub use nonempty::{NonEmpty, nonempty};
 
 pub trait CollectNonEmpty: Iterator {
     fn collect_nonempty(self) -> Option<NonEmpty<Self::Item>>

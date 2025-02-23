@@ -1,15 +1,15 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
 use itertools::Itertools;
-use metrics::{prometheus::IntGauge, RegistersMetrics};
+use metrics::{RegistersMetrics, prometheus::IntGauge};
 use services::types::{
-    storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-    CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-    TransactionState, TryCollectNonEmpty, Utc,
+    BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+    NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, TryCollectNonEmpty, Utc,
+    storage::SequentialFuelBlocks,
 };
 use sqlx::{
-    postgres::{PgConnectOptions, PgPoolOptions},
     PgConnection, QueryBuilder,
+    postgres::{PgConnectOptions, PgPoolOptions},
 };
 
 use super::error::{Error, Result};
@@ -533,7 +533,9 @@ impl Postgres {
             Ok(row.try_into()?)
         } else {
             let hash = hex::encode(fuel_block_hash);
-            Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
+            Err(Error::Database(format!(
+                "Cannot set submission to completed! Submission of block: `{hash}` not found in DB."
+            )))
         }
     }
 

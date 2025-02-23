@@ -1,15 +1,15 @@
 use std::sync::{
-    atomic::{AtomicU32, Ordering},
     Arc,
+    atomic::{AtomicU32, Ordering},
 };
 
-use rand::{rngs::SmallRng, thread_rng, Rng, RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng, thread_rng};
 use tokio::{
     sync::Mutex,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 
-use super::graphql::{block_at_height, Block, DaCompressedBlock, HexString};
+use super::graphql::{Block, DaCompressedBlock, HexString, block_at_height};
 
 pub struct AppState {
     pub current_height: AtomicU32,

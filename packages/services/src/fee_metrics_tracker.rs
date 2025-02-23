@@ -2,13 +2,13 @@ pub mod service {
     use std::{num::NonZeroU64, ops::RangeInclusive};
 
     use metrics::{
-        prometheus::{core::Collector, IntGauge, Opts},
         RegistersMetrics,
+        prometheus::{IntGauge, Opts, core::Collector},
     };
 
     use crate::{
-        fees::{Api, Fees},
         Result, Runner,
+        fees::{Api, Fees},
     };
 
     #[derive(Debug, Clone)]

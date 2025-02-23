@@ -3,8 +3,8 @@ pub mod service {
     use tracing::info;
 
     use crate::{
-        types::{nonempty, CompressedFuelBlock, NonEmpty},
         Result, Runner,
+        types::{CompressedFuelBlock, NonEmpty, nonempty},
     };
 
     /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
@@ -79,7 +79,7 @@ pub mod port {
 
     use nonempty::NonEmpty;
 
-    use crate::{types::CompressedFuelBlock, Result};
+    use crate::{Result, types::CompressedFuelBlock};
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
@@ -97,7 +97,7 @@ pub mod port {
 
         use futures::stream::BoxStream;
 
-        use crate::{types::CompressedFuelBlock, Result};
+        use crate::{Result, types::CompressedFuelBlock};
 
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]

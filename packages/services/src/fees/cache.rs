@@ -141,7 +141,7 @@ mod tests {
 
     use mockall::predicate::eq;
 
-    use crate::fees::{cache::CachingApi, Fees, FeesAtHeight, MockApi, SequentialBlockFees};
+    use crate::fees::{Fees, FeesAtHeight, MockApi, SequentialBlockFees, cache::CachingApi};
 
     #[tokio::test]
     async fn evicts_oldest_blocks() {

@@ -1,22 +1,22 @@
 use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr, time::Duration};
 
-use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
+use ::metrics::{HealthChecker, RegistersMetrics, prometheus::core::Collector};
 use alloy::{
     consensus::SignableTransaction,
     network::TxSigner,
-    primitives::{Address, ChainId, B256},
+    primitives::{Address, B256, ChainId},
     rpc::types::FeeHistory,
-    signers::{local::PrivateKeySigner, Signature},
+    signers::{Signature, local::PrivateKeySigner},
 };
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
+    Result,
     state_committer::port::l1::Priority,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
         TransactionResponse, U256,
     },
-    Result,
 };
 use url::Url;
 
@@ -24,7 +24,7 @@ use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{fee_api_helpers::batch_requests, AwsClient, AwsConfig};
+use crate::{AwsClient, AwsConfig, fee_api_helpers::batch_requests};
 
 mod connection;
 mod health_tracking_middleware;
