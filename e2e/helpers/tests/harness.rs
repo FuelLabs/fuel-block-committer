@@ -28,4 +28,3 @@ async fn simulated_fuel_node_can_reply_to_adapter() -> Result<()> {
 
     Ok(())
 }
-
