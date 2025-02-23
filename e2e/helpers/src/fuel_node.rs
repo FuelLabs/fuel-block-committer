@@ -44,8 +44,8 @@ impl FuelNode {
                     owner: Input::owner(&key.public_key()),
                     amount: u64::MAX,
                     asset_id: AssetId::zeroed(),
-                    tx_id: rng.gen(),
-                    output_index: rng.gen(),
+                    tx_id: rng.r#gen(),
+                    output_index: rng.r#gen(),
                     ..Default::default()
                 })
                 .take(10)

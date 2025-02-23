@@ -1530,7 +1530,7 @@ mod tests {
         // create fragments for the bundle
         let fragments = (0..fragments_per_bundle)
             .map(|_| Fragment {
-                data: NonEmpty::from_vec(vec![rng.gen()]).unwrap(),
+                data: NonEmpty::from_vec(vec![rng.r#gen()]).unwrap(),
                 unused_bytes: rng.gen_range(0..1000),
                 total_bytes: rng.gen_range(1000..5000).try_into().unwrap(),
             })
@@ -1557,10 +1557,10 @@ mod tests {
         // for each fragment, create multiple transactions
         for _id in fragment_ids.iter() {
             for _ in 0..txs_per_fragment {
-                let tx_hash = rng.gen::<[u8; 32]>();
+                let tx_hash = rng.r#gen::<[u8; 32]>();
                 let tx = L1Tx {
                     hash: tx_hash,
-                    nonce: rng.gen(),
+                    nonce: rng.r#gen(),
                     ..Default::default()
                 };
 

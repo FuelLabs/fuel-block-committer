@@ -58,10 +58,10 @@ impl BlockSubmission {
 impl rand::distributions::Distribution<BlockSubmission> for rand::distributions::Standard {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> BlockSubmission {
         BlockSubmission {
-            id: Some(rng.gen()),
-            block_hash: rng.gen(),
-            block_height: rng.gen(),
-            completed: rng.gen(),
+            id: Some(rng.r#gen()),
+            block_hash: rng.r#gen(),
+            block_height: rng.r#gen(),
+            completed: rng.r#gen(),
         }
     }
 }

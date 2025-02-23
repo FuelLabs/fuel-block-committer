@@ -75,13 +75,13 @@ impl PostgresProcess {
             tokio::sync::Mutex::const_new(Weak::new());
         let mut shared_process = LOCK.lock().await;
 
-        let process = if let Some(running_process) = shared_process.upgrade() {
+        let process = match shared_process.upgrade() { Some(running_process) => {
             running_process
-        } else {
+        } _ => {
             let process = Arc::new(Self::start().await?);
             *shared_process = Arc::downgrade(&process);
             process
-        };
+        }};
 
         Ok(process)
     }

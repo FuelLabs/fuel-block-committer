@@ -1240,7 +1240,7 @@ mod tests {
         let bundle_b_id = storage.next_bundle_id().await.unwrap();
 
         let random_frag = || {
-            let data: [u8; 2] = thread_rng().gen();
+            let data: [u8; 2] = thread_rng().r#gen();
             Fragment {
                 data: nonempty![data[0], data[1]],
                 unused_bytes: 0,

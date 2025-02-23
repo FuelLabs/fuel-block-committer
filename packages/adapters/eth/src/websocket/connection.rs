@@ -373,13 +373,13 @@ impl WsConnection {
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), signers.main).await?;
 
-        let (blob_provider, blob_signer_address) = if let Some(signer) = signers.blob {
+        let (blob_provider, blob_signer_address) = match signers.blob { Some(signer) => {
             let blob_signer_address = TxSigner::address(&signer);
             let blob_provider = Self::provider_with_signer(ws, signer).await?;
             (Some(blob_provider), Some(blob_signer_address))
-        } else {
+        } _ => {
             (None, None)
-        };
+        }};
 
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FuelStateContract::new(contract_address, provider.clone());

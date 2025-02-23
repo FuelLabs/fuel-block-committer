@@ -30,7 +30,7 @@ impl<P> CachingApi<P> {
         self.cache.lock().await.extend(fees);
     }
 
-    pub async fn export(&self) -> impl IntoIterator<Item = (u64, Fees)> {
+    pub async fn export(&self) -> impl IntoIterator<Item = (u64, Fees)> + use<P> {
         self.cache.lock().await.clone()
     }
 }

@@ -7,7 +7,7 @@ use services::types::{
 use sqlx::types::BigDecimal;
 
 macro_rules! bail {
-    ($msg: literal, $($args: expr),*) => {
+    ($msg: literal, $($args: expr_2021),*) => {
         return Err($crate::error::Error::Conversion(format!($msg, $($args),*)))
     };
 }

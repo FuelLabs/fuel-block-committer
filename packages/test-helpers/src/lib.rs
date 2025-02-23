@@ -423,7 +423,7 @@ pub mod mocks {
 
         pub fn given_a_block(height: u32) -> FuelBlock {
             FuelBlock {
-                id: rand::thread_rng().gen(),
+                id: rand::thread_rng().r#gen(),
                 height,
             }
         }
@@ -647,7 +647,7 @@ impl Setup {
     }
 
     pub fn given_incomplete_submission(block_height: u32) -> BlockSubmission {
-        let mut submission: BlockSubmission = rand::thread_rng().gen();
+        let mut submission: BlockSubmission = rand::thread_rng().r#gen();
         submission.block_height = block_height;
         submission.completed = false;
 

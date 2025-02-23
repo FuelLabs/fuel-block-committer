@@ -282,27 +282,27 @@ where
     }
 
     async fn submit_fragments_if_ready(&self) -> Result<()> {
-        if let Some(fragments) = self.next_fragments_to_submit().await? {
+        match self.next_fragments_to_submit().await? { Some(fragments) => {
             if self.should_submit_fragments(&fragments).await? {
                 self.submit_fragments(fragments, None).await?;
             }
-        } else {
+        } _ => {
             // if we have no fragments to submit, that means that we're up to date and new
             // blocks haven't been bundled yet
             let current_height_to_commit =
-                if let Some(height) = self.storage.latest_bundled_height().await? {
+                match self.storage.latest_bundled_height().await? { Some(height) => {
                     height.saturating_add(1)
-                } else {
+                } _ => {
                     self.fuel_api
                         .latest_height()
                         .await?
                         .saturating_sub(self.config.lookback_window)
-                };
+                }};
 
             self.metrics
                 .current_height_to_commit
                 .set(current_height_to_commit.into());
-        }
+        }}
 
         Ok(())
     }
