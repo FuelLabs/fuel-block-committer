@@ -7,7 +7,7 @@ use services::types::{
 use sqlx::types::BigDecimal;
 
 macro_rules! bail {
-    ($msg: literal, $($args: expr_2021),*) => {
+    ($msg: literal, $($args: expr),*) => {
         return Err($crate::error::Error::Conversion(format!($msg, $($args),*)))
     };
 }
@@ -33,7 +33,6 @@ impl TryFrom<L1FuelBlockSubmission> for services::types::BlockSubmission {
             bail!(
                 "`fuel_block_height` as read from the db cannot fit in a `u32` as expected. Got: {:?} from db",
                 value.fuel_block_height
-
             );
         };
 
@@ -84,7 +83,8 @@ impl L1FuelBlockSubmissionTx {
             (1, Some(finalized_at)) => Ok(TransactionState::Finalized(finalized_at)),
             (1, None) => {
                 bail!(
-                    "L1FuelBlockSubmissionTx(id={}) is missing finalized_at field. Must not happen since there should have been a constraint on the table!", self.id
+                    "L1FuelBlockSubmissionTx(id={}) is missing finalized_at field. Must not happen since there should have been a constraint on the table!",
+                    self.id
                 )
             }
             (2, _) => Ok(TransactionState::Failed),
@@ -332,7 +332,8 @@ impl L1Tx {
             (1, Some(finalized_at)) => Ok(TransactionState::Finalized(finalized_at)),
             (1, None) => {
                 bail!(
-                    "L1SubmissionTx(id={}) is missing finalized_at field. Must not happen since there should have been a constraint on the table!", self.id
+                    "L1SubmissionTx(id={}) is missing finalized_at field. Must not happen since there should have been a constraint on the table!",
+                    self.id
                 )
             }
             (2, _) => Ok(TransactionState::Failed),

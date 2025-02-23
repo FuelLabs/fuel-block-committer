@@ -5,14 +5,14 @@ use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
 use alloy::{
     consensus::Transaction,
     eips::{
-        eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
         BlockNumberOrTag,
+        eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
     },
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{
-        utils::{Eip1559Estimation, EIP1559_FEE_ESTIMATION_PAST_BLOCKS},
         Provider, ProviderBuilder, SendableTx, WsConnect,
+        utils::{EIP1559_FEE_ESTIMATION_PAST_BLOCKS, Eip1559Estimation},
     },
     pubsub::PubSubFrontend,
     rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
@@ -21,8 +21,8 @@ use alloy::{
 use estimation::{MaxTxFeesPerGas, TransactionRequestExt};
 use itertools::Itertools;
 use metrics::{
-    prometheus::{self, histogram_opts},
     RegistersMetrics,
+    prometheus::{self, histogram_opts},
 };
 use services::{
     state_committer::port::l1::Priority,
@@ -31,7 +31,7 @@ use services::{
 use tracing::info;
 use url::Url;
 
-use super::{health_tracking_middleware::EthApi, Signers, TxConfig};
+use super::{Signers, TxConfig, health_tracking_middleware::EthApi};
 use crate::{
     blob_encoder::{self},
     error::{Error, Result},
@@ -309,7 +309,10 @@ impl EthApi for WsConnection {
             ..Default::default()
         };
 
-        info!("sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
+        info!(
+            "sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}",
+            l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee
+        );
 
         let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
         if max_fee > self.tx_config.tx_max_fee {
@@ -373,13 +376,13 @@ impl WsConnection {
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), signers.main).await?;
 
-        let (blob_provider, blob_signer_address) = match signers.blob { Some(signer) => {
+        let (blob_provider, blob_signer_address) = if let Some(signer) = signers.blob {
             let blob_signer_address = TxSigner::address(&signer);
             let blob_provider = Self::provider_with_signer(ws, signer).await?;
             (Some(blob_provider), Some(blob_signer_address))
-        } _ => {
+        } else {
             (None, None)
-        }};
+        };
 
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FuelStateContract::new(contract_address, provider.clone());
@@ -614,8 +617,10 @@ mod tests {
 
         // then
         let result = result.expect_err("should return an error");
-        assert!(result
-            .to_string()
-            .contains(&format!("limit {}", tx_max_fee)));
+        assert!(
+            result
+                .to_string()
+                .contains(&format!("limit {}", tx_max_fee))
+        );
     }
 }
