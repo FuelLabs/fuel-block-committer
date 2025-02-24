@@ -78,8 +78,16 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
-        let bundle_cost = stack.committer.fetch_costs(0, 10).await?.pop().unwrap();
-        assert!(bundle_cost.cost > 0);
+        let start = Instant::now();
+        let costs = loop {
+            if let Some(costs) = stack.committer.fetch_costs(0, 10).await?.pop() {
+                break costs;
+            } else if start.elapsed() > Duration::from_secs(60) {
+                panic!("Expected costs to be present");
+            }
+        };
+
+        assert!(costs.cost > 0);
 
         Ok(())
     }
