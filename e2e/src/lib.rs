@@ -11,7 +11,10 @@ mod whole_stack;
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use anyhow::Result;
     use tokio::{sync::Mutex, time::sleep_until};
