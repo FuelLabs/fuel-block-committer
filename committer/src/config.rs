@@ -11,12 +11,14 @@ use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
+use signers::KeySource;
 use storage::DbConfig;
 use url::Url;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub eth: Eth,
+    pub da_layer: Option<DALayer>,
     pub fuel: Fuel,
     pub app: App,
 }
@@ -88,6 +90,24 @@ pub struct Fuel {
     pub graphql_endpoint: Url,
     /// Number of concurrent requests.
     pub num_buffered_requests: NonZeroU32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DALayer {
+    #[serde(rename = "EigenDA")]
+    EigenDA(EigenDA),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EigenDA {
+    /// Key for posting authenticated requests to the EigenDA disperser.
+    pub key: KeySource,
+    /// URL to an EigenDA RPC endpoint.
+    #[serde(deserialize_with = "parse_url")]
+    pub rpc: Url,
+    // Allocated throughput in MiB for the address corresponding to the key
+    // pub throughput: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

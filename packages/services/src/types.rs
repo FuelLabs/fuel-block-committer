@@ -6,6 +6,7 @@ pub use non_empty::*;
 
 mod block_submission;
 mod bundle_cost;
+mod eigen_submission;
 mod fragment;
 mod fuel_block_committed_on_l1;
 mod l1_height;
@@ -17,6 +18,7 @@ pub mod storage;
 
 pub use block_submission::*;
 pub use bundle_cost::*;
+pub use eigen_submission::*;
 pub use fragment::*;
 pub use fuel_block_committed_on_l1::*;
 pub use l1_height::*;

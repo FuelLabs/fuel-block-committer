@@ -1,7 +1,7 @@
 use nonempty::NonEmpty;
 
 use crate::{
-    types::{storage::BundleFragment, DateTime, L1Tx, NonNegative, Utc},
+    types::{storage::BundleFragment, DateTime, EigenDASubmission, L1Tx, NonNegative, Utc},
     Error, Result,
 };
 
@@ -55,6 +55,20 @@ pub mod l1 {
     }
 }
 
+pub mod eigen_da {
+    use crate::{
+        types::{EigenDASubmission, Fragment},
+        Result,
+    };
+
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    #[cfg_attr(feature = "test-helpers", mockall::automock)]
+    pub trait Api {
+        async fn submit_state_fragment(&self, fragment: Fragment) -> Result<EigenDASubmission>;
+    }
+}
+
 pub mod fuel {
     pub use fuel_core_client::client::types::block::Block as FuelBlock;
 
@@ -76,7 +90,7 @@ pub trait Storage: Sync {
     async fn record_pending_tx(
         &self,
         tx: L1Tx,
-        fragment_id: NonEmpty<NonNegative<i32>>,
+        fragment_ids: NonEmpty<NonNegative<i32>>,
         created_at: DateTime<Utc>,
     ) -> Result<()>;
     async fn oldest_nonfinalized_fragments(
@@ -87,6 +101,20 @@ pub trait Storage: Sync {
     async fn latest_bundled_height(&self) -> Result<Option<u32>>;
     async fn fragments_submitted_by_tx(&self, tx_hash: [u8; 32]) -> Result<Vec<BundleFragment>>;
     async fn get_latest_pending_txs(&self) -> Result<Option<L1Tx>>;
+
+    // EigenDA
+    async fn record_eigenda_submission(
+        &self,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
+    ) -> Result<()>;
+
+    async fn oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleFragment>>;
 }
 
 pub trait Clock {

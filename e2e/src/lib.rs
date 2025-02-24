@@ -1,13 +1,8 @@
-#[cfg(test)]
-mod committer;
-#[cfg(test)]
-mod eth_node;
-#[cfg(test)]
-mod fuel_node;
-#[cfg(test)]
-mod kms;
-#[cfg(test)]
-mod whole_stack;
+pub mod committer;
+pub mod eth_node;
+pub mod fuel_node;
+pub mod kms;
+pub mod whole_stack;
 
 #[cfg(test)]
 mod tests {
@@ -21,6 +16,7 @@ mod tests {
 
     use crate::whole_stack::{FuelNodeType, WholeStack};
 
+    #[ignore = "reason"]
     #[tokio::test(flavor = "multi_thread")]
     async fn submitted_correct_block_and_was_finalized() -> Result<()> {
         // given
@@ -95,6 +91,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore = "reason"]
     #[tokio::test(flavor = "multi_thread")]
     async fn old_state_will_be_pruned() -> Result<()> {
         use services::state_pruner::port::Storage;

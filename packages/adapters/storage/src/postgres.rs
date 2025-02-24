@@ -7,8 +7,8 @@ use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
         storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-        CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-        TransactionState, Utc,
+        CompressedFuelBlock, DateTime, DispersalStatus, EigenDASubmission, Fragment, NonEmpty,
+        NonNegative, TransactionCostUpdate, TransactionState, Utc,
     },
 };
 use sqlx::{
@@ -18,7 +18,10 @@ use sqlx::{
 
 use super::error::{Error, Result};
 use crate::{
-    mappings::tables::{self, L1TxState},
+    mappings::{
+        eigen_tables::{self, SubmissionStatus},
+        tables::{self, L1TxState},
+    },
     postgres::tables::u128_to_bigdecimal,
 };
 
@@ -267,6 +270,60 @@ impl Postgres {
         transaction.commit().await?;
 
         Ok(submission_row)
+    }
+
+    pub(crate) async fn _oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<services::types::storage::BundleFragment>> {
+        let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
+        let fragments = sqlx::query_as!(
+            tables::BundleFragment,
+            r#"SELECT
+        sub.id,
+        sub.idx,
+        sub.bundle_id,
+        sub.data,
+        sub.unused_bytes,
+        sub.total_bytes,
+        sub.start_height
+    FROM (
+        SELECT DISTINCT ON (f.id)
+            f.*,
+            b.start_height
+        FROM l1_fragments f
+        JOIN bundles b ON b.id = f.bundle_id
+        WHERE
+            b.end_height >= $2
+            AND NOT EXISTS (
+                SELECT 1
+                FROM eigen_submission_fragments tf
+                JOIN eigen_submission t ON t.id = tf.submission_id
+                WHERE tf.fragment_id = f.id
+                  AND t.status <> $1
+            )
+        ORDER BY
+            f.id,
+            b.start_height ASC,
+            f.idx ASC
+    ) AS sub
+    ORDER BY
+        sub.start_height ASC,
+        sub.idx ASC
+    LIMIT $3;
+"#,
+            i16::from(SubmissionStatus::Failed),
+            i64::from(starting_height),
+            limit
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .try_collect()?;
+
+        Ok(fragments)
     }
 
     pub(crate) async fn _oldest_nonfinalized_fragments(
@@ -1247,6 +1304,77 @@ impl Postgres {
             contract_transactions: response.size_contract_transactions.unwrap_or_default() as u32,
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
         })
+    }
+
+    pub(crate) async fn _record_eigenda_submission(
+        &self,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        let row = eigen_tables::EigenDASubmission::from(submission);
+        let submission_id = sqlx::query!(
+            "INSERT INTO eigen_submission (request_id, status, created_at) VALUES ($1, $2, $3) RETURNING id",
+            row.request_id,
+            i16::from(eigen_tables::SubmissionStatus::Processing),
+            created_at
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .id;
+
+        sqlx::query!(
+            "INSERT INTO eigen_submission_fragments (submission_id, fragment_id) VALUES ($1, $2)",
+            submission_id,
+            fragment_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_non_finalized_eigen_submission(
+        &self,
+    ) -> Result<Vec<EigenDASubmission>> {
+        sqlx::query_as!(
+            eigen_tables::EigenDASubmission,
+            "SELECT * FROM eigen_submission WHERE status = $1 or status = $2",
+            i16::from(eigen_tables::SubmissionStatus::Processing),
+            i16::from(eigen_tables::SubmissionStatus::Confirmed),
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _update_eigen_submissions(
+        &self,
+        changes: Vec<(u32, DispersalStatus)>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        for (id, status) in changes {
+            let status: i16 = SubmissionStatus::from(status).into();
+
+            sqlx::query!(
+                "UPDATE eigen_submission SET status = $1 WHERE id = $2",
+                status,
+                id as i32
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
     }
 }
 

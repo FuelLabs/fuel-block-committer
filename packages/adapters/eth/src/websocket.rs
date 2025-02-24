@@ -6,7 +6,7 @@ use alloy::{
     network::TxSigner,
     primitives::{Address, ChainId, B256},
     rpc::types::FeeHistory,
-    signers::{local::PrivateKeySigner, Signature},
+    signers::{aws::AwsSigner, local::PrivateKeySigner, Signature},
 };
 use delegate::delegate;
 use serde::Deserialize;
@@ -18,13 +18,14 @@ use services::{
     },
     Result,
 };
+use signers::{AwsKmsClient, KeySource};
 use url::Url;
 
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{fee_api_helpers::batch_requests, AwsClient, AwsConfig};
+use crate::{error::Error, fee_api_helpers::batch_requests};
 
 mod connection;
 mod health_tracking_middleware;
@@ -117,42 +118,17 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum L1Key {
-    Kms(String),
-    Private(String),
-}
-
-impl<'a> serde::Deserialize<'a> for L1Key {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
-            Ok(L1Key::Kms(k.to_string()))
-        } else if let Some(k) = value
-            .strip_prefix("Private(")
-            .and_then(|s| s.strip_suffix(')'))
-        {
-            Ok(L1Key::Private(k.to_string()))
-        } else {
-            Err(serde::de::Error::custom("invalid L1Key format"))
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct L1Keys {
     /// The eth key authorized by the L1 bridging contracts to post block commitments.
-    pub main: L1Key,
+    pub main: KeySource,
     /// The eth key for posting L2 state to L1.
-    pub blob: Option<L1Key>,
+    pub blob: Option<KeySource>,
 }
 
 impl L1Keys {
     pub fn uses_aws(&self) -> bool {
-        matches!(self.main, L1Key::Kms(_)) || matches!(self.blob, Some(L1Key::Kms(_)))
+        matches!(self.main, KeySource::Kms(_)) || matches!(self.blob, Some(KeySource::Kms(_)))
     }
 }
 
@@ -257,8 +233,24 @@ impl alloy::signers::Signer<Signature> for Signer {
 }
 
 impl Signer {
-    pub async fn make_aws_signer(client: &AwsClient, key: String) -> Result<Self> {
-        let signer = client.make_signer(key).await?;
+    pub async fn for_key(key: KeySource) -> Result<Self> {
+        match key {
+            KeySource::Kms(key) => {
+                let client = AwsKmsClient::new().await;
+                let signer = Signer::make_aws_signer(&client, key).await?;
+                Ok(signer)
+            }
+            KeySource::Private(key) => {
+                let signer = Signer::make_private_key_signer(&key)?;
+                Ok(signer)
+            }
+        }
+    }
+
+    pub async fn make_aws_signer(client: &AwsKmsClient, key: String) -> Result<Self> {
+        let signer = AwsSigner::new(client.inner().clone(), key, None)
+            .await
+            .map_err(|err| Error::Other(format!("Error making aws signer: {err:?}")))?;
 
         Ok(Signer {
             signer: Box::new(signer),
@@ -282,23 +274,25 @@ pub struct Signers {
 impl Signers {
     pub async fn for_keys(keys: L1Keys) -> Result<Self> {
         let aws_client = if keys.uses_aws() {
-            let config = AwsConfig::from_env().await;
-            Some(AwsClient::new(config))
+            let client = AwsKmsClient::new().await;
+            Some(client)
         } else {
             None
         };
 
         let blob_signer = match keys.blob {
-            Some(L1Key::Kms(key)) => {
+            Some(KeySource::Kms(key)) => {
                 Some(Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?)
             }
-            Some(L1Key::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
+            Some(KeySource::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
             None => None,
         };
 
         let main_signer = match keys.main {
-            L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await?,
-            L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
+            KeySource::Kms(key) => {
+                Signer::make_aws_signer(&aws_client.expect("is set"), key).await?
+            }
+            KeySource::Private(key) => Signer::make_private_key_signer(&key)?,
         };
 
         Ok(Self {
@@ -408,73 +402,5 @@ impl WebsocketClient {
 impl RegistersMetrics for WebsocketClient {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.inner.metrics()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_eq;
-    use services::state_committer::port::l1::Priority;
-
-    use super::L1Key;
-
-    #[test]
-    fn can_deserialize_private_key() {
-        // given
-        let val = r#""Private(0x1234)""#;
-
-        // when
-        let key: L1Key = serde_json::from_str(val).unwrap();
-
-        // then
-        assert_eq!(key, L1Key::Private("0x1234".to_owned()));
-    }
-
-    #[test]
-    fn can_deserialize_kms_key() {
-        // given
-        let val = r#""Kms(0x1234)""#;
-
-        // when
-        let key: L1Key = serde_json::from_str(val).unwrap();
-
-        // then
-        assert_eq!(key, L1Key::Kms("0x1234".to_owned()));
-    }
-
-    #[test]
-    fn lowest_priority_gives_min_priority_fee_perc() {
-        // given
-        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
-
-        // when
-        let fee_perc = sut.apply(Priority::MIN);
-
-        // then
-        assert_eq!(fee_perc, 20.);
-    }
-
-    #[test]
-    fn medium_priority_gives_middle_priority_fee_perc() {
-        // given
-        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
-
-        // when
-        let fee_perc = sut.apply(Priority::new(50.).unwrap());
-
-        // then
-        assert_eq!(fee_perc, 30.);
-    }
-
-    #[test]
-    fn highest_priority_gives_max_priority_fee_perc() {
-        // given
-        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
-
-        // when
-        let fee_perc = sut.apply(Priority::MAX);
-
-        // then
-        assert_eq!(fee_perc, 40.);
     }
 }
