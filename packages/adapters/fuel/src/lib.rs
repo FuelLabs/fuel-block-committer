@@ -3,17 +3,16 @@
 use std::ops::RangeInclusive;
 
 use futures::{stream::BoxStream, StreamExt};
-use services::types::fuel::FuelBlock;
 mod client;
 mod metrics;
 
 pub use client::*;
 use delegate::delegate;
-use services::Result;
+use services::{block_committer::port::fuel::FuelBlock, Result};
 
 impl services::block_importer::port::fuel::Api for client::HttpClient {
     async fn latest_height(&self) -> Result<u32> {
-        self.latest_block().await.map(|b| b.header.height)
+        self.latest_block().await.map(|b| b.height)
     }
 
     fn compressed_blocks_in_height_range(
@@ -26,7 +25,7 @@ impl services::block_importer::port::fuel::Api for client::HttpClient {
 
 impl services::block_bundler::port::fuel::Api for client::HttpClient {
     async fn latest_height(&self) -> Result<u32> {
-        self.latest_block().await.map(|b| b.header.height)
+        self.latest_block().await.map(|b| b.height)
     }
 }
 
@@ -41,7 +40,7 @@ impl services::block_committer::port::fuel::Api for client::HttpClient {
 
 impl services::state_committer::port::fuel::Api for client::HttpClient {
     async fn latest_height(&self) -> Result<u32> {
-        self.latest_block().await.map(|b| b.header.height)
+        self.latest_block().await.map(|b| b.height)
     }
 }
 

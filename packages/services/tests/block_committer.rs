@@ -4,7 +4,7 @@ use services::{
     Runner,
 };
 use test_helpers::mocks::{
-    fuel::{given_a_block, given_fetcher, given_secret_key},
+    fuel::{given_a_block, given_fetcher},
     l1::{expects_contract_submission, expects_transaction_response, FullL1Mock},
 };
 
@@ -13,9 +13,8 @@ async fn will_do_nothing_if_latest_block_is_completed_and_not_stale() {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let secret_key = given_secret_key();
-    let latest_block = given_a_block(10, &secret_key);
-    let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
+    let latest_block = given_a_block(10);
+    let fuel_adapter = given_fetcher(vec![latest_block]);
 
     setup.add_submissions(vec![6, 8, 10]).await;
     setup // TODO: do this through block committer and not directly
@@ -47,8 +46,8 @@ async fn will_submit_on_latest_epoch() {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let latest_block = given_a_block(10, &given_secret_key());
-    let fuel_adapter = given_fetcher(vec![latest_block.clone()]);
+    let latest_block = given_a_block(10);
+    let fuel_adapter = given_fetcher(vec![latest_block]);
 
     let l1 = expects_contract_submission(latest_block, [0; 32]);
     let mut block_committer = BlockCommitter::new(
@@ -71,13 +70,8 @@ async fn will_skip_incomplete_submission_to_submit_latest() {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let secret_key = given_secret_key();
-    let latest_block = given_a_block(10, &secret_key);
-    let all_blocks = vec![
-        given_a_block(8, &secret_key),
-        given_a_block(9, &secret_key),
-        latest_block.clone(),
-    ];
+    let latest_block = given_a_block(10);
+    let all_blocks = vec![given_a_block(8), given_a_block(9), latest_block];
     let fuel_adapter = given_fetcher(all_blocks);
 
     let l1 = expects_contract_submission(latest_block, [0; 32]);
@@ -103,10 +97,9 @@ async fn will_fetch_and_submit_missed_block() {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let secret_key = given_secret_key();
-    let missed_block = given_a_block(4, &secret_key);
-    let latest_block = given_a_block(5, &secret_key);
-    let fuel_adapter = given_fetcher(vec![latest_block, missed_block.clone()]);
+    let missed_block = given_a_block(4);
+    let latest_block = given_a_block(5);
+    let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
     let l1 = expects_contract_submission(missed_block, [3; 32]);
     setup.add_submissions(vec![0, 2]).await;
@@ -132,9 +125,8 @@ async fn will_not_reattempt_submitting_missed_block() {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let secret_key = given_secret_key();
-    let missed_block = given_a_block(4, &secret_key);
-    let latest_block = given_a_block(5, &secret_key);
+    let missed_block = given_a_block(4);
+    let latest_block = given_a_block(5);
     let fuel_adapter = given_fetcher(vec![latest_block, missed_block]);
 
     setup.add_submissions(vec![0, 2, 4]).await;
@@ -162,9 +154,8 @@ async fn propagates_block_if_epoch_reached() {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let secret_key = given_secret_key();
-    let block = given_a_block(4, &secret_key);
-    let fuel_adapter = given_fetcher(vec![block.clone()]);
+    let block = given_a_block(4);
+    let fuel_adapter = given_fetcher(vec![block]);
 
     setup.add_submissions(vec![0, 2]).await;
     let l1 = expects_contract_submission(block, [1; 32]);
@@ -189,9 +180,8 @@ async fn updates_submission_state_to_finalized() {
     // given
     let setup = test_helpers::Setup::init().await;
 
-    let secret_key = given_secret_key();
     let latest_height = 4;
-    let latest_block = given_a_block(latest_height, &secret_key);
+    let latest_block = given_a_block(latest_height);
     let fuel_adapter = given_fetcher(vec![latest_block]);
 
     setup.add_submissions(vec![0, 2, 4]).await;

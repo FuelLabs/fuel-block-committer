@@ -4,9 +4,11 @@ pub mod service {
     use tracing::info;
 
     use crate::{
-        types::{fuel::FuelBlock, BlockSubmission, NonNegative, TransactionState},
+        types::{BlockSubmission, NonNegative, TransactionState},
         Error, Result, Runner,
     };
+
+    use super::port::fuel::FuelBlock;
 
     pub struct BlockCommitter<L1, Db, Fuel, Clock> {
         l1_adapter: L1,
@@ -55,11 +57,11 @@ pub mod service {
         Clock: crate::block_committer::port::Clock,
     {
         async fn submit_block(&self, fuel_block: FuelBlock) -> Result<()> {
-            let submission = BlockSubmission::new(*fuel_block.id, fuel_block.header.height);
+            let submission = BlockSubmission::new(fuel_block.id, fuel_block.height);
 
             let mut tx = self
                 .l1_adapter
-                .submit(*fuel_block.id, fuel_block.header.height)
+                .submit(fuel_block.id, fuel_block.height)
                 .await?;
             tx.submission_id = submission.id;
             self.storage
@@ -175,14 +177,13 @@ pub mod service {
             let latest_submission = self.storage.submission_w_latest_block().await?;
 
             let current_block = self.fuel_adapter.latest_block().await?;
-            let current_epoch_block_height =
-                self.current_epoch_block_height(current_block.header.height);
+            let current_epoch_block_height = self.current_epoch_block_height(current_block.height);
 
             let action = self.decide_action(latest_submission.as_ref(), current_epoch_block_height);
             match action {
                 Action::DoNothing => {}
                 Action::Post => {
-                    let block = if current_block.header.height == current_epoch_block_height {
+                    let block = if current_block.height == current_epoch_block_height {
                         current_block
                     } else {
                         self.fetch_block(current_epoch_block_height).await?
@@ -239,9 +240,13 @@ pub mod port {
     }
 
     pub mod fuel {
-        pub use fuel_core_client::client::types::block::Block as FuelBlock;
-
         use crate::Result;
+
+        #[derive(Debug, Clone, Copy)]
+        pub struct FuelBlock {
+            pub id: [u8; 32],
+            pub height: u32,
+        }
 
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]

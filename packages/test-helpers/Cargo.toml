@@ -14,7 +14,6 @@ clock = { workspace = true, features = ["test-helpers"] }
 delegate = { workspace = true }
 eth = { workspace = true, features = ["test-helpers"] }
 fuel-block-committer-encoding = { workspace = true }
-fuel-crypto = { workspace = true, features = ["random"] }
 futures = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
@@ -22,4 +21,3 @@ mockall = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
 services = { workspace = true, features = ["test-helpers"] }
 storage = { workspace = true, features = ["test-helpers"] }
-tai64 = { workspace = true }

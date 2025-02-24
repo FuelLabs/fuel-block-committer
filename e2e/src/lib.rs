@@ -38,7 +38,7 @@ mod tests {
         // then
         stack
             .committer
-            .wait_for_committed_block(stack.contract_args.blocks_per_interval as u64)
+            .wait_for_committed_block(stack.contract_args.blocks_per_interval.into())
             .await?;
         let committed_at = tokio::time::Instant::now();
 
