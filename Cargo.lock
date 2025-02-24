@@ -1668,6 +1668,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3ac9f8b63eca6fd385229b3675f6cc0dc5c8a5c8a54a59d4f52ffd670d87b0c"
 
 [[package]]
+name = "byte-unit"
+version = "5.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1cd29c3c585209b0cbc7309bfe3ed7efd8c84c21b7af29c8bfae908f8777174"
+dependencies = [
+ "rust_decimal",
+ "utf8-width",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2875,6 +2885,7 @@ version = "0.10.7"
 dependencies = [
  "actix-web",
  "anyhow",
+ "byte-unit",
  "clap",
  "clock",
  "config",
@@ -5348,6 +5359,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
+name = "rust_decimal"
+version = "1.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b082d80e3e3cc52b2ed634388d436fe1f4de6af5786cc2de9ba9737527bdf555"
+dependencies = [
+ "arrayvec",
+ "num-traits",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5804,6 +5825,7 @@ version = "0.10.7"
 dependencies = [
  "alloy",
  "async-trait",
+ "byte-unit",
  "bytesize",
  "clock",
  "eth",
@@ -5812,6 +5834,7 @@ dependencies = [
  "fuel-crypto",
  "futures",
  "hex",
+ "humantime",
  "itertools 0.13.0",
  "metrics",
  "mockall",
@@ -6205,6 +6228,7 @@ version = "0.10.7"
 dependencies = [
  "clock",
  "delegate",
+ "futures",
  "hex",
  "itertools 0.13.0",
  "metrics",
@@ -7029,6 +7053,12 @@ name = "utf16_iter"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8232dd3cdaed5356e0f716d285e4b40b932ac434100fe9b7e0e8e935b9e6246"
+
+[[package]]
+name = "utf8-width"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86bd8d4e895da8537e5315b8254664e6b769c4ff3db18321b297a1e7004392e3"
 
 [[package]]
 name = "utf8_iter"

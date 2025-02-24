@@ -11,10 +11,13 @@ mod whole_stack;
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use anyhow::Result;
-    use tokio::time::sleep_until;
+    use tokio::{sync::Mutex, time::sleep_until};
 
     use crate::whole_stack::{FuelNodeType, WholeStack};
 
@@ -78,8 +81,16 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
-        let bundle_cost = stack.committer.fetch_costs(0, 10).await?.pop().unwrap();
-        assert!(bundle_cost.cost > 0);
+        let start = Instant::now();
+        let costs = loop {
+            if let Some(costs) = stack.committer.fetch_costs(0, 10).await?.pop() {
+                break costs;
+            } else if start.elapsed() > Duration::from_secs(60) {
+                panic!("Expected costs to be present");
+            }
+        };
+
+        assert!(costs.cost > 0);
 
         Ok(())
     }
@@ -92,6 +103,17 @@ mod tests {
         let show_logs = false;
         let blob_support = true;
         let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
+        let db_clone = stack.db.clone();
+        let sizes = Arc::new(Mutex::new(vec![]));
+
+        let sizes_clone = Arc::clone(&sizes);
+        let size_tracking_job = tokio::task::spawn(async move {
+            loop {
+                let new_sizes = db_clone.table_sizes().await.unwrap();
+                sizes_clone.lock().await.push(new_sizes);
+                tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+            }
+        });
 
         let num_iterations = 10;
         let blocks_per_iteration = 100;
@@ -116,24 +138,20 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
 
-        let expected_table_sizes_before_pruning = services::state_pruner::port::TableSizes {
-            blob_transactions: 2,
-            fragments: 2,
-            transaction_fragments: 2,
-            bundles: 2,
-            bundle_costs: 2,
-            blocks: 1300,
-            contract_transactions: 2,
-            contract_submissions: 2,
-        };
-        let table_sizes = stack.db.table_sizes().await?;
-        assert!(table_sizes >= expected_table_sizes_before_pruning);
+        tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 
-        // Sleep to make sure the pruner service had time to run
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        size_tracking_job.abort();
 
-        let table_sizes = stack.db.table_sizes().await?;
-        assert!(table_sizes < expected_table_sizes_before_pruning);
+        // validate that sizes went down in size at one point
+        let sizes = sizes.lock().await.clone();
+        let went_down_in_size = sizes.windows(2).any(|pair| {
+            let older = &pair[0];
+            let newer = &pair[1];
+
+            newer < older
+        });
+
+        assert!(went_down_in_size);
 
         Ok(())
     }

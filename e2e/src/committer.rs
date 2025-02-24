@@ -16,7 +16,7 @@ pub struct Committer {
     db_name: Option<String>,
     kms_url: Option<String>,
     bundle_accumulation_timeout: Option<String>,
-    bundle_blocks_to_accumulate: Option<String>,
+    block_bytes_to_accumulate: Option<String>,
     bundle_optimization_step: Option<String>,
     bundle_optimization_timeout: Option<String>,
     bundle_block_height_lookback: Option<String>,
@@ -82,9 +82,11 @@ impl Committer {
                 get_field!(bundle_accumulation_timeout),
             )
             .env(
-                "COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE",
-                get_field!(bundle_blocks_to_accumulate),
+                "COMMITTER__APP__BUNDLE__BYTES_TO_ACCUMULATE",
+                get_field!(block_bytes_to_accumulate),
             )
+            .env("COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE", "3600")
+            .env("COMMITTER__APP__BUNDLE__MAX_FRAGMENTS_PER_BUNDLE", "12")
             .env(
                 "COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT",
                 get_field!(bundle_optimization_timeout),
@@ -176,8 +178,8 @@ impl Committer {
         self
     }
 
-    pub fn with_bundle_blocks_to_accumulate(mut self, blocks: String) -> Self {
-        self.bundle_blocks_to_accumulate = Some(blocks);
+    pub fn with_block_bytes_to_accumulate(mut self, blocks: String) -> Self {
+        self.block_bytes_to_accumulate = Some(blocks);
         self
     }
 
@@ -283,7 +285,7 @@ impl CommitterProcess {
         Ok(metric)
     }
 
-    async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
+    pub async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
         let response = reqwest::get(format!("http://localhost:{}/metrics", self.port))
             .await?
             .error_for_status()?
