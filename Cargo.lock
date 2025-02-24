@@ -6540,6 +6540,7 @@ version = "0.10.7"
 dependencies = [
  "clock",
  "delegate",
+ "futures",
  "hex",
  "itertools 0.13.0",
  "metrics",
