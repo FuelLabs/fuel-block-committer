@@ -2363,7 +2363,7 @@ dependencies = [
 
 [[package]]
 name = "da"
-version = "0.10.5"
+version = "0.10.7"
 
 [[package]]
 name = "darling"
@@ -2701,7 +2701,7 @@ dependencies = [
 
 [[package]]
 name = "eigenda"
-version = "0.10.5"
+version = "0.10.7"
 dependencies = [
  "futures",
  "hex",

@@ -1,9 +1,9 @@
+use async_graphql::{Context, Object, Schema, SimpleObject};
+use hex;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use async_graphql::{Schema, Object, Context, SimpleObject};
-use warp::{Filter, http::Response};
 use tokio::time::{sleep, Duration};
-use hex;
+use warp::{http::Response, Filter};
 
 //
 // Internal types and shared state
@@ -74,7 +74,9 @@ impl QueryRoot {
     async fn chain(&self, ctx: &Context<'_>) -> Option<ChainInfo> {
         let state = ctx.data::<Arc<AppState>>().unwrap();
         let blocks = state.blocks.lock().await;
-        blocks.last().cloned().map(|b| ChainInfo { latest_block: b.into() })
+        blocks.last().cloned().map(|b| ChainInfo {
+            latest_block: b.into(),
+        })
     }
 
     // Returns block(height: $height) { height, id }
@@ -82,14 +84,22 @@ impl QueryRoot {
         let state = ctx.data::<Arc<AppState>>().unwrap();
         let blocks = state.blocks.lock().await;
         if let Some(h) = height {
-            blocks.iter().find(|b| b.height == h).cloned().map(|b| b.into())
+            blocks
+                .iter()
+                .find(|b| b.height == h)
+                .cloned()
+                .map(|b| b.into())
         } else {
             None
         }
     }
 
     // Returns daCompressedBlock(height: $height) { bytes }
-    async fn da_compressed_block(&self, ctx: &Context<'_>, height: Option<u32>) -> Option<DaCompressedBlock> {
+    async fn da_compressed_block(
+        &self,
+        ctx: &Context<'_>,
+        height: Option<u32>,
+    ) -> Option<DaCompressedBlock> {
         let state = ctx.data::<Arc<AppState>>().unwrap();
         let blocks = state.blocks.lock().await;
         if let Some(h) = height {
@@ -136,15 +146,22 @@ pub async fn run_server(block_size: usize, port: u16) {
         produce_blocks(state_clone).await;
     });
 
-    let schema = Schema::build(QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription)
-        .data(state)
-        .finish();
+    let schema = Schema::build(
+        QueryRoot,
+        async_graphql::EmptyMutation,
+        async_graphql::EmptySubscription,
+    )
+    .data(state)
+    .finish();
 
     // GraphQL endpoint filter for POST requests.
     let graphql_filter = async_graphql_warp::graphql(schema).and_then(
-        |(schema, request): (Schema<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription>, async_graphql::Request)| async move {
+        |(schema, request): (
+            Schema<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription>,
+            async_graphql::Request,
+        )| async move {
             Ok::<_, std::convert::Infallible>(warp::reply::json(&schema.execute(request).await))
-        }
+        },
     );
 
     // GraphQL Playground for GET requests at the root ("/")
@@ -159,6 +176,9 @@ pub async fn run_server(block_size: usize, port: u16) {
     // Combine routes: Playground at "/" and GraphQL endpoint at "/graphql"
     let routes = playground.or(warp::path("graphql").and(graphql_filter));
 
-    println!("GraphQL server running on http://localhost:{}/graphql", port);
+    println!(
+        "GraphQL server running on http://localhost:{}/graphql",
+        port
+    );
     warp::serve(routes).run(([0, 0, 0, 0], port)).await;
 }

@@ -98,6 +98,7 @@ impl Bundle for EigenBundler {
                 known_to_be_optimal: true,
                 optimization_attempts: 1,
                 gas_usage: 0,
+                block_num_upper_limit: NonZeroUsize::new(100).expect("idk"), // TODO
             },
             fragments,
         })

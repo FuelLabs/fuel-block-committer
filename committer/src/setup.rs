@@ -123,8 +123,13 @@ pub fn ethereum_da_services(
         last_finalization_metric(), // TODO: will this match on the metric name?
     );
 
-    let state_importer_handle =
-        block_importer(fuel, storage.clone(), cancel_token.clone(), &config);
+    let state_importer_handle = block_importer(
+        fuel,
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &internal_config,
+    );
 
     // TODO: state pruner currently only works with the Ethereum DA
     let state_pruner_handle =
@@ -186,8 +191,13 @@ pub async fn eigen_da_services(
         }
     };
 
-    let state_importer_handle =
-        block_importer(fuel, storage.clone(), cancel_token.clone(), &config);
+    let state_importer_handle = block_importer(
+        fuel,
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &internal_config,
+    );
 
     // TODO: no pruner or fee metric handle
 
@@ -220,9 +230,11 @@ pub fn eigen_block_bundler(
         bundler_factory,
         BlockBundlerConfig {
             optimization_time_limit: Duration::from_secs(0),
-            block_accumulation_time_limit: config.app.bundle.accumulation_timeout,
-            num_blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
             lookback_window: config.app.bundle.block_height_lookback,
+            bytes_to_accumulate: config.app.bundle.bytes_to_accumulate,
+            max_fragments_per_bundle: config.app.bundle.max_fragments_per_bundle,
             max_bundles_per_optimization_run: num_cpus::get()
                 .try_into()
                 .expect("num cpus not zero"),

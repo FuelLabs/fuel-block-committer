@@ -146,14 +146,11 @@ impl Committer {
             let key = format!("Kms({key})");
 
             cmd.env("COMMITTER__DA_LAYER__TYPE", "EigenDA")
-             .env(
-                 "COMMITTER__DA_LAYER__RPC",
-                 "https://disperser-holesky.eigenda.xyz",
-             )
-             .env(
-                 "COMMITTER__DA_LAYER__KEY",
-                 key,
-            );
+                .env(
+                    "COMMITTER__DA_LAYER__RPC",
+                    "https://disperser-holesky.eigenda.xyz",
+                )
+                .env("COMMITTER__DA_LAYER__KEY", key);
         }
 
         let sink = if self.show_logs {

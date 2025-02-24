@@ -81,8 +81,7 @@ impl AwsKmsClient {
         use std::ops::Deref;
 
         // convert hex private key to DER format
-        let private_key =
-            hex::decode(key)?;
+        let private_key = hex::decode(key)?;
         let der = k256::SecretKey::from_slice(&private_key)?.to_sec1_der()?;
         let der = der.deref().clone();
 

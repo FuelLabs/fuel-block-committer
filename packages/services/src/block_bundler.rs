@@ -14,7 +14,7 @@ pub mod service {
     use tracing::info;
 
     use super::{
-        bundler::{Bundle, BundleProposal, BundlerFactory, Metadata},
+        common::{Bundle, BundleProposal, BundlerFactory, Metadata},
         port::UnbundledBlocks,
     };
     use crate::{

@@ -7,8 +7,8 @@ use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
         storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-        CompressedFuelBlock, DateTime, DispersalStatus, EigenDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-        TransactionState, Utc,
+        CompressedFuelBlock, DateTime, DispersalStatus, EigenDASubmission, Fragment, NonEmpty,
+        NonNegative, TransactionCostUpdate, TransactionState, Utc,
     },
 };
 use sqlx::{
@@ -1305,7 +1305,7 @@ impl Postgres {
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
         })
     }
-    
+
     pub(crate) async fn _record_eigenda_submission(
         &self,
         submission: EigenDASubmission,
@@ -1376,39 +1376,6 @@ impl Postgres {
 
         Ok(())
     }
-}
-
-async fn take_blocks_until_limit(
-    mut stream: BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
-    max_cumulative_bytes: u32,
-) -> Result<Vec<CompressedFuelBlock>> {
-    let mut blocks = vec![];
-
-    let mut total_bytes = 0;
-    let mut last_height: Option<u32> = None;
-    while let Some(val) = stream.try_next().await? {
-        let data_len = val.data.len();
-        if total_bytes + data_len > max_cumulative_bytes as usize {
-            break;
-        }
-
-        let block = CompressedFuelBlock::try_from(val)?;
-        let height = block.height;
-        total_bytes += data_len;
-
-        blocks.push(block);
-
-        match &mut last_height {
-            Some(last_height) if height != last_height.saturating_add(1) => {
-                break;
-            }
-            _ => {
-                last_height = Some(height);
-            }
-        }
-    }
-
-    Ok(blocks)
 }
 
 async fn take_blocks_until_limit(
