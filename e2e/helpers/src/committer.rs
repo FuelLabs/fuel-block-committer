@@ -83,7 +83,7 @@ impl Committer {
             )
             .env(
                 "COMMITTER__APP__BUNDLE__BYTES_TO_ACCUMULATE",
-                get_field!(bundle_blocks_to_accumulate),
+                get_field!(block_bytes_to_accumulate),
             )
             .env("COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE", "3600")
             .env("COMMITTER__APP__BUNDLE__MAX_FRAGMENTS_PER_BUNDLE", "12")
