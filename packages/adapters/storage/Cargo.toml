@@ -10,6 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+futures = { workspace = true }
 delegate = { workspace = true, optional = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
@@ -45,9 +46,4 @@ storage = { workspace = true, features = ["test-helpers"] }
 tokio = { workspace = true }
 
 [features]
-test-helpers = [
-  "dep:testcontainers",
-  "tokio/sync",
-  "dep:rand",
-  "dep:delegate",
-]
+test-helpers = ["dep:testcontainers", "tokio/sync", "dep:rand", "dep:delegate"]

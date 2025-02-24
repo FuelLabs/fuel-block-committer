@@ -18,7 +18,7 @@ async fn imports_first_block_when_db_is_empty() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(vec![block.clone()], true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -26,9 +26,10 @@ async fn imports_first_block_when_db_is_empty() -> Result<()> {
     // then
     let all_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .oldest;
 
     let expected_block = nonempty![block];
 
@@ -42,10 +43,11 @@ async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let existing_blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -61,7 +63,7 @@ async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 1000);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 1000, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -69,9 +71,10 @@ async fn does_not_request_or_import_blocks_already_in_db() -> Result<()> {
     // then
     let stored_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 100)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .oldest;
 
     pretty_assertions::assert_eq!(stored_blocks.into_inner(), all_blocks);
 
@@ -83,10 +86,11 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -98,7 +102,7 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(new_blocks.clone(), true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 5);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 5, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -106,9 +110,10 @@ async fn respects_height_even_if_blocks_before_are_missing() -> Result<()> {
     // then
     let stored_new_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(starting_height, 100)
+        .lowest_sequence_of_unbundled_blocks(starting_height, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .oldest;
 
     pretty_assertions::assert_eq!(stored_new_blocks.into_inner(), new_blocks);
 
@@ -123,13 +128,13 @@ async fn handles_chain_with_no_new_blocks() -> Result<()> {
     let fuel_blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size: 100,
         })
         .await;
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(fuel_blocks.clone(), true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 0, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -138,9 +143,10 @@ async fn handles_chain_with_no_new_blocks() -> Result<()> {
     // Database should remain unchanged
     let stored_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .oldest;
 
     assert_eq!(stored_blocks.into_inner(), fuel_blocks);
 
@@ -158,7 +164,13 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
 
     let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks_to_import, true);
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, lookback_window);
+    let mut importer = BlockImporter::new(
+        setup.db(),
+        fuel_mock,
+        lookback_window,
+        usize::MAX,
+        usize::MAX,
+    );
 
     // when
     importer.run().await?;
@@ -166,9 +178,10 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // then
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .oldest;
 
     let unbundled_block_heights: Vec<_> = unbundled_blocks
         .into_inner()
@@ -194,7 +207,7 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
         setup
             .import_blocks(Blocks::WithHeights {
                 range,
-                data_size: 100,
+                block_size: 100,
             })
             .await;
     }
@@ -222,7 +235,7 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
         .once()
         .return_once(|| Box::pin(async { Ok(100) }));
 
-    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 101);
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, 101, usize::MAX, usize::MAX);
 
     // when
     importer.run().await?;
@@ -230,9 +243,10 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
     // then
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 101)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
-        .unwrap();
+        .unwrap()
+        .oldest;
 
     let unbundled_block_heights: Vec<_> = unbundled_blocks
         .into_inner()
@@ -245,6 +259,65 @@ async fn fills_in_missing_blocks_inside_lookback_window() -> Result<()> {
         (0..=100).collect_vec(),
         "Blocks outside the lookback window should remain unbundled"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunks_blocks_correctly_by_count() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    // Generate 10 blocks (each with 100 bytes of data).
+    let blocks = (0..10)
+        .map(|height| test_helpers::mocks::fuel::generate_block(height, 100))
+        .collect_nonempty()
+        .unwrap();
+    let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks.clone(), true);
+    // Set chunking thresholds so that only 3 blocks per chunk are allowed.
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, u32::MAX, 3, usize::MAX);
+
+    // when
+    importer.run().await?;
+
+    // then
+    let stored_blocks = setup
+        .db()
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
+        .await?
+        .unwrap()
+        .oldest;
+    // Even though the importer internally processes the blocks in chunks,
+    // the final state of the database should include all blocks in order.
+    pretty_assertions::assert_eq!(stored_blocks.into_inner(), blocks);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunks_blocks_correctly_by_size() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    // Generate 10 blocks, each with 100 bytes.
+    let blocks = (0..10)
+        .map(|height| test_helpers::mocks::fuel::generate_block(height, 100))
+        .collect_nonempty()
+        .unwrap();
+    let fuel_mock = test_helpers::mocks::fuel::these_blocks_exist(blocks.clone(), true);
+    // Set thresholds so that the max cumulative size is 250 bytes.
+    // Since each block is 100 bytes, only 2 blocks (200 bytes) will be accumulated per chunk.
+    let mut importer = BlockImporter::new(setup.db(), fuel_mock, u32::MAX, usize::MAX, 250);
+
+    // when
+    importer.run().await?;
+
+    // then
+    let stored_blocks = setup
+        .db()
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
+        .await?
+        .unwrap()
+        .oldest;
+    pretty_assertions::assert_eq!(stored_blocks.into_inner(), blocks);
 
     Ok(())
 }

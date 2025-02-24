@@ -1,11 +1,15 @@
+mod chunking;
 pub mod service {
-    use futures::TryStreamExt;
+
+    use futures::{StreamExt, TryStreamExt};
     use tracing::info;
 
     use crate::{
-        types::{nonempty, CompressedFuelBlock, NonEmpty},
+        types::{CompressedFuelBlock, NonEmpty},
         Result, Runner,
     };
+
+    use super::chunking::TryChunkBlocksExt;
 
     /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
     /// into local storage. It fetches blocks from the Fuel API
@@ -14,15 +18,26 @@ pub mod service {
         storage: Db,
         fuel_api: FuelApi,
         lookback_window: u32,
+        /// Maximum number of blocks to accumulate before importing.
+        max_blocks: usize,
+        /// Maximum total size (in bytes) to accumulate before importing.
+        max_size: usize,
     }
 
     impl<Db, FuelApi> BlockImporter<Db, FuelApi> {
-        /// Creates a new `BlockImporter`.
-        pub fn new(storage: Db, fuel_api: FuelApi, lookback_window: u32) -> Self {
+        pub fn new(
+            storage: Db,
+            fuel_api: FuelApi,
+            lookback_window: u32,
+            max_blocks: usize,
+            max_size: usize,
+        ) -> Self {
             Self {
                 storage,
                 fuel_api,
                 lookback_window,
+                max_blocks,
+                max_size,
             }
         }
     }
@@ -58,15 +73,27 @@ pub mod service {
                 .missing_blocks(starting_height, chain_height)
                 .await?
             {
-                self.fuel_api
+                let mut block_stream = self
+                    .fuel_api
                     .compressed_blocks_in_height_range(range)
                     .map_err(crate::Error::from)
-                    .try_for_each(|block| async {
-                        self.import_blocks(nonempty![block]).await?;
+                    .try_chunk_blocks(self.max_blocks, self.max_size)
+                    .map(|res| match res {
+                        Ok(blocks) => (Some(blocks), None),
+                        Err(err) => (err.blocks, Some(err.error)),
+                    });
 
-                        Ok(())
-                    })
-                    .await?;
+                while let Some((blocks_until_potential_error, maybe_err)) =
+                    block_stream.next().await
+                {
+                    if let Some(blocks) = blocks_until_potential_error {
+                        self.import_blocks(blocks).await?;
+                    }
+
+                    if let Some(err) = maybe_err {
+                        return Err(err);
+                    }
+                }
             }
 
             Ok(())

@@ -51,8 +51,8 @@ impl Api for PreconfiguredFeeApi {
         let fees = self
             .fees
             .iter()
-            .skip_while(|(height, _)| !height_range.contains(height))
-            .take_while(|(height, _)| height_range.contains(height))
+            .skip_while(|(height, _)| !height_range.contains(*height))
+            .take_while(|(height, _)| height_range.contains(*height))
             .map(|(height, fees)| FeesAtHeight {
                 height: *height,
                 fees: *fees,

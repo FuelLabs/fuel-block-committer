@@ -7,7 +7,8 @@ use std::{
 use delegate::delegate;
 use serde::Serialize;
 use services::{
-    block_bundler, block_committer, block_importer,
+    block_bundler::{self, port::UnbundledBlocks},
+    block_committer, block_importer,
     types::{
         storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
@@ -246,10 +247,10 @@ impl block_bundler::port::Storage for DbWithProcess {
     async fn lowest_sequence_of_unbundled_blocks(
         &self,
         starting_height: u32,
-        limit: usize,
-    ) -> services::Result<Option<SequentialFuelBlocks>> {
+        max_cumulative_bytes: u32,
+    ) -> services::Result<Option<UnbundledBlocks>> {
         self.db
-            ._lowest_unbundled_blocks(starting_height, limit)
+            ._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
             .await
             .map_err(Into::into)
     }
