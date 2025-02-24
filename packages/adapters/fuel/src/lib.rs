@@ -9,6 +9,7 @@ mod metrics;
 pub use client::*;
 use delegate::delegate;
 use services::{block_committer::port::fuel::FuelBlock, Result};
+pub use url::Url;
 
 impl services::block_importer::port::fuel::Api for client::HttpClient {
     async fn latest_height(&self) -> Result<u32> {

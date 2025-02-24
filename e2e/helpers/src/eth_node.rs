@@ -131,7 +131,7 @@ impl EthNodeProcess {
             .send_transaction(tx)
             .await?
             .with_required_confirmations(1)
-            .with_timeout(Some(Duration::from_secs(1)))
+            .with_timeout(Some(Duration::from_secs(60)))
             .get_receipt()
             .await?
             .status();

@@ -242,7 +242,7 @@ pub mod port {
     pub mod fuel {
         use crate::Result;
 
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub struct FuelBlock {
             pub id: [u8; 32],
             pub height: u32,

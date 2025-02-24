@@ -145,7 +145,7 @@ impl HttpClient {
         }
     }
 
-    pub(crate) async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>> {
+    pub async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>> {
         let query = BlockAtHeightQuery::build(BlockAtHeightVariables {
             height: custom_queries::U32(height.to_string()),
         });
@@ -178,7 +178,7 @@ impl HttpClient {
         }
     }
 
-    pub(crate) async fn compressed_block_at_height(
+    pub async fn compressed_block_at_height(
         &self,
         height: u32,
     ) -> Result<Option<CompressedFuelBlock>> {
