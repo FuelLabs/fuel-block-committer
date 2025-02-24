@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use services::{state_pruner, state_pruner::port::Storage as PrunerStorage, Runner};
+use services::{Runner, state_pruner, state_pruner::port::Storage as PrunerStorage};
 
 #[tokio::test]
 async fn not_pruning_until_retention_exceeded() -> services::Result<()> {

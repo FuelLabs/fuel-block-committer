@@ -1,19 +1,19 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
-use futures::{stream::BoxStream, TryStreamExt};
+use futures::{TryStreamExt, stream::BoxStream};
 use itertools::Itertools;
-use metrics::{prometheus::IntGauge, RegistersMetrics};
+use metrics::{RegistersMetrics, prometheus::IntGauge};
 use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
-        storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-        CompressedFuelBlock, DateTime, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-        TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        storage::SequentialFuelBlocks,
     },
 };
 use sqlx::{
-    postgres::{PgConnectOptions, PgPoolOptions},
     PgConnection, QueryBuilder,
+    postgres::{PgConnectOptions, PgPoolOptions},
 };
 
 use super::error::{Error, Result};
@@ -576,7 +576,9 @@ impl Postgres {
             Ok(row.try_into()?)
         } else {
             let hash = hex::encode(fuel_block_hash);
-            Err(Error::Database(format!("Cannot set submission to completed! Submission of block: `{hash}` not found in DB.")))
+            Err(Error::Database(format!(
+                "Cannot set submission to completed! Submission of block: `{hash}` not found in DB."
+            )))
         }
     }
 
@@ -1606,7 +1608,7 @@ mod tests {
         // create fragments for the bundle
         let fragments = (0..fragments_per_bundle)
             .map(|_| Fragment {
-                data: NonEmpty::from_vec(vec![rng.gen()]).unwrap(),
+                data: NonEmpty::from_vec(vec![rng.r#gen()]).unwrap(),
                 unused_bytes: rng.gen_range(0..1000),
                 total_bytes: rng.gen_range(1000..5000).try_into().unwrap(),
             })
@@ -1633,10 +1635,10 @@ mod tests {
         // for each fragment, create multiple transactions
         for _id in fragment_ids.iter() {
             for _ in 0..txs_per_fragment {
-                let tx_hash = rng.gen::<[u8; 32]>();
+                let tx_hash = rng.r#gen::<[u8; 32]>();
                 let tx = L1Tx {
                     hash: tx_hash,
-                    nonce: rng.gen(),
+                    nonce: rng.r#gen(),
                     ..Default::default()
                 };
 

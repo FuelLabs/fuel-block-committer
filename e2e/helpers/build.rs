@@ -54,7 +54,7 @@ mod bridge {
 
     use anyhow::bail;
     use walkdir::WalkDir;
-    use zip::{read::ZipFile, ZipArchive};
+    use zip::{ZipArchive, read::ZipFile};
 
     pub async fn download_contract(revision: &str, dir: &Path) -> anyhow::Result<()> {
         tokio::fs::create_dir_all(dir).await?;
@@ -128,8 +128,8 @@ mod bridge {
         }
     }
 
-    async fn extract_file<'a>(
-        mut file: ZipFile<'a>,
+    async fn extract_file(
+        mut file: ZipFile<'_>,
         dir: &Path,
         remove_prefix: &str,
     ) -> anyhow::Result<PathBuf> {
@@ -226,7 +226,7 @@ mod bridge {
 mod foundry {
     use std::path::Path;
 
-    use anyhow::{bail, Context};
+    use anyhow::{Context, bail};
     use itertools::Itertools;
     use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 

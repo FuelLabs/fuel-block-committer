@@ -4,12 +4,11 @@ pub mod service {
     use futures::{StreamExt, TryStreamExt};
     use tracing::info;
 
-    use crate::{
-        types::{CompressedFuelBlock, NonEmpty},
-        Result, Runner,
-    };
-
     use super::chunking::TryChunkBlocksExt;
+    use crate::{
+        Result, Runner,
+        types::{CompressedFuelBlock, NonEmpty},
+    };
 
     /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain
     /// into local storage. It fetches blocks from the Fuel API
@@ -106,7 +105,7 @@ pub mod port {
 
     use nonempty::NonEmpty;
 
-    use crate::{types::CompressedFuelBlock, Result};
+    use crate::{Result, types::CompressedFuelBlock};
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
@@ -124,7 +123,7 @@ pub mod port {
 
         use futures::stream::BoxStream;
 
-        use crate::{types::CompressedFuelBlock, Result};
+        use crate::{Result, types::CompressedFuelBlock};
 
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]

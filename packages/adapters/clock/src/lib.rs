@@ -32,7 +32,7 @@ impl_port!(
 #[cfg(feature = "test-helpers")]
 mod test_helpers {
     use std::{
-        sync::{atomic::AtomicI64, Arc},
+        sync::{Arc, atomic::AtomicI64},
         time::Duration,
     };
 

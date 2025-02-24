@@ -1,6 +1,6 @@
 use ::metrics::{
-    prometheus::{core::Collector, IntCounter, Opts},
     RegistersMetrics,
+    prometheus::{IntCounter, Opts, core::Collector},
 };
 
 #[derive(Clone)]

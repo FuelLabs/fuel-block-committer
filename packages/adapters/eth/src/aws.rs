@@ -1,8 +1,8 @@
 use alloy::signers::aws::AwsSigner;
-use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region, SdkConfig};
+use aws_config::{Region, SdkConfig, default_provider::credentials::DefaultCredentialsChain};
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
-use aws_sdk_kms::{config::BehaviorVersion, Client};
+use aws_sdk_kms::{Client, config::BehaviorVersion};
 use services::{Error, Result};
 
 #[derive(Debug, Clone)]

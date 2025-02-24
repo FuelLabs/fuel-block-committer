@@ -1,6 +1,9 @@
-use futures::stream::Stream;
-use futures::task::{Context, Poll};
 use std::pin::Pin;
+
+use futures::{
+    stream::Stream,
+    task::{Context, Poll},
+};
 
 use crate::types::{CompressedFuelBlock, NonEmpty};
 
@@ -174,13 +177,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use futures::stream;
-    use futures::StreamExt;
+    use futures::{StreamExt, stream};
     use nonempty::NonEmpty;
 
-    use crate::block_importer::chunking::{ChunkError, TryChunkBlocksExt};
-    use crate::types::CompressedFuelBlock;
-    use crate::Result;
+    use crate::{
+        Result,
+        block_importer::chunking::{ChunkError, TryChunkBlocksExt},
+        types::CompressedFuelBlock,
+    };
 
     /// Helper to generate a block with the given height and a data vector of the given size.
     fn gen_block(height: u32, size: usize) -> CompressedFuelBlock {

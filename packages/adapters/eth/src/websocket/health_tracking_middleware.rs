@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, ops::RangeInclusive};
 
 use ::metrics::{
-    prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
+    ConnectionHealthTracker, HealthChecker, RegistersMetrics, prometheus::core::Collector,
 };
 use alloy::rpc::types::FeeHistory;
 use delegate::delegate;
@@ -183,7 +183,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ::metrics::prometheus::{proto::Metric, Registry};
+    use ::metrics::prometheus::{Registry, proto::Metric};
 
     use super::*;
 

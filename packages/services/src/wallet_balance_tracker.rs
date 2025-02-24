@@ -2,13 +2,13 @@ pub mod service {
     use std::collections::HashMap;
 
     use metrics::{
-        prometheus::{core::Collector, IntGauge, Opts},
         RegistersMetrics,
+        prometheus::{IntGauge, Opts, core::Collector},
     };
 
     use crate::{
-        types::{Address, U256},
         Result, Runner,
+        types::{Address, U256},
     };
 
     struct Balance {
@@ -100,11 +100,11 @@ mod tests {
 
     use alloy::primitives::U256;
     use metrics::{
-        prometheus::{
-            proto::{Metric, MetricFamily},
-            Registry,
-        },
         RegistersMetrics,
+        prometheus::{
+            Registry,
+            proto::{Metric, MetricFamily},
+        },
     };
     use mockall::predicate::eq;
     use service::WalletBalanceTracker;

@@ -2,13 +2,13 @@
 
 use std::ops::RangeInclusive;
 
-use futures::{stream::BoxStream, StreamExt};
+use futures::{StreamExt, stream::BoxStream};
 mod client;
 mod metrics;
 
 pub use client::*;
 use delegate::delegate;
-use services::{block_committer::port::fuel::FuelBlock, Result};
+use services::{Result, block_committer::port::fuel::FuelBlock};
 pub use url::Url;
 
 impl services::block_importer::port::fuel::Api for client::HttpClient {
@@ -48,8 +48,8 @@ impl services::state_committer::port::fuel::Api for client::HttpClient {
 #[cfg(test)]
 mod tests {
     use ::metrics::{
-        prometheus::{proto::Metric, Registry},
         RegistersMetrics,
+        prometheus::{Registry, proto::Metric},
     };
     use url::Url;
 

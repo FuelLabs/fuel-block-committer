@@ -1,16 +1,16 @@
 use nonempty::NonEmpty;
 
 use crate::{
-    types::{storage::BundleFragment, DateTime, L1Tx, NonNegative, Utc},
     Error, Result,
+    types::{DateTime, L1Tx, NonNegative, Utc, storage::BundleFragment},
 };
 
 pub mod l1 {
     use nonempty::NonEmpty;
 
     use crate::{
-        types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
         Error, Result,
+        types::{BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx},
     };
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]

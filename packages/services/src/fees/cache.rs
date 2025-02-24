@@ -30,7 +30,7 @@ impl<P> CachingApi<P> {
         self.cache.lock().await.extend(fees);
     }
 
-    pub async fn export(&self) -> impl IntoIterator<Item = (u64, Fees)> {
+    pub async fn export(&self) -> impl IntoIterator<Item = (u64, Fees)> + use<P> {
         self.cache.lock().await.clone()
     }
 }
@@ -141,7 +141,7 @@ mod tests {
 
     use mockall::predicate::eq;
 
-    use crate::fees::{cache::CachingApi, Fees, FeesAtHeight, MockApi, SequentialBlockFees};
+    use crate::fees::{Fees, FeesAtHeight, MockApi, SequentialBlockFees, cache::CachingApi};
 
     #[tokio::test]
     async fn evicts_oldest_blocks() {

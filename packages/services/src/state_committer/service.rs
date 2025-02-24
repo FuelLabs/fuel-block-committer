@@ -2,16 +2,16 @@ use std::{num::NonZeroUsize, time::Duration};
 
 use itertools::Itertools;
 use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
+    prometheus::{IntGauge, Opts, core::Collector},
 };
 use tracing::info;
 
-use super::{fee_algo::SmaFeeAlgo, AlgoConfig};
+use super::{AlgoConfig, fee_algo::SmaFeeAlgo};
 use crate::{
-    state_committer::port::l1::Priority,
-    types::{storage::BundleFragment, CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc},
     Result, Runner,
+    state_committer::port::l1::Priority,
+    types::{CollectNonEmpty, DateTime, L1Tx, NonEmpty, Utc, storage::BundleFragment},
 };
 
 // src/config.rs

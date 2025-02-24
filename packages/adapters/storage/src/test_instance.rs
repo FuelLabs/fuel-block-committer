@@ -9,16 +9,16 @@ use services::{
     block_bundler::{self, port::UnbundledBlocks},
     block_committer, block_importer,
     types::{
-        storage::BundleFragment, BlockSubmission, BlockSubmissionTx, BundleCost,
-        CompressedFuelBlock, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
-        TransactionCostUpdate, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        storage::BundleFragment,
     },
 };
 use sqlx::Executor;
 use testcontainers::{
+    Image,
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
-    Image,
 };
 
 use super::postgres::{DbConfig, Postgres};

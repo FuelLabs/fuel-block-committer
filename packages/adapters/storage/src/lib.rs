@@ -11,13 +11,13 @@ pub(crate) mod error;
 mod postgres;
 pub use postgres::{DbConfig, Postgres};
 use services::{
+    Result,
     block_bundler::port::UnbundledBlocks,
     types::{
-        storage::BundleFragment, BlockSubmission, BlockSubmissionTx, BundleCost,
-        CompressedFuelBlock, DateTime, Fragment, L1Tx, NonEmpty, NonNegative,
-        TransactionCostUpdate, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
+        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        storage::BundleFragment,
     },
-    Result,
 };
 
 impl services::state_listener::port::Storage for Postgres {
@@ -206,14 +206,14 @@ mod tests {
 
     use clock::TestClock;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use services::{
         block_bundler::port::Storage as BundlerStorage,
         block_importer::port::Storage,
         cost_reporter::port::Storage as CostStorage,
         state_committer::port::Storage as CommitterStorage,
         state_listener::port::Storage as ListenerStorage,
-        types::{nonempty, CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState},
+        types::{CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState, nonempty},
     };
 
     use super::*;
@@ -536,8 +536,8 @@ mod tests {
 
     async fn insert_sequence_of_bundled_blocks(
         storage: impl services::block_bundler::port::Storage
-            + services::block_importer::port::Storage
-            + Clone,
+        + services::block_importer::port::Storage
+        + Clone,
         range: RangeInclusive<u32>,
         num_fragments: usize,
     ) {
@@ -1016,9 +1016,9 @@ mod tests {
 
     async fn ensure_finalized_fragments_exist_in_the_db(
         storage: impl services::block_bundler::port::Storage
-            + services::state_committer::port::Storage
-            + services::state_listener::port::Storage
-            + Clone,
+        + services::state_committer::port::Storage
+        + services::state_listener::port::Storage
+        + Clone,
         range: RangeInclusive<u32>,
         total_fee: u128,
         da_block_height: u64,
@@ -1249,7 +1249,7 @@ mod tests {
         let bundle_b_id = storage.next_bundle_id().await.unwrap();
 
         let random_frag = || {
-            let data: [u8; 2] = thread_rng().gen();
+            let data: [u8; 2] = thread_rng().r#gen();
             Fragment {
                 data: nonempty![data[0], data[1]],
                 unused_bytes: 0,

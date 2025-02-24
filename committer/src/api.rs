@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use ::metrics::{
-    prometheus::{self, Encoder, Registry, TextEncoder},
     HealthChecker,
+    prometheus::{self, Encoder, Registry, TextEncoder},
 };
 use actix_web::{
-    error::InternalError, get, http::StatusCode, web, App, HttpResponse, HttpServer, Responder,
+    App, HttpResponse, HttpServer, Responder, error::InternalError, get, http::StatusCode, web,
 };
 use serde::Deserialize;
 use services::{
@@ -14,9 +14,9 @@ use services::{
 };
 
 use crate::{
+    Database,
     config::{Config, Internal},
     errors::{Error, Result},
-    Database,
 };
 
 pub async fn launch_api_server(

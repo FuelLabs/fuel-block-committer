@@ -4,10 +4,11 @@ use clock::SystemClock;
 use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
-    prometheus::{IntGauge, Registry},
     HealthChecker, RegistersMetrics,
+    prometheus::{IntGauge, Registry},
 };
 use services::{
+    BlockBundler, BlockBundlerConfig, Runner,
     block_committer::{port::l1::Contract, service::BlockCommitter},
     fee_metrics_tracker::service::FeeMetricsTracker,
     fees::cache::CachingApi,
@@ -15,13 +16,12 @@ use services::{
     state_listener::service::StateListener,
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
-    BlockBundler, BlockBundlerConfig, Runner,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{config, errors::Result, Database, FuelApi, L1};
+use crate::{Database, FuelApi, L1, config, errors::Result};
 
 pub fn wallet_balance_tracker(
     internal_config: &config::Internal,

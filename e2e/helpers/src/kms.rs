@@ -1,4 +1,4 @@
-use alloy::signers::{aws::AwsSigner, Signer};
+use alloy::signers::{Signer, aws::AwsSigner};
 use anyhow::Context;
 use eth::{Address, AwsClient, AwsConfig};
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};

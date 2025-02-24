@@ -1,11 +1,11 @@
 use services::{
+    Runner,
     block_committer::{port::Storage, service::BlockCommitter},
     types::{TransactionResponse, TransactionState, Utc},
-    Runner,
 };
 use test_helpers::mocks::{
     fuel::{given_a_block, given_fetcher},
-    l1::{expects_contract_submission, expects_transaction_response, FullL1Mock},
+    l1::{FullL1Mock, expects_contract_submission, expects_transaction_response},
 };
 
 #[tokio::test]

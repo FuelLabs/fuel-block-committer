@@ -47,7 +47,7 @@ pub mod service {
 }
 
 pub mod port {
-    use crate::{types::BlockSubmission, Result};
+    use crate::{Result, types::BlockSubmission};
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]

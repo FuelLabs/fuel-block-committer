@@ -1,12 +1,12 @@
 use std::{iter::repeat, num::NonZeroU32, time::Duration};
 
 use itertools::Itertools;
-use metrics::{prometheus, RegistersMetrics};
+use metrics::{RegistersMetrics, prometheus};
 use services::{
+    Result, Runner, StateCommitter, StateCommitterConfig,
     fees::Fees,
     state_committer::{AlgoConfig, FeeThresholds, SmaPeriods},
     types::{Fragment, FragmentsSubmitted, L1Tx, NonEmpty},
-    Result, Runner, StateCommitter, StateCommitterConfig,
 };
 use test_helpers::{mocks, noop_fees, preconfigured_fees};
 

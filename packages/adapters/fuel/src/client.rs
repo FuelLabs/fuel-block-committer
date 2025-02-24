@@ -2,23 +2,23 @@ use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr};
 
 use custom_queries::block_at_height::{BlockAtHeightQuery, BlockAtHeightVariables};
 use cynic::QueryBuilder;
+use fuel_core_client::client::FuelClient as GqlClient;
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
-    primitives::{Address, AssetId},
     Coin, CoinType,
+    primitives::{Address, AssetId},
 };
-use fuel_core_client::client::FuelClient as GqlClient;
 use fuel_core_types::fuel_tx::Bytes32;
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
-use futures::{stream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream};
 use metrics::{
-    prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
+    ConnectionHealthTracker, HealthChecker, RegistersMetrics, prometheus::core::Collector,
 };
 use services::{
+    Error, Result,
     block_committer::port::fuel::FuelBlock,
     types::{CompressedFuelBlock, NonEmpty},
-    Error, Result,
 };
 use url::Url;
 

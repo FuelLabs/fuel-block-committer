@@ -2,8 +2,8 @@ pub mod service {
     use std::time::Duration;
 
     use metrics::{
-        prometheus::{core::Collector, IntGauge},
         RegistersMetrics,
+        prometheus::{IntGauge, core::Collector},
     };
 
     use super::create_int_gauge;
@@ -189,8 +189,8 @@ pub mod service {
 
 pub mod port {
     use crate::{
-        types::{DateTime, Utc},
         Result,
+        types::{DateTime, Utc},
     };
 
     #[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]

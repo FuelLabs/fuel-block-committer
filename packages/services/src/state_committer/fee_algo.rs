@@ -6,8 +6,8 @@ use std::{
 use tracing::info;
 
 use crate::{
-    fee_metrics_tracker::{self},
     Error, Result,
+    fee_metrics_tracker::{self},
 };
 
 impl<P> SmaFeeAlgo<P>
@@ -63,7 +63,9 @@ where
             num_l2_blocks_behind,
         );
 
-        info!( "short_term_tx_fee: {short_term_tx_fee}, long_term_tx_fee: {long_term_tx_fee}, max_upper_tx_fee: {max_upper_tx_fee}");
+        info!(
+            "short_term_tx_fee: {short_term_tx_fee}, long_term_tx_fee: {long_term_tx_fee}, max_upper_tx_fee: {max_upper_tx_fee}"
+        );
 
         let should_send = short_term_tx_fee <= max_upper_tx_fee;
 
@@ -240,7 +242,9 @@ fn calculate_max_upper_fee(
     let max_fee = from_ppm(fee.saturating_mul(multiplier_ppm));
     {
         let multiplier_perc = multiplier_ppm as f64 / 1_000_000.;
-        info!( "{blocks_behind}/{max_blocks_behind} blocks behind -> long term fee({fee}) * multiplier({multiplier_perc}) = max_fee({max_fee})");
+        info!(
+            "{blocks_behind}/{max_blocks_behind} blocks behind -> long term fee({fee}) * multiplier({multiplier_perc}) = max_fee({max_fee})"
+        );
     }
 
     max_fee
@@ -263,10 +267,10 @@ mod tests {
 
         use super::{Config, SmaPeriods};
         use crate::{
-            fees::{testing::PreconfiguredFeeApi, Api, Fees},
+            fees::{Api, Fees, testing::PreconfiguredFeeApi},
             state_committer::{
-                fee_algo::{FeeMultiplierRange, SmaFeeAlgo},
                 FeeThresholds,
+                fee_algo::{FeeMultiplierRange, SmaFeeAlgo},
             },
         };
 
@@ -589,9 +593,9 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-            decision, should_send,
-            "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {should_send}, got: {decision}",
-        );
+                decision, should_send,
+                "For num_blobs={num_blobs}, num_l2_blocks_behind={num_l2_blocks_behind}, config={config:?}: Expected decision: {should_send}, got: {decision}",
+            );
         }
 
         fn generate_fees(
@@ -617,8 +621,8 @@ mod tests {
         pub use test_case::test_case;
 
         use crate::state_committer::{
-            fee_algo::{calculate_max_upper_fee, FeeMultiplierRange},
             FeeThresholds,
+            fee_algo::{FeeMultiplierRange, calculate_max_upper_fee},
         };
         struct Setup {
             fee: u128,
