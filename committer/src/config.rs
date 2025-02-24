@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use byte_unit::Byte;
 use clap::{command, Parser};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
@@ -82,17 +83,18 @@ impl Config {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Fuel {
-    /// URL to a fuel-core graphql endpoint.
+    /// Fuel-core GraphQL endpoint URL.
     #[serde(deserialize_with = "parse_url")]
     pub graphql_endpoint: Url,
+    /// Number of concurrent requests.
     pub num_buffered_requests: NonZeroU32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
-    /// L1 keys for calling the state contract and for posting state
+    /// L1 keys for state contract calls and postings.
     pub l1_keys: L1Keys,
-    /// URL to a Ethereum RPC endpoint.
+    /// Ethereum RPC endpoint URL.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
@@ -113,116 +115,113 @@ where
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct App {
-    /// Port used by the started server
+    /// Server port.
     pub port: u16,
-    /// IPv4 address on which the server will listen for connections
+    /// Server IPv4 address.
     pub host: Ipv4Addr,
-    /// Postgres database configuration
+    /// Postgres database configuration.
     pub db: DbConfig,
-    /// How often to check for fuel blocks
+    /// Interval for checking new fuel blocks.
     #[serde(deserialize_with = "human_readable_duration")]
     pub block_check_interval: Duration,
-    /// How often to check for finalized l1 txs
+    /// Interval for checking finalized L1 transactions.
     #[serde(deserialize_with = "human_readable_duration")]
     pub tx_finalization_check_interval: Duration,
-    /// How often to check for l1 fees
+    /// Interval for checking L1 fees.
     #[serde(deserialize_with = "human_readable_duration")]
     pub l1_fee_check_interval: Duration,
-    /// Number of L1 blocks that need to pass to accept the tx as finalized
+    /// Number of L1 blocks to wait before finalizing a transaction.
     pub num_blocks_to_finalize_tx: u64,
-    /// Interval after which to bump a pending tx
+    /// Timeout after which a pending transaction is bumped.
     #[serde(deserialize_with = "human_readable_duration")]
     pub gas_bump_timeout: Duration,
-    /// Tweak how we pay for a l1 transaction
+    /// Settings for L1 transaction fees.
     pub tx_fees: TxFeesConfig,
-    ///// Contains configs relating to block state posting to l1
+    /// Settings for bundling blocks.
     pub bundle: BundleConfig,
-    //// Duration for timeout when sending tx requests
+    /// Timeout for sending transaction requests.
     #[serde(deserialize_with = "human_readable_duration")]
     pub send_tx_request_timeout: Duration,
-    //// Retention duration for state pruner
+    /// Retention period for state pruner.
     #[serde(deserialize_with = "human_readable_duration")]
     pub state_pruner_retention: Duration,
-    /// How often to run state pruner
+    /// Interval for running the state pruner.
     #[serde(deserialize_with = "human_readable_duration")]
     pub state_pruner_run_interval: Duration,
-    /// Configuration for the fee algorithm used by the StateCommitter
+    /// Configuration for the fee tracking algorithm.
     pub fee_algo: FeeAlgoConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Copy)]
 pub struct TxFeesConfig {
-    /// Max gas fee we permit a tx to have in wei
+    /// Maximum allowed gas fee in wei.
     pub max: u64,
-    /// lowest reward percentage to use when we're up to date with l2 block posting (e.g. 20.)
+    /// Minimum reward percentage when L2 block posting is current. (eg. 20%)
     pub min_reward_perc: f64,
-    /// highest reward percentage to use when we're very late with l2 block posting (e.g. 30.)
+    /// Maximum reward percentage when L2 block posting is maximally delayed. (eg. 30%)
     pub max_reward_perc: f64,
 }
 
-/// Configuration for the fee algorithm used by the StateCommitter
+/// Fee algorithm configuration for the StateCommitter.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FeeAlgoConfig {
-    /// Short-term period for Simple Moving Average (SMA) in block numbers
+    /// Short-term SMA period (in blocks).
     pub short_sma_blocks: NonZeroU64,
-
-    /// Long-term period for Simple Moving Average (SMA) in block numbers
+    /// Long-term SMA period (in blocks).
     pub long_sma_blocks: NonZeroU64,
-
-    /// Maximum number of unposted L2 blocks before sending a transaction regardless of fees
+    /// Maximum allowed lag (in unposted L2 blocks) before forcing a tx.
     pub max_l2_blocks_behind: NonZeroU32,
-
-    /// Starting multiplier applied when we're 0 l2 blocks behind
+    /// Starting fee multiplier when fully up-to-date.
     pub start_max_fee_multiplier: f64,
-
-    /// Ending multiplier applied if we're max_l2_blocks_behind - 1 blocks behind
+    /// Ending fee multiplier when nearly max lag.
     pub end_max_fee_multiplier: f64,
-
-    /// A fee that is always acceptable regardless of other conditions
+    /// Fee that is always acceptable.
     pub always_acceptable_fee: u64,
 }
 
-/// Configuration settings for managing fuel block bundling and fragment submission operations.
+/// Bundling configuration for fuel block submission to L1.
 ///
-/// This struct defines how blocks and fragments are accumulated, optimized, and eventually submitted to L1.
+/// This configuration controls how blocks are accumulated and bundled.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BundleConfig {
-    /// Duration to wait for additional fuel blocks before initiating the bundling process.
+    /// Time to wait for additional blocks before starting bundling.
     ///
-    /// This timeout is measured from the moment the last blob transaction was finalized, or, if
-    /// missing, from the application startup time.
+    /// This timeout starts from the last time a bundle was created or from app startup.
+    /// Bundling will occur when this timeout expires, even if byte or block thresholds aren’t met.
     #[serde(deserialize_with = "human_readable_duration")]
     pub accumulation_timeout: Duration,
 
-    /// The number of fuel blocks to accumulate before initiating the bundling process.
+    /// Byte threshold to trigger bundling immediately.
     ///
-    /// If the system successfully accumulates this number of blocks before the `accumulation_timeout` is reached,
-    /// the bundling process will start immediately. Otherwise, the bundling process will be triggered when the
-    /// `accumulation_timeout` fires, regardless of the number of blocks accumulated.
+    /// If this many bytes are accumulated before the timeout, bundling starts right away.
+    #[serde(deserialize_with = "human_readable_bytes")]
+    pub bytes_to_accumulate: NonZeroUsize,
+
+    /// Block count threshold to trigger bundling if enough unbundled blocks are present.
     pub blocks_to_accumulate: NonZeroUsize,
 
-    /// Maximum duration allocated for determining the optimal bundle size.
+    /// Maximum number of fragments per bundle. Limits the size of the bundle.
+    pub max_fragments_per_bundle: NonZeroUsize,
+
+    /// Maximum time to search for the optimal bundle size.
     ///
-    /// This timeout limits the amount of time the system can spend searching for the ideal
-    /// number of fuel blocks to include in a bundle. Once this duration is reached, the
-    /// bundling process will proceed with the best configuration found within the allotted time.
+    /// When this duration expires, bundling proceeds with the best size found.
     #[serde(deserialize_with = "human_readable_duration")]
     pub optimization_timeout: Duration,
 
-    /// How big should the optimization step be at the start of the optimization process. Setting
-    /// this value to 100 and giving the bundler a 1000 blocks would result in the following
-    /// attempts:
-    /// 1000, 900, ..., 100, 1, 950, 850, ..., 50, 975, 925, ...
+    /// Initial step size for the optimization search.
+    ///
+    /// For example, with an optimization step of 100 on 1000 blocks, the attempts would be:
+    /// 1000, 900, …, 100, 1, 950, 850, …, 50, 975, 925, …
     pub optimization_step: NonZeroUsize,
 
-    /// Duration to wait for additional fragments before submitting them in a transaction to L1.
+    /// Timeout to wait for additional fragments before submitting to L1.
     ///
-    /// Similar to `accumulation_timeout`, this timeout starts from the last finalized fragment submission. If no new
-    /// fragments are received within this period, the system will proceed to submit the currently accumulated fragments.
+    /// Starts from the last submitted fragment; if no new ones arrive, the accumulated fragments are sent.
     #[serde(deserialize_with = "human_readable_duration")]
     pub fragment_accumulation_timeout: Duration,
 
-    /// The number of fragments to accumulate before submitting them in a transaction to L1.
+    /// Number of fragments to accumulate before submission.
     pub fragments_to_accumulate: NonZeroUsize,
 
     /// Only blocks within the `block_height_lookback` window
@@ -244,14 +243,14 @@ pub struct BundleConfig {
     /// This approach effectively "gives up" on blocks that fall outside the defined window.
     pub block_height_lookback: u32,
 
-    /// Compression level used for compressing block data before submission.
+    /// Compression level for block data before submission.
     ///
-    /// Compression is applied to the blocks to minimize the transaction size. Valid values are:
-    /// - `"disabled"`: No compression is applied.
-    /// - `"min"` to `"max"`: Compression levels where higher numbers indicate more aggressive compression.
+    /// Options:
+    /// - `"disabled"`: No compression.
+    /// - `"min"` to `"max"`: Increasingly aggressive compression.
     pub compression_level: CompressionLevel,
 
-    /// Duration to wait before checking if a new bundle can be made
+    /// Interval to check if a new bundle can be created.
     #[serde(deserialize_with = "human_readable_duration")]
     pub new_bundle_check_interval: Duration,
 }
@@ -267,6 +266,26 @@ where
     })
 }
 
+fn human_readable_bytes<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration_str: String = Deserialize::deserialize(deserializer).unwrap();
+
+    let num_bytes = Byte::from_str(&duration_str)
+        .map_err(|e| {
+            let msg = format!("Failed to parse bytes '{duration_str}': {e};");
+            serde::de::Error::custom(msg)
+        })?
+        .as_u64() as usize;
+
+    if num_bytes == 0 {
+        return Err(serde::de::Error::custom("num bytes must be greater than 0"));
+    }
+
+    Ok(NonZeroUsize::new(num_bytes).expect("just checked"))
+}
+
 #[derive(Debug, Clone)]
 pub struct Internal {
     pub fuel_errors_before_unhealthy: usize,
@@ -274,6 +293,24 @@ pub struct Internal {
     pub balance_update_interval: Duration,
     pub cost_request_limit: usize,
     pub l1_blocks_cached_for_fee_metrics_tracker: usize,
+    pub import_batches: ImportBatches,
+}
+
+/// Manages batching of incoming fuel blocks before importing them into the database, optimizing memory usage
+/// and reducing the number of generated logs.
+#[derive(Debug, Clone, Copy)]
+pub struct ImportBatches {
+    pub max_blocks: usize,
+    pub max_cumulative_size: usize,
+}
+
+impl Default for ImportBatches {
+    fn default() -> Self {
+        Self {
+            max_blocks: 4000,
+            max_cumulative_size: 20_000_000,
+        }
+    }
 }
 
 impl Default for Internal {
@@ -286,9 +323,11 @@ impl Default for Internal {
             balance_update_interval: Duration::from_secs(10),
             cost_request_limit: 1000,
             l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
+            import_batches: ImportBatches::default(),
         }
     }
 }
+
 #[derive(Parser)]
 #[command(
     name = "fuel-block-committer",
@@ -299,7 +338,7 @@ impl Default for Internal {
 struct Cli {
     #[arg(
         value_name = "FILE",
-        help = "Used to be the path to the configuration, unused currently until helm charts are updated."
+        help = "Path to the configuration file (currently unused, all configuration done via ENV)."
     )]
     config_path: Option<String>,
 }
