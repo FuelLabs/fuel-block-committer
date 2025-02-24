@@ -7,7 +7,7 @@ use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, TryCollectNonEmpty, Utc,
+        NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
         storage::SequentialFuelBlocks,
     },
 };

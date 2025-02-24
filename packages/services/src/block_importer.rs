@@ -7,7 +7,7 @@ pub mod service {
     use super::chunking::TryChunkBlocksExt;
     use crate::{
         Result, Runner,
-        types::{CompressedFuelBlock, NonEmpty, nonempty},
+        types::{CompressedFuelBlock, NonEmpty},
     };
 
     /// The `BlockImporter` is responsible for importing blocks from the Fuel blockchain

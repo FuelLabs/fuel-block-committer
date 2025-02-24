@@ -16,7 +16,7 @@ use services::{
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
         L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
-        storage::{BundleFragment, SequentialFuelBlocks},
+        storage::BundleFragment,
     },
 };
 
