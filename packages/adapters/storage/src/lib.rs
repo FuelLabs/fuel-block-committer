@@ -12,6 +12,7 @@ mod postgres;
 pub use postgres::{DbConfig, Postgres};
 use services::{
     Result,
+    block_bundler::port::UnbundledBlocks,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
         L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
@@ -88,9 +89,9 @@ impl services::block_bundler::port::Storage for Postgres {
     async fn lowest_sequence_of_unbundled_blocks(
         &self,
         starting_height: u32,
-        limit: usize,
-    ) -> Result<Option<SequentialFuelBlocks>> {
-        self._lowest_unbundled_blocks(starting_height, limit)
+        max_cumulative_bytes: u32,
+    ) -> Result<Option<UnbundledBlocks>> {
+        self._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
             .await
             .map_err(Into::into)
     }
@@ -524,6 +525,11 @@ mod tests {
                 .collect_nonempty()
                 .expect("chunk shouldn't be empty");
 
+            assert!(
+                blocks.iter().all(|b| b.data.len() == 1),
+                "some tests depend on the blocks having only 1B of data. Make it configurable if you need to."
+            );
+
             storage.insert_blocks(blocks).await.unwrap();
         }
     }
@@ -556,13 +562,14 @@ mod tests {
     async fn lowest_unbundled_sequence(
         storage: impl services::block_bundler::port::Storage,
         starting_height: u32,
-        limit: usize,
+        max_cumulative_bytes: u32,
     ) -> RangeInclusive<u32> {
         storage
-            .lowest_sequence_of_unbundled_blocks(starting_height, limit)
+            .lowest_sequence_of_unbundled_blocks(starting_height, max_cumulative_bytes)
             .await
             .unwrap()
             .unwrap()
+            .oldest
             .height_range()
     }
 
@@ -575,7 +582,7 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 1..=10).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 1..=10);
@@ -590,7 +597,7 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 4..=6).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 0..=2);
@@ -604,7 +611,7 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 0..=10).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 2, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 2, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 2..=10);
@@ -642,7 +649,7 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 3..=4).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 3..=4);
@@ -659,7 +666,7 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 11..=15).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, usize::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 0..=2);
@@ -680,9 +687,11 @@ mod tests {
         let start_height = unbundled_end - 604_800;
         let blocks_to_retrieve = 3500;
         let start_time = std::time::Instant::now();
+
+        // each block has only 1 B of data
+        let max_cumulative_bytes = blocks_to_retrieve;
         let height_range =
-            lowest_unbundled_sequence(storage.clone(), start_height, blocks_to_retrieve as usize)
-                .await;
+            lowest_unbundled_sequence(storage.clone(), start_height, max_cumulative_bytes).await;
         let elapsed_time = start_time.elapsed();
 
         let expected_range = unbundled_start..=(unbundled_start + blocks_to_retrieve - 1);
@@ -1327,5 +1336,92 @@ mod tests {
         // => total 4 fragments, so we expect 1/4 of the fee for A (250) and 3/4 (750) for B.
         assert_eq!(cost_a, 250, "Bundle A should get 25% of the 1000 fee");
         assert_eq!(cost_b, 750, "Bundle B should get 75% of the 1000 fee");
+    }
+
+    #[tokio::test]
+    async fn respects_cumulative_bytes_for_variable_sized_blocks() {
+        use services::block_bundler::port::Storage;
+
+        let storage = start_db().await;
+
+        let block_sizes = [2, 4, 1, 10, 2];
+        let blocks = block_sizes
+            .into_iter()
+            .enumerate()
+            .map(|(height, data_amount)| CompressedFuelBlock {
+                height: height as u32,
+                data: NonEmpty::from_vec(vec![0_u8; data_amount]).unwrap(),
+            })
+            .collect_nonempty()
+            .unwrap();
+
+        storage.insert_blocks(blocks).await.unwrap();
+
+        let lowest_unbundled_heights = |starting_height: u32, max_cumulative_bytes: u32| {
+            let storage = storage.clone();
+            async move {
+                storage
+                    .lowest_sequence_of_unbundled_blocks(starting_height, max_cumulative_bytes)
+                    .await
+                    .unwrap()
+                    .map(|seq| seq.oldest.height_range())
+            }
+        };
+
+        //    Case A: With max_cumulative_bytes = 7, we can fit blocks 0..=2 (sizes: 2+4+1=7).
+        //    Block 3 (size 10) would push us to 17 total, exceeding 7, so we must stop before height 3.
+        assert_eq!(
+            lowest_unbundled_heights(0, 7).await,
+            Some(0..=2),
+            "We should get blocks 0..=2 under a 7-byte cumulative limit"
+        );
+
+        //    Case B: If the first block alone exceeds the limit, we should get no blocks.
+        //    Try max_cumulative_bytes = 1 => even block 0 has 2 bytes, so we skip everything.
+        assert_eq!(
+            lowest_unbundled_heights(0, 1).await,
+            None,
+            "If the first block is bigger than the limit, we get none"
+        );
+
+        //    Case C: If we increase the cumulative limit to 25, we can include all blocks 0..=4.
+        //    Summing their sizes = 2+4+1+10+2 = 19 <= 25
+        assert_eq!(
+            lowest_unbundled_heights(0, 25).await,
+            Some(0..=4),
+            "We should be able to include all blocks if the limit is large enough"
+        );
+
+        //    Case D: Verify starting_height is respected. If we start from height=2 and have a
+        //    large limit (25), then we only pick blocks >= 2: i.e. heights 2..=4 => sizes 1+10+2=13.
+        //    That is still <= 25, so we get 2..=4.
+        assert_eq!(
+            lowest_unbundled_heights(2, 25).await,
+            Some(2..=4),
+            "Should start counting from height=2 and pick blocks 2..=4"
+        );
+
+        //   Case E: Ensure bundled blocks are indeed excluded from the selection.
+        //   Let's 'bundle' block 0..=1, then retest. We'll confirm that
+        //   the function no longer returns them.
+        let bundle_id = storage.next_bundle_id().await.unwrap();
+        let fragments = nonempty!(Fragment {
+            // the data inside a Fragment is unrelated to the block data; we just need any non-empty data
+            data: nonempty![123],
+            unused_bytes: 0,
+            total_bytes: 1.try_into().unwrap(),
+        });
+        storage
+            .insert_bundle_and_fragments(bundle_id, 0..=1, fragments)
+            .await
+            .unwrap();
+
+        // Now blocks 0 and 1 are considered 'bundled', so we only have 2..=4 as unbundled
+        // if we query from 0 with a large limit
+        assert_eq!(
+            lowest_unbundled_heights(0, 25).await,
+            Some(2..=4),
+            "Blocks 0..=1 are excluded after bundling"
+        );
     }
 }

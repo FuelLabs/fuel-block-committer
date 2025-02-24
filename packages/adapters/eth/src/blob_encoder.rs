@@ -110,6 +110,13 @@ impl services::block_bundler::port::l1::FragmentEncoder for BlobEncoder {
     fn gas_usage(&self, num_bytes: NonZeroUsize) -> u64 {
         blob::Encoder::default().blobs_needed_to_encode(num_bytes.get()) as u64 * DATA_GAS_PER_BLOB
     }
+
+    fn num_fragments_needed(&self, num_bytes: NonZeroUsize) -> NonZeroUsize {
+        blob::Encoder::default()
+            .blobs_needed_to_encode(num_bytes.get())
+            .try_into()
+            .expect("known to be non-zero")
+    }
 }
 
 #[cfg(test)]

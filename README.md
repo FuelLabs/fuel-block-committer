@@ -221,35 +221,36 @@ The Fuel Block Committer is configured primarily through environment variables.
 
 - **`COMMITTER__APP__FEE_ALGO_SHORT_SMA_BLOCKS`**
 
-  - **Description:** Short-term period for the fee algo in block numbers.
+  - **Description:** Short-term period for the fee algorithm in block numbers.
   - **Type:** Positive integer (`NonZeroU64`)
   - **Example:** `25`
 
 - **`COMMITTER__APP__FEE_ALGO_LONG_SMA_BLOCKS`**
 
-  - **Description:** Long-term period for the fee algo in block numbers.
+  - **Description:** Long-term period for the fee algorithm in block numbers.
   - **Type:** Positive integer (`NonZeroU64`)
   - **Example:** `300`
 
 - **`COMMITTER__APP__FEE_ALGO_MAX_L2_BLOCKS_BEHIND`**
 
-  - **Description:** Maximum number of unposted L2 blocks before sending a transaction regardless of fees.
+  - **Description:** Maximum number of unposted L2 blocks before forcing a transaction regardless of fees.
   - **Type:** Positive integer (`NonZeroU32`)
   - **Example:** `28800`
 
 - **`COMMITTER__APP__FEE_ALGO_START_MAX_FEE_MULTIPLIER`**
 
-  - **Description:** Starting multiplier applied when we're 0 L2 blocks behind.
+  - **Description:** Starting fee multiplier applied when the system is fully up to date (i.e., 0 L2 blocks behind).
   - **Type:** `f64`
   - **Example:** `0.800000`
 
 - **`COMMITTER__APP__FEE_ALGO_END_MAX_FEE_MULTIPLIER`**
 
-  - **Description:** Ending multiplier applied if we're `max_l2_blocks_behind - 1` blocks behind.
+  - **Description:** Ending fee multiplier applied when the system is nearly at the maximum allowed lag (i.e., `max_l2_blocks_behind - 1`).
   - **Type:** `f64`
   - **Example:** `1.200000`
 
 - **`COMMITTER__APP__FEE_ALGO_ALWAYS_ACCEPTABLE_FEE`**
+
   - **Description:** A fee that is always acceptable regardless of other conditions.
   - **Type:** `u64`
   - **Example:** `1000000000000000`
@@ -262,11 +263,23 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Format:** Human-readable duration
   - **Example:** `30s`
 
+- **`COMMITTER__APP__BUNDLE__BYTES_TO_ACCUMULATE`**
+
+  - **Description:** Byte threshold that, if reached before the accumulation timeout expires, will trigger bundling immediately.
+  - **Format:** Human-readable byte string (e.g., `10MB`, `500KB`)
+  - **Example:** `1MB`
+
 - **`COMMITTER__APP__BUNDLE__BLOCKS_TO_ACCUMULATE`**
 
   - **Description:** Number of Fuel blocks to accumulate before initiating the bundling process.
   - **Type:** Positive integer (`NonZeroUsize`)
   - **Example:** `5`
+
+- **`COMMITTER__APP__BUNDLE__MAX_FRAGMENTS_PER_BUNDLE`**
+
+  - **Description:** Maximum number of fragments allowed per bundle. This limits the size of any individual bundle.
+  - **Type:** Positive integer (`NonZeroUsize`)
+  - **Example:** `10`
 
 - **`COMMITTER__APP__BUNDLE__OPTIMIZATION_TIMEOUT`**
 
@@ -276,7 +289,7 @@ The Fuel Block Committer is configured primarily through environment variables.
 
 - **`COMMITTER__APP__BUNDLE__OPTIMIZATION_STEP`**
 
-  - **Description:** Size of the optimization step at the start of the optimization process.
+  - **Description:** Step size used during the optimization search for the ideal bundle size.
   - **Type:** Positive integer (`NonZeroUsize`)
   - **Example:** `100`
 
@@ -285,6 +298,7 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Description:** Number of fragments to accumulate before submitting them in a transaction to L1.
   - **Type:** Positive integer (`NonZeroUsize`)
   - **Example:** `6`
+  - **Note:** This value must be less than or equal to 6.
 
 - **`COMMITTER__APP__BUNDLE__FRAGMENT_ACCUMULATION_TIMEOUT`**
 
@@ -294,30 +308,35 @@ The Fuel Block Committer is configured primarily through environment variables.
 
 - **`COMMITTER__APP__BUNDLE__NEW_BUNDLE_CHECK_INTERVAL`**
 
-  - **Description:** Duration to wait before checking if a new bundle can be made.
+  - **Description:** Duration to wait before checking if a new bundle can be created.
   - **Format:** Human-readable duration
   - **Example:** `15s`
+
+- **`COMMITTER__APP__BUNDLE__BLOCK_HEIGHT_LOOKBACK`**
+
+  - **Description:** The lookback window (in block numbers) used to determine which blocks are eligible for bundling. Blocks outside this window will be ignored.
+  - **Type:** `u32`
+  - **Example:** `100`
 
 - **`COMMITTER__APP__BUNDLE__COMPRESSION_LEVEL`**
 
   - **Description:** Compression level used for compressing block data before submission.
-  - **Values:** `"disabled"`, `"min"`, `"level1"`..`"level9"`, `"max"`
+  - **Allowed Values:** `"disabled"`, `"min"`, or any value up to `"max"` (`"level1"`, `"level2"`, ...)
   - **Example:** `"min"`
 
 ### Configuration Validation
 
-The committer performs validation on the provided configuration to ensure consistency and correctness. For example:
+At startup, the committer validates the provided configuration to ensure that:
 
 - **Wallet Keys:** The main wallet key and blob pool wallet key must be different.
-- **Fragments to Accumulate:** Must be less than or equal to 6.
-- **Block Height Lookback:** Must be greater than or equal to the number of blocks to accumulate.
-- **Fee Multiplier Range:** Must have valid start and end multipliers.
+- **Fragments to Accumulate:** The number of fragments to accumulate is checked to be less than or equal to 6.
+- **Fee Algorithm Settings:** The fee multiplier range (start and end multipliers) is verified to be valid.
 
-If any validation fails, the committer will return an error, preventing it from running with invalid settings.
+If any validation fails, the committer will exit with an error message, preventing it from running with invalid settings.
 
 ## Running the Fee Algo Simulator
 
-The **Fee Algo Simulator** is a separate binary designed to simulate and analyze fee algorithms using data from eth mainnet.
+The **Fee Algo Simulator** is a separate binary designed to simulate and analyze fee algorithms using data from Ethereum mainnet.
 
 ### Running the Simulator
 

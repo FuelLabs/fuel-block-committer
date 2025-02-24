@@ -54,6 +54,7 @@ async fn bundler_finishing_will_advance_if_not_called_at_least_once() {
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(),
         1u16.into(),
+        NonZeroUsize::MAX,
     );
 
     // when
@@ -87,6 +88,7 @@ async fn bundler_will_provide_a_suboptimal_bundle_if_not_advanced_enough() -> Re
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(),
         1u16.into(),
+        NonZeroUsize::MAX,
     );
 
     bundler.advance(1.try_into().unwrap()).await?;
@@ -123,6 +125,7 @@ async fn bundler_tolerates_step_too_large() -> Result<()> {
         bundle::Encoder::new(CompressionLevel::Disabled),
         step_size,
         1u16.into(),
+        NonZeroUsize::MAX,
     );
 
     while bundler.advance(1.try_into().unwrap()).await? {}
@@ -153,6 +156,7 @@ async fn bigger_bundle_will_have_same_storage_gas_usage() -> Result<()> {
         bundle::Encoder::new(CompressionLevel::Disabled),
         NonZeroUsize::new(1).unwrap(), // Default step size
         1u16.into(),
+        NonZeroUsize::MAX,
     );
     while bundler.advance(1.try_into().unwrap()).await? {}
 
@@ -175,6 +179,7 @@ fn default_bundler_factory() -> BundlerFactory<BlobEncoder> {
         BlobEncoder,
         bundle::Encoder::new(CompressionLevel::Disabled),
         1.try_into().unwrap(),
+        NonZeroUsize::MAX,
     )
 }
 
@@ -184,25 +189,31 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
 
     // given
     let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
+
+    // We only store a single block.
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
 
-    let num_blocks_to_accumulate = 2.try_into().unwrap();
-
+    // The chain’s latest height is 0
     let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(0);
 
+    // We require 2 * block_size in bytes AND we also require 2 blocks
+    // to force immediate bundling. We only have 1 block, so bundling
+    // should NOT occur.
     let mut block_bundler = BlockBundler::new(
         mock_fuel_api,
         setup.db(),
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate,
-            lookback_window: 0, // Adjust lookback_window as needed
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
+            blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+            lookback_window: 0,
             ..BlockBundlerConfig::default()
         },
     );
@@ -216,7 +227,8 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
             .db()
             .oldest_nonfinalized_fragments(0, 1)
             .await?
-            .is_empty()
+            .is_empty(),
+        "No fragments should be bundled"
     );
 
     Ok(())
@@ -232,10 +244,11 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -252,8 +265,8 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
         clock.clone(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            block_accumulation_time_limit: Duration::from_secs(1),
-            num_blocks_to_accumulate: 2.try_into().unwrap(),
+            accumulation_time_limit: Duration::from_secs(1),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             lookback_window: 0,
             ..Default::default()
         },
@@ -296,10 +309,11 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_ti
 
     let clock = TestClock::default();
 
+    let block_size = 100;
     let fuel_blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 1..=3,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -309,8 +323,8 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_ti
         clock.clone(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            block_accumulation_time_limit: Duration::from_secs(10),
-            num_blocks_to_accumulate: 2.try_into().unwrap(),
+            accumulation_time_limit: Duration::from_secs(10),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             ..Default::default()
         },
     );
@@ -355,10 +369,11 @@ async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=2,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -371,7 +386,7 @@ async fn doesnt_bundle_more_than_accumulation_blocks() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: 2.try_into().unwrap(),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             ..Default::default()
         },
     );
@@ -404,7 +419,7 @@ async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=1,
-            data_size: 100,
+            block_size: 100,
         })
         .await;
 
@@ -418,7 +433,7 @@ async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: 1.try_into().unwrap(),
+            bytes_to_accumulate: 100.try_into().unwrap(),
             ..Default::default()
         },
     );
@@ -447,10 +462,11 @@ async fn doesnt_bundle_already_bundled_blocks() -> Result<()> {
 async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -470,6 +486,7 @@ async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
             compressed_data_size: 100.try_into().unwrap(),
             uncompressed_data_size: 1000.try_into().unwrap(),
             num_fragments: 1.try_into().unwrap(),
+            block_num_upper_limit: 1.try_into().unwrap(),
         },
     };
 
@@ -487,6 +504,7 @@ async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
         bundler_factory,
         BlockBundlerConfig {
             optimization_time_limit: optimization_timeout,
+            bytes_to_accumulate: block_size.try_into().unwrap(),
             ..BlockBundlerConfig::default()
         },
     );
@@ -516,10 +534,11 @@ async fn stops_advancing_if_optimization_time_ran_out() -> Result<()> {
 async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
     setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -540,6 +559,7 @@ async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()
         BlockBundlerConfig {
             optimization_time_limit: optimization_timeout,
             lookback_window: 0,
+            bytes_to_accumulate: block_size.try_into().unwrap(),
             ..BlockBundlerConfig::default()
         },
     );
@@ -573,10 +593,11 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // given
     let setup = test_helpers::Setup::init().await;
 
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=3,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -611,7 +632,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: 1.try_into().unwrap(),
+            bytes_to_accumulate: block_size.try_into().unwrap(),
             lookback_window,
             ..Default::default()
         },
@@ -639,11 +660,12 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // Ensure that blocks outside the lookback window are still unbundled
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, 10)
+        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
         .await?
         .unwrap();
 
     let unbundled_block_heights: Vec<_> = unbundled_blocks
+        .oldest
         .into_inner()
         .iter()
         .map(|b| b.height)
@@ -664,10 +686,11 @@ async fn metrics_are_updated() -> Result<()> {
     let setup = test_helpers::Setup::init().await;
 
     // Import two blocks with specific parameters
+    let block_size = 100;
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=1,
-            data_size: 100,
+            block_size,
         })
         .await;
 
@@ -682,7 +705,7 @@ async fn metrics_are_updated() -> Result<()> {
         TestClock::default(),
         default_bundler_factory(),
         BlockBundlerConfig {
-            num_blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
             ..Default::default()
         },
     );
@@ -747,6 +770,178 @@ async fn metrics_are_updated() -> Result<()> {
     let compression_ratio_sum = compression_ratio_sample.get_sample_sum();
     // If we don't compress we loose a bit due to postcard encoding the bundle
     assert!((0.97..=1.0).contains(&compression_ratio_sum));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_fallback_to_smallest_invalid_proposal() {
+    // given
+    let block_size = 1000;
+    let blocks = generate_storage_block_sequence(0..=10, block_size);
+
+    let target_bundle_size = NonZeroUsize::new(50).unwrap();
+    assert!(
+        target_bundle_size.get() < block_size,
+        "so that even a single block is over the target_bundle_size"
+    );
+
+    let bundler = Bundler::new(
+        BlobEncoder,
+        blocks,
+        bundle::Encoder::new(CompressionLevel::Disabled),
+        NonZeroUsize::new(1).unwrap(),
+        1u16.into(),
+        target_bundle_size,
+    );
+
+    // when
+    let proposal = bundler.finish().await.unwrap();
+
+    // then
+    assert!(proposal.metadata.compressed_data_size.get() > target_bundle_size.get());
+}
+
+#[tokio::test]
+async fn respects_target_bundle_size() {
+    // given
+    let blocks = generate_storage_block_sequence(0..=1, enough_bytes_to_almost_fill_a_blob());
+
+    // bundle should fit in 1 blob
+    let max_fragments = NonZeroUsize::new(1).unwrap();
+
+    let mut bundler = Bundler::new(
+        BlobEncoder,
+        blocks.clone(),
+        bundle::Encoder::new(CompressionLevel::Disabled),
+        NonZeroUsize::new(1).unwrap(),
+        1u16.into(),
+        max_fragments,
+    );
+    while bundler.advance(1.try_into().unwrap()).await.unwrap() {}
+
+    // when
+    let final_bundle: BundleProposal = bundler.finish().await.unwrap();
+
+    // then
+    assert!(
+        final_bundle.metadata.known_to_be_optimal,
+        "Expected the bundler to know this result is optimal"
+    );
+
+    assert_eq!(
+        final_bundle.metadata.block_heights,
+        0..=0,
+        "Expected one block to fit in fragment"
+    );
+
+    assert!(
+        final_bundle.metadata.num_fragments <= max_fragments,
+        "Bundle should not exceed max_fragments"
+    );
+}
+
+/// In this example, bundling all 3 blocks would fit under the target size,
+/// but it would require two fragments, leading to higher gas usage.
+/// Bundling just the first 2 blocks fits in a single fragment,
+/// producing a better ratio—so the bundler opts for the smaller bundle.
+#[tokio::test]
+async fn chooses_less_blocks_for_better_gas_usage() {
+    let fragment_capacity = BlobEncoder::FRAGMENT_SIZE;
+
+    let overhead = 1000;
+    let half_a_blob = fragment_capacity / 2 - overhead;
+    let spillover_to_second_blob = 5000;
+
+    // Three blocks sized so that 2 blocks fit in one fragment, but all 3 blocks together require two fragments.
+    let blocks = nonempty![
+        generate_block(0, half_a_blob),
+        generate_block(1, half_a_blob),
+        generate_block(2, spillover_to_second_blob),
+    ];
+    let blocks = SequentialFuelBlocks::try_from(blocks).unwrap();
+
+    let mut bundler = Bundler::new(
+        BlobEncoder,
+        blocks.clone(),
+        bundle::Encoder::new(CompressionLevel::Disabled),
+        NonZeroUsize::new(1).unwrap(),
+        1u16.into(),
+        NonZeroUsize::new(4).unwrap(),
+    );
+    while bundler.advance(1.try_into().unwrap()).await.unwrap() {}
+
+    // when
+    let final_bundle: BundleProposal = bundler.finish().await.unwrap();
+
+    // then
+    assert!(
+        final_bundle.metadata.known_to_be_optimal,
+        "We expect the bundler to finalize an optimal solution"
+    );
+
+    let used_fragments = final_bundle.metadata.num_fragments.get();
+    assert_eq!(
+        used_fragments, 1,
+        "Should only need 1 fragment for 2 blocks"
+    );
+
+    assert_eq!(
+        final_bundle.metadata.block_heights,
+        0..=1,
+        "Expected bundler to choose blocks [0..=1] instead of all three"
+    );
+}
+
+#[tokio::test]
+async fn bundles_immediately_if_enough_blocks() -> Result<()> {
+    use services::state_committer::port::Storage;
+
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let block_size = 100;
+
+    // We will store exactly 2 blocks so that we hit the threshold.
+    let blocks = setup
+        .import_blocks(Blocks::WithHeights {
+            range: 0..=1, // This gives us 2 blocks
+            block_size,
+        })
+        .await;
+
+    let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(1);
+
+    // We'll set a large bytes_to_accumulate so the bundler won't trigger on bytes,
+    // but only on the number of blocks. We set max_blocks_to_accumulate to 2.
+    let mut block_bundler = BlockBundler::new(
+        mock_fuel_api,
+        setup.db(),
+        TestClock::default(),
+        default_bundler_factory(),
+        BlockBundlerConfig {
+            bytes_to_accumulate: NonZeroUsize::MAX,
+            blocks_to_accumulate: NonZeroUsize::new(2).unwrap(),
+            ..BlockBundlerConfig::default()
+        },
+    );
+
+    // when
+    block_bundler.run().await?;
+
+    // then
+    // We expect that the 2 blocks triggered an immediate bundle.
+    let unsubmitted_fragments = setup
+        .db()
+        .oldest_nonfinalized_fragments(0, 10)
+        .await?
+        .into_iter()
+        .map(|f| f.fragment)
+        .collect_nonempty()
+        .unwrap();
+
+    let expected_fragments = bundle_and_encode_into_blobs(blocks.clone(), 1);
+
+    assert_eq!(unsubmitted_fragments, expected_fragments);
 
     Ok(())
 }

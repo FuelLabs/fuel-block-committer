@@ -17,7 +17,8 @@ use crate::{
 pub struct Metadata {
     pub block_heights: RangeInclusive<u32>,
     pub known_to_be_optimal: bool,
-    pub optimization_attempts: u64,
+    pub block_num_upper_limit: NonZeroUsize,
+    pub optimization_attempts: usize,
     pub gas_usage: u64,
     pub compressed_data_size: NonZeroUsize,
     pub uncompressed_data_size: NonZeroUsize,
@@ -43,6 +44,7 @@ impl Display for Metadata {
             .field("block_heights", &self.block_heights)
             .field("known_to_be_optimal", &self.known_to_be_optimal)
             .field("optimization_attempts", &self.optimization_attempts)
+            .field("block_num_upper_limit", &self.block_num_upper_limit)
             .field("gas_usage", &self.gas_usage)
             .field(
                 "compressed_data_size",
@@ -88,14 +90,21 @@ pub struct Factory<GasCalculator> {
     gas_calc: GasCalculator,
     bundle_encoder: bundle::Encoder,
     step_size: NonZeroUsize,
+    max_fragments: NonZeroUsize,
 }
 
 impl<L1> Factory<L1> {
-    pub fn new(gas_calc: L1, bundle_encoder: bundle::Encoder, step_size: NonZeroUsize) -> Self {
+    pub fn new(
+        gas_calc: L1,
+        bundle_encoder: bundle::Encoder,
+        step_size: NonZeroUsize,
+        max_fragments: NonZeroUsize,
+    ) -> Self {
         Self {
             gas_calc,
             bundle_encoder,
             step_size,
+            max_fragments,
         }
     }
 }
@@ -113,6 +122,7 @@ where
             self.bundle_encoder.clone(),
             self.step_size,
             id,
+            self.max_fragments,
         )
     }
 }
@@ -123,9 +133,14 @@ struct Proposal {
     uncompressed_data_size: NonZeroUsize,
     compressed_data: NonEmpty<u8>,
     gas_usage: u64,
+    num_fragments: NonZeroUsize,
 }
 
 impl Proposal {
+    fn block_count(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.block_heights.clone().count()).expect("not empty range")
+    }
+
     fn gas_per_uncompressed_byte(&self) -> f64 {
         self.gas_usage as f64 / self.uncompressed_data_size.get() as f64
     }
@@ -135,10 +150,14 @@ impl Proposal {
 pub struct Bundler<FragmentEncoder> {
     fragment_encoder: FragmentEncoder,
     blocks: NonEmpty<CompressedFuelBlock>,
-    best_proposal: Option<Proposal>,
+    best_valid_proposal: Option<Proposal>,
+    smallest_invalid_proposal: Option<Proposal>,
     bundle_encoder: bundle::Encoder,
-    attempts: VecDeque<NonZeroUsize>,
+    sizes_to_try: VecDeque<NonZeroUsize>,
+    attempts_made: usize,
+    max_blocks_in_bundle: NonZeroUsize,
     bundle_id: NonNegative<i32>,
+    max_fragments: NonZeroUsize,
 }
 
 impl<T> Bundler<T> {
@@ -148,6 +167,7 @@ impl<T> Bundler<T> {
         bundle_encoder: bundle::Encoder,
         initial_step_size: NonZeroUsize,
         bundle_id: NonNegative<i32>,
+        max_fragments: NonZeroUsize,
     ) -> Self {
         let max_blocks = blocks.len();
         let initial_step = initial_step_size;
@@ -157,24 +177,51 @@ impl<T> Bundler<T> {
         Self {
             fragment_encoder: cost_calculator,
             blocks: blocks.into_inner(),
-            best_proposal: None,
+            best_valid_proposal: None,
+            smallest_invalid_proposal: None,
             bundle_encoder,
-            attempts,
+            sizes_to_try: attempts,
             bundle_id,
+            max_fragments,
+            attempts_made: 0,
+            max_blocks_in_bundle: max_blocks,
         }
     }
 
     fn save_if_best_so_far(&mut self, new_proposal: Proposal) {
-        match &mut self.best_proposal {
-            Some(best)
-                if new_proposal.gas_per_uncompressed_byte() < best.gas_per_uncompressed_byte() =>
-            {
-                *best = new_proposal;
+        if new_proposal.num_fragments <= self.max_fragments {
+            match &mut self.best_valid_proposal {
+                Some(best)
+                    if new_proposal.gas_per_uncompressed_byte()
+                        < best.gas_per_uncompressed_byte() =>
+                {
+                    *best = new_proposal;
+                }
+                None => {
+                    self.best_valid_proposal = Some(new_proposal);
+                }
+                _ => {}
             }
-            None => {
-                self.best_proposal = Some(new_proposal);
+        } else {
+            let block_count_failed = new_proposal.block_count();
+            match &mut self.smallest_invalid_proposal {
+                Some(smallest)
+                    if new_proposal.compressed_data.len() < smallest.compressed_data.len() =>
+                {
+                    *smallest = new_proposal;
+                }
+                None => {
+                    self.smallest_invalid_proposal = Some(new_proposal);
+                }
+                _ => {}
             }
-            _ => {}
+
+            let min_blocks_in_bundle = NonZeroUsize::try_from(1).unwrap();
+            let max_blocks_in_bundle =
+                NonZeroUsize::try_from(block_count_failed.get().saturating_sub(1))
+                    .unwrap_or(min_blocks_in_bundle);
+
+            self.max_blocks_in_bundle = min(self.max_blocks_in_bundle, max_blocks_in_bundle);
         }
     }
 
@@ -189,19 +236,19 @@ impl<T> Bundler<T> {
 
     fn blocks_bundles_for_analyzing(
         &mut self,
-        num_concurrent: std::num::NonZero<usize>,
+        num_concurrent: std::num::NonZeroUsize,
     ) -> Vec<NonEmpty<CompressedFuelBlock>> {
         let mut blocks_for_attempts = vec![];
 
-        while !self.attempts.is_empty() && blocks_for_attempts.len() < num_concurrent.get() {
-            let block_count = self.attempts.pop_front().expect("not empty");
+        while !self.sizes_to_try.is_empty() && blocks_for_attempts.len() < num_concurrent.get() {
+            let block_count = self.sizes_to_try.pop_front().expect("not empty");
             let blocks = self.blocks_for_new_proposal(block_count);
             blocks_for_attempts.push(blocks);
         }
         blocks_for_attempts
     }
 
-    async fn analyze(&mut self, num_concurrent: std::num::NonZero<usize>) -> Result<Vec<Proposal>>
+    async fn analyze(&mut self, num_concurrent: std::num::NonZeroUsize) -> Result<Vec<Proposal>>
     where
         T: crate::block_bundler::port::l1::FragmentEncoder + Send + Sync + Clone + 'static,
     {
@@ -210,7 +257,7 @@ impl<T> Bundler<T> {
         let bundle_encoder = self.bundle_encoder.clone();
         let fragment_encoder = self.fragment_encoder.clone();
 
-        // Needs to be wrapped in a blocking task to avoid blocking the executor
+        // Offload to a blocking thread so as not to block the async runtime
         tokio::task::spawn_blocking(move || {
             blocks_for_analyzing
                 .into_par_iter()
@@ -231,48 +278,48 @@ where
     T: crate::block_bundler::port::l1::FragmentEncoder + Send + Sync + Clone + 'static,
 {
     async fn advance(&mut self, optimization_runs: NonZeroUsize) -> Result<bool> {
-        if self.attempts.is_empty() {
+        self.sizes_to_try
+            .retain(|size| size <= &self.max_blocks_in_bundle);
+
+        if self.sizes_to_try.is_empty() {
             return Ok(false);
         }
+        let proposals = self.analyze(optimization_runs).await?;
+        self.attempts_made += proposals.len();
 
-        for proposal in self.analyze(optimization_runs).await? {
+        for proposal in proposals {
             self.save_if_best_so_far(proposal);
         }
 
-        Ok(!self.attempts.is_empty())
+        Ok(!self.sizes_to_try.is_empty())
     }
 
     async fn finish(mut self) -> Result<BundleProposal> {
-        if self.best_proposal.is_none() {
-            self.advance(1.try_into().expect("not zero")).await?;
+        if self.best_valid_proposal.is_none() {
+            self.advance(NonZeroUsize::new(1).unwrap()).await?;
         }
 
         let best_proposal = self
-            .best_proposal
+            .best_valid_proposal
             .take()
-            .expect("advance should have set the best proposal");
+            .or(self.smallest_invalid_proposal.take())
+            .expect("advance should have set at least one");
 
         let compressed_data_size = best_proposal.compressed_data.len_nonzero();
         let fragments = self
             .fragment_encoder
             .encode(best_proposal.compressed_data, self.bundle_id)?;
 
-        let num_attempts = self
-            .blocks
-            .len()
-            .saturating_sub(self.attempts.len())
-            .try_into()
-            .map_err(|_| crate::Error::Other("too many attempts".to_string()))?;
-
         Ok(BundleProposal {
             metadata: Metadata {
                 block_heights: best_proposal.block_heights,
-                known_to_be_optimal: self.attempts.is_empty(),
+                known_to_be_optimal: self.sizes_to_try.is_empty(),
                 uncompressed_data_size: best_proposal.uncompressed_data_size,
                 compressed_data_size,
                 gas_usage: best_proposal.gas_usage,
-                optimization_attempts: num_attempts,
+                optimization_attempts: self.attempts_made,
                 num_fragments: fragments.len_nonzero(),
+                block_num_upper_limit: self.max_blocks_in_bundle,
             },
             fragments,
         })
@@ -311,12 +358,9 @@ fn create_proposal(
         .map(|block| Vec::from(block.data))
         .collect();
 
-    let uncompressed_data_size = NonZeroUsize::try_from(
-        blocks.iter().map(|b| b.len()).sum::<usize>(),
-    )
-    .expect(
-        "at least one block should be present, so the sum of all block sizes should be non-zero",
-    );
+    let uncompressed_data_size =
+        NonZeroUsize::try_from(blocks.iter().map(|b| b.len()).sum::<usize>())
+            .expect("sum of block sizes should be > 0");
 
     let compressed_data = bundle_encoder
         .encode(bundle::Bundle::V1(BundleV1 { blocks }))
@@ -325,12 +369,14 @@ fn create_proposal(
     let compressed_data = NonEmpty::from_vec(compressed_data)
         .ok_or_else(|| crate::Error::Other("bundle encoder returned zero bytes".to_string()))?;
 
+    let num_fragments = fragment_encoder.num_fragments_needed(compressed_data.len_nonzero());
     let gas_usage = fragment_encoder.gas_usage(compressed_data.len_nonzero());
 
     Ok(Proposal {
+        block_heights,
         uncompressed_data_size,
         compressed_data,
         gas_usage,
-        block_heights,
+        num_fragments,
     })
 }

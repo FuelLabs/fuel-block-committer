@@ -11,6 +11,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 actix-web = { workspace = true, features = ["macros"] }
+byte-unit = { workspace = true, features = ["byte", "u128"] }
 clap = { workspace = true, features = ["default", "derive"] }
 clock = { workspace = true }
 config = { workspace = true, features = ["async"] }
