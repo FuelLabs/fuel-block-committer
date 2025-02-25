@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use url::Url;
 
-use e2e::{
+use e2e_helpers::{
     committer::Committer,
     eth_node::{ContractArgs, DeployedContract, EthNode, EthNodeProcess},
     kms::{Kms, KmsKey, KmsProcess},

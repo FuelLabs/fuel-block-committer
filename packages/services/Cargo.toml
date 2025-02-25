@@ -17,8 +17,6 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytesize = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
-fuel-core-client = { workspace = true }
-fuel-crypto = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
@@ -39,7 +37,6 @@ test-case = { workspace = true }
 clock = { workspace = true, features = ["test-helpers"] }
 eth = { workspace = true, features = ["test-helpers"] }
 eigenda = { workspace = true }
-fuel-crypto = { workspace = true, features = ["random"] }
 mockall = { workspace = true }
 services = { workspace = true, features = ["test-helpers"] }
 pretty_assertions = { workspace = true, features = ["std"] }

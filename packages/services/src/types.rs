@@ -25,14 +25,3 @@ pub use l1_height::*;
 pub use serial_id::*;
 pub use state_submission::*;
 pub use transactions::*;
-
-pub mod fuel {
-    pub use fuel_core_client::client::types::{
-        block::{
-            Block as FuelBlock, Consensus as FuelConsensus, Genesis, Genesis as FuelGenesis,
-            Header as FuelHeader, PoAConsensus as FuelPoAConsensus,
-        },
-        primitives::{BlockId as FuelBlockId, Bytes32 as FuelBytes32, PublicKey as FuelPublicKey},
-        Consensus,
-    };
-}

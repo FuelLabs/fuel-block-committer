@@ -66,7 +66,7 @@ impl WholeStack {
             blob_support,
             db.clone(),
             &eth_node,
-            fuel_node.url(),
+            &fuel_node.url(),
             &deployed_contract,
             &main_key,
             &secondary_key,
@@ -145,15 +145,15 @@ impl WholeStack {
     }
 }
 
-async fn start_kms(logs: bool) -> anyhow::Result<KmsProcess> {
+pub async fn start_kms(logs: bool) -> anyhow::Result<KmsProcess> {
     Kms::default().with_show_logs(logs).start().await
 }
 
-async fn start_eth(logs: bool) -> anyhow::Result<EthNodeProcess> {
+pub async fn start_eth(logs: bool) -> anyhow::Result<EthNodeProcess> {
     EthNode::default().with_show_logs(logs).start().await
 }
 
-async fn create_and_fund_kms_keys(
+pub async fn create_and_fund_kms_keys(
     kms: &KmsProcess,
     eth_node: &EthNodeProcess,
 ) -> anyhow::Result<(KmsKey, KmsKey)> {
@@ -170,7 +170,7 @@ async fn create_and_fund_kms_keys(
     Ok((create_and_fund().await?, create_and_fund().await?))
 }
 
-async fn deploy_contract(
+pub async fn deploy_contract(
     eth_node: &EthNodeProcess,
     main_wallet_key: &KmsKey,
     tx_max_fee: u128,
@@ -194,11 +194,11 @@ async fn deploy_contract(
     Ok((contract_args, deployed_contract))
 }
 
-async fn start_fuel_node(logs: bool) -> anyhow::Result<FuelNodeProcess> {
+pub async fn start_fuel_node(logs: bool) -> anyhow::Result<FuelNodeProcess> {
     FuelNode::default().with_show_logs(logs).start().await
 }
 
-async fn start_db() -> anyhow::Result<DbWithProcess> {
+pub async fn start_db() -> anyhow::Result<DbWithProcess> {
     storage::PostgresProcess::shared()
         .await?
         .create_random_db()
@@ -207,12 +207,12 @@ async fn start_db() -> anyhow::Result<DbWithProcess> {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn start_committer(
+pub async fn start_committer(
     logs: bool,
     blob_support: bool,
     random_db: DbWithProcess,
     eth_node: &EthNodeProcess,
-    fuel_node_url: Url,
+    fuel_node_url: &Url,
     deployed_contract: &DeployedContract,
     main_key: &KmsKey,
     secondary_key: &KmsKey,
@@ -220,23 +220,23 @@ async fn start_committer(
     let committer_builder = Committer::default()
         .with_show_logs(logs)
         .with_eth_rpc((eth_node).ws_url().clone())
-        .with_fuel_rpc(fuel_node_url)
+        .with_fuel_rpc(fuel_node_url.clone())
         .with_db_port(random_db.port())
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
         .with_main_key_arn(main_key.id.clone())
         .with_kms_url(main_key.url.clone())
         .with_bundle_accumulation_timeout("5s".to_owned())
-        .with_block_bytes_to_accumulate("3 MB".to_string())
         .with_bundle_optimization_timeout("5s".to_owned())
+        .with_block_bytes_to_accumulate("3 MB".to_string())
         .with_bundle_block_height_lookback("20000".to_owned())
         .with_bundle_fragments_to_accumulate("3".to_owned())
         .with_bundle_fragment_accumulation_timeout("5s".to_owned())
         .with_bundle_optimization_step("100".to_owned())
         .with_bundle_compression_level("level6".to_owned())
         .with_new_bundle_check_interval("3s".to_owned())
-        .with_state_pruner_retention("1s".to_owned())
-        .with_state_pruner_run_interval("30s".to_owned());
+        .with_state_pruner_retention("10s".to_owned())
+        .with_state_pruner_run_interval("50s".to_owned());
 
     let committer = if blob_support {
         committer_builder.with_blob_key_arn(secondary_key.id.clone())

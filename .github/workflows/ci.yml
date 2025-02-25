@@ -16,7 +16,7 @@ env:
   DASEL_VERSION: https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_linux_amd64
   RUST_VERSION: 1.82
   RUSTFLAGS: "-D warnings"
-  FUEL_CORE_VERSION: 0.40.0
+  FUEL_CORE_VERSION: 0.41.7
   IMAGE_NAME: ${{ github.repository }}
   REPO_NAME: ${{ github.event.repository.name }}
   AWS_ROLE_ARN: arn:aws:iam::024848458133:role/github_oidc_FuelLabs_fuel-block-committer
@@ -95,7 +95,7 @@ jobs:
           chmod +x fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core
           mv fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core /usr/local/bin/fuel-core
       - name: Unit/integration tests
-        run:  cargo test --workspace --exclude e2e
+        run:  cargo test --workspace --exclude e2e-tests
 
   additional-check-for-published-crates:
     runs-on: ubuntu-latest
@@ -163,7 +163,7 @@ jobs:
       - name: Run E2E tests
         run: |
           ./target/release/fuel-block-committer --version
-          PATH="$(pwd)/target/release:$PATH" cargo test --package e2e --jobs 1
+          PATH="$(pwd)/target/release:$PATH" cargo test --package e2e-tests --jobs 1
 
   check-db-preview-updates:
     runs-on: ubuntu-latest

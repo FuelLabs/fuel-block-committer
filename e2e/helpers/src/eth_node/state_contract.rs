@@ -10,7 +10,7 @@ use alloy::{
 use eth::{AcceptablePriorityFeePercentages, Signer, Signers, WebsocketClient};
 use fs_extra::dir::{copy, CopyOptions};
 use serde::Deserialize;
-use services::types::{fuel::FuelBlock, Address};
+use services::{block_committer::port::fuel::FuelBlock, types::Address};
 use signers::AwsKmsClient;
 use tokio::process::Command;
 use url::Url;
@@ -56,7 +56,7 @@ impl DeployedContract {
 
     pub async fn finalized(&self, block: FuelBlock) -> anyhow::Result<bool> {
         self.chain_state_contract
-            .finalized(*block.id, block.header.height)
+            .finalized(block.id, block.height)
             .await
             .map_err(Into::into)
     }
@@ -117,7 +117,7 @@ impl CreateTransactions {
                 .send_transaction(tx.tx)
                 .await?
                 .with_required_confirmations(1)
-                .with_timeout(Some(Duration::from_secs(1)))
+                .with_timeout(Some(Duration::from_secs(60)))
                 .get_receipt()
                 .await?
                 .status();

@@ -70,7 +70,6 @@ pub mod eigen_da {
 }
 
 pub mod fuel {
-    pub use fuel_core_client::client::types::block::Block as FuelBlock;
 
     use crate::Result;
 

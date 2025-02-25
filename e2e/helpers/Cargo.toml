@@ -1,18 +1,29 @@
 [package]
-name = "e2e"
-authors = { workspace = true }
-edition = { workspace = true }
-homepage = { workspace = true }
-license = { workspace = true }
-repository = { workspace = true }
-version = { workspace = true }
-publish = { workspace = true }
-rust-version = { workspace = true }
+name = "e2e-helpers"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
 build = "build.rs"
 
-[[bin]]
-name = "start_committer"
-path = "src/bin/start_committer.rs"
+[build-dependencies]
+anyhow = { workspace = true, features = ["std"] }
+itertools = { workspace = true, features = ["use_alloc"] }
+reqwest = { workspace = true, features = ["default-tls"] }
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "process",
+  "fs",
+  "io-util",
+] }
+walkdir = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
 
 [dependencies]
 alloy = { workspace = true, features = [
@@ -52,56 +63,17 @@ tokio = { workspace = true, features = [
   "fs",
 ] }
 url = { workspace = true }
-
-[build-dependencies]
-anyhow = { workspace = true, features = ["std"] }
-itertools = { workspace = true, features = ["use_alloc"] }
-reqwest = { workspace = true, features = ["default-tls"] }
-tokio = { workspace = true, features = [
-  "macros",
-  "rt-multi-thread",
-  "process",
-  "fs",
-  "io-util",
-] }
-walkdir = { workspace = true }
-zip = { workspace = true, features = ["deflate"] }
+async-graphql = { workspace = true, optional = true }
+async-graphql-actix-web = { workspace = true, optional = true }
+actix-web = { workspace = true, optional = true }
 
 [dev-dependencies]
-alloy = { workspace = true, features = [
-  "signer-aws",
-  "signer-mnemonic",
-  "serde",
-] }
-anyhow = { workspace = true, features = ["std"] }
-aws-config = { workspace = true, features = ["rustls"] }
-aws-sdk-kms = { workspace = true, features = ["rustls"] }
-eth = { workspace = true, features = ["test-helpers"] }
-fs_extra = { workspace = true }
-fuel = { workspace = true, features = ["test-helpers"] }
-fuel-core-chain-config = { workspace = true, features = [
-  "std",
-  "test-helpers",
-] }
-fuel-core-types = { workspace = true }
-futures = { workspace = true }
-hex = { workspace = true }
-itertools = { workspace = true, features = ["use_alloc"] }
-portpicker = { workspace = true }
-signers = { workspace = true, features = ["test-helpers"] }
-services = { workspace = true }
-rand = { workspace = true, features = ["std"] }
-reqwest = { workspace = true }
-secp256k1 = { workspace = true, features = ["rand-std"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-storage = { workspace = true, features = ["test-helpers"] }
-tempfile = { workspace = true }
-testcontainers = { workspace = true, features = ["watchdog"] }
-tokio = { workspace = true, features = [
-  "macros",
-  "rt-multi-thread",
-  "process",
-  "fs",
-] }
-url = { workspace = true }
+e2e-helpers = { workspace = true, features = ["fuel-core-simulated"] }
+
+[features]
+fuel-core-simulated = [
+  "dep:async-graphql",
+  "dep:async-graphql-actix-web",
+  "dep:actix-web",
+  "rand/small_rng",
+]

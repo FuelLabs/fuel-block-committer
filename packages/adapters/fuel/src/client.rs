@@ -1,11 +1,14 @@
-use std::{num::NonZeroU32, ops::RangeInclusive};
+use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr};
 
+use custom_queries::block_at_height::{BlockAtHeightQuery, BlockAtHeightVariables};
+use cynic::QueryBuilder;
 #[cfg(feature = "test-helpers")]
 use fuel_core_client::client::types::{
     primitives::{Address, AssetId},
     Coin, CoinType,
 };
-use fuel_core_client::client::{types::Block, FuelClient as GqlClient};
+use fuel_core_client::client::FuelClient as GqlClient;
+use fuel_core_types::fuel_tx::Bytes32;
 #[cfg(feature = "test-helpers")]
 use fuel_core_types::fuel_tx::Transaction;
 use futures::{stream, Stream, StreamExt};
@@ -13,12 +16,61 @@ use metrics::{
     prometheus::core::Collector, ConnectionHealthTracker, HealthChecker, RegistersMetrics,
 };
 use services::{
+    block_committer::port::fuel::FuelBlock,
     types::{CompressedFuelBlock, NonEmpty},
     Error, Result,
 };
 use url::Url;
 
 use crate::metrics::Metrics;
+
+mod custom_queries {
+    #[cynic::schema("fuelcore")]
+    mod schema {}
+
+    #[derive(cynic::Scalar, Debug, Clone)]
+    pub struct BlockId(pub String);
+
+    #[derive(cynic::Scalar, Debug, Clone)]
+    pub struct U32(pub String);
+
+    #[derive(cynic::QueryFragment, Debug)]
+    pub struct Block {
+        pub height: U32,
+        pub id: BlockId,
+    }
+
+    pub mod latest_block {
+        use super::*;
+
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(graphql_type = "Query")]
+        pub struct LatestBlockQuery {
+            pub chain: ChainInfo,
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        pub struct ChainInfo {
+            pub latest_block: Block,
+        }
+    }
+
+    pub mod block_at_height {
+        use super::*;
+
+        #[derive(cynic::QueryVariables, Debug)]
+        pub struct BlockAtHeightVariables {
+            pub height: U32,
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(graphql_type = "Query", variables = "BlockAtHeightVariables")]
+        pub struct BlockAtHeightQuery {
+            #[arguments(height: $height)]
+            pub block: Option<Block>,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct HttpClient {
@@ -93,11 +145,31 @@ impl HttpClient {
         }
     }
 
-    pub(crate) async fn block_at_height(&self, height: u32) -> Result<Option<Block>> {
-        match self.client.block_by_height(height.into()).await {
+    pub async fn block_at_height(&self, height: u32) -> Result<Option<FuelBlock>> {
+        let query = BlockAtHeightQuery::build(BlockAtHeightVariables {
+            height: custom_queries::U32(height.to_string()),
+        });
+
+        match self.client.query(query).await {
             Ok(maybe_block) => {
                 self.handle_network_success();
-                Ok(maybe_block.map(Into::into))
+                let Some(block) = maybe_block.block else {
+                    return Ok(None);
+                };
+
+                let height = block.height.0.parse().map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode fuel block at height: {height}, invalid height: {e}"
+                    ))
+                })?;
+
+                let id = *Bytes32::from_str(&block.id.0).map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode fuel block at height: {height}, invalid id: {e}"
+                    ))
+                })?;
+
+                Ok(Some(FuelBlock { id, height }))
             }
             Err(err) => {
                 self.handle_network_error();
@@ -106,7 +178,7 @@ impl HttpClient {
         }
     }
 
-    pub(crate) async fn compressed_block_at_height(
+    pub async fn compressed_block_at_height(
         &self,
         height: u32,
     ) -> Result<Option<CompressedFuelBlock>> {
@@ -117,8 +189,7 @@ impl HttpClient {
                     Some(data) => {
                         let non_empty_data = NonEmpty::collect(data).ok_or_else(|| {
                             Error::Other(format!(
-                                "encountered empty compressed block at height: {}",
-                                height
+                                "encountered empty compressed block at height: {height}",
                             ))
                         })?;
 
@@ -128,8 +199,7 @@ impl HttpClient {
                         }))
                     }
                     None => Err(Error::Other(format!(
-                        "compressed block not found at height: {}",
-                        height
+                        "compressed block not found at height: {height}",
                     ))),
                 }
             }
@@ -150,13 +220,28 @@ impl HttpClient {
             .filter_map(|result| async move { result.transpose() })
     }
 
-    pub async fn latest_block(&self) -> Result<Block> {
-        match self.client.chain_info().await {
+    pub async fn latest_block(&self) -> Result<FuelBlock> {
+        let query = custom_queries::latest_block::LatestBlockQuery::build(());
+
+        match self.client.query(query).await {
             Ok(chain_info) => {
                 self.handle_network_success();
-                let height = chain_info.latest_block.header.height;
+                let block = chain_info.chain.latest_block;
+                let id = *Bytes32::from_str(&block.id.0).map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode latest fuel block, invalid id: {e}"
+                    ))
+                })?;
+                let data = block.height.0.trim_start_matches("0x");
+                let height = u32::from_str(data).map_err(|e| {
+                    Error::Other(format!(
+                        "couldn't decode latest fuel block, invalid height: {e}"
+                    ))
+                })?;
+
                 self.metrics.fuel_height.set(height.into());
-                Ok(chain_info.latest_block)
+
+                Ok(FuelBlock { id, height })
             }
             Err(err) => {
                 self.handle_network_error();
