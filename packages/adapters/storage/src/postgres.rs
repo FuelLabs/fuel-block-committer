@@ -541,6 +541,46 @@ impl Postgres {
         }))
     }
 
+    // pub(crate) async fn _lowest_unbundled_blocks_2(
+    //     &self,
+    //     starting_height: u32,
+    //     limit: usize,
+    // ) -> Result<Option<SequentialFuelBlocks>> {
+    //     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    //
+    //     let response = sqlx::query_as!(
+    //         tables::DBCompressedFuelBlock,
+    //         r#"
+    //             SELECT fb.height, fb.data
+    //             FROM fuel_blocks fb
+    //             WHERE fb.height >= $1
+    //             AND fb.is_bundled = false
+    //             ORDER BY fb.height
+    //             LIMIT $2;
+    //         "#,
+    //         i64::from(starting_height),
+    //         limit
+    //     )
+    //     .fetch_all(&self.connection_pool)
+    //     .await
+    //     .map_err(Error::from)?;
+    //
+    //     let sequential_blocks = response
+    //         .into_iter()
+    //         .map(CompressedFuelBlock::try_from)
+    //         .try_collect_nonempty()?
+    //         .map(SequentialFuelBlocks::from_first_sequence);
+    //
+    //     if let Some(sequential_blocks) = &sequential_blocks {
+    //         let lowest_unbundled_height = *sequential_blocks.height_range().start();
+    //         self.metrics
+    //             .lowest_unbundled_height
+    //             .set(lowest_unbundled_height.into());
+    //     }
+    //
+    //     Ok(sequential_blocks)
+    // }
+
     fn stream_unbundled_blocks(
         &self,
         starting_height: u32,
@@ -548,7 +588,7 @@ impl Postgres {
         sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
-            SELECT fb.* 
+            SELECT fb.height, fb.data
         FROM fuel_blocks fb 
         WHERE fb.height >= $1
         AND NOT EXISTS (
@@ -1675,5 +1715,119 @@ mod tests {
         assert!(duration.as_secs() < 60);
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod perf_tests {
+        use crate::postgres::Postgres;
+        use crate::test_instance::PostgresProcess;
+        use itertools::Itertools;
+        use services::types::{CompressedFuelBlock, Fragment, NonEmpty};
+        use std::cmp;
+        use std::time::Instant;
+
+        // Helper function to insert fuel blocks in batches.
+        // Each block's data is 344 bytes (mimicking production).
+        async fn insert_fuel_blocks(db: &Postgres, start: u32, end: u32, batch_size: usize) {
+            // Create a payload of 344 bytes (using a constant value).
+            let payload = vec![1u8; 344];
+            for chunk in (start..=end).chunks(batch_size).into_iter() {
+                let blocks: Vec<CompressedFuelBlock> = chunk
+                    .into_iter()
+                    .map(|height| CompressedFuelBlock {
+                        height,
+                        data: NonEmpty::from_vec(payload.clone()).expect("NonEmpty data"),
+                    })
+                    .collect();
+                let nonempty_blocks =
+                    NonEmpty::from_vec(blocks).expect("Batch should be non-empty");
+                db._insert_blocks(nonempty_blocks)
+                    .await
+                    .expect("Insertion should succeed");
+            }
+        }
+
+        #[tokio::test]
+        async fn test_lowest_unbundled_blocks_performance_4m_blocks() {
+            // Set total number of blocks to insert (around 4 million)
+            let total_blocks = 1 * 7 * 24 * 3600 + 1000;
+            // We'll leave the last 2500 blocks unbundled.
+            let bundled_end = total_blocks - 2500;
+
+            // Set up the test database.
+            let process = PostgresProcess::shared()
+                .await
+                .expect("Failed to start test PostgresProcess");
+            let db_with_process = process
+                .create_random_db()
+                .await
+                .expect("Failed to create random test database");
+            let db = &db_with_process.db;
+
+            // Insert fuel blocks from 1 to total_blocks with 344-byte payloads.
+            // Using a batch size of 1000.
+            insert_fuel_blocks(db, 1, total_blocks, 62000).await;
+
+            // Bundle blocks from 1 to bundled_end in small bundles of at most 3600 blocks.
+            let bundle_max_size = 3600;
+            // Create a dummy fragment with a 344-byte payload.
+            let fragment_payload = vec![1u8; 344];
+            let dummy_fragment = Fragment {
+                data: NonEmpty::from_vec(fragment_payload).expect("NonEmpty data"),
+                unused_bytes: 0,
+                total_bytes: 344u32.try_into().unwrap(),
+            };
+
+            let mut current_start = 1u32;
+            while current_start <= bundled_end {
+                let current_end = cmp::min(current_start + bundle_max_size - 1, bundled_end);
+                let range = current_start..=current_end;
+                let next_bundle_id = db
+                    ._next_bundle_id()
+                    .await
+                    .expect("Should be able to get a bundle id");
+                db._insert_bundle_and_fragments(
+                    next_bundle_id,
+                    range,
+                    NonEmpty::from_vec(vec![dummy_fragment.clone()])
+                        .expect("Non-empty fragment list"),
+                )
+                .await
+                .expect("Bundle insertion failed");
+                current_start = current_end + 1;
+            }
+
+            // Now run the unbundled blocks query.
+            // Since blocks 1 to bundled_end (3,997,500) are bundled, only blocks 3,997,501 to 4,000,000 (2500 blocks)
+            // remain unbundled.
+            let start_height = 95_200;
+            let limit = 3600;
+            let start_time = Instant::now();
+            let result = db
+                ._lowest_unbundled_blocks(start_height, limit)
+                .await
+                .expect("Query should execute correctly");
+            let duration = start_time.elapsed();
+
+            // Determine the count of unbundled blocks returned.
+            let unbundled_count = result
+                .as_ref()
+                .map(|seq| {
+                    let range = seq.height_range();
+                    range.end() - range.start() + 1
+                })
+                .unwrap_or(0);
+            println!(
+                "Unbundled blocks query returned {} blocks in {:?}",
+                unbundled_count, duration
+            );
+
+            // We expect exactly 2500 unbundled blocks.
+            assert_eq!(
+                unbundled_count, 2500,
+                "Expected exactly 2500 unbundled blocks"
+            );
+            println!("Query execution took: {:?}", duration);
+        }
     }
 }
