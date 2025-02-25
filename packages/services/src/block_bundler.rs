@@ -159,10 +159,7 @@ pub mod service {
         async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
             let starting_height = self.get_starting_height().await?;
 
-            while let Some(UnbundledBlocks {
-                oldest,
-                total_unbundled,
-            }) = self
+            while let Some(UnbundledBlocks { oldest, has_more }) = self
                 .storage
                 .lowest_sequence_of_unbundled_blocks(
                     starting_height,
@@ -170,7 +167,7 @@ pub mod service {
                 )
                 .await?
             {
-                if self.should_wait(&oldest, total_unbundled)? {
+                if self.should_wait(&oldest, has_more)? {
                     return Ok(());
                 }
 
@@ -203,29 +200,15 @@ pub mod service {
             Ok(())
         }
 
-        fn should_wait(
-            &self,
-            blocks: &SequentialFuelBlocks,
-            total_available: NonZeroUsize,
-        ) -> Result<bool> {
+        fn should_wait(&self, blocks: &SequentialFuelBlocks, has_more: bool) -> Result<bool> {
             let cum_size = blocks.cumulative_size();
-            let has_more = total_available > blocks.len();
+            let num_blocks = blocks.len();
 
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
-            // We use `total_available` because we previously encountered a scenario with:
-            // - A few very large blocks,
-            // - Followed by a long sequence of bundled blocks,
-            // - And then additional unbundled blocks.
-            // Since bundling required a fixed number of sequential blocks, the process skipped over
-            // the blocks before the gap until a timeout occurred. Even after timing out, only one bundle
-            // was created, and then the system waited for another timeout. To avoid this, we ignore the
-            // total count of unbundled blocks when deciding whether to wait. The trade-off is that if there
-            // is a gap of unimported blocks followed by many unbundled blocks, processing of the newer
-            // blocks is deferred until the older ones are bundled. This can lead to the creation of small
-            // bundles if the import process cannot supply blocks quickly enough.
+            let enough_blocks = blocks.len() >= self.config.blocks_to_accumulate;
 
             let should_wait = cum_size < self.config.bytes_to_accumulate
-                && total_available < self.config.blocks_to_accumulate
+                && !enough_blocks
                 && !has_more
                 && still_time_to_accumulate_more;
 
@@ -242,7 +225,7 @@ pub mod service {
                 );
 
                 tracing::info!(
-                    "Not bundling yet (accumulated {available_data} of required {needed_data}, {total_available}/{} blocks accumulated, timeout in {until_timeout}); waiting for more.",
+                    "Not bundling yet (accumulated {available_data}/{needed_data}, {num_blocks}/{} blocks, timeout in {until_timeout}); waiting for more.",
                     self.config.blocks_to_accumulate
                 );
             } else {
@@ -323,7 +306,7 @@ pub mod service {
 }
 
 pub mod port {
-    use std::{num::NonZeroUsize, ops::RangeInclusive};
+    use std::ops::RangeInclusive;
 
     use nonempty::NonEmpty;
 
@@ -365,7 +348,7 @@ pub mod port {
     #[derive(Debug, Clone)]
     pub struct UnbundledBlocks {
         pub oldest: SequentialFuelBlocks,
-        pub total_unbundled: NonZeroUsize,
+        pub has_more: bool,
     }
 
     #[allow(async_fn_in_trait)]

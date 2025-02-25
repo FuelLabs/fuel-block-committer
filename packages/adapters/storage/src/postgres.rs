@@ -1,4 +1,4 @@
-use std::{cmp::max, collections::HashMap, ops::RangeInclusive};
+use std::{collections::HashMap, ops::RangeInclusive};
 
 use futures::{TryStreamExt, stream::BoxStream};
 use itertools::Itertools;
@@ -479,36 +479,13 @@ impl Postgres {
         Ok(response)
     }
 
-    pub(crate) async fn total_unbundled_blocks(&self, starting_height: u32) -> Result<u64> {
-        let count = sqlx::query!(
-            r#"SELECT COUNT(*)
-                FROM fuel_blocks fb 
-                WHERE fb.height >= $1
-                AND NOT EXISTS (
-                    SELECT 1 FROM bundles b 
-                    WHERE fb.height BETWEEN b.start_height AND b.end_height
-                    AND b.end_height >= $1
-                )"#,
-            i64::from(starting_height)
-        )
-        .fetch_one(&self.connection_pool)
-        .await?
-        .count
-        .unwrap_or_default();
-
-        let count = u64::try_from(count)
-            .map_err(|_| crate::error::Error::Conversion("invalid block count".to_string()))?;
-
-        Ok(count)
-    }
-
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
     ) -> Result<Option<UnbundledBlocks>> {
         let stream = self.stream_unbundled_blocks(starting_height);
-        let blocks = take_blocks_until_past_limit(stream, max_cumulative_bytes).await?;
+        let (blocks, has_more) = take_blocks_until_limit(stream, max_cumulative_bytes).await?;
 
         let sequential_blocks = {
             let Some(nonempty_blocks) = NonEmpty::from_vec(blocks) else {
@@ -524,7 +501,7 @@ impl Postgres {
 
         Ok(Some(UnbundledBlocks {
             oldest: sequential_blocks,
-            total_unbundled: 100.try_into().unwrap(),
+            has_more,
         }))
     }
 
@@ -1283,15 +1260,15 @@ impl Postgres {
     }
 }
 
-async fn take_blocks_until_past_limit(
+async fn take_blocks_until_limit(
     mut stream: BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
     max_cumulative_bytes: u32,
-) -> Result<Vec<CompressedFuelBlock>> {
+) -> Result<(Vec<CompressedFuelBlock>, bool)> {
     let mut blocks = vec![];
 
     let mut total_bytes = 0;
     let mut last_height: Option<u32> = None;
-    let mut has_more = true;
+
     while let Some(val) = stream.try_next().await? {
         let data_len = val.data.len();
 
@@ -1300,7 +1277,7 @@ async fn take_blocks_until_past_limit(
         let height = block.height;
         match &mut last_height {
             Some(last_height) if height != last_height.saturating_add(1) => {
-                break;
+                return Ok((blocks, true));
             }
             _ => {
                 last_height = Some(height);
@@ -1309,12 +1286,15 @@ async fn take_blocks_until_past_limit(
 
         total_bytes += data_len;
         blocks.push(block);
-        if total_bytes > max_cumulative_bytes as usize {
+
+        if total_bytes >= max_cumulative_bytes as usize {
             break;
         }
     }
 
-    Ok(blocks)
+    let has_more = stream.try_next().await?.is_some();
+
+    Ok((blocks, has_more))
 }
 
 fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
@@ -1742,7 +1722,7 @@ mod tests {
         #[tokio::test]
         async fn test_lowest_unbundled_blocks_performance_4m_blocks() {
             // Set total number of blocks to insert (around 4 million)
-            let total_blocks = 1 * 7 * 24 * 3600 + 3600;
+            let total_blocks = 7 * 24 * 3600 + 3600;
             // We'll leave the last 2500 blocks unbundled.
             let bundled_end = total_blocks - 2500;
 
@@ -1793,7 +1773,6 @@ mod tests {
             // Since blocks 1 to bundled_end (3,997,500) are bundled, only blocks 3,997,501 to 4,000,000 (2500 blocks)
             // remain unbundled.
             let start_height = total_blocks - (7 * 24 * 3600);
-            let limit = 3600;
             let start_time = Instant::now();
             let result = db
                 ._lowest_unbundled_blocks(start_height, u32::MAX)

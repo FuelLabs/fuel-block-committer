@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fuel_blocks SET is_bundled = true WHERE height BETWEEN $1 AND $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f59a2060860fc37728a1d3cb5510f0d3c7476f90fd254645465ffe25cdc86cd"
+}

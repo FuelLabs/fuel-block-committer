@@ -1376,12 +1376,12 @@ mod tests {
             "We should get blocks 0..=2 under a 7-byte cumulative limit"
         );
 
-        //    Case B: If the first block alone exceeds the limit, we should get no blocks.
-        //    Try max_cumulative_bytes = 1 => even block 0 has 2 bytes, so we skip everything.
+        //    Case B: If the first block alone exceeds the limit, we should get one block
+        //    regardless of it passing the limit.
         assert_eq!(
             lowest_unbundled_heights(0, 1).await,
-            None,
-            "If the first block is bigger than the limit, we get none"
+            Some(0..=0),
+            "If the first block is bigger than the limit, we get at least one"
         );
 
         //    Case C: If we increase the cumulative limit to 25, we can include all blocks 0..=4.
@@ -1422,6 +1422,120 @@ mod tests {
             lowest_unbundled_heights(0, 25).await,
             Some(2..=4),
             "Blocks 0..=1 are excluded after bundling"
+        );
+    }
+
+    /// Test that when the cumulative bytes limit is reached,
+    /// we return only as many blocks as fit and `has_more` is true.
+    #[tokio::test]
+    async fn test_has_more_due_to_limit() {
+        let storage = start_db().await;
+
+        // Insert blocks 1 through 10, each with 1 byte of data.
+        let blocks: Vec<CompressedFuelBlock> = (1u32..=10)
+            .map(|h| CompressedFuelBlock {
+                height: h,
+                data: NonEmpty::from_vec(vec![0u8]).expect("Non-empty block data"),
+            })
+            .collect();
+        let blocks = NonEmpty::from_vec(blocks).expect("Should have at least one block");
+        storage.insert_blocks(blocks).await.unwrap();
+
+        // Use a cumulative byte limit of 5 bytes.
+        let unbundled = storage
+            .lowest_sequence_of_unbundled_blocks(1, 5)
+            .await
+            .unwrap()
+            .expect("Expected some unbundled blocks");
+        let height_range = unbundled.oldest.height_range();
+        let count = *height_range.end() - *height_range.start() + 1;
+        assert_eq!(count, 5, "Expected only 5 blocks due to cumulative limit");
+        assert!(
+            unbundled.has_more,
+            "Expected 'has_more' to be true when there are additional blocks"
+        );
+    }
+
+    /// Test that when there is a break in the block sequence (a gap),
+    /// the function returns the sequence up to the gap and sets `has_more` to true.
+    #[tokio::test]
+    async fn test_has_more_due_to_gap() {
+        let storage = start_db().await;
+
+        // Insert blocks with a gap:
+        // Blocks at heights 1, 2, 3 then a gap (no block at 4), then blocks 5 and 6.
+        let blocks = vec![
+            CompressedFuelBlock {
+                height: 1,
+                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
+            },
+            CompressedFuelBlock {
+                height: 2,
+                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
+            },
+            CompressedFuelBlock {
+                height: 3,
+                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
+            },
+            CompressedFuelBlock {
+                height: 5,
+                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
+            },
+            CompressedFuelBlock {
+                height: 6,
+                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
+            },
+        ];
+        let blocks = NonEmpty::from_vec(blocks).expect("Should have blocks");
+        storage.insert_blocks(blocks).await.unwrap();
+
+        // Query starting from height 1 with a generous cumulative limit.
+        let unbundled = storage
+            .lowest_sequence_of_unbundled_blocks(1, 100)
+            .await
+            .unwrap()
+            .expect("Expected some unbundled blocks");
+        // The returned sequence should stop at height 3 (the gap after 3)
+        assert_eq!(
+            unbundled.oldest.height_range(),
+            1..=3,
+            "Sequence should stop at the gap"
+        );
+        assert!(
+            unbundled.has_more,
+            "Expected 'has_more' to be true when a gap causes early termination"
+        );
+    }
+
+    /// Test that when all available blocks form a complete sequence (and the cumulative bytes limit isn’t exceeded),
+    /// then the returned sequence includes them all and `has_more` is false.
+    #[tokio::test]
+    async fn test_no_more_when_all_fetched() {
+        let storage = start_db().await;
+
+        // Insert consecutive blocks from heights 10 to 15, each with 1 byte of data.
+        let blocks: Vec<CompressedFuelBlock> = (10u32..=15)
+            .map(|h| CompressedFuelBlock {
+                height: h,
+                data: NonEmpty::from_vec(vec![0u8]).expect("Non-empty"),
+            })
+            .collect();
+        let blocks = NonEmpty::from_vec(blocks).expect("Should have blocks");
+        storage.insert_blocks(blocks).await.unwrap();
+
+        let unbundled = storage
+            .lowest_sequence_of_unbundled_blocks(10, 100)
+            .await
+            .unwrap()
+            .expect("Expected unbundled blocks");
+        assert_eq!(
+            unbundled.oldest.height_range(),
+            10..=15,
+            "Expected full consecutive sequence"
+        );
+        assert!(
+            !unbundled.has_more,
+            "Expected 'has_more' to be false when all blocks are returned"
         );
     }
 }
