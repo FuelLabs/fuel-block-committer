@@ -265,6 +265,11 @@ pub struct CommitterProcess {
 }
 
 impl CommitterProcess {
+    pub fn metrics_url(&self) -> Url {
+        format!("http://localhost:{}/metrics", self.port)
+            .parse()
+            .unwrap()
+    }
     pub async fn wait_for_committed_block(&self, height: u64) -> anyhow::Result<()> {
         loop {
             match self.fetch_latest_committed_block().await {
@@ -319,5 +324,9 @@ impl CommitterProcess {
         .await?;
 
         Ok(response)
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
     }
 }
