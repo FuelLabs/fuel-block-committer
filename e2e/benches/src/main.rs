@@ -1,4 +1,5 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use actix_web::{App, HttpResponse, HttpServer, web};
 use anyhow::Result;
