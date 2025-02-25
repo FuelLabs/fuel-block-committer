@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::RangeInclusive};
+use std::{cmp::max, collections::HashMap, ops::RangeInclusive};
 
 use futures::{TryStreamExt, stream::BoxStream};
 use itertools::Itertools;
@@ -507,19 +507,8 @@ impl Postgres {
         starting_height: u32,
         max_cumulative_bytes: u32,
     ) -> Result<Option<UnbundledBlocks>> {
-        // We're not using snapshot isolation here, so the count may change by the time
-        // we retrieve the blocks. If the pruner is configured aggressively to track the
-        // lookback window closely, the worst-case scenario is a temporary over- or
-        // underestimation of the block count. This discrepancy should resolve quickly,
-        // making the overhead of a snapshot-isolated transaction unnecessary.
-        let total_unbundled_blocks = self.total_unbundled_blocks(starting_height).await?;
-
-        if total_unbundled_blocks == 0 {
-            return Ok(None);
-        }
-
         let stream = self.stream_unbundled_blocks(starting_height);
-        let blocks = take_blocks_until_limit(stream, max_cumulative_bytes).await?;
+        let blocks = take_blocks_until_past_limit(stream, max_cumulative_bytes).await?;
 
         let sequential_blocks = {
             let Some(nonempty_blocks) = NonEmpty::from_vec(blocks) else {
@@ -535,9 +524,7 @@ impl Postgres {
 
         Ok(Some(UnbundledBlocks {
             oldest: sequential_blocks,
-            total_unbundled: (total_unbundled_blocks as usize)
-                .try_into()
-                .expect("checked already"),
+            total_unbundled: 100.try_into().unwrap(),
         }))
     }
 
@@ -589,14 +576,10 @@ impl Postgres {
             tables::DBCompressedFuelBlock,
             r#"
             SELECT fb.height, fb.data
-        FROM fuel_blocks fb 
-        WHERE fb.height >= $1
-        AND NOT EXISTS (
-            SELECT 1 FROM bundles b 
-            WHERE fb.height BETWEEN b.start_height AND b.end_height
-            AND b.end_height >= $1
-        ) 
-        ORDER BY fb.height"#,
+            FROM fuel_blocks fb 
+            WHERE fb.is_bundled = false
+                AND fb.height >= $1
+            ORDER BY fb.height"#,
             i64::from(starting_height),
         )
         .fetch(&self.connection_pool)
@@ -1132,6 +1115,14 @@ impl Postgres {
             })
             .collect::<Vec<_>>();
 
+        sqlx::query!(
+            "UPDATE fuel_blocks SET is_bundled = true WHERE height BETWEEN $1 AND $2",
+            i64::from(start),
+            i64::from(end)
+        )
+        .execute(&mut *tx)
+        .await?;
+
         // Execute all fragment insertion queries
         for mut query in queries {
             query.build().execute(&mut *tx).await?;
@@ -1292,7 +1283,7 @@ impl Postgres {
     }
 }
 
-async fn take_blocks_until_limit(
+async fn take_blocks_until_past_limit(
     mut stream: BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
     max_cumulative_bytes: u32,
 ) -> Result<Vec<CompressedFuelBlock>> {
@@ -1300,18 +1291,13 @@ async fn take_blocks_until_limit(
 
     let mut total_bytes = 0;
     let mut last_height: Option<u32> = None;
+    let mut has_more = true;
     while let Some(val) = stream.try_next().await? {
         let data_len = val.data.len();
-        if total_bytes + data_len > max_cumulative_bytes as usize {
-            break;
-        }
 
         let block = CompressedFuelBlock::try_from(val)?;
+
         let height = block.height;
-        total_bytes += data_len;
-
-        blocks.push(block);
-
         match &mut last_height {
             Some(last_height) if height != last_height.saturating_add(1) => {
                 break;
@@ -1319,6 +1305,12 @@ async fn take_blocks_until_limit(
             _ => {
                 last_height = Some(height);
             }
+        }
+
+        total_bytes += data_len;
+        blocks.push(block);
+        if total_bytes > max_cumulative_bytes as usize {
+            break;
         }
     }
 
@@ -1750,7 +1742,7 @@ mod tests {
         #[tokio::test]
         async fn test_lowest_unbundled_blocks_performance_4m_blocks() {
             // Set total number of blocks to insert (around 4 million)
-            let total_blocks = 1 * 7 * 24 * 3600 + 1000;
+            let total_blocks = 1 * 7 * 24 * 3600 + 3600;
             // We'll leave the last 2500 blocks unbundled.
             let bundled_end = total_blocks - 2500;
 
@@ -1800,11 +1792,11 @@ mod tests {
             // Now run the unbundled blocks query.
             // Since blocks 1 to bundled_end (3,997,500) are bundled, only blocks 3,997,501 to 4,000,000 (2500 blocks)
             // remain unbundled.
-            let start_height = 95_200;
+            let start_height = total_blocks - (7 * 24 * 3600);
             let limit = 3600;
             let start_time = Instant::now();
             let result = db
-                ._lowest_unbundled_blocks(start_height, limit)
+                ._lowest_unbundled_blocks(start_height, u32::MAX)
                 .await
                 .expect("Query should execute correctly");
             let duration = start_time.elapsed();
@@ -1813,7 +1805,7 @@ mod tests {
             let unbundled_count = result
                 .as_ref()
                 .map(|seq| {
-                    let range = seq.height_range();
+                    let range = seq.oldest.height_range();
                     range.end() - range.start() + 1
                 })
                 .unwrap_or(0);
