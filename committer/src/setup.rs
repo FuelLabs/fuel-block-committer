@@ -1,4 +1,7 @@
-use std::{num::NonZeroU32, time::Duration};
+use std::{
+    num::{NonZeroU32, NonZeroUsize},
+    time::Duration,
+};
 
 use clock::SystemClock;
 use eigenda::EigenDAClient;
@@ -221,6 +224,7 @@ pub fn eigen_block_bundler(
     let bundler_factory = services::EigenBundlerFactory::new(
         bundle::Encoder::new(config.app.bundle.compression_level),
         NonZeroU32::new(15_000_000).unwrap(), // TODO pass this via config
+        config.app.bundle.max_fragments_per_bundle,
     );
 
     let block_bundler = BlockBundler::new(

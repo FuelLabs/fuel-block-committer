@@ -10,14 +10,20 @@ use crate::{
 
 pub struct Factory {
     fragment_size: NonZeroU32,
+    max_fragments: NonZeroUsize,
     bundle_encoder: bundle::Encoder,
 }
 
 impl Factory {
-    pub fn new(bundle_encoder: bundle::Encoder, fragment_size: NonZeroU32) -> Self {
+    pub fn new(
+        bundle_encoder: bundle::Encoder,
+        fragment_size: NonZeroU32,
+        max_fragments: NonZeroUsize,
+    ) -> Self {
         Self {
             bundle_encoder,
             fragment_size,
+            max_fragments,
         }
     }
 }
@@ -26,7 +32,12 @@ impl BundlerFactory for Factory {
     type Bundler = EigenBundler;
 
     async fn build(&self, blocks: SequentialFuelBlocks, _id: NonNegative<i32>) -> Self::Bundler {
-        EigenBundler::new(self.bundle_encoder.clone(), blocks, self.fragment_size)
+        EigenBundler::new(
+            self.bundle_encoder.clone(),
+            blocks,
+            self.fragment_size,
+            self.max_fragments,
+        )
     }
 }
 
@@ -40,6 +51,7 @@ pub struct EigenBundler {
     bundle_encoder: bundle::Encoder,
     blocks: NonEmpty<CompressedFuelBlock>,
     fragment_size: NonZeroU32,
+    max_fragments: NonZeroUsize,
 }
 
 impl EigenBundler {
@@ -47,11 +59,13 @@ impl EigenBundler {
         bundle_encoder: bundle::Encoder,
         blocks: SequentialFuelBlocks,
         fragment_size: NonZeroU32,
+        max_fragments: NonZeroUsize,
     ) -> Self {
         Self {
             bundle_encoder,
             blocks: blocks.into_inner(),
             fragment_size,
+            max_fragments,
         }
     }
 
@@ -69,11 +83,25 @@ impl EigenBundler {
         NonEmpty::from_vec(fragments)
             .ok_or_else(|| crate::Error::Other("no fragments created".to_string()))
     }
+
+    fn trim_blocks_to_fit(&self) -> NonEmpty<CompressedFuelBlock> {
+        let mut current_blocks = self.blocks.clone();
+        while let Ok(bundle) = encode_blocks(self.bundle_encoder.clone(), current_blocks.clone()) {
+            if let Ok(fragments) = self.create_fragments(bundle.data.clone()) {
+                if fragments.len() <= self.max_fragments.get() {
+                    return current_blocks;
+                }
+            }
+            current_blocks.pop();
+        }
+        panic!("Could not find a valid block bundle within fragment limit");
+    }
 }
 
 impl Bundle for EigenBundler {
     async fn advance(&mut self, _num_concurrent: NonZeroUsize) -> Result<bool> {
-        // EigenDA bundler processes everything in one go
+        // adjust blocks to fit within max_fragments constraint
+        self.blocks = self.trim_blocks_to_fit();
         Ok(true)
     }
 
@@ -94,11 +122,11 @@ impl Bundle for EigenBundler {
                 compressed_data_size,
                 uncompressed_data_size,
                 num_fragments: fragments.len_nonzero(),
-                // TODO: These fields can be ignored for now until we refactor the bundler
                 known_to_be_optimal: true,
                 optimization_attempts: 1,
                 gas_usage: 0,
-                block_num_upper_limit: NonZeroUsize::new(100).expect("idk"), // TODO
+                block_num_upper_limit: NonZeroUsize::new(self.blocks.len())
+                    .expect("valid block count"),
             },
             fragments,
         })
