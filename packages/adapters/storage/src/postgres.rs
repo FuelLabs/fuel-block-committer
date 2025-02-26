@@ -1324,15 +1324,22 @@ fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, path::Path};
+
+    use super::*;
+    use services::Result;
+    use sqlx::Executor; // or your error alias
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+    };
 
     use rand::Rng;
     use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
-    use sqlx::{Executor, PgPool, Row};
+    use sqlx::{PgPool, Row};
     use tokio::time::Instant;
 
     use super::*;
-    use crate::test_instance;
+    use crate::{DbWithProcess, test_instance};
 
     #[tokio::test]
     async fn test_second_migration_applies_successfully() {
@@ -1800,5 +1807,130 @@ mod tests {
             );
             println!("Query execution took: {:?}", duration);
         }
+    }
+
+    /// Helper: load the contents of a migration file relative to the crate root.
+    fn load_migration_file(file: &str) -> String {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("migrations");
+        path.push(file);
+        std::fs::read_to_string(path).expect(&format!("failed to read migration file {}", file))
+    }
+
+    /// Helper: get a test pool. Adjust this if you already have one in your project.
+    async fn get_test_pool() -> Result<DbWithProcess> {
+        let db_with_process = crate::test_instance::PostgresProcess::shared()
+            .await?
+            .create_noschema_random_db()
+            .await?;
+        Ok(db_with_process)
+    }
+
+    #[tokio::test]
+    async fn test_migration_8_populates_is_bundled_correctly() {
+        let process = get_test_pool().await.unwrap();
+        let db = process.db.pool();
+
+        // --- Apply migrations 1 through 7 ---
+        // These migrations create the necessary tables.
+        let mig_files = [
+            "0001_initial.up.sql",
+            "0002_better_fragmentation.up.sql",
+            "0003_block_submission_tx_id.up.sql",
+            "0004_blob_gas_bumping.sql",
+            "0005_tx_state_added.up.sql",
+            "0006_fuel_block_drop_hash_and_set_height_as_pkey.up.sql",
+            "0007_cost_tracking.sql",
+        ];
+
+        for file in &mig_files {
+            let sql = load_migration_file(file);
+
+            db.execute(sqlx::raw_sql(&sql)).await.unwrap();
+        }
+
+        // At this point, the fuel_blocks table (created in migration 0002 and then altered in 0006)
+        // now has only "height" and "data" columns.
+        // Insert some sample fuel blocks with various heights.
+        let blocks = vec![
+            // Block not bundled (height 50)
+            (50i64, b"block50".as_ref()),
+            // Blocks that should be bundled via first bundle (range 100-150)
+            (100i64, b"block100".as_ref()),
+            (125i64, b"block125".as_ref()),
+            (150i64, b"block150".as_ref()),
+            // Blocks not bundled (height 175, 200)
+            (175i64, b"block175".as_ref()),
+            (200i64, b"block200".as_ref()),
+            // Block bundled via second bundle (range 300-350)
+            (320i64, b"block320".as_ref()),
+        ];
+        for (height, data) in blocks {
+            db.execute(sqlx::query!(
+                "INSERT INTO fuel_blocks (height, data) VALUES ($1, $2)",
+                height,
+                data
+            ))
+            .await
+            .unwrap();
+        }
+
+        // Insert sample bundles.
+        // First bundle covers heights 100 to 150.
+        db.execute(sqlx::query!(
+            "INSERT INTO bundles (start_height, end_height) VALUES ($1, $2)",
+            100i64,
+            150i64
+        ))
+        .await
+        .unwrap();
+        // Second bundle covers heights 300 to 350.
+        db.execute(sqlx::query!(
+            "INSERT INTO bundles (start_height, end_height) VALUES ($1, $2)",
+            300i64,
+            350i64
+        ))
+        .await
+        .unwrap();
+
+        // --- Apply Migration 8 ---
+        // Load migration 8 from its file.
+        let mig8_sql = load_migration_file("0008_add_is_bundled_column.up.sql");
+        db.execute(sqlx::raw_sql(&mig8_sql)).await.unwrap();
+
+        // --- Verification ---
+        // Expected logic:
+        //   Blocks with heights 100, 125, 150 (first bundle) and 320 (second bundle) should be marked as bundled.
+        //   Blocks with heights 50, 175, and 200 should remain not bundled.
+        let rows = sqlx::query!("SELECT height, is_bundled FROM fuel_blocks ORDER BY height")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+        for row in rows {
+            match row.height {
+                50 => assert!(!row.is_bundled, "Block at height 50 should not be bundled"),
+                100 => assert!(row.is_bundled, "Block at height 100 should be bundled"),
+                125 => assert!(row.is_bundled, "Block at height 125 should be bundled"),
+                150 => assert!(row.is_bundled, "Block at height 150 should be bundled"),
+                175 => assert!(!row.is_bundled, "Block at height 175 should not be bundled"),
+                200 => assert!(!row.is_bundled, "Block at height 200 should not be bundled"),
+                320 => assert!(row.is_bundled, "Block at height 320 should be bundled"),
+                other => panic!("Unexpected block height: {}", other),
+            }
+        }
+
+        // Verify that the composite index exists.
+        let index = sqlx::query!(
+            "SELECT indexname FROM pg_indexes 
+             WHERE tablename = 'fuel_blocks' 
+             AND indexname = 'idx_fuel_blocks_is_bundled_height'"
+        )
+        .fetch_optional(&db)
+        .await
+        .unwrap();
+        assert!(
+            index.is_some(),
+            "Index 'idx_fuel_blocks_is_bundled_height' should exist"
+        );
     }
 }

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT indexname FROM pg_indexes \n             WHERE tablename = 'fuel_blocks' \n             AND indexname = 'idx_fuel_blocks_is_bundled_height'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "indexname",
+        "type_info": "Name"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f3cfded5657439dc92850da9265940398f326d9f3d5175ccb984881d9cfc4c78"
+}
