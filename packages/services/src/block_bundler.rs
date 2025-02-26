@@ -40,7 +40,7 @@ pub mod service {
                 max_fragments_per_bundle: NonZeroUsize::MAX,
                 lookback_window: 1000,
                 max_bundles_per_optimization_run: 1.try_into().unwrap(),
-                blocks_to_accumulate: NonZeroUsize::new(10).unwrap(),
+                blocks_to_accumulate: 10.try_into().unwrap(),
             }
         }
     }
@@ -207,10 +207,10 @@ pub mod service {
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
             let enough_blocks = blocks.len() >= self.config.blocks_to_accumulate;
 
-            let should_wait = cum_size < self.config.bytes_to_accumulate
-                && !enough_blocks
-                && !has_more
-                && still_time_to_accumulate_more;
+            let enough_bytes = cum_size >= self.config.bytes_to_accumulate;
+
+            let should_wait =
+                !enough_bytes && !enough_blocks && !has_more && still_time_to_accumulate_more;
 
             let available_data = human_readable_size(cum_size);
 
