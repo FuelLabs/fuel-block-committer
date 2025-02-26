@@ -101,7 +101,8 @@ DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:$HOST_POSTG
 
 log "Running SchemaSpy..."
 
-# Ensure the SchemaSpy output directory is writable by all
+# because the docker has a user called java which needs to be able to create
+# directories inside of the docker mount
 chmod 777 "$TEMP_DB_RENDER_DIR"
 
 SCHEMASPY_LOG="$SCRIPT_DIR/schemaspy.log"
@@ -119,7 +120,6 @@ docker run --rm \
   panic "SchemaSpy failed. Check the log at $SCHEMASPY_LOG"
 }
 
-# Only save the relationships diagram files; remove any other preview artifacts later.
 mkdir -p "$DOTS_DIR"
 mkdir -p "$PNGS_DIR"
 
@@ -128,12 +128,9 @@ shopt -s nullglob
 
 log "Saving rendered relationships diagram files..."
 
-# Copy only the summary relationships DOT and PNG files.
 cp "$TEMP_DB_RENDER_DIR/diagrams/summary/relationships.real.large.dot" "$DOTS_DIR/relationships.dot"
 cp "$TEMP_DB_RENDER_DIR/diagrams/summary/relationships.real.large.png" "$PNGS_DIR/relationships.png"
 
-# --- Append orphans ---
-# Assume that SchemaSpy produced an orphans DOT file at:
 ORPHANS_DOT="$TEMP_DB_RENDER_DIR/diagrams/orphans/orphans.dot"
 
 if [ -f "$ORPHANS_DOT" ]; then
