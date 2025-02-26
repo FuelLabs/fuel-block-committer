@@ -35,7 +35,7 @@ trap cleanup EXIT # Ensure cleanup on exit
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check for required commands
-for cmd in docker sqlx sed; do
+for cmd in docker sqlx sed dot; do
   if ! command -v $cmd >/dev/null 2>&1; then
     panic "Command '$cmd' is required but not installed."
   fi
@@ -119,48 +119,18 @@ docker run --rm \
   panic "SchemaSpy failed. Check the log at $SCHEMASPY_LOG"
 }
 
-mkdir -p "$DOTS_DIR/tables"
-mkdir -p "$PNGS_DIR/tables"
+# Only save the relationships diagram files; remove any other preview artifacts later.
+mkdir -p "$DOTS_DIR"
+mkdir -p "$PNGS_DIR"
 
 # Enable nullglob to handle cases with no matching files
 shopt -s nullglob
 
-log "Saving rendered files..."
+log "Saving rendered relationships diagram files..."
 
-# Copy summary diagram files
+# Copy only the summary relationships DOT and PNG files.
 cp "$TEMP_DB_RENDER_DIR/diagrams/summary/relationships.real.large.dot" "$DOTS_DIR/relationships.dot"
 cp "$TEMP_DB_RENDER_DIR/diagrams/summary/relationships.real.large.png" "$PNGS_DIR/relationships.png"
-
-# Copy table DOT and PNG files:
-# First, copy over all .1degree files, then overwrite with any .2degrees files.
-for file in "$TEMP_DB_RENDER_DIR/diagrams/tables/"*.1degree.dot; do
-  if [ -f "$file" ]; then
-    base_name="$(basename "$file" .1degree.dot)"
-    cp "$file" "$DOTS_DIR/tables/${base_name}.dot"
-  fi
-done
-for file in "$TEMP_DB_RENDER_DIR/diagrams/tables/"*.2degrees.dot; do
-  if [ -f "$file" ]; then
-    base_name="$(basename "$file" .2degrees.dot)"
-    cp "$file" "$DOTS_DIR/tables/${base_name}.dot"
-  fi
-done
-
-for file in "$TEMP_DB_RENDER_DIR/diagrams/tables/"*.1degree.png; do
-  if [ -f "$file" ]; then
-    base_name="$(basename "$file" .1degree.png)"
-    cp "$file" "$PNGS_DIR/tables/${base_name}.png"
-  fi
-done
-for file in "$TEMP_DB_RENDER_DIR/diagrams/tables/"*.2degrees.png; do
-  if [ -f "$file" ]; then
-    base_name="$(basename "$file" .2degrees.png)"
-    cp "$file" "$PNGS_DIR/tables/${base_name}.png"
-  fi
-done
-
-# Disable nullglob after use
-shopt -u nullglob
 
 # --- Append orphans ---
 # Assume that SchemaSpy produced an orphans DOT file at:
@@ -169,16 +139,16 @@ ORPHANS_DOT="$TEMP_DB_RENDER_DIR/diagrams/orphans/orphans.dot"
 if [ -f "$ORPHANS_DOT" ]; then
   log "Appending orphan tables from $ORPHANS_DOT into relationships DOT..."
 
-  # Read the orphans DOT file and remove its header and final brace
+  # Remove header and footer from the orphans DOT so that only node definitions remain.
   ORPHANS_CONTENT=$(sed '1d;$d' "$ORPHANS_DOT")
 
   # Create a temporary file for the updated relationships DOT.
   TEMP_REL="$(mktemp)"
 
-  # Remove the last line (the closing brace) from the relationships DOT file.
+  # Remove the closing brace from the relationships DOT file.
   sed '$d' "$DOTS_DIR/relationships.dot" >"$TEMP_REL"
 
-  # Append a newline, the orphan content, and a newline.
+  # Append a newline and orphan content.
   echo "" >>"$TEMP_REL"
   echo "$ORPHANS_CONTENT" >>"$TEMP_REL"
   echo "" >>"$TEMP_REL"
@@ -186,7 +156,7 @@ if [ -f "$ORPHANS_DOT" ]; then
   # Append the closing brace.
   echo "}" >>"$TEMP_REL"
 
-  # Replace the original relationships DOT with the updated file.
+  # Replace the original relationships DOT file.
   mv "$TEMP_REL" "$DOTS_DIR/relationships.dot"
 
   log "Appended orphan nodes into relationships DOT."
@@ -195,8 +165,8 @@ else
 fi
 
 # --- Fix image paths ---
-# SchemaSpy's DOT files reference images using a relative path ../../images.
-# If the images directory exists in the SchemaSpy output, update the DOT file to use its absolute path.
+# SchemaSpy's DOT files reference images via a relative path (../../images).
+# Update the relationships DOT file to use an absolute path if the images directory exists.
 IMAGES_DIR="$TEMP_DB_RENDER_DIR/images"
 if [ -d "$IMAGES_DIR" ]; then
   ABS_IMAGES_DIR=$(realpath "$IMAGES_DIR")
@@ -206,5 +176,14 @@ fi
 
 # Re-render the relationships diagram PNG using the updated DOT file.
 log "Re-rendering relationships diagram to PNG..."
-dot -Tpng "$DOTS_DIR/relationships.dot" -o "$PNGS_DIR/relationships.png"
-log "Browse rendered files in $DB_PREVIEW_DIR"
+dot -Tpng "$DOTS_DIR/relationships.dot" -o "$PNGS_DIR/relationships.png" 2>/dev/null
+
+# --- Cleanup: Only keep relationships.dot and relationships.png in the preview directory ---
+# Move the two files to DB_PREVIEW_DIR and remove all other directories.
+mv "$DOTS_DIR/relationships.dot" "$DB_PREVIEW_DIR/"
+mv "$PNGS_DIR/relationships.png" "$DB_PREVIEW_DIR/"
+rm -rf "$DOTS_DIR" "$PNGS_DIR"
+
+log "Preview available in $DB_PREVIEW_DIR:"
+log "  - relationships.dot"
+log "  - relationships.png"
