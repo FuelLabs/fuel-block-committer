@@ -1464,29 +1464,15 @@ mod tests {
 
         // Insert blocks with a gap:
         // Blocks at heights 1, 2, 3 then a gap (no block at 4), then blocks 5 and 6.
-        let blocks = vec![
-            CompressedFuelBlock {
-                height: 1,
+        let blocks = [1, 2, 3, 5, 6]
+            .map(|height| CompressedFuelBlock {
+                height,
                 data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
-            },
-            CompressedFuelBlock {
-                height: 2,
-                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
-            },
-            CompressedFuelBlock {
-                height: 3,
-                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
-            },
-            CompressedFuelBlock {
-                height: 5,
-                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
-            },
-            CompressedFuelBlock {
-                height: 6,
-                data: NonEmpty::from_vec(vec![0]).expect("Non-empty"),
-            },
-        ];
-        let blocks = NonEmpty::from_vec(blocks).expect("Should have blocks");
+            })
+            .into_iter()
+            .collect_nonempty()
+            .expect("not empty");
+
         storage.insert_blocks(blocks).await.unwrap();
 
         // Query starting from height 1 with a generous cumulative limit.
