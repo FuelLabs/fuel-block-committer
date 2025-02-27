@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO bundles(id, start_height, end_height, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+  "query": "INSERT INTO bundles(id, start_height, end_height) VALUES ($1, $2, $3) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -13,13 +13,12 @@
       "Left": [
         "Int4",
         "Int8",
-        "Int8",
-        "Timestamptz"
+        "Int8"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "7f0671d856c536f0bbab82e370de97cae26b59774ea8f1dd0e694432c2c23b79"
+  "hash": "8c34c4c454b5b6d8bfc2eb67a38eff1ceb985eb38321fe5760ef02dfa40e3b3f"
 }

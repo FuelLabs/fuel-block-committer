@@ -479,13 +479,6 @@ impl Postgres {
         Ok(response)
     }
 
-    pub(crate) async fn _get_latest_bundle_created_at(&self) -> Result<Option<DateTime<Utc>>> {
-        let row = sqlx::query!("SELECT MAX(created_at) AS latest_created_at FROM bundles")
-            .fetch_one(&self.connection_pool)
-            .await?;
-        Ok(row.latest_created_at)
-    }
-
     pub(crate) async fn _lowest_unbundled_blocks(
         &self,
         starting_height: u32,
@@ -994,7 +987,6 @@ impl Postgres {
         bundle_id: NonNegative<i32>,
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
-        created_at: DateTime<Utc>,
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
@@ -1003,11 +995,10 @@ impl Postgres {
 
         // Insert a new bundle and retrieve its ID
         let bundle_id = sqlx::query!(
-            "INSERT INTO bundles(id, start_height, end_height, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
+            "INSERT INTO bundles(id, start_height, end_height) VALUES ($1, $2, $3) RETURNING id",
             bundle_id.get(),
             i64::from(start),
-            i64::from(end),
-            created_at
+            i64::from(end)
         )
         .fetch_one(&mut *tx)
         .await?
@@ -1342,7 +1333,7 @@ mod tests {
             let fragments = NonEmpty::from_vec(fragments).unwrap();
 
             storage
-                .insert_bundle_and_fragments(bundle_id, range, fragments.clone(), Utc::now())
+                .insert_bundle_and_fragments(bundle_id, range, fragments.clone())
                 .await
                 .unwrap();
 
@@ -1468,7 +1459,6 @@ mod tests {
                     range,
                     NonEmpty::from_vec(vec![dummy_fragment.clone()])
                         .expect("Non-empty fragment list"),
-                    Utc::now(),
                 )
                 .await
                 .expect("Bundle insertion failed");
@@ -1585,8 +1575,7 @@ mod tests {
 
             // --- Apply Migration 8 ---
             // Load migration 8 from its file.
-            let mig8_sql =
-                load_migration_file("0008_add_is_bundled_and_created_at_to_bundles.up.sql");
+            let mig8_sql = load_migration_file("0008_add_is_bundled_column.up.sql");
             db.execute(sqlx::raw_sql(&mig8_sql)).await.unwrap();
 
             // --- Verification ---
