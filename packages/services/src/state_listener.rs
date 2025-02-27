@@ -2,14 +2,14 @@ pub mod service {
     use std::collections::HashSet;
 
     use metrics::{
-        prometheus::{core::Collector, IntGauge, Opts},
         RegistersMetrics,
+        prometheus::{IntGauge, Opts, core::Collector},
     };
     use tracing::info;
 
     use crate::{
-        types::{L1Tx, TransactionCostUpdate, TransactionState},
         Runner,
+        types::{L1Tx, TransactionCostUpdate, TransactionState},
     };
 
     pub struct StateListener<L1, Db, Clock> {
@@ -229,14 +229,14 @@ pub mod service {
 
 pub mod port {
     use crate::{
-        types::{DateTime, L1Tx, TransactionCostUpdate, TransactionState, Utc},
         Result,
+        types::{DateTime, L1Tx, TransactionCostUpdate, TransactionState, Utc},
     };
 
     pub mod l1 {
         use crate::{
-            types::{L1Height, TransactionResponse},
             Result,
+            types::{L1Height, TransactionResponse},
         };
 
         #[allow(async_fn_in_trait)]

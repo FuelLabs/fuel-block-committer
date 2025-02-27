@@ -6,11 +6,11 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::{
-    types::{
-        storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty,
-        NonNegative,
-    },
     Result,
+    types::{
+        CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative,
+        storage::SequentialFuelBlocks,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

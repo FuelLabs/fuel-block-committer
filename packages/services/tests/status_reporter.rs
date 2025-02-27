@@ -23,7 +23,7 @@ async fn status_depends_on_last_submission() {
             if let Some(is_completed) = submission_status {
                 let latest_submission = BlockSubmission {
                     completed: is_completed,
-                    ..rng.gen()
+                    ..rng.r#gen()
                 };
                 db.record_block_submission(
                     BlockSubmissionTx::default(),

@@ -108,8 +108,8 @@ pub fn id_for_height(height: u32) -> String {
     hex::encode(*digest)
 }
 
-pub fn build_schema(
-) -> SchemaBuilder<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription> {
+pub fn build_schema()
+-> SchemaBuilder<QueryRoot, async_graphql::EmptyMutation, async_graphql::EmptySubscription> {
     Schema::build(
         QueryRoot,
         async_graphql::EmptyMutation,

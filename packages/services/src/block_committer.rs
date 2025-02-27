@@ -3,12 +3,11 @@ pub mod service {
 
     use tracing::info;
 
-    use crate::{
-        types::{BlockSubmission, NonNegative, TransactionState},
-        Error, Result, Runner,
-    };
-
     use super::port::fuel::FuelBlock;
+    use crate::{
+        Error, Result, Runner,
+        types::{BlockSubmission, NonNegative, TransactionState},
+    };
 
     pub struct BlockCommitter<L1, Db, Fuel, Clock> {
         l1_adapter: L1,
@@ -207,16 +206,16 @@ pub mod service {
 
 pub mod port {
     use crate::{
-        types::{BlockSubmission, BlockSubmissionTx, DateTime, NonNegative, TransactionState, Utc},
         Result,
+        types::{BlockSubmission, BlockSubmissionTx, DateTime, NonNegative, TransactionState, Utc},
     };
 
     pub mod l1 {
         use std::num::NonZeroU32;
 
         use crate::{
-            types::{BlockSubmissionTx, L1Height, TransactionResponse},
             Result,
+            types::{BlockSubmissionTx, L1Height, TransactionResponse},
         };
 
         #[allow(async_fn_in_trait)]

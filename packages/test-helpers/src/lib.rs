@@ -9,15 +9,15 @@ use metrics::prometheus::IntGauge;
 use mocks::l1::TxStatus;
 use rand::{Rng, RngCore};
 use services::{
+    BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
     block_committer::service::BlockCommitter,
     block_importer::service::BlockImporter,
     fees::{
-        testing::{ConstantFeeApi, PreconfiguredFeeApi},
         Fees,
+        testing::{ConstantFeeApi, PreconfiguredFeeApi},
     },
     state_listener::service::StateListener,
     types::{BlockSubmission, CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty},
-    BlockBundler, BlockBundlerConfig, BundlerFactory, Runner, StateCommitter,
 };
 use storage::{DbWithProcess, PostgresProcess};
 
@@ -36,7 +36,7 @@ pub mod mocks {
         use std::{cmp::min, num::NonZeroU32};
 
         use delegate::delegate;
-        use mockall::{predicate::eq, Sequence};
+        use mockall::{Sequence, predicate::eq};
         use services::{
             block_committer::port::fuel::FuelBlock,
             types::{
@@ -308,14 +308,14 @@ pub mod mocks {
     pub mod fuel {
         use std::ops::RangeInclusive;
 
-        use futures::{stream, StreamExt};
+        use futures::{StreamExt, stream};
         use itertools::Itertools;
         use mockall::predicate::eq;
         use rand::{Rng, RngCore, SeedableRng};
         use services::{
             block_committer::port::fuel::FuelBlock,
             types::{
-                storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, NonEmpty,
+                CollectNonEmpty, CompressedFuelBlock, NonEmpty, storage::SequentialFuelBlocks,
             },
         };
 
@@ -423,7 +423,7 @@ pub mod mocks {
 
         pub fn given_a_block(height: u32) -> FuelBlock {
             FuelBlock {
-                id: rand::thread_rng().gen(),
+                id: rand::thread_rng().r#gen(),
                 height,
             }
         }
@@ -656,7 +656,7 @@ impl Setup {
     }
 
     pub fn given_incomplete_submission(block_height: u32) -> BlockSubmission {
-        let mut submission: BlockSubmission = rand::thread_rng().gen();
+        let mut submission: BlockSubmission = rand::thread_rng().r#gen();
         submission.block_height = block_height;
         submission.completed = false;
 
