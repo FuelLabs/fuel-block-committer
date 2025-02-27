@@ -8,6 +8,7 @@ use metrics::RegistersMetrics;
 use services::{
     BlockBundler, BlockBundlerConfig, Bundle, BundleProposal, Bundler, BundlerFactory,
     ControllableBundlerFactory, Metadata, Result, Runner,
+    block_bundler::port::Storage,
     block_bundler::port::l1::FragmentEncoder,
     types::{
         CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, nonempty,
@@ -235,32 +236,71 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
 }
 
 #[tokio::test]
-async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_creation() -> Result<()>
-{
-    use services::{
-        block_bundler::port::Storage as BundlerStorage, state_committer::port::Storage,
-    };
+async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle() -> Result<()> {
+    use services::state_committer::port::Storage;
 
     // given
     let setup = test_helpers::Setup::init().await;
-
     let block_size = 100;
-    let blocks = setup
+
+    // --- Create the first bundle immediately.
+    // Import a single block (block 0)
+    let initial_blocks = setup
         .import_blocks(Blocks::WithHeights {
             range: 0..=0,
             block_size,
         })
         .await;
-
     let clock = TestClock::default();
 
-    let latest_height = blocks.last().height;
-    let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(latest_height);
+    let latest_height_initial = initial_blocks.last().height;
+    let mock_fuel_api_initial =
+        test_helpers::mocks::fuel::block_bundler_latest_height_is(latest_height_initial);
 
-    let expected_fragments = bundle_and_encode_into_blobs(blocks.clone(), 1);
+    let expected_fragments_initial = bundle_and_encode_into_blobs(initial_blocks.clone(), 1);
 
-    let mut block_bundler = BlockBundler::new(
-        mock_fuel_api,
+    // For the first bundle, the bundler should bundle immediately.
+    let mut bundler1 = BlockBundler::new(
+        mock_fuel_api_initial,
+        setup.db(),
+        clock.clone(),
+        default_bundler_factory(),
+        BlockBundlerConfig {
+            accumulation_time_limit: Duration::from_secs(1),
+            ..Default::default()
+        },
+    );
+    bundler1.run().await?;
+
+    // Verify that the first bundle was created as expected.
+    let fragments_initial = setup
+        .db()
+        .oldest_nonfinalized_fragments(0, 1)
+        .await?
+        .into_iter()
+        .map(|f| f.fragment)
+        .collect_nonempty()
+        .unwrap();
+    assert_eq!(
+        fragments_initial, expected_fragments_initial,
+        "First bundle should be created immediately"
+    );
+
+    // --- Now import a new block (block 1)
+    let new_blocks = setup
+        .import_blocks(Blocks::WithHeights {
+            range: 1..=1,
+            block_size,
+        })
+        .await;
+    let expected_fragments_new = bundle_and_encode_into_blobs(new_blocks.clone(), 2);
+    let latest_height_new = new_blocks.last().height;
+    let mock_fuel_api_new =
+        test_helpers::mocks::fuel::block_bundler_latest_height_is(latest_height_new);
+
+    // Create a new bundler instance to accumulate new blocks.
+    let mut bundler2 = BlockBundler::new(
+        mock_fuel_api_new,
         setup.db(),
         clock.clone(),
         default_bundler_factory(),
@@ -272,92 +312,47 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
         },
     );
 
-    clock.advance_time(Duration::from_secs(2));
-
-    // when
-    block_bundler.run().await?;
-
-    // then
-    let fragments = setup
+    // when: Run bundler2 WITHOUT advancing the clock.
+    // Since the accumulation timeout (1s) is not reached from the last bundle's timestamp,
+    // no new bundle should be created.
+    bundler2.run().await?;
+    let unbundled_before = setup
         .db()
-        .oldest_nonfinalized_fragments(0, 1)
+        .lowest_sequence_of_unbundled_blocks(latest_height_new, 1)
+        .await?;
+    // then
+    assert!(
+        unbundled_before.is_some(),
+        "Without advancing the clock, new block should remain unbundled"
+    );
+
+    // when: Advance the clock beyond the accumulation time limit.
+    clock.advance_time(Duration::from_secs(2));
+    bundler2.run().await?;
+
+    // then: the new block should be bundled.
+    let fragments_new = setup
+        .db()
+        .oldest_nonfinalized_fragments(latest_height_new, 1)
         .await?
         .into_iter()
         .map(|f| f.fragment)
         .collect_nonempty()
         .unwrap();
+    assert_eq!(
+        fragments_new, expected_fragments_new,
+        "After advancing time, the new block should be bundled"
+    );
 
-    assert_eq!(fragments, expected_fragments);
-
+    // Also verify that no unbundled blocks remain in the lookback.
     assert!(
         setup
             .db()
-            .lowest_sequence_of_unbundled_blocks(blocks.last().height, 1)
+            .lowest_sequence_of_unbundled_blocks(new_blocks.last().height, 1)
             .await?
-            .is_none()
+            .is_none(),
+        "All blocks should now be bundled"
     );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn stops_accumulating_blocks_if_time_runs_out_measured_from_last_bundle_time() -> Result<()> {
-    use services::state_committer::port::Storage;
-
-    // given
-    let setup = test_helpers::Setup::init().await;
-
-    let clock = TestClock::default();
-
-    let block_size = 100;
-    let fuel_blocks = setup
-        .import_blocks(Blocks::WithHeights {
-            range: 1..=3,
-            block_size,
-        })
-        .await;
-
-    let mut block_bundler = BlockBundler::new(
-        mocks::fuel::block_bundler_latest_height_is(fuel_blocks.last().height),
-        setup.db(),
-        clock.clone(),
-        default_bundler_factory(),
-        BlockBundlerConfig {
-            accumulation_time_limit: Duration::from_secs(10),
-            bytes_to_accumulate: (2 * block_size).try_into().unwrap(),
-            ..Default::default()
-        },
-    );
-    let fuel_blocks = Vec::from(fuel_blocks);
-
-    block_bundler.run().await?;
-    clock.advance_time(Duration::from_secs(10));
-
-    // when
-    block_bundler.run().await?;
-
-    // then
-    let first_bundle_fragments =
-        bundle_and_encode_into_blobs(nonempty![fuel_blocks[0].clone(), fuel_blocks[1].clone()], 1);
-
-    let second_bundle_fragments =
-        bundle_and_encode_into_blobs(nonempty![fuel_blocks[2].clone()], 2);
-
-    let unsubmitted_fragments = setup
-        .db()
-        .oldest_nonfinalized_fragments(0, 2)
-        .await?
-        .into_iter()
-        .map(|f| f.fragment.clone())
-        .collect_nonempty()
-        .unwrap();
-
-    let expected_fragments = first_bundle_fragments
-        .into_iter()
-        .chain(second_bundle_fragments)
-        .collect_nonempty()
-        .unwrap();
-    assert_eq!(unsubmitted_fragments, expected_fragments);
 
     Ok(())
 }
@@ -545,10 +540,7 @@ async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()
     let (bundler_factory, send_can_advance, _notify_advanced) =
         ControllableBundlerFactory::setup(None);
 
-    // Create a TestClock
     let test_clock = TestClock::default();
-
-    // Create the BlockBundler
     let optimization_timeout = Duration::from_secs(1);
 
     let mut block_bundler = BlockBundler::new(
@@ -564,7 +556,6 @@ async fn doesnt_stop_advancing_if_there_is_still_time_to_optimize() -> Result<()
         },
     );
 
-    // Spawn the BlockBundler run method in a separate task
     let block_bundler_handle = tokio::spawn(async move {
         block_bundler.run().await.unwrap();
     });
@@ -904,7 +895,7 @@ async fn bundles_immediately_if_enough_blocks() -> Result<()> {
     // We will store exactly 2 blocks so that we hit the threshold.
     let blocks = setup
         .import_blocks(Blocks::WithHeights {
-            range: 0..=1, // This gives us 2 blocks
+            range: 0..=1,
             block_size,
         })
         .await;

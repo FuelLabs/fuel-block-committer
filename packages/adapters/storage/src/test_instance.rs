@@ -232,6 +232,13 @@ impl block_importer::port::Storage for DbWithProcess {
 }
 
 impl block_bundler::port::Storage for DbWithProcess {
+    async fn get_latest_bundle_created_at(&self) -> services::Result<Option<DateTime<Utc>>> {
+        self.db
+            ._get_latest_bundle_created_at()
+            .await
+            .map_err(Into::into)
+    }
+
     async fn lowest_sequence_of_unbundled_blocks(
         &self,
         starting_height: u32,
@@ -247,9 +254,10 @@ impl block_bundler::port::Storage for DbWithProcess {
         bundle_id: NonNegative<i32>,
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
+        created_at: DateTime<Utc>,
     ) -> services::Result<()> {
         self.db
-            ._insert_bundle_and_fragments(bundle_id, block_range, fragments)
+            ._insert_bundle_and_fragments(bundle_id, block_range, fragments, created_at)
             .await
             .map_err(Into::into)
     }

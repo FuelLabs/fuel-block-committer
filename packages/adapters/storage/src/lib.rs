@@ -86,6 +86,9 @@ impl services::block_importer::port::Storage for Postgres {
 }
 
 impl services::block_bundler::port::Storage for Postgres {
+    async fn get_latest_bundle_created_at(&self) -> Result<Option<DateTime<Utc>>> {
+        Ok(self._get_latest_bundle_created_at().await?)
+    }
     async fn lowest_sequence_of_unbundled_blocks(
         &self,
         starting_height: u32,
@@ -100,8 +103,9 @@ impl services::block_bundler::port::Storage for Postgres {
         bundle_id: NonNegative<i32>,
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
+        created_at: DateTime<Utc>,
     ) -> Result<()> {
-        self._insert_bundle_and_fragments(bundle_id, block_range, fragments)
+        self._insert_bundle_and_fragments(bundle_id, block_range, fragments, created_at)
             .await
             .map_err(Into::into)
     }
@@ -263,6 +267,7 @@ mod tests {
                         total_bytes: 1000.try_into().unwrap()
                     }
                 ),
+                Utc::now(),
             )
             .await
             .unwrap();
@@ -448,7 +453,12 @@ mod tests {
         let next_id = storage.next_bundle_id().await.unwrap();
         // when
         storage
-            .insert_bundle_and_fragments(next_id, block_range.clone(), fragments.clone())
+            .insert_bundle_and_fragments(
+                next_id,
+                block_range.clone(),
+                fragments.clone(),
+                Utc::now(),
+            )
             .await
             .unwrap();
 
@@ -554,7 +564,7 @@ mod tests {
 
         let next_id = storage.next_bundle_id().await.unwrap();
         storage
-            .insert_bundle_and_fragments(next_id, range, fragments)
+            .insert_bundle_and_fragments(next_id, range, fragments, Utc::now())
             .await
             .unwrap();
     }
@@ -732,6 +742,7 @@ mod tests {
                     unused_bytes: 1000,
                     total_bytes: 100.try_into().unwrap()
                 }),
+                Utc::now(),
             )
             .await
             .unwrap();
@@ -749,6 +760,7 @@ mod tests {
                 next_id,
                 10..=15, // Bundle ends at 15
                 nonempty!(fragment.clone()),
+                Utc::now(),
             )
             .await
             .unwrap();
@@ -782,6 +794,7 @@ mod tests {
                 next_id,
                 5..=10, // Bundle ends at 10
                 nonempty!(fragment.clone()),
+                Utc::now(),
             )
             .await
             .unwrap();
@@ -815,6 +828,7 @@ mod tests {
                 next_id,
                 5..=10, // Bundle ends at 10
                 nonempty!(fragment.clone()),
+                Utc::now(),
             )
             .await
             .unwrap();
@@ -1233,7 +1247,12 @@ mod tests {
             total_bytes: 10.try_into().unwrap(),
         };
         storage
-            .insert_bundle_and_fragments(bundle_a_id, 1..=5, nonempty!(fragment_a.clone()))
+            .insert_bundle_and_fragments(
+                bundle_a_id,
+                1..=5,
+                nonempty!(fragment_a.clone()),
+                Utc::now(),
+            )
             .await
             .unwrap();
 
@@ -1264,6 +1283,7 @@ mod tests {
                 bundle_b_id,
                 6..=10, // Another arbitrary range
                 NonEmpty::from_vec(b_fragments.clone()).unwrap(),
+                Utc::now(),
             )
             .await
             .unwrap();
@@ -1412,7 +1432,7 @@ mod tests {
             total_bytes: 1.try_into().unwrap(),
         });
         storage
-            .insert_bundle_and_fragments(bundle_id, 0..=1, fragments)
+            .insert_bundle_and_fragments(bundle_id, 0..=1, fragments, Utc::now())
             .await
             .unwrap();
 

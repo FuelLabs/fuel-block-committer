@@ -53,7 +53,6 @@ pub mod service {
         clock: Clock,
         bundler_factory: BundlerFactory,
         config: Config,
-        last_time_bundled: DateTime<Utc>,
         metrics: Metrics,
     }
 
@@ -135,13 +134,10 @@ pub mod service {
             bundler_factory: BF,
             config: Config,
         ) -> Self {
-            let now = clock.now();
-
             Self {
                 fuel_api: fuel_adapter,
                 storage,
                 clock,
-                last_time_bundled: now,
                 bundler_factory,
                 config,
                 metrics: Metrics::default(),
@@ -167,7 +163,7 @@ pub mod service {
                 )
                 .await?
             {
-                if self.should_wait(&oldest, has_more)? {
+                if self.should_wait(&oldest, has_more).await? {
                     return Ok(());
                 }
 
@@ -186,25 +182,30 @@ pub mod service {
                 tracing::info!("Bundler proposed: {metadata}");
 
                 self.storage
-                    .insert_bundle_and_fragments(next_id, metadata.block_heights.clone(), fragments)
+                    .insert_bundle_and_fragments(
+                        next_id,
+                        metadata.block_heights.clone(),
+                        fragments,
+                        self.clock.now(),
+                    )
                     .await?;
 
                 self.metrics.observe_metadata(&metadata);
                 self.metrics
                     .optimization_duration
                     .observe(optimization_duration.num_seconds() as f64);
-
-                self.last_time_bundled = self.clock.now();
             }
 
             Ok(())
         }
 
-        fn should_wait(&self, blocks: &SequentialFuelBlocks, has_more: bool) -> Result<bool> {
+        async fn should_wait(&self, blocks: &SequentialFuelBlocks, has_more: bool) -> Result<bool> {
             let cum_size = blocks.cumulative_size();
             let num_blocks = blocks.len();
 
-            let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
+            let last_bundle_time = self.storage.get_latest_bundle_created_at().await?;
+            let still_time_to_accumulate_more =
+                self.still_time_to_accumulate_more(last_bundle_time)?;
             let enough_blocks = blocks.len() >= self.config.blocks_to_accumulate;
 
             let enough_bytes = cum_size >= self.config.bytes_to_accumulate;
@@ -220,7 +221,9 @@ pub mod service {
                 let until_timeout = humantime::format_duration(
                     self.config
                         .accumulation_time_limit
-                        .checked_sub(self.elapsed(self.last_time_bundled)?)
+                        .checked_sub(
+                            self.elapsed(last_bundle_time.unwrap_or_else(|| self.clock.now()))?,
+                        )
                         .unwrap_or_default(),
                 );
 
@@ -262,8 +265,13 @@ pub mod service {
             bundler.finish().await
         }
 
-        fn still_time_to_accumulate_more(&self) -> Result<bool> {
-            let elapsed = self.elapsed(self.last_time_bundled)?;
+        fn still_time_to_accumulate_more(
+            &self,
+            last_bundle_time: Option<DateTime<Utc>>,
+        ) -> Result<bool> {
+            let effective_last_bundle_time = last_bundle_time.unwrap_or_else(|| self.clock.now());
+
+            let elapsed = self.elapsed(effective_last_bundle_time)?;
 
             Ok(elapsed < self.config.accumulation_time_limit)
         }
@@ -354,6 +362,7 @@ pub mod port {
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Sync {
+        async fn get_latest_bundle_created_at(&self) -> Result<Option<DateTime<Utc>>>;
         async fn lowest_sequence_of_unbundled_blocks(
             &self,
             starting_height: u32,
@@ -364,6 +373,7 @@ pub mod port {
             bundle_id: NonNegative<i32>,
             block_range: RangeInclusive<u32>,
             fragments: NonEmpty<Fragment>,
+            created_at: DateTime<Utc>,
         ) -> Result<()>;
         async fn next_bundle_id(&self) -> Result<NonNegative<i32>>;
     }
