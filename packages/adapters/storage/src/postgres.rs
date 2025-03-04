@@ -1226,9 +1226,9 @@ impl Postgres {
 // Helper function to count additional blocks until the buildup threshold is reached or the stream is exhausted.
 async fn count_remaining_blocks(
     stream: &mut BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
-    buildup_detection_threshold: usize,
-) -> Result<usize> {
-    let mut count = 0;
+    buildup_detection_threshold: u32,
+) -> Result<u32> {
+    let mut count = 0u32;
     while count < buildup_detection_threshold {
         if stream.try_next().await?.is_some() {
             count += 1;
@@ -1249,42 +1249,36 @@ async fn take_limited_amount_of_blocks(
     let mut total_blocks_count = 0;
     let mut last_height: Option<u32> = None;
 
-    let target_bytes = target_cumulative_bytes as usize;
-    let threshold = block_buildup_threshold as usize;
+    while cumulative_bytes < target_cumulative_bytes {
+        let Some(db_block) = stream.try_next().await? else {
+            break;
+        };
 
-    // Process blocks until we reach the target cumulative bytes.
-    while cumulative_bytes < target_bytes {
-        match stream.try_next().await? {
-            Some(db_block) => {
-                total_blocks_count += 1;
-                let data_len = db_block.data.len();
-                let block = CompressedFuelBlock::try_from(db_block)?;
-                let height = block.height;
+        total_blocks_count += 1;
+        let data_len = db_block.data.len() as u32;
+        let block = CompressedFuelBlock::try_from(db_block)?;
+        let height = block.height;
 
-                // Check if the block is contiguous.
-                if let Some(prev_height) = last_height {
-                    if height != prev_height.saturating_add(1) {
-                        // A gap is detected. Break out without adding this block.
-                        break;
-                    }
-                }
-                last_height = Some(height);
-                contiguous_blocks.push(block);
-                cumulative_bytes += data_len;
+        // Check if the block is contiguous.
+        if let Some(prev_height) = last_height {
+            if height != prev_height.saturating_add(1) {
+                // A gap is detected. Break out without adding this block.
+                break;
             }
-            None => break, // Stream exhausted.
         }
+        last_height = Some(height);
+        contiguous_blocks.push(block);
+        cumulative_bytes += data_len;
     }
 
-    // If we haven't reached the target bytes, count the remaining blocks.
-    if cumulative_bytes < target_bytes {
-        let count = total_blocks_count + count_remaining_blocks(&mut stream, threshold).await?;
-        let buildup_detected = count >= threshold;
-        return Ok((contiguous_blocks, Some(buildup_detected)));
+    if cumulative_bytes < target_cumulative_bytes {
+        total_blocks_count += count_remaining_blocks(&mut stream, block_buildup_threshold).await?;
+        let buildup_detected = total_blocks_count >= block_buildup_threshold;
+        Ok((contiguous_blocks, Some(buildup_detected)))
+    } else {
+        // If target bytes are reached without encountering a gap, no buildup detection is needed.
+        Ok((contiguous_blocks, None))
     }
-
-    // If target bytes are reached without encountering a gap, no buildup detection is needed.
-    Ok((contiguous_blocks, None))
 }
 
 fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
