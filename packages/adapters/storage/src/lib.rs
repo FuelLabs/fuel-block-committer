@@ -1507,12 +1507,13 @@ mod tests {
         );
         assert!(
             unbundled.buildup_detected.unwrap(),
-            "Expected 'buildup_detected' to be true when a gap causes early termination"
+            "Expected 'buildup_detected' to be true when a gap causes early termination and a buildup happens"
         );
     }
 
     /// Test that when all available blocks form a complete sequence and the cumulative limit isn’t exceeded,
-    /// the function returns all blocks and the buildup (buildup_detected) indicator is None.
+    /// the function returns all blocks and the buildup (buildup_detected) indicator is false since
+    /// the buildup threshold is high
     #[tokio::test]
     async fn test_no_more_when_all_fetched() {
         let storage = start_db().await;
@@ -1537,6 +1538,6 @@ mod tests {
             10..=15,
             "Expected full consecutive sequence"
         );
-        assert!(unbundled.buildup_detected.is_some());
+        assert!(!unbundled.buildup_detected.unwrap());
     }
 }
