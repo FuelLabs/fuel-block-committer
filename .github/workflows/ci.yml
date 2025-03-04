@@ -168,40 +168,6 @@ jobs:
           ./target/release/fuel-block-committer --version
           PATH="$(pwd)/target/release:$PATH" cargo test --package e2e-tests --jobs 1
 
-  check-db-preview-updates:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Install sqlx CLI
-        run: |
-          cargo install sqlx-cli --no-default-features --features native-tls,postgres
-
-      - name: Install Graphviz
-        run: sudo apt-get update && sudo apt-get install -y graphviz
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Run the 'update_db_preview.sh' script
-        run: ./update_db_preview.sh
-
-      - name: Check for updated or new .dot files
-        run: |
-          if [[ -n "$(git status --porcelain db_preview)" ]]; then
-            echo "Error: The 'db_preview' directory contains uncommitted changes."
-            echo "Please run './update_db_preview.sh' and commit the updated files."
-            git status --short db_preview
-            exit 1
-          else
-            echo "No changes detected in 'db_preview'."
-          fi
-
   publish-crates-check:
     runs-on: ubuntu-latest
     steps:
@@ -372,7 +338,6 @@ jobs:
   publish:
     needs:
       - cargo-verifications
-      - check-db-preview-updates
       - additional-check-for-published-crates
       - publish-crates-check
       - e2e-tests
