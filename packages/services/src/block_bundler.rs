@@ -214,6 +214,17 @@ pub mod service {
             let cum_size = oldest.cumulative_size();
 
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
+            // We use `buildup_detected` because we previously encountered a scenario with:
+            // - A few unbundled blocks,
+            // - Followed by a long sequence of bundled blocks,
+            // - And then additional unbundled blocks.
+            // Since bundling required a fixed number of block bytes to be available, the process skipped over
+            // the blocks before the gap until a timeout occurred. Even after timing out, only one bundle
+            // was created, and then the system waited for another timeout. To avoid this, we ignore the
+            // total count of unbundled blocks when deciding whether to wait. The trade-off is that if there
+            // is a gap of unimported blocks followed by many unbundled blocks, processing of the newer
+            // blocks is deferred until the older ones are bundled. This can lead to the creation of small
+            // bundles if the import process cannot supply blocks quickly enough.
             let buildup_detected = buildup_detected.unwrap_or(false);
 
             let enough_bytes = cum_size >= self.config.bytes_to_accumulate;
