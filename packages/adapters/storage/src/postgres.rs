@@ -1450,7 +1450,7 @@ mod tests {
             TransactionState, Utc,
         };
         use std::cmp;
-        use std::time::Instant;
+        use std::time::{Duration, Instant};
 
         #[tokio::test]
         async fn stress_test_update_costs() -> crate::Result<()> {
@@ -1638,17 +1638,12 @@ mod tests {
                     range.end() - range.start() + 1
                 })
                 .unwrap_or(0);
-            println!(
-                "Unbundled blocks query returned {} blocks in {:?}",
-                unbundled_count, duration
-            );
 
-            // We expect exactly 2500 unbundled blocks.
             assert_eq!(
                 unbundled_count, 2500,
                 "Expected exactly 2500 unbundled blocks"
             );
-            println!("Query execution took: {:?}", duration);
+            assert!(duration < Duration::from_secs(1));
         }
     }
 }
