@@ -173,11 +173,11 @@ fi
 
 # Re-render the relationships diagram PNG using the updated DOT file.
 log "Re-rendering relationships diagram to PNG..."
-dot -Tpng "$DOTS_DIR/relationships.dot" -o "$PNGS_DIR/relationships.png" 2>/dev/null
+dot -Tsvg "$DOTS_DIR/relationships.dot" -o "$PNGS_DIR/relationships.svg" 2>/dev/null
 
 # --- Cleanup: Only keep relationships.dot and relationships.png in the preview directory ---
 # Move the two files to DB_PREVIEW_DIR and remove all other directories.
-mv "$PNGS_DIR/relationships.png" "$DB_PREVIEW_DIR/"
+mv "$PNGS_DIR/relationships.svg" "$DB_PREVIEW_DIR/"
 rm -rf "$DOTS_DIR" "$PNGS_DIR"
 
 log "Preview available in $DB_PREVIEW_DIR:"
