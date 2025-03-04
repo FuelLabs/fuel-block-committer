@@ -24,6 +24,7 @@ use services::{
 // goal, no need to report on the buildup. If we haven't because something made us stop then:
 // if we stopped due to a hole, we report if there is a buildup
 // if we stopped because no more blocks, we report that there is no build up
+// but if we accumulated enough bytes then we don't care about the buildup
 
 impl services::state_listener::port::Storage for Postgres {
     async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
@@ -95,10 +96,15 @@ impl services::block_bundler::port::Storage for Postgres {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
+        block_buildup_threshold: u32,
     ) -> Result<Option<UnbundledBlocks>> {
-        self._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
-            .await
-            .map_err(Into::into)
+        self._lowest_unbundled_blocks(
+            starting_height,
+            max_cumulative_bytes,
+            block_buildup_threshold,
+        )
+        .await
+        .map_err(Into::into)
     }
     async fn insert_bundle_and_fragments(
         &self,
@@ -207,6 +213,7 @@ impl services::state_pruner::port::Storage for Postgres {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::RangeInclusive;
     use std::time::Duration;
 
     use clock::TestClock;
@@ -218,12 +225,15 @@ mod tests {
         cost_reporter::port::Storage as CostStorage,
         state_committer::port::Storage as CommitterStorage,
         state_listener::port::Storage as ListenerStorage,
-        types::{CollectNonEmpty, L1Tx, TransactionCostUpdate, TransactionState, nonempty},
+        types::{
+            CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, TransactionCostUpdate,
+            TransactionState, nonempty,
+        },
     };
 
     use super::*;
 
-    // Helper function to create a storage instance for testing
+    // Helper function to create a storage instance for testing.
     async fn start_db() -> DbWithProcess {
         PostgresProcess::shared()
             .await
@@ -519,7 +529,7 @@ mod tests {
         storage: impl services::block_importer::port::Storage,
         range: RangeInclusive<u32>,
     ) {
-        // Insert blocks in chunks to enable setting up the db for a load test
+        // Insert blocks in chunks to enable setting up the db for a load test.
         let chunk_size = 10_000;
         for chunk in range.chunks(chunk_size).into_iter() {
             let blocks = chunk
@@ -564,13 +574,19 @@ mod tests {
             .unwrap();
     }
 
+    // Updated helper to accept the new buildup_detection_threshold parameter.
     async fn lowest_unbundled_sequence(
         storage: impl services::block_bundler::port::Storage,
         starting_height: u32,
         max_cumulative_bytes: u32,
+        buildup_detection_threshold: u32,
     ) -> RangeInclusive<u32> {
         storage
-            .lowest_sequence_of_unbundled_blocks(starting_height, max_cumulative_bytes)
+            .lowest_sequence_of_unbundled_blocks(
+                starting_height,
+                max_cumulative_bytes,
+                buildup_detection_threshold,
+            )
             .await
             .unwrap()
             .unwrap()
@@ -583,11 +599,11 @@ mod tests {
         // given
         let storage = start_db().await;
 
-        // Insert blocks 1 to 10
+        // Insert blocks 1 to 10.
         insert_sequence_of_unbundled_blocks(storage.clone(), 1..=10).await;
 
-        // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
+        // when: use a very high buildup threshold so that buildup detection is not triggered.
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 1..=10);
@@ -601,8 +617,8 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 0..=2).await;
         insert_sequence_of_unbundled_blocks(storage.clone(), 4..=6).await;
 
-        // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
+        // when: use a high buildup threshold so that buildup detection is not triggered.
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 0..=2);
@@ -615,8 +631,8 @@ mod tests {
 
         insert_sequence_of_unbundled_blocks(storage.clone(), 0..=10).await;
 
-        // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 2, u32::MAX).await;
+        // when: pass starting height = 2.
+        let height_range = lowest_unbundled_sequence(storage.clone(), 2, u32::MAX, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 2..=10);
@@ -629,10 +645,10 @@ mod tests {
 
         insert_sequence_of_unbundled_blocks(storage.clone(), 0..=10).await;
 
-        // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, 2).await;
+        // when: use cumulative limit 2 and a high buildup threshold.
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, 2, u32::MAX).await;
 
-        // then
+        // then: expect only blocks 0 and 1 (2 blocks total).
         assert_eq!(height_range, 0..=1);
     }
 
@@ -654,13 +670,13 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 3..=4).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 3..=4);
     }
 
-    /// This can happen if we change the lookback config a couple of times in a short period of time
+    /// This can happen if we change the lookback config a couple of times in a short period of time.
     #[tokio::test]
     async fn can_handle_bundled_blocks_appearing_after_unbundled_ones() {
         // given
@@ -671,9 +687,9 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 11..=15).await;
 
         // when
-        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await;
+        let height_range = lowest_unbundled_sequence(storage.clone(), 0, u32::MAX, u32::MAX).await;
 
-        // then
+        // then: the first unbundled sequence (0..=2) is returned.
         assert_eq!(height_range, 0..=2);
     }
 
@@ -693,10 +709,15 @@ mod tests {
         let blocks_to_retrieve = 3500;
         let start_time = std::time::Instant::now();
 
-        // each block has only 1 B of data
+        // each block has only 1 byte of data
         let max_cumulative_bytes = blocks_to_retrieve;
-        let height_range =
-            lowest_unbundled_sequence(storage.clone(), start_height, max_cumulative_bytes).await;
+        let height_range = lowest_unbundled_sequence(
+            storage.clone(),
+            start_height,
+            max_cumulative_bytes,
+            u32::MAX,
+        )
+        .await;
         let elapsed_time = start_time.elapsed();
 
         let expected_range = unbundled_start..=(unbundled_start + blocks_to_retrieve - 1);
@@ -706,12 +727,12 @@ mod tests {
         assert!(elapsed_time.as_secs_f64() <= 2.0);
     }
 
-    // Important because sqlx panics if the bundle is too big
+    // Important because sqlx panics if the bundle is too big.
     #[tokio::test]
     async fn can_insert_big_batches() {
         let storage = start_db().await;
 
-        // u16::MAX because of implementation details
+        // u16::MAX because of implementation details.
         insert_sequence_of_bundled_blocks(
             storage.clone(),
             0..=u16::MAX as u32 * 2,
@@ -726,12 +747,12 @@ mod tests {
         let storage = start_db().await;
         let starting_height = 10;
 
-        // Insert a bundle that ends before the starting_height
+        // Insert a bundle that ends before the starting_height.
         let next_id = storage.next_bundle_id().await.unwrap();
         storage
             .insert_bundle_and_fragments(
                 next_id,
-                1..=5, // Bundle ends at 5
+                1..=5, // Bundle ends at 5.
                 nonempty!(Fragment {
                     data: nonempty![0],
                     unused_bytes: 1000,
@@ -741,7 +762,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Insert a bundle that ends after the starting_height
+        // Insert a bundle that ends after the starting_height.
         let fragment = Fragment {
             data: nonempty![1],
             unused_bytes: 1000,
@@ -752,7 +773,7 @@ mod tests {
         storage
             .insert_bundle_and_fragments(
                 next_id,
-                10..=15, // Bundle ends at 15
+                10..=15, // Bundle ends at 15.
                 nonempty!(fragment.clone()),
             )
             .await
@@ -775,7 +796,7 @@ mod tests {
         let storage = start_db().await;
         let starting_height = 10;
 
-        // Insert a bundle that ends exactly at the starting_height
+        // Insert a bundle that ends exactly at the starting_height.
         let fragment = Fragment {
             data: nonempty![2],
             unused_bytes: 1000,
@@ -785,7 +806,7 @@ mod tests {
         storage
             .insert_bundle_and_fragments(
                 next_id,
-                5..=10, // Bundle ends at 10
+                5..=10, // Bundle ends at 10.
                 nonempty!(fragment.clone()),
             )
             .await
@@ -808,7 +829,7 @@ mod tests {
         let storage = start_db().await;
         let starting_height = 10;
 
-        // Insert a bundle that ends exactly at the starting_height
+        // Insert a bundle that ends exactly at the starting_height.
         let fragment = Fragment {
             data: nonempty![2],
             unused_bytes: 1000,
@@ -818,7 +839,7 @@ mod tests {
         storage
             .insert_bundle_and_fragments(
                 next_id,
-                5..=10, // Bundle ends at 10
+                5..=10, // Bundle ends at 10.
                 nonempty!(fragment.clone()),
             )
             .await
@@ -1366,52 +1387,51 @@ mod tests {
             let storage = storage.clone();
             async move {
                 storage
-                    .lowest_sequence_of_unbundled_blocks(starting_height, max_cumulative_bytes)
+                    .lowest_sequence_of_unbundled_blocks(
+                        starting_height,
+                        max_cumulative_bytes,
+                        u32::MAX,
+                    )
                     .await
                     .unwrap()
                     .map(|seq| seq.oldest.height_range())
             }
         };
 
-        //    Case A: With max_cumulative_bytes = 7, we can fit blocks 0..=2 (sizes: 2+4+1=7).
-        //    Block 3 (size 10) would push us to 17 total, exceeding 7, so we must stop before height 3.
+        // Case A: With max_cumulative_bytes = 7, we can fit blocks 0..=2 (sizes: 2+4+1=7).
+        // Block 3 (size 10) would push total to 17, exceeding 7, so we must stop before height 3.
         assert_eq!(
             lowest_unbundled_heights(0, 7).await,
             Some(0..=2),
             "We should get blocks 0..=2 under a 7-byte cumulative limit"
         );
 
-        //    Case B: If the first block alone exceeds the limit, we should get one block
-        //    regardless of it passing the limit.
+        // Case B: If the first block alone exceeds the limit, we should get one block.
         assert_eq!(
             lowest_unbundled_heights(0, 1).await,
             Some(0..=0),
             "If the first block is bigger than the limit, we get at least one"
         );
 
-        //    Case C: If we increase the cumulative limit to 25, we can include all blocks 0..=4.
-        //    Summing their sizes = 2+4+1+10+2 = 19 <= 25
+        // Case C: Increase cumulative limit to 25, we can include all blocks 0..=4.
+        // Total sizes = 2+4+1+10+2 = 19 <= 25.
         assert_eq!(
             lowest_unbundled_heights(0, 25).await,
             Some(0..=4),
             "We should be able to include all blocks if the limit is large enough"
         );
 
-        //    Case D: Verify starting_height is respected. If we start from height=2 and have a
-        //    large limit (25), then we only pick blocks >= 2: i.e. heights 2..=4 => sizes 1+10+2=13.
-        //    That is still <= 25, so we get 2..=4.
+        // Case D: Verify starting_height is respected.
+        // If starting from height 2 with limit 25, then blocks 2..=4 (sizes 1+10+2=13) are included.
         assert_eq!(
             lowest_unbundled_heights(2, 25).await,
             Some(2..=4),
             "Should start counting from height=2 and pick blocks 2..=4"
         );
 
-        //   Case E: Ensure bundled blocks are indeed excluded from the selection.
-        //   Let's 'bundle' block 0..=1, then retest. We'll confirm that
-        //   the function no longer returns them.
+        // Case E: Ensure bundled blocks are excluded.
         let bundle_id = storage.next_bundle_id().await.unwrap();
         let fragments = nonempty!(Fragment {
-            // the data inside a Fragment is unrelated to the block data; we just need any non-empty data
             data: nonempty![123],
             unused_bytes: 0,
             total_bytes: 1.try_into().unwrap(),
@@ -1421,8 +1441,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Now blocks 0 and 1 are considered 'bundled', so we only have 2..=4 as unbundled
-        // if we query from 0 with a large limit
+        // Now blocks 0 and 1 are bundled; only blocks 2..=4 remain unbundled.
         assert_eq!(
             lowest_unbundled_heights(0, 25).await,
             Some(2..=4),
@@ -1431,9 +1450,9 @@ mod tests {
     }
 
     /// Test that when the cumulative bytes limit is reached,
-    /// we return only as many blocks as fit and `has_more` is true.
+    /// we return only as many blocks as fit and the buildup (buildup_detected) indicator is None.
     #[tokio::test]
-    async fn test_has_more_due_to_limit() {
+    async fn test_buildup_detected_due_to_limit() {
         let storage = start_db().await;
 
         // Insert blocks 1 through 10, each with 1 byte of data.
@@ -1447,8 +1466,9 @@ mod tests {
         storage.insert_blocks(blocks).await.unwrap();
 
         // Use a cumulative byte limit of 5 bytes.
+        // When the target cumulative bytes is reached without a gap, buildup detection should return None.
         let unbundled = storage
-            .lowest_sequence_of_unbundled_blocks(1, 5)
+            .lowest_sequence_of_unbundled_blocks(1, 5, u32::MAX)
             .await
             .unwrap()
             .expect("Expected some unbundled blocks");
@@ -1456,19 +1476,18 @@ mod tests {
         let count = *height_range.end() - *height_range.start() + 1;
         assert_eq!(count, 5, "Expected only 5 blocks due to cumulative limit");
         assert!(
-            unbundled.has_more,
-            "Expected 'has_more' to be true when there are additional blocks"
+            unbundled.buildup_detected.is_none(),
+            "Expected 'buildup_detected' to be None when target cumulative bytes are reached"
         );
     }
 
-    /// Test that when there is a break in the block sequence (a gap),
-    /// the function returns the sequence up to the gap and sets `has_more` to true.
+    /// Test that when there is a gap in the block sequence,
+    /// the function returns blocks up to the gap and sets the buildup (buildup_detected) indicator to true.
     #[tokio::test]
-    async fn test_has_more_due_to_gap() {
+    async fn test_buildup_detected_due_to_gap() {
         let storage = start_db().await;
 
-        // Insert blocks with a gap:
-        // Blocks at heights 1, 2, 3 then a gap (no block at 4), then blocks 5 and 6.
+        // Insert blocks with a gap: 1,2,3 then (no 4), then 5 and 6.
         let blocks = [1, 2, 3, 5, 6]
             .map(|height| CompressedFuelBlock {
                 height,
@@ -1482,24 +1501,24 @@ mod tests {
 
         // Query starting from height 1 with a generous cumulative limit.
         let unbundled = storage
-            .lowest_sequence_of_unbundled_blocks(1, 100)
+            .lowest_sequence_of_unbundled_blocks(1, 100, 5)
             .await
             .unwrap()
             .expect("Expected some unbundled blocks");
-        // The returned sequence should stop at height 3 (the gap after 3)
+        // The sequence should stop at height 3 (gap after 3).
         assert_eq!(
             unbundled.oldest.height_range(),
             1..=3,
             "Sequence should stop at the gap"
         );
         assert!(
-            unbundled.has_more,
-            "Expected 'has_more' to be true when a gap causes early termination"
+            unbundled.buildup_detected.unwrap(),
+            "Expected 'buildup_detected' to be true when a gap causes early termination"
         );
     }
 
-    /// Test that when all available blocks form a complete sequence (and the cumulative bytes limit isn’t exceeded),
-    /// then the returned sequence includes them all and `has_more` is false.
+    /// Test that when all available blocks form a complete sequence and the cumulative limit isn’t exceeded,
+    /// the function returns all blocks and the buildup (buildup_detected) indicator is None.
     #[tokio::test]
     async fn test_no_more_when_all_fetched() {
         let storage = start_db().await;
@@ -1515,7 +1534,7 @@ mod tests {
         storage.insert_blocks(blocks).await.unwrap();
 
         let unbundled = storage
-            .lowest_sequence_of_unbundled_blocks(10, 100)
+            .lowest_sequence_of_unbundled_blocks(10, 100, u32::MAX)
             .await
             .unwrap()
             .expect("Expected unbundled blocks");
@@ -1524,9 +1543,6 @@ mod tests {
             10..=15,
             "Expected full consecutive sequence"
         );
-        assert!(
-            !unbundled.has_more,
-            "Expected 'has_more' to be false when all blocks are returned"
-        );
+        assert!(unbundled.buildup_detected.is_some());
     }
 }

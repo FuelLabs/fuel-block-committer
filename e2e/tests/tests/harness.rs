@@ -142,7 +142,7 @@ async fn state_submitting_finished(
     };
 
     let finished = db
-        .lowest_sequence_of_unbundled_blocks(0, 1)
+        .lowest_sequence_of_unbundled_blocks(0, 1, u32::MAX)
         .await?
         .is_none()
         && db.oldest_nonfinalized_fragments(0, 1).await?.is_empty()

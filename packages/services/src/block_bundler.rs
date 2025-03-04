@@ -16,7 +16,7 @@ pub mod service {
     };
     use crate::{
         Error, Result, Runner,
-        types::{DateTime, Utc, storage::SequentialFuelBlocks},
+        types::{DateTime, Utc},
     };
 
     #[derive(Debug, Clone, Copy)]
@@ -159,20 +159,24 @@ pub mod service {
         async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
             let starting_height = self.get_starting_height().await?;
 
-            while let Some(UnbundledBlocks { oldest, has_more }) = self
+            while let Some(unbundled_blocks) = self
                 .storage
                 .lowest_sequence_of_unbundled_blocks(
                     starting_height,
                     self.config.bytes_to_accumulate.get() as u32,
+                    self.config.blocks_to_accumulate.get() as u32,
                 )
                 .await?
             {
-                if self.should_wait(&oldest, has_more)? {
+                if self.should_wait(&unbundled_blocks)? {
                     return Ok(());
                 }
 
                 let next_id = self.storage.next_bundle_id().await?;
-                let bundler = self.bundler_factory.build(oldest, next_id).await;
+                let bundler = self
+                    .bundler_factory
+                    .build(unbundled_blocks.oldest, next_id)
+                    .await;
 
                 let optimization_start = self.clock.now();
                 let BundleProposal {
@@ -200,22 +204,27 @@ pub mod service {
             Ok(())
         }
 
-        fn should_wait(&self, blocks: &SequentialFuelBlocks, has_more: bool) -> Result<bool> {
-            let cum_size = blocks.cumulative_size();
-            let num_blocks = blocks.len();
+        fn should_wait(
+            &self,
+            UnbundledBlocks {
+                oldest,
+                buildup_detected,
+            }: &UnbundledBlocks,
+        ) -> Result<bool> {
+            let cum_size = oldest.cumulative_size();
 
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
-            let enough_blocks = blocks.len() >= self.config.blocks_to_accumulate;
+            let buildup_detected = buildup_detected.unwrap_or(false);
 
             let enough_bytes = cum_size >= self.config.bytes_to_accumulate;
 
-            let should_wait =
-                !enough_bytes && !enough_blocks && !has_more && still_time_to_accumulate_more;
+            let should_wait = !enough_bytes && !buildup_detected && still_time_to_accumulate_more;
 
             let available_data = human_readable_size(cum_size);
 
             if should_wait {
                 let needed_data = human_readable_size(self.config.bytes_to_accumulate);
+                let num_blocks = oldest.len();
 
                 let until_timeout = humantime::format_duration(
                     self.config
@@ -231,7 +240,7 @@ pub mod service {
             } else {
                 tracing::info!(
                     "Proceeding to bundle with {} blocks (accumulated {available_data}).",
-                    blocks.len()
+                    oldest.len()
                 );
             }
 
@@ -348,7 +357,7 @@ pub mod port {
     #[derive(Debug, Clone)]
     pub struct UnbundledBlocks {
         pub oldest: SequentialFuelBlocks,
-        pub has_more: bool,
+        pub buildup_detected: Option<bool>,
     }
 
     #[allow(async_fn_in_trait)]
@@ -357,7 +366,8 @@ pub mod port {
         async fn lowest_sequence_of_unbundled_blocks(
             &self,
             starting_height: u32,
-            max_cumulative_bytes: u32,
+            target_cumulative_bytes: u32,
+            block_buildup_detection_threshold: u32,
         ) -> Result<Option<UnbundledBlocks>>;
         async fn insert_bundle_and_fragments(
             &self,
