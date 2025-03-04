@@ -19,12 +19,6 @@ use services::{
         storage::BundleFragment,
     },
 };
-// TODO: Segfault
-// make it so that the storage adapter reports on whether there is a buildup. If we reach our size
-// goal, no need to report on the buildup. If we haven't because something made us stop then:
-// if we stopped due to a hole, we report if there is a buildup
-// if we stopped because no more blocks, we report that there is no build up
-// but if we accumulated enough bytes then we don't care about the buildup
 
 impl services::state_listener::port::Storage for Postgres {
     async fn get_non_finalized_txs(&self) -> Result<Vec<L1Tx>> {
