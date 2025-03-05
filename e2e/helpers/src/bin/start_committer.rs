@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
 
     let eth_node = start_eth(false).await?;
     let main_key = create_and_fund_kms_key(&kms, &eth_node).await?;
-    let eigen_key = create_eigen_key(&kms, &eth_node).await?;
+    let eigen_key = "".to_string(); // TODO: fill in eigen_key
 
     let (contract_args, deployed_contract) = deploy_contract(&eth_node, &main_key).await?;
 
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
             .with_new_bundle_check_interval("3s".to_owned())
             .with_state_pruner_retention("1s".to_owned())
             .with_state_pruner_run_interval("30s".to_owned())
-            .with_alt_da_key_arn(eigen_key);
+            .with_alt_da_key(eigen_key);
 
         committer_builder.start().await?
     };
@@ -79,17 +79,6 @@ async fn create_and_fund_kms_key(kms: &KmsProcess, eth_node: &EthNodeProcess) ->
     eth_node.fund(signer.address(), amount).await?;
 
     Ok(key)
-}
-
-async fn create_eigen_key(kms: &KmsProcess, eth_node: &EthNodeProcess) -> Result<String> {
-    let amount = alloy::primitives::utils::parse_ether("1000")?;
-
-    let key = kms.client().create_specific_key("".to_string()).await?;
-    let signer = Signer::make_aws_signer(kms.client(), key.to_string().clone()).await?;
-
-    eth_node.fund(signer.address(), amount).await?;
-
-    Ok(key.to_string())
 }
 
 async fn deploy_contract(

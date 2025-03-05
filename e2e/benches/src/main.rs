@@ -6,7 +6,8 @@ use anyhow::Result;
 use e2e_helpers::{
     fuel_node_simulated::{Compressibility, FuelNode, SimulationConfig},
     whole_stack::{
-        create_and_fund_kms_keys, deploy_contract, start_committer, start_db, start_eth, start_kms,
+        create_and_fund_kms_keys, deploy_contract, start_db, start_eigen_committer, start_eth,
+        start_kms,
     },
 };
 use serde::Deserialize;
@@ -29,7 +30,8 @@ async fn main() -> Result<()> {
     let logs = false;
     let kms = start_kms(logs).await?;
     let eth_node = start_eth(logs).await?;
-    let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
+    let (main_key, _) = create_and_fund_kms_keys(&kms, &eth_node).await?;
+    let eigen_key = "EIGEN KEY".to_string();
     let request_timeout = Duration::from_secs(50);
     let max_fee = 1_000_000_000_000;
     let (_contract_args, deployed_contract) =
@@ -37,15 +39,14 @@ async fn main() -> Result<()> {
     let db = start_db().await?;
 
     let logs = true;
-    let committer = start_committer(
+    let committer = start_eigen_committer(
         logs,
-        true,
         db.clone(),
         &eth_node,
         &fuel_node.url(),
         &deployed_contract,
         &main_key,
-        &secondary_key,
+        eigen_key,
     )
     .await?;
 

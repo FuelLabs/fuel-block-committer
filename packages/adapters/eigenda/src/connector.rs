@@ -96,6 +96,8 @@ impl EigenDAClient {
     }
 
     async fn handle_authenticated_dispersal(&mut self, data: Vec<u8>) -> Result<Vec<u8>> {
+        dbg!(self.account_id.clone());
+
         let disperse_request = AuthenticatedRequest {
             payload: Some(authenticated_request::Payload::DisperseRequest(
                 DisperseBlobRequest {

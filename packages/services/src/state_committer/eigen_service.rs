@@ -130,7 +130,7 @@ where
 
         let fragment = self
             .storage
-            .oldest_unsubmitted_fragments(starting_height, 1)
+            .oldest_unsubmitted_fragments(starting_height, 6)
             .await?
             .first()
             .cloned();

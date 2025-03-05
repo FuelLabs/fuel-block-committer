@@ -1,7 +1,4 @@
-use std::{
-    num::{NonZeroU32, NonZeroUsize},
-    time::Duration,
-};
+use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
 use eigenda::EigenDAClient;

@@ -9,7 +9,7 @@ pub struct Committer {
     show_logs: bool,
     main_key_arn: Option<String>,
     blob_key_arn: Option<String>,
-    alt_da_key_arn: Option<String>,
+    alt_da_key: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
@@ -142,8 +142,8 @@ impl Committer {
 
         if let Some(key) = blob_key {
             cmd.env("COMMITTER__ETH__L1_KEYS__BLOB", key.clone());
-        } else if let Some(key) = self.alt_da_key_arn {
-            let key = format!("Kms({key})");
+        } else if let Some(key) = self.alt_da_key {
+            let key = format!("Private({key})");
 
             cmd.env("COMMITTER__DA_LAYER__TYPE", "EigenDA")
                 .env(
@@ -238,8 +238,8 @@ impl Committer {
         self
     }
 
-    pub fn with_alt_da_key_arn(mut self, alt_da_key_arn: String) -> Self {
-        self.alt_da_key_arn = Some(alt_da_key_arn);
+    pub fn with_alt_da_key(mut self, alt_da_key: String) -> Self {
+        self.alt_da_key = Some(alt_da_key);
         self
     }
 
