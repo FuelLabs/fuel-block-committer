@@ -19,13 +19,13 @@ async fn main() -> Result<()> {
     let main_key = create_and_fund_kms_key(&kms, &eth_node).await?;
     let eigen_key = "".to_string(); // TODO: fill in eigen_key
 
-    let (contract_args, deployed_contract) = deploy_contract(&eth_node, &main_key).await?;
+    let (_, deployed_contract) = deploy_contract(&eth_node, &main_key).await?;
 
     let db = start_db().await?;
 
     let fuel_node_url = Url::parse("http://localhost:4000").unwrap();
 
-    let committer = {
+    let _ = {
         let committer_builder = Committer::default()
             .with_show_logs(true)
             .with_eth_rpc((eth_node).ws_url())

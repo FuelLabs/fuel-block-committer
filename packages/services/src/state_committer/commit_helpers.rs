@@ -1,5 +1,4 @@
 use crate::state_committer::port::{fuel::Api as FuelApi, Storage};
-use crate::types::{storage::BundleFragment, NonEmpty};
 use crate::Result;
 use metrics::prometheus::IntGauge;
 
