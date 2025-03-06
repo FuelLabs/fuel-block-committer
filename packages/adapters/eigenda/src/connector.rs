@@ -17,6 +17,7 @@ use crate::{
         disperser::{
             disperser_client::DisperserClient, BlobStatus, BlobStatusRequest, DisperseBlobRequest,
         },
+        BlobCommitmentRequest,
     },
     codec::convert_by_padding_empty_byte,
     error::{Error, Result},
@@ -85,7 +86,8 @@ impl EigenDAClient {
     }
 
     async fn post_data(&mut self, data: Vec<u8>) -> Result<Vec<u8>> {
-        let blob_header = self.blob_header(&data);
+        let commitment = self.get_blob_committment(&data).await?;
+        let blob_header = self.blob_header(commitment);
         let signature = self.sign_blob_header(&blob_header).await?;
 
         let request = DisperseBlobRequest {
@@ -107,27 +109,26 @@ impl EigenDAClient {
         Ok(reply.blob_key)
     }
 
-    // TODO
-    fn compute_kzg_commitment_proof(data: &[u8]) -> BlobCommitment {
-        // For demonstration, use Keccak256 hashes as dummy values.
-        let commitment = Keccak256::digest(data).to_vec();
-        let length_commitment = Keccak256::digest(&[data.len() as u8]).to_vec();
-        let length_proof = Keccak256::digest(&[data.len() as u8, 0x01]).to_vec();
-        BlobCommitment {
-            commitment,
-            length_commitment,
-            length_proof,
-            length: data.len() as u32,
-        }
+    async fn get_blob_committment(&self, data: &[u8]) -> Result<BlobCommitment> {
+        let request = BlobCommitmentRequest {
+            blob: data.to_vec(),
+        };
+
+        let mut client = self.client.clone();
+        let reply = client.get_blob_commitment(request).await?;
+        let commitment = reply
+            .into_inner()
+            .blob_commitment
+            .expect("commitment not found");
+
+        Ok(commitment)
     }
 
-    fn blob_header(&self, data: &[u8]) -> BlobHeader {
-        let blob_commitment = Self::compute_kzg_commitment_proof(data);
-
+    fn blob_header(&self, commitment: BlobCommitment) -> BlobHeader {
         BlobHeader {
-            version: 2, // TODO: verify this is correct
-            quorum_numbers: vec![],
-            commitment: Some(blob_commitment),
+            version: 0,
+            quorum_numbers: vec![0],
+            commitment: Some(commitment),
             payment_header: Some(PaymentHeader {
                 account_id: self.account_id.clone(),
                 timestamp: Utc::now().timestamp_nanos_opt().expect("timestampt failed"),
@@ -137,11 +138,7 @@ impl EigenDAClient {
     }
 
     async fn sign_blob_header(&self, header: &BlobHeader) -> Result<Vec<u8>> {
-        let mut buf = Vec::with_capacity(header.encoded_len());
-        header
-            .encode(&mut buf)
-            .expect("Failed to encode blob header");
-
+        let mut buf = header.encode_to_vec();
         let hash = Keccak256::digest(&buf);
 
         let signature = self.signer.sign_prehash(&hash).await?;

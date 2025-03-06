@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
     let kms = start_kms(logs).await?;
     let eth_node = start_eth(logs).await?;
     let (main_key, _) = create_and_fund_kms_keys(&kms, &eth_node).await?;
-    let eigen_key = "EIGEN KEY".to_string();
+    let eigen_key = "***REMOVED***".to_string();
     let request_timeout = Duration::from_secs(50);
     let max_fee = 1_000_000_000_000;
     let (_contract_args, deployed_contract) =
