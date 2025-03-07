@@ -28,6 +28,20 @@ impl<'a> From<&'a L1Tx> for MaxTxFeesPerGas {
 }
 
 impl MaxTxFeesPerGas {
+    /// Returns a new [`MaxTxFeesPerGas`] instance with its `normal` fee adjusted to ensure
+    /// that it is at least as high as the transaction's `priority` fee.
+    ///
+    /// Under EIP1559, the following requirements must be met:
+    /// - `max_fee_per_gas` must be at least as high as the block's base fee.
+    /// - `max_fee_per_gas` must be at least as high as the transaction's `max_priority_fee_per_gas`.
+    pub fn normalized(self) -> Self {
+        Self {
+            normal: std::cmp::max(self.normal, self.priority),
+            priority: self.priority,
+            blob: self.blob,
+        }
+    }
+
     pub fn double(self) -> Self {
         Self {
             normal: self.normal.saturating_mul(2),
@@ -41,6 +55,31 @@ impl MaxTxFeesPerGas {
             normal: max(self.normal, previous_fees.normal),
             priority: max(self.priority, previous_fees.priority),
             blob: max(self.blob, previous_fees.blob),
+        }
+    }
+
+    /// Projects the current fee estimates forward to account for potential increases in the base fee
+    /// over a future time horizon. This is achieved by iteratively applying Ethereum’s fee growth
+    /// mechanism, which effectively multiplies a fee by about 1.125 per block. In this projection,
+    /// the blob fee and the normal fee are each adjusted over their predetermined horizons, and the
+    /// normal fee is then increased by adding the current priority fee as a buffer.
+    ///
+    /// EIP1559 requires only that:
+    /// - `max_fee_per_gas` ≥ `base_fee`
+    /// - `max_fee_per_gas` ≥ `max_priority_fee_per_gas`
+    ///
+    /// However, since the miner’s effective tip is computed as `max_fee_per_gas - base_fee`,
+    /// a sudden rise in the base fee can reduce the tip even if the above conditions are met.
+    /// By adding the priority fee to the projected normal fee, this method attempts to preserve
+    /// the intended tip.
+    pub fn projected(&self) -> Self {
+        const BLOB_FEE_HORIZON: u32 = 5;
+        const FEE_HORIZON: u32 = 6;
+
+        Self {
+            normal: at_horizon(self.normal, FEE_HORIZON).saturating_add(self.priority),
+            blob: at_horizon(self.blob, BLOB_FEE_HORIZON),
+            priority: self.priority,
         }
     }
 }
@@ -79,7 +118,7 @@ impl TransactionRequestExt for TransactionRequest {
     }
 }
 
-pub fn at_horizon(mut value: u128, horizon: u32) -> u128 {
+fn at_horizon(mut value: u128, horizon: u32) -> u128 {
     for _ in 0..horizon {
         // multiply by 1.125 = multiply by 9, then divide by 8
         value = value.saturating_mul(9).saturating_div(8);
@@ -190,6 +229,67 @@ mod tests {
                 blob: 30,
             },
         );
+    }
+
+    #[test]
+    fn test_project_fees_at_horizon() {
+        // given
+        let fees = MaxTxFeesPerGas {
+            normal: 100,
+            priority: 20,
+            blob: 50,
+        };
+
+        // when
+        let projected = fees.projected();
+
+        // then
+        assert_eq!(
+            projected,
+            MaxTxFeesPerGas {
+                normal: 219,
+                blob: 87,
+                ..fees
+            }
+        );
+    }
+
+    #[test]
+    fn normalized_updates_normal_when_lower_than_priority() {
+        // given
+        let fees = MaxTxFeesPerGas {
+            normal: 50,    // Lower than the priority fee.
+            priority: 100, // Intended miner tip.
+            blob: 30,
+        };
+
+        // when
+        let normalized_fees = fees.normalized();
+
+        // then
+        assert_eq!(
+            normalized_fees,
+            MaxTxFeesPerGas {
+                normal: 100,
+                ..normalized_fees
+            }
+        );
+    }
+
+    #[test]
+    fn normalized_keeps_normal_when_higher_than_priority() {
+        // given
+        let fees = MaxTxFeesPerGas {
+            normal: 150, // Higher than the priority fee.
+            priority: 100,
+            blob: 30,
+        };
+
+        // when
+        let normalized_fees = fees.normalized();
+
+        // then
+        assert_eq!(fees, normalized_fees);
     }
 
     fn gen_l1_tx(max_fee: u128, blob_fee: u128, priority_fee: u128) -> L1Tx {
