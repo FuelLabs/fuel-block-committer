@@ -84,10 +84,7 @@ pub struct WsConnection {
 }
 
 impl WsConnection {
-    async fn estimate_fees_at_horizon(&self, priority: Priority) -> Result<MaxTxFeesPerGas> {
-        const BLOB_FEE_HORIZON: u32 = 5;
-        const FEE_HORIZON: u32 = 6;
-
+    async fn current_fees(&self, priority: Priority) -> Result<MaxTxFeesPerGas> {
         let priority_perc = self
             .tx_config
             .acceptable_priority_fee_percentage
@@ -102,11 +99,7 @@ impl WsConnection {
             )
             .await?;
 
-        let mut fees_w_horizon = MaxTxFeesPerGas::try_from(fee_history)?;
-        fees_w_horizon.blob = estimation::at_horizon(fees_w_horizon.blob, BLOB_FEE_HORIZON);
-        fees_w_horizon.normal = estimation::at_horizon(fees_w_horizon.normal, FEE_HORIZON);
-
-        Ok(fees_w_horizon)
+        MaxTxFeesPerGas::try_from(fee_history)
     }
 
     fn get_max_fee(tx: &L1Tx, gas_limit: u128, num_fragments: usize) -> u128 {
@@ -265,7 +258,7 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = blob_encoder::BlobEncoder::sidecar_from_fragments(limited_fragments)?;
 
-        let fees = self.estimate_fees_at_horizon(priority).await?;
+        let projected_fees = self.current_fees(priority).await?.projected();
 
         let blob_tx = TransactionRequest::default()
             .with_blob_sidecar(sidecar)
@@ -273,13 +266,15 @@ impl EthApi for WsConnection {
 
         let blob_tx = if let Some(previous_tx) = previous_tx {
             let minimum_replacement_fees = MaxTxFeesPerGas::from(&previous_tx).double();
-            let fees = fees.retain_max(minimum_replacement_fees);
+            let fees = projected_fees
+                .retain_max(minimum_replacement_fees)
+                .normalized();
 
             blob_tx
                 .with_max_fees(fees)
                 .with_nonce(previous_tx.nonce as u64)
         } else {
-            blob_tx.with_max_fees(fees)
+            blob_tx.with_max_fees(projected_fees.normalized())
         };
 
         let blob_tx = blob_provider.fill(blob_tx).await?;
