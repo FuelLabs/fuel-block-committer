@@ -30,7 +30,6 @@ pub fn convert_by_padding_empty_byte(data: &[u8]) -> Vec<u8> {
     valid_data
 }
 
-// for decoding
 pub fn remove_empty_byte_from_padded_bytes(data: &[u8]) -> Vec<u8> {
     const PUT_SIZE: usize = BYTES_PER_SYMBOL - 1; // 31
 

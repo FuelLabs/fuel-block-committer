@@ -1,4 +1,5 @@
 use k256::{ecdsa::SigningKey, SecretKey};
+use sha3::{Digest, Keccak256};
 use signers::{AwsKmsClient, KeySource};
 
 use crate::error::{Error, Result};

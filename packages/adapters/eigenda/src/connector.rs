@@ -1,6 +1,6 @@
-use prost::Message as _;
+use futures::{stream, StreamExt, TryFutureExt};
 use services::{
-    types::{DispersalStatus, EigenDASubmission, Fragment, Utc},
+    types::{DispersalStatus, EigenDASubmission, Fragment},
     Error as ServiceError, Result as ServiceResult,
 };
 use sha3::{Digest, Keccak256};
@@ -13,10 +13,12 @@ use url::Url;
 
 use crate::{
     bindings::{
-        common::{BlobCommitment, BlobHeader, PaymentHeader},
+        authenticated_reply,
         disperser::{
-            disperser_client::DisperserClient, BlobStatus, BlobStatusRequest, DisperseBlobRequest,
+            authenticated_request, disperser_client::DisperserClient, AuthenticatedRequest,
+            BlobStatus, BlobStatusRequest, DisperseBlobRequest,
         },
+        AuthenticationData,
     },
     codec::convert_by_padding_empty_byte,
     error::{Error, Result},
@@ -30,9 +32,9 @@ impl services::state_committer::port::eigen_da::Api for EigenDAClient {
 
         let mut client = self.clone();
         let request_id = client
-            .post_data(data)
-            .await
-            .map_err(|e| ServiceError::Other(format!("Failed to disperse state fragment: {e}")))?;
+            .handle_authenticated_dispersal(data)
+            .map_err(|e| ServiceError::Other(format!("Failed to disperse state fragment: {e}")))
+            .await?;
 
         Ok(EigenDASubmission {
             request_id,
@@ -84,79 +86,104 @@ impl EigenDAClient {
         })
     }
 
-    async fn post_data(&mut self, data: Vec<u8>) -> Result<Vec<u8>> {
-        let blob_header = self.blob_header(&data);
-        let signature = self.sign_blob_header(&blob_header).await?;
-
-        let request = DisperseBlobRequest {
-            blob: data,
-            blob_header: Some(blob_header),
-            signature,
-        };
-
-        let response = self.client.disperse_blob(Request::new(request)).await?;
-        let reply = response.into_inner();
-
-        if reply.result != BlobStatus::Queued as i32 {
-            return Err(Error::Other(format!(
-                "Unexpected result during dispersal: {}",
-                reply.result
-            )));
-        }
-
-        Ok(reply.blob_key)
-    }
-
-    // TODO
-    fn compute_kzg_commitment_proof(data: &[u8]) -> BlobCommitment {
-        // For demonstration, use Keccak256 hashes as dummy values.
-        let commitment = Keccak256::digest(data).to_vec();
-        let length_commitment = Keccak256::digest(&[data.len() as u8]).to_vec();
-        let length_proof = Keccak256::digest(&[data.len() as u8, 0x01]).to_vec();
-        BlobCommitment {
-            commitment,
-            length_commitment,
-            length_proof,
-            length: data.len() as u32,
-        }
-    }
-
-    fn blob_header(&self, data: &[u8]) -> BlobHeader {
-        let blob_commitment = Self::compute_kzg_commitment_proof(data);
-
-        BlobHeader {
-            version: 2, // TODO: verify this is correct
-            quorum_numbers: vec![],
-            commitment: Some(blob_commitment),
-            payment_header: Some(PaymentHeader {
-                account_id: self.account_id.clone(),
-                timestamp: Utc::now().timestamp_nanos_opt().expect("timestampt failed"),
-                cumulative_payment: vec![], // TODO: cumulative payment as required.
-            }),
-        }
-    }
-
-    async fn sign_blob_header(&self, header: &BlobHeader) -> Result<Vec<u8>> {
-        let mut buf = Vec::with_capacity(header.encoded_len());
-        header
-            .encode(&mut buf)
-            .expect("Failed to encode blob header");
-
-        let hash = Keccak256::digest(&buf);
+    async fn sign_challenge_u32(&self, nonce: u32) -> Result<Vec<u8>> {
+        let nonce_bytes = nonce.to_be_bytes();
+        let hash = Keccak256::digest(nonce_bytes);
 
         let signature = self.signer.sign_prehash(&hash).await?;
 
         Ok(signature)
     }
 
-    async fn check_status(&self, blob_key: Vec<u8>) -> Result<DispersalStatus> {
-        let request = BlobStatusRequest { blob_key };
+    async fn handle_authenticated_dispersal(&mut self, data: Vec<u8>) -> Result<Vec<u8>> {
+        dbg!(self.account_id.clone());
+
+        let disperse_request = AuthenticatedRequest {
+            payload: Some(authenticated_request::Payload::DisperseRequest(
+                DisperseBlobRequest {
+                    data,
+                    custom_quorum_numbers: vec![],
+                    account_id: self.account_id.clone(),
+                },
+            )),
+        };
+
+        let (tx, rx) = tokio::sync::mpsc::channel(2);
+        let tx_clone = tx.clone();
+
+        tx.send(disperse_request)
+            .await
+            .map_err(|_| Error::AuthenticationFailed)?;
+
+        // Start bidirectional streaming with a stream that can be extended
+        let mut stream = self
+            .client
+            .disperse_blob_authenticated(Request::new(stream::unfold(rx, |mut rx| async move {
+                rx.recv().await.map(|req| (req, rx))
+            })))
+            .await?
+            .into_inner();
+
+        // Process server responses
+        while let Some(reply) = stream.next().await {
+            let reply = reply?;
+
+            match reply.payload {
+                Some(authenticated_reply::Payload::BlobAuthHeader(header)) => {
+                    let signature_bytes =
+                        self.sign_challenge_u32(header.challenge_parameter).await?;
+
+                    // Send back the authentication data
+                    let auth_request = AuthenticatedRequest {
+                        payload: Some(authenticated_request::Payload::AuthenticationData(
+                            AuthenticationData {
+                                authentication_data: signature_bytes,
+                            },
+                        )),
+                    };
+
+                    // Send the authentication response through the same stream
+                    tx_clone
+                        .send(auth_request)
+                        .await
+                        .map_err(|_| Error::AuthenticationFailed)?;
+                }
+                Some(authenticated_reply::Payload::DisperseReply(reply)) => {
+                    return Ok(reply.request_id);
+                }
+                None => {
+                    return Err(Error::Other("received unexpected response".to_string()));
+                }
+            }
+        }
+
+        Err(Error::AuthenticationFailed)
+    }
+
+    async fn handle_unauthenticated_dispersal(&mut self, data: Vec<u8>) -> Result<Vec<u8>> {
+        let reply = self
+            .client
+            .disperse_blob(Request::new(DisperseBlobRequest {
+                data,
+                custom_quorum_numbers: vec![],
+                account_id: self.account_id.clone(),
+            }))
+            .await?
+            .into_inner();
+
+        Ok(reply.request_id)
+    }
+
+    async fn check_status(&self, request_id: Vec<u8>) -> Result<DispersalStatus> {
         let mut client = self.client.clone();
+        let status = client
+            .get_blob_status(Request::new(BlobStatusRequest { request_id }))
+            .await?
+            .into_inner()
+            .status;
 
-        let response = client.get_blob_status(Request::new(request)).await?;
-        let reply = response.into_inner();
+        let status = BlobStatus::try_from(status).unwrap_or(BlobStatus::Unknown);
 
-        let status = BlobStatus::try_from(reply.status).unwrap_or(BlobStatus::Unknown);
         Ok(status.into())
     }
 }

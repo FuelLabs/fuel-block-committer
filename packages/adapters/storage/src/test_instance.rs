@@ -5,13 +5,15 @@ use std::{
 };
 
 use delegate::delegate;
+use serde::Serialize;
 use services::{
     block_bundler::{self, port::UnbundledBlocks},
     block_committer, block_importer,
     types::{
-        storage::BundleFragment, BlockSubmission, BlockSubmissionTx, BundleCost,
-        CompressedFuelBlock, DateTime, DispersalStatus, EigenDASubmission, Fragment, L1Tx,
-        NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        storage::{BundleFragment, SequentialFuelBlocks},
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        DispersalStatus, EigenDASubmission, Fragment, L1Tx, NonEmpty, NonNegative,
+        TransactionCostUpdate, TransactionState, Utc,
     },
 };
 use sqlx::Executor;
@@ -218,7 +220,7 @@ impl services::state_listener::port::Storage for DbWithProcess {
     }
     async fn update_eigen_submissions(
         &self,
-        _changes: Vec<(u32, DispersalStatus)>,
+        changes: Vec<(u32, DispersalStatus)>,
     ) -> services::Result<()> {
         unimplemented!();
     }
@@ -357,17 +359,17 @@ impl services::state_committer::port::Storage for DbWithProcess {
 
     async fn record_eigenda_submission(
         &self,
-        _submission: EigenDASubmission,
-        _fragment_id: i32,
-        _created_at: DateTime<Utc>,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
     ) -> services::Result<()> {
         unimplemented!()
     }
 
     async fn oldest_unsubmitted_fragments(
         &self,
-        _starting_height: u32,
-        _limit: usize,
+        starting_height: u32,
+        limit: usize,
     ) -> services::Result<Vec<BundleFragment>> {
         unimplemented!()
     }

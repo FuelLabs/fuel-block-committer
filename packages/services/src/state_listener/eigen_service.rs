@@ -50,6 +50,7 @@ where
 
             match status {
                 DispersalStatus::Processing => {
+                    // log processing
                     tracing::info!(
                         "Processing submission with request_id: {}",
                         base64::encode(submission.request_id)
@@ -71,6 +72,7 @@ where
                     changes.push((submission_id, DispersalStatus::Finalized));
                 }
                 _ => {
+                    // log got bad status
                     tracing::info!(
                         "Unexpected status - submission with request_id: {}",
                         base64::encode(submission.request_id)
