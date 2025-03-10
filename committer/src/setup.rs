@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
-use eigenda::EigenDAClient;
+use eigenda::{EigenDAClient, Throughput};
 use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -349,8 +349,9 @@ pub fn eigen_state_committer(
 
     state_committer.register_metrics(registry);
 
+    // TODO: have a separate configurable polling interval
     Ok(schedule_polling(
-        config.app.tx_finalization_check_interval,
+        Duration::from_secs(1),
         state_committer,
         "State Committer",
         cancel_token,
@@ -486,9 +487,17 @@ pub async fn eigen_adapter(
 ) -> Result<EigenDAClient> {
     // TODO add health tracking
 
-    let eigen_da = EigenDAClient::new(config.key.clone(), config.rpc.clone())
-        .await
-        .expect("TODO add err conversion");
+    let eigen_da = EigenDAClient::new(
+        config.key.clone(),
+        config.rpc.clone(),
+        Throughput {
+            bytes_per_sec: 2_000_000.try_into().unwrap(),
+            max_burst: 16_000_000.try_into().unwrap(),
+            calls_per_sec: 1.try_into().unwrap(),
+        },
+    )
+    .await
+    .expect("TODO add err conversion");
 
     Ok(eigen_da)
 }

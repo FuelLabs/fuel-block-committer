@@ -1,4 +1,16 @@
-use futures::{stream, StreamExt, TryFutureExt};
+use std::{
+    num::NonZeroU32,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use byte_unit::Byte;
+use futures::{future::Inspect, stream, StreamExt, TryFutureExt};
+use governor::{
+    clock::DefaultClock,
+    state::{InMemoryState, NotKeyed},
+    Quota, RateLimiter,
+};
 use services::{
     types::{DispersalStatus, EigenDASubmission, Fragment},
     Error as ServiceError, Result as ServiceResult,
@@ -9,6 +21,7 @@ use tonic::{
     transport::{Channel, ClientTlsConfig},
     Request,
 };
+use tracing::info;
 use url::Url;
 
 use crate::{
@@ -27,14 +40,43 @@ use crate::{
 
 impl services::state_committer::port::eigen_da::Api for EigenDAClient {
     async fn submit_state_fragment(&self, fragment: Fragment) -> ServiceResult<EigenDASubmission> {
-        let data: Vec<_> = fragment.data.into_iter().collect();
+        let data = fragment.data;
+        let start = Instant::now();
+        self.throughput_limiter
+            .until_n_ready(NonZeroU32::new(data.len() as u32).unwrap())
+            .await
+            .unwrap();
+        self.post_frequency_limiter
+            .until_n_ready(NonZeroU32::new(1).unwrap())
+            .await
+            .unwrap();
+
+        let elapsed = start.elapsed();
+        if elapsed > Duration::from_millis(100) {
+            let elapsed = humantime::format_duration(elapsed);
+            info!("Was throttled for {elapsed}");
+        }
+
+        let data: Vec<_> = data.into_iter().collect();
         let data = convert_by_padding_empty_byte(&data);
 
         let mut client = self.clone();
+        let start = Instant::now();
+        let data_len = data.len();
         let request_id = client
             .handle_authenticated_dispersal(data)
             .map_err(|e| ServiceError::Other(format!("Failed to disperse state fragment: {e}")))
             .await?;
+
+        let original_size =
+            Byte::from_u64(data_len as u64).get_appropriate_unit(byte_unit::UnitType::Decimal);
+
+        let bytes_per_sec = data_len as f64 / start.elapsed().as_secs_f64();
+        let speed =
+            Byte::from_u64(bytes_per_sec as u64).get_appropriate_unit(byte_unit::UnitType::Decimal);
+        let elapsed = humantime::format_duration(start.elapsed());
+
+        info!("Posted {original_size:.3} in {elapsed} at speed: {speed:.5}");
 
         Ok(EigenDASubmission {
             request_id,
@@ -62,10 +104,21 @@ pub struct EigenDAClient {
     client: DisperserClient<Channel>,
     signer: EigenDASigner,
     account_id: String,
+    // Limits the number of bytes that can be posted per second.
+    throughput_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
+    // Limits the posting frequency to one request per second.
+    post_frequency_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Throughput {
+    pub bytes_per_sec: NonZeroU32,
+    pub max_burst: NonZeroU32,
+    pub calls_per_sec: NonZeroU32,
 }
 
 impl EigenDAClient {
-    pub async fn new(key: KeySource, rpc: Url) -> Result<Self> {
+    pub async fn new(key: KeySource, rpc: Url, throughput: Throughput) -> Result<Self> {
         let tls_config = ClientTlsConfig::new().with_native_roots();
 
         let endpoint = Channel::from_shared(rpc.to_string())
@@ -79,10 +132,16 @@ impl EigenDAClient {
         let signer = EigenDASigner::new(key).await?;
         let account_id = signer.account_id().await;
 
+        let throughput_quota =
+            Quota::per_second(throughput.bytes_per_sec).allow_burst(throughput.max_burst);
+        let post_quota = Quota::per_second(throughput.calls_per_sec);
+
         Ok(Self {
             client,
             signer,
             account_id,
+            throughput_limiter: Arc::new(RateLimiter::direct(throughput_quota)),
+            post_frequency_limiter: Arc::new(RateLimiter::direct(post_quota)),
         })
     }
 

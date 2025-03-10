@@ -20,10 +20,19 @@ metrics = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tonic = { workspace = true, features = ["tls", "transport", "tls-roots", "codegen", "prost"] }
+tonic = { workspace = true, features = [
+  "tls",
+  "transport",
+  "tls-roots",
+  "codegen",
+  "prost",
+] }
 tonic-build = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+governor = { workspace = true, features = ["default"] }
+humantime = { workspace = true }
+byte-unit = { workspace = true, features = ["byte", "u128"] }
 
 [dev-dependencies]
 
