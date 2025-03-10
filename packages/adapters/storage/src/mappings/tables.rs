@@ -409,7 +409,6 @@ impl TryFrom<L1Tx> for services::types::L1Tx {
 pub enum L1TxState {
     Pending,
     Finalized,
-    SqueezedOut,
     IncludedInBlock,
     Failed,
 }
@@ -421,7 +420,6 @@ impl From<L1TxState> for i16 {
             L1TxState::Finalized => 1,
             L1TxState::Failed => 2,
             L1TxState::IncludedInBlock => 3,
-            L1TxState::SqueezedOut => 4,
         }
     }
 }
@@ -433,7 +431,6 @@ impl From<&TransactionState> for L1TxState {
             TransactionState::IncludedInBlock => Self::IncludedInBlock,
             TransactionState::Finalized(_) => Self::Finalized,
             TransactionState::Failed => Self::Failed,
-            TransactionState::SqueezedOut => Self::SqueezedOut,
         }
     }
 }

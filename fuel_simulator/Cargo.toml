@@ -1,0 +1,12 @@
+[package]
+name = "fuel_simulator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.28", features = ["full"] }
+warp = "0.3"
+async-graphql = "7"
+async-graphql-warp = "7"
+hex = "0.4"
+clap = { version = "4", features = ["derive"] }

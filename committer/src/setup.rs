@@ -1,6 +1,7 @@
-use std::time::Duration;
+use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
+use eigenda::{EigenDAClient, Throughput};
 use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -13,7 +14,7 @@ use services::{
     fee_metrics_tracker::service::FeeMetricsTracker,
     fees::cache::CachingApi,
     state_committer::port::Storage,
-    state_listener::service::StateListener,
+    state_listener::{eigen_service::StateListener as EigenStateListener, service::StateListener},
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
 };
@@ -21,7 +22,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{Database, FuelApi, L1, config, errors::Result};
+use crate::{
+    config::{self, DALayer, EigenDA},
+    errors::{Error, Result},
+    Database, FuelApi, L1,
+};
 
 pub fn wallet_balance_tracker(
     internal_config: &config::Internal,
@@ -70,6 +75,179 @@ pub fn block_committer(
         config.app.block_check_interval,
         block_committer,
         "Block Committer",
+        cancel_token,
+    )
+}
+
+pub fn ethereum_da_services(
+    fuel: FuelApi,
+    ethereum_rpc: L1,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+    registry: &Registry,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
+    let block_bundler = block_bundler(
+        fuel.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &registry,
+    );
+
+    let fee_api = CachingApi::new(
+        ethereum_rpc.clone(),
+        internal_config.l1_blocks_cached_for_fee_metrics_tracker,
+    );
+
+    let fee_metrics_updater_handle =
+        fee_metrics_tracker(fee_api.clone(), cancel_token.clone(), &config, &registry)?;
+
+    let committer = state_committer(
+        fuel.clone(),
+        ethereum_rpc.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &registry,
+        fee_api,
+    )?;
+
+    let listener = state_listener(
+        ethereum_rpc,
+        storage.clone(),
+        cancel_token.clone(),
+        &registry,
+        &config,
+        last_finalization_metric(), // TODO: will this match on the metric name?
+    );
+
+    let state_importer_handle = block_importer(
+        fuel,
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &internal_config,
+    );
+
+    // TODO: state pruner currently only works with the Ethereum DA
+    let state_pruner_handle =
+        state_pruner(storage.clone(), cancel_token.clone(), &registry, &config);
+
+    let handles = vec![
+        committer,
+        state_importer_handle,
+        block_bundler,
+        listener,
+        fee_metrics_updater_handle,
+        state_pruner_handle,
+    ];
+
+    Ok(handles)
+}
+
+pub async fn eigen_da_services(
+    fuel: FuelApi,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+    registry: &Registry,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
+    let block_bundler = eigen_block_bundler(
+        fuel.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &registry,
+    );
+
+    let (state_committer_handle, state_listener_handle) = match config.da_layer.clone() {
+        Some(DALayer::EigenDA(eigen_config)) => {
+            let eigen_da = eigen_adapter(&eigen_config, &internal_config).await?;
+            let committer = eigen_state_committer(
+                fuel.clone(),
+                eigen_da.clone(),
+                storage.clone(),
+                cancel_token.clone(),
+                &config,
+                &registry,
+            )?;
+
+            let listener = eigen_state_listener(
+                eigen_da,
+                storage.clone(),
+                cancel_token.clone(),
+                &config,
+                &registry,
+                last_finalization_metric(), // TODO will this match on name
+            )?;
+
+            (committer, listener)
+        }
+        _ => {
+            return Err(Error::Other("Invalid da layer config".to_string()));
+        }
+    };
+
+    let state_importer_handle = block_importer(
+        fuel,
+        storage.clone(),
+        cancel_token.clone(),
+        &config,
+        &internal_config,
+    );
+
+    // TODO: no pruner or fee metric handle
+
+    let handles = vec![
+        state_committer_handle,
+        state_importer_handle,
+        block_bundler,
+        state_listener_handle,
+    ];
+
+    Ok(handles)
+}
+
+pub fn eigen_block_bundler(
+    fuel: FuelApi,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> tokio::task::JoinHandle<()> {
+    let bundler_factory = services::EigenBundlerFactory::new(
+        bundle::Encoder::new(config.app.bundle.compression_level),
+        NonZeroU32::new(15_000_000).unwrap(), // TODO pass this via config
+        config.app.bundle.max_fragments_per_bundle,
+    );
+
+    let block_bundler = BlockBundler::new(
+        fuel,
+        storage,
+        SystemClock,
+        bundler_factory,
+        BlockBundlerConfig {
+            optimization_time_limit: Duration::from_secs(0),
+            accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            lookback_window: config.app.bundle.block_height_lookback,
+            bytes_to_accumulate: config.app.bundle.bytes_to_accumulate,
+            max_fragments_per_bundle: config.app.bundle.max_fragments_per_bundle,
+            max_bundles_per_optimization_run: num_cpus::get()
+                .try_into()
+                .expect("num cpus not zero"),
+        },
+    );
+
+    block_bundler.register_metrics(registry);
+
+    schedule_polling(
+        config.app.bundle.new_bundle_check_interval,
+        block_bundler,
+        "Block Bundler",
         cancel_token,
     )
 }
@@ -146,6 +324,56 @@ pub fn state_committer(
         config.app.tx_finalization_check_interval,
         state_committer,
         "State Committer",
+        cancel_token,
+    ))
+}
+
+pub fn eigen_state_committer(
+    fuel: FuelApi,
+    eigen_da: EigenDAClient,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let state_committer = services::EigenStateCommitter::new(
+        eigen_da,
+        fuel,
+        storage,
+        services::EigenStatecommitterConfig {
+            api_throughput: 16, // TODO
+            lookback_window: config.app.bundle.block_height_lookback,
+        },
+        SystemClock,
+    );
+
+    state_committer.register_metrics(registry);
+
+    // TODO: have a separate configurable polling interval
+    Ok(schedule_polling(
+        Duration::from_secs(1),
+        state_committer,
+        "State Committer",
+        cancel_token,
+    ))
+}
+
+pub fn eigen_state_listener(
+    eigen_da: EigenDAClient,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+    last_finalization: IntGauge,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let state_committer = EigenStateListener::new(eigen_da, storage, last_finalization);
+
+    state_committer.register_metrics(registry);
+
+    Ok(schedule_polling(
+        config.app.tx_finalization_check_interval,
+        state_committer,
+        "State Listener",
         cancel_token,
     ))
 }
@@ -251,6 +479,27 @@ pub async fn l1_adapter(
     let health_check = l1.connection_health_checker();
 
     Ok((l1, health_check))
+}
+
+pub async fn eigen_adapter(
+    config: &EigenDA,
+    _internal_config: &config::Internal,
+) -> Result<EigenDAClient> {
+    // TODO add health tracking
+
+    let eigen_da = EigenDAClient::new(
+        config.key.clone(),
+        config.rpc.clone(),
+        Throughput {
+            bytes_per_sec: 2_000_000.try_into().unwrap(),
+            max_burst: 16_000_000.try_into().unwrap(),
+            calls_per_sec: 1.try_into().unwrap(),
+        },
+    )
+    .await
+    .expect("TODO add err conversion");
+
+    Ok(eigen_da)
 }
 
 fn schedule_polling(

@@ -1,6 +1,5 @@
-use alloy::signers::{Signer, aws::AwsSigner};
 use anyhow::Context;
-use eth::{Address, AwsClient, AwsConfig};
+use signers::AwsKmsClient;
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -46,10 +45,10 @@ impl Kms {
         }
 
         let port = container.get_host_port_ipv4(4566).await?;
+        dbg!(port);
         let url = format!("http://localhost:{}", port);
 
-        let config = AwsConfig::for_testing(url.clone()).await;
-        let client = AwsClient::new(config);
+        let client = AwsKmsClient::for_testing(url.clone()).await;
 
         Ok(KmsProcess {
             _container: container,
@@ -100,46 +99,33 @@ fn spawn_log_printer(container: &testcontainers::ContainerAsync<KmsImage>) {
 
 pub struct KmsProcess {
     _container: testcontainers::ContainerAsync<KmsImage>,
-    client: AwsClient,
+    client: AwsKmsClient,
     url: String,
+}
+
+impl KmsProcess {
+    pub async fn create_key(&self) -> anyhow::Result<KmsKey> {
+        let id = self.client.create_key().await?;
+
+        Ok(KmsKey {
+            id: id.to_string(),
+            url: self.url.clone(),
+            client: self.client.clone(),
+        })
+    }
+
+    pub fn client(&self) -> &AwsKmsClient {
+        &self.client
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct KmsKey {
     pub id: String,
-    pub signer: AwsSigner,
     pub url: String,
-}
-
-impl KmsKey {
-    pub fn address(&self) -> Address {
-        self.signer.address()
-    }
-}
-
-impl KmsProcess {
-    pub async fn create_key(&self) -> anyhow::Result<KmsKey> {
-        let response = self
-            .client
-            .inner()
-            .create_key()
-            .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
-            .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
-            .send()
-            .await?;
-
-        // use arn as id to closer imitate prod behavior
-        let id = response
-            .key_metadata
-            .and_then(|metadata| metadata.arn)
-            .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
-
-        let signer = self.client.make_signer(id.clone()).await?;
-
-        Ok(KmsKey {
-            id,
-            signer,
-            url: self.url.clone(),
-        })
-    }
+    pub client: AwsKmsClient,
 }
