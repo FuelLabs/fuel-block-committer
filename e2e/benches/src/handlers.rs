@@ -1,6 +1,8 @@
 use super::*;
-use crate::data::{AppData, ConfigForm};
-use crate::template;
+use crate::{
+    data::{AppData, ConfigForm},
+    template,
+};
 
 pub async fn serve_control_panel(data: web::Data<AppData>) -> HttpResponse {
     let cfg = data.simulation_config.lock().await;

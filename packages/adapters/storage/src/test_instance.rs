@@ -236,9 +236,14 @@ impl block_bundler::port::Storage for DbWithProcess {
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
+        block_buildup_threshold: u32,
     ) -> services::Result<Option<UnbundledBlocks>> {
         self.db
-            ._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
+            ._lowest_unbundled_blocks(
+                starting_height,
+                max_cumulative_bytes,
+                block_buildup_threshold,
+            )
             .await
             .map_err(Into::into)
     }
