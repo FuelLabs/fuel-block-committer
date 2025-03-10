@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM lukemathwalker/cargo-chef:latest-rust-1.82 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.85 AS chef
 WORKDIR /build/
 # hadolint ignore=DL3008
 

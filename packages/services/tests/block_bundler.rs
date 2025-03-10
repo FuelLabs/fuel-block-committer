@@ -6,20 +6,20 @@ use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use itertools::Itertools;
 use metrics::RegistersMetrics;
 use services::{
-    block_bundler::port::l1::FragmentEncoder,
-    types::{
-        nonempty, storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, Fragment,
-        NonEmpty,
-    },
     BlockBundler, BlockBundlerConfig, Bundle, BundleProposal, Bundler, BundlerFactory,
     ControllableBundlerFactory, Metadata, Result, Runner,
+    block_bundler::port::l1::FragmentEncoder,
+    types::{
+        CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, nonempty,
+        storage::SequentialFuelBlocks,
+    },
 };
 use test_helpers::{
+    Blocks,
     mocks::{
         self,
         fuel::{generate_block, generate_storage_block_sequence},
     },
-    Blocks,
 };
 
 pub fn bundle_and_encode_into_blobs(
@@ -289,11 +289,13 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
 
     assert_eq!(fragments, expected_fragments);
 
-    assert!(setup
-        .db()
-        .lowest_sequence_of_unbundled_blocks(blocks.last().height, 1)
-        .await?
-        .is_none());
+    assert!(
+        setup
+            .db()
+            .lowest_sequence_of_unbundled_blocks(blocks.last().height, 1)
+            .await?
+            .is_none()
+    );
 
     Ok(())
 }

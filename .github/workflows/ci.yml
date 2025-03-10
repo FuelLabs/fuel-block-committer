@@ -14,7 +14,7 @@ concurrency:
 
 env:
   DASEL_VERSION: https://github.com/TomWright/dasel/releases/download/v1.24.3/dasel_linux_amd64
-  RUST_VERSION: 1.82
+  RUST_VERSION: 1.85
   RUSTFLAGS: "-D warnings"
   FUEL_CORE_VERSION: 0.41.7
   IMAGE_NAME: ${{ github.repository }}
@@ -142,11 +142,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          # The last version of Foundry that didn't experience this issue: https://github.com/alloy-rs/alloy/issues/1371
-          version: nightly-cb9dfae298fe0b5a5cdef2536955f50b8c7f0bf5
+          version: nightly-4974a0891bf01511993f49138ebf81f4be207cdf
       - name: Download release binary
         uses: actions/download-artifact@v4
         with:

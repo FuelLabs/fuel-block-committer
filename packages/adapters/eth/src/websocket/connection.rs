@@ -5,14 +5,14 @@ use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
 use alloy::{
     consensus::Transaction,
     eips::{
-        eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
         BlockNumberOrTag,
+        eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
     },
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{
-        utils::{Eip1559Estimation, EIP1559_FEE_ESTIMATION_PAST_BLOCKS},
         Provider, ProviderBuilder, SendableTx, WsConnect,
+        utils::{EIP1559_FEE_ESTIMATION_PAST_BLOCKS, Eip1559Estimation},
     },
     pubsub::PubSubFrontend,
     rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
@@ -21,8 +21,8 @@ use alloy::{
 use estimation::{MaxTxFeesPerGas, TransactionRequestExt};
 use itertools::Itertools;
 use metrics::{
-    prometheus::{self, histogram_opts},
     RegistersMetrics,
+    prometheus::{self, histogram_opts},
 };
 use services::{
     state_committer::port::l1::Priority,
@@ -31,7 +31,7 @@ use services::{
 use tracing::info;
 use url::Url;
 
-use super::{health_tracking_middleware::EthApi, Signers, TxConfig};
+use super::{Signers, TxConfig, health_tracking_middleware::EthApi};
 use crate::{
     blob_encoder::{self},
     error::{Error, Result},
@@ -84,10 +84,7 @@ pub struct WsConnection {
 }
 
 impl WsConnection {
-    async fn estimate_fees_at_horizon(&self, priority: Priority) -> Result<MaxTxFeesPerGas> {
-        const BLOB_FEE_HORIZON: u32 = 5;
-        const FEE_HORIZON: u32 = 6;
-
+    async fn current_fees(&self, priority: Priority) -> Result<MaxTxFeesPerGas> {
         let priority_perc = self
             .tx_config
             .acceptable_priority_fee_percentage
@@ -102,11 +99,7 @@ impl WsConnection {
             )
             .await?;
 
-        let mut fees_w_horizon = MaxTxFeesPerGas::try_from(fee_history)?;
-        fees_w_horizon.blob = estimation::at_horizon(fees_w_horizon.blob, BLOB_FEE_HORIZON);
-        fees_w_horizon.normal = estimation::at_horizon(fees_w_horizon.normal, FEE_HORIZON);
-
-        Ok(fees_w_horizon)
+        MaxTxFeesPerGas::try_from(fee_history)
     }
 
     fn get_max_fee(tx: &L1Tx, gas_limit: u128, num_fragments: usize) -> u128 {
@@ -265,7 +258,7 @@ impl EthApi for WsConnection {
         let limited_fragments = fragments.into_iter().take(num_fragments);
         let sidecar = blob_encoder::BlobEncoder::sidecar_from_fragments(limited_fragments)?;
 
-        let fees = self.estimate_fees_at_horizon(priority).await?;
+        let projected_fees = self.current_fees(priority).await?.projected();
 
         let blob_tx = TransactionRequest::default()
             .with_blob_sidecar(sidecar)
@@ -273,13 +266,15 @@ impl EthApi for WsConnection {
 
         let blob_tx = if let Some(previous_tx) = previous_tx {
             let minimum_replacement_fees = MaxTxFeesPerGas::from(&previous_tx).double();
-            let fees = fees.retain_max(minimum_replacement_fees);
+            let fees = projected_fees
+                .retain_max(minimum_replacement_fees)
+                .normalized();
 
             blob_tx
                 .with_max_fees(fees)
                 .with_nonce(previous_tx.nonce as u64)
         } else {
-            blob_tx.with_max_fees(fees)
+            blob_tx.with_max_fees(projected_fees.normalized())
         };
 
         let blob_tx = blob_provider.fill(blob_tx).await?;
@@ -309,7 +304,10 @@ impl EthApi for WsConnection {
             ..Default::default()
         };
 
-        info!("sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}", l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee);
+        info!(
+            "sending blob tx: {tx_id} with nonce: {}, max_fee_per_gas: {}, tip: {}, max_blob_fee_per_gas: {}",
+            l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee
+        );
 
         let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
         if max_fee > self.tx_config.tx_max_fee {
@@ -614,8 +612,10 @@ mod tests {
 
         // then
         let result = result.expect_err("should return an error");
-        assert!(result
-            .to_string()
-            .contains(&format!("limit {}", tx_max_fee)));
+        assert!(
+            result
+                .to_string()
+                .contains(&format!("limit {}", tx_max_fee))
+        );
     }
 }

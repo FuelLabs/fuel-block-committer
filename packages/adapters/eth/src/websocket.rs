@@ -1,22 +1,22 @@
 use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr, time::Duration};
 
-use ::metrics::{prometheus::core::Collector, HealthChecker, RegistersMetrics};
+use ::metrics::{HealthChecker, RegistersMetrics, prometheus::core::Collector};
 use alloy::{
     consensus::SignableTransaction,
     network::TxSigner,
-    primitives::{Address, ChainId, B256},
+    primitives::{Address, B256, ChainId},
     rpc::types::FeeHistory,
     signers::{aws::AwsSigner, local::PrivateKeySigner, Signature},
 };
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
+    Result,
     state_committer::port::l1::Priority,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
         TransactionResponse, U256,
     },
-    Result,
 };
 use signers::{AwsKmsClient, KeySource};
 use url::Url;

@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use actix_web::{web, HttpResponse, Responder, ResponseError};
+use actix_web::{HttpResponse, Responder, ResponseError, web};
 use anyhow::Result;
 use eth::HttpClient;
 use services::{
     fee_metrics_tracker::service::calculate_blob_tx_fee,
-    fees::{cache::CachingApi, Api, FeesAtHeight, SequentialBlockFees},
+    fees::{Api, FeesAtHeight, SequentialBlockFees, cache::CachingApi},
     state_committer::{AlgoConfig, SmaFeeAlgo},
     types::{DateTime, Utc},
 };

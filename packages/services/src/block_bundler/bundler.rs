@@ -9,6 +9,10 @@ use crate::{
         storage::SequentialFuelBlocks, CollectNonEmpty, CompressedFuelBlock, NonEmpty, NonNegative,
     },
     Result,
+    types::{
+        CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, NonNegative,
+        storage::SequentialFuelBlocks,
+    },
 };
 
 use super::{

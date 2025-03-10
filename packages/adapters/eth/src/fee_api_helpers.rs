@@ -1,11 +1,11 @@
 use std::{future::Future, ops::RangeInclusive};
 
 use alloy::rpc::types::FeeHistory;
-use futures::{stream, StreamExt, TryStreamExt};
-use itertools::{izip, Itertools};
+use futures::{StreamExt, TryStreamExt, stream};
+use itertools::{Itertools, izip};
 use services::{
-    fees::{Fees, FeesAtHeight, SequentialBlockFees},
     Result,
+    fees::{Fees, FeesAtHeight, SequentialBlockFees},
 };
 use static_assertions::const_assert;
 

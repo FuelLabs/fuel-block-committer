@@ -6,7 +6,7 @@ use std::{
 };
 
 use byte_unit::Byte;
-use clap::{command, Parser};
+use clap::{Parser, command};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;

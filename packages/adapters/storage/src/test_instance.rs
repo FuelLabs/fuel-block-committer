@@ -18,9 +18,9 @@ use services::{
 };
 use sqlx::Executor;
 use testcontainers::{
+    Image,
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
-    Image,
 };
 
 use super::postgres::{DbConfig, Postgres};

@@ -133,7 +133,7 @@ impl TryFrom<NonEmpty<CompressedFuelBlock>> for SequentialFuelBlocks {
 
 #[cfg(test)]
 mod tests {
-    use nonempty::{nonempty, NonEmpty};
+    use nonempty::{NonEmpty, nonempty};
 
     use super::*;
 
@@ -477,9 +477,9 @@ mod tests {
 
         // then
         assert_eq!(
-        size.get(),
-        block_heights.len(),
-        "Cumulative size should be equal to the number of blocks, as each block has data length 1"
-    );
+            size.get(),
+            block_heights.len(),
+            "Cumulative size should be equal to the number of blocks, as each block has data length 1"
+        );
     }
 }

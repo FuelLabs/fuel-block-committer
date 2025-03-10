@@ -5,7 +5,7 @@ use alloy::{
     network::{EthereumWallet, TransactionBuilder},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
-    signers::local::{coins_bip39::English, MnemonicBuilder, PrivateKeySigner},
+    signers::local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
 };
 use eth::Address;
 use services::types::U256;
