@@ -38,40 +38,38 @@
     <hr class="my-5">
     <h2>Live Metrics Preview</h2>
     <canvas id="metricsChart" width="800" height="400"></canvas>
-  </div>
-  <script>
-    // Intercept the form submission and update configuration via AJAX.
-    document.getElementById("updateForm").addEventListener("submit", function(e) {
-      e.preventDefault(); // Prevent the full page refresh.
-      const form = e.target;
-      const formData = new FormData(form);
-      // Convert formData to URL encoded string.
-      const data = new URLSearchParams();
-      for (const pair of formData) {
-          data.append(pair[0], pair[1]);
-      }
-      fetch(form.action, {
-        method: "POST",
-        body: data,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        }
-      })
-      .then(response => response.text())
-      .then(result => {
-        document.getElementById("updateStatus").textContent = "Configuration updated successfully.";
-        // clear the status after a few seconds.
-        setTimeout(() => {
-          document.getElementById("updateStatus").textContent = "";
-        }, 3000);
-      })
-      .catch(err => {
-        console.error("Error updating configuration:", err);
-        document.getElementById("updateStatus").textContent = "Error updating configuration.";
-      });
-    });
 
-    // Initialize the Chart.js chart with streaming plugin enabled.
+    <!-- Bootstrap Cards for Metrics -->
+    <div class="row mt-4">
+      <!-- L2 Blocks Behind Card -->
+      <div class="col-md-6">
+        <div class="card text-center mb-3">
+          <div class="card-body">
+            <h5 class="card-title">L2 Blocks Behind</h5>
+            <p class="card-text">
+              Current: <span id="l2BehindValue">--</span> <br>
+              5min Diff: <span id="l2BehindDiff">--</span>
+            </p>
+          </div>
+        </div>
+      </div>
+      <!-- Unbundled Blocks Card -->
+      <div class="col-md-6">
+        <div class="card text-center mb-3">
+          <div class="card-body">
+            <h5 class="card-title">Unbundled Blocks</h5>
+            <p class="card-text">
+              Current: <span id="unbundledValue">--</span> <br>
+              5min Diff: <span id="unbundledDiff">--</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // The chart remains unchanged.
     document.addEventListener("DOMContentLoaded", function() {
       const ctx = document.getElementById('metricsChart').getContext('2d');
       const chart = new Chart(ctx, {
@@ -103,12 +101,12 @@
                         const match = text.match(regex);
                         return match ? parseFloat(match[1]) : null;
                       }
+                      const now = Date.now();
                       const fuel_height = parseMetric("fuel_height");
                       const current_height_to_commit = parseMetric("current_height_to_commit");
                       if (fuel_height !== null && current_height_to_commit !== null) {
-                        const expr = fuel_height - current_height_to_commit;
-                        const now = Date.now();
-                        chart.data.datasets[0].data.push({x: now, y: expr});
+                        const l2Behind = fuel_height - current_height_to_commit;
+                        chart.data.datasets[0].data.push({ x: now, y: l2Behind });
                       }
                     })
                     .catch(err => console.error("Error fetching metrics:", err));
@@ -127,6 +125,71 @@
         }
       });
     });
+    
+    // Separate setInterval for updating the cards every second with a rolling 5-minute (300000ms) window.
+    let behindCardHistory = [];
+    let unbundledCardHistory = [];
+    
+    setInterval(() => {
+      fetch("/proxy/metrics")
+        .then(response => response.text())
+        .then(text => {
+          const now = Date.now();
+          function parseMetric(metricName) {
+            const regex = new RegExp("^" + metricName + "\\s+(\\S+)", "m");
+            const match = text.match(regex);
+            return match ? parseFloat(match[1]) : null;
+          }
+          const fuel_height = parseMetric("fuel_height");
+          const current_height_to_commit = parseMetric("current_height_to_commit");
+          const lowest_unbundled_height = parseMetric("lowest_unbundled_height");
+          
+          // --- L2 Blocks Behind (fuel_height - current_height_to_commit) ---
+          if (fuel_height !== null && current_height_to_commit !== null) {
+            const l2Behind = fuel_height - current_height_to_commit;
+            behindCardHistory.push({ time: now, value: l2Behind });
+            // Keep only entries from the last 5 minutes.
+            behindCardHistory = behindCardHistory.filter(item => now - item.time <= 300000);
+            const oldest = behindCardHistory.length > 0 ? behindCardHistory[0].value : l2Behind;
+            const diff = l2Behind - oldest;
+            document.getElementById("l2BehindValue").textContent = l2Behind;
+            const diffEl = document.getElementById("l2BehindDiff");
+            if (diff < 0) {
+              diffEl.textContent = "-" + Math.abs(diff).toFixed(2);
+              diffEl.style.color = "green";
+            } else if (diff > 0) {
+              diffEl.textContent = "+" + diff.toFixed(2);
+              diffEl.style.color = "red";
+            } else {
+              diffEl.textContent = "0";
+              diffEl.style.color = "black";
+            }
+          }
+          
+          // --- Unbundled Blocks (fuel_height - lowest_unbundled_height) ---
+          if (fuel_height !== null && lowest_unbundled_height !== null) {
+            const unbundled = fuel_height - lowest_unbundled_height;
+            unbundledCardHistory.push({ time: now, value: unbundled });
+            // Keep only entries from the last 5 minutes.
+            unbundledCardHistory = unbundledCardHistory.filter(item => now - item.time <= 300000);
+            const oldestUnbundled = unbundledCardHistory.length > 0 ? unbundledCardHistory[0].value : unbundled;
+            const diffUnbundled = unbundled - oldestUnbundled;
+            document.getElementById("unbundledValue").textContent = unbundled;
+            const diffUnbundledEl = document.getElementById("unbundledDiff");
+            if (diffUnbundled < 0) {
+              diffUnbundledEl.textContent = "-" + Math.abs(diffUnbundled).toFixed(2);
+              diffUnbundledEl.style.color = "green";
+            } else if (diffUnbundled > 0) {
+              diffUnbundledEl.textContent = "+" + diffUnbundled.toFixed(2);
+              diffUnbundledEl.style.color = "red";
+            } else {
+              diffUnbundledEl.textContent = "0";
+              diffUnbundledEl.style.color = "black";
+            }
+          }
+        })
+        .catch(err => console.error("Error fetching metrics for cards:", err));
+    }, 1000);
   </script>
 </body>
 </html>

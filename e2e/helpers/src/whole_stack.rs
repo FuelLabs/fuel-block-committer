@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use alloy::network::TxSigner;
+use eth::Signer;
 use fuel::HttpClient;
 use storage::DbWithProcess;
 use url::Url;
@@ -60,7 +62,7 @@ impl WholeStack {
         let db = start_db().await?;
 
         let committer = start_committer(
-            logs,
+            true,
             blob_support,
             db.clone(),
             &eth_node,
@@ -110,7 +112,7 @@ impl WholeStack {
                 .with_db_name(db.db_name())
                 .with_state_contract_address(deployed_contract.address())
                 .with_main_key_arn(main_key.id.clone())
-                .with_kms_url(main_key.url.clone())
+                .with_kms_url(kms.url().to_owned())
                 .with_bundle_accumulation_timeout("3600s".to_owned())
                 .with_block_bytes_to_accumulate("3 MB".to_string())
                 .with_bundle_optimization_timeout("60s".to_owned())
@@ -159,7 +161,9 @@ pub async fn create_and_fund_kms_keys(
 
     let create_and_fund = || async {
         let key = kms.create_key().await?;
-        eth_node.fund(key.address(), amount).await?;
+        let signer = Signer::make_aws_signer(kms.client(), key.id.clone()).await?;
+
+        eth_node.fund(signer.address(), amount).await?;
         anyhow::Result::<_>::Ok(key)
     };
 
@@ -241,4 +245,40 @@ pub async fn start_committer(
     };
 
     committer.start().await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn start_eigen_committer(
+    logs: bool,
+    random_db: DbWithProcess,
+    eth_node: &EthNodeProcess,
+    fuel_node_url: &Url,
+    deployed_contract: &DeployedContract,
+    main_key: &KmsKey,
+    eigen_key: String,
+    bytes_to_accumulate: &str,
+) -> anyhow::Result<CommitterProcess> {
+    let committer_builder = Committer::default()
+        .with_show_logs(logs)
+        .with_eth_rpc((eth_node).ws_url())
+        .with_fuel_rpc(fuel_node_url.to_owned())
+        .with_db_port(random_db.port())
+        .with_db_name(random_db.db_name())
+        .with_state_contract_address(deployed_contract.address())
+        .with_main_key_arn(main_key.id.clone())
+        .with_kms_url(main_key.url.clone())
+        .with_bundle_accumulation_timeout("3600s".to_owned())
+        .with_block_bytes_to_accumulate(bytes_to_accumulate.to_string())
+        .with_bundle_optimization_timeout("60s".to_owned())
+        .with_bundle_block_height_lookback("8500".to_owned())
+        .with_bundle_compression_level("level6".to_owned())
+        .with_bundle_optimization_step("100".to_owned())
+        .with_bundle_fragments_to_accumulate("3".to_owned())
+        .with_bundle_fragment_accumulation_timeout("10m".to_owned())
+        .with_new_bundle_check_interval("3s".to_owned())
+        .with_state_pruner_retention("1s".to_owned())
+        .with_state_pruner_run_interval("30s".to_owned())
+        .with_alt_da_key(eigen_key);
+
+    committer_builder.start().await
 }

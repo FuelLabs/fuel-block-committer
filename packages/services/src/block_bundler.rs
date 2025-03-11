@@ -1,4 +1,6 @@
 pub mod bundler;
+pub mod common;
+pub mod eigen_bundler; // TODO
 
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
@@ -11,7 +13,7 @@ pub mod service {
     use tracing::info;
 
     use super::{
-        bundler::{Bundle, BundleProposal, BundlerFactory, Metadata},
+        common::{Bundle, BundleProposal, BundlerFactory, Metadata},
         port::UnbundledBlocks,
     };
     use crate::{
@@ -399,8 +401,8 @@ pub mod test_helpers {
         mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     };
 
-    use super::bundler::{Bundle, BundleProposal, BundlerFactory};
-    use crate::types::{NonNegative, storage::SequentialFuelBlocks};
+    use super::common::{Bundle, BundleProposal, BundlerFactory};
+    use crate::types::{storage::SequentialFuelBlocks, NonNegative};
 
     pub struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,
