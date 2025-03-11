@@ -1,9 +1,8 @@
 use nonempty::NonEmpty;
 
 use crate::{
-    types::{storage::BundleFragment, DateTime, EigenDASubmission, L1Tx, NonNegative, Utc},
     Error, Result,
-    types::{DateTime, L1Tx, NonNegative, Utc, storage::BundleFragment},
+    types::{DateTime, EigenDASubmission, L1Tx, NonNegative, Utc, storage::BundleFragment},
 };
 
 pub mod l1 {
@@ -58,8 +57,8 @@ pub mod l1 {
 
 pub mod eigen_da {
     use crate::{
-        types::{EigenDASubmission, Fragment},
         Result,
+        types::{EigenDASubmission, Fragment},
     };
 
     #[allow(async_fn_in_trait)]

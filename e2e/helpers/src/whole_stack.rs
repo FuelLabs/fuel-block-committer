@@ -256,6 +256,7 @@ pub async fn start_eigen_committer(
     deployed_contract: &DeployedContract,
     main_key: &KmsKey,
     eigen_key: String,
+    bytes_to_accumulate: &str,
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
         .with_show_logs(logs)
@@ -267,7 +268,7 @@ pub async fn start_eigen_committer(
         .with_main_key_arn(main_key.id.clone())
         .with_kms_url(main_key.url.clone())
         .with_bundle_accumulation_timeout("3600s".to_owned())
-        .with_block_bytes_to_accumulate("100 MB".to_string())
+        .with_block_bytes_to_accumulate(bytes_to_accumulate.to_string())
         .with_bundle_optimization_timeout("60s".to_owned())
         .with_bundle_block_height_lookback("8500".to_owned())
         .with_bundle_compression_level("level6".to_owned())

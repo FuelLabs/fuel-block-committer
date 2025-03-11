@@ -1,5 +1,4 @@
 use async_graphql::{Context, Object, Schema, SimpleObject};
-use hex;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
