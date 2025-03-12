@@ -16,7 +16,7 @@ publish = true
 alloy = { workspace = true, features = ["consensus", "eips"], optional = true }
 anyhow = { workspace = true, features = ["default"] }
 bitvec = { workspace = true, features = ["default"] }
-c-kzg = { workspace = true }
+c-kzg = { workspace = true, optional = true }
 flate2 = { workspace = true, features = ["default"] }
 hex = { workspace = true }
 itertools = { workspace = true, features = ["use_std"] }
@@ -37,4 +37,4 @@ test-case = { workspace = true }
 
 [features]
 default = []
-kzg = ["alloy/kzg"]
+kzg = ["alloy/kzg", "dep:c-kzg"]
