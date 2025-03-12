@@ -18,7 +18,7 @@ anyhow = { workspace = true, features = ["default"] }
 bitvec = { workspace = true, features = ["default"] }
 c-kzg = { workspace = true, optional = true }
 flate2 = { workspace = true, features = ["default"] }
-hex = { workspace = true }
+hex = { workspace = true, features = ["alloc"] }
 itertools = { workspace = true, features = ["use_std"] }
 postcard = { workspace = true, features = ["use-std"] }
 serde = { workspace = true }
