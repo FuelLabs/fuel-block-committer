@@ -5,7 +5,7 @@ use alloy::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("network error: {msg}")]
+    #[error("network error: {msg}, recoverable: {recoverable}")]
     Network { msg: String, recoverable: bool },
     #[error("network error: {0}")]
     TxExecution(String),
