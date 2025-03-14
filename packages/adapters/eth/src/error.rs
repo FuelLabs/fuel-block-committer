@@ -5,8 +5,8 @@ use alloy::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("network error: {0}")]
-    Network(String),
+    #[error("network error: {msg}")]
+    Network { msg: String, recoverable: bool },
     #[error("network error: {0}")]
     TxExecution(String),
     #[error("other error: {0}")]
@@ -19,7 +19,16 @@ impl From<RpcError<TransportErrorKind>> for Error {
             RpcError::ErrorResp(err) if err.code >= -32613 && err.code <= -32000 => {
                 Self::TxExecution(err.message)
             }
-            _ => Self::Network(err.to_string()),
+            RpcError::Transport(
+                TransportErrorKind::BackendGone | TransportErrorKind::PubsubUnavailable,
+            ) => Self::Network {
+                msg: err.to_string(),
+                recoverable: false,
+            },
+            _ => Self::Network {
+                msg: err.to_string(),
+                recoverable: true,
+            },
         }
     }
 }
@@ -27,7 +36,7 @@ impl From<RpcError<TransportErrorKind>> for Error {
 impl From<alloy::contract::Error> for Error {
     fn from(value: alloy::contract::Error) -> Self {
         match value {
-            alloy::contract::Error::TransportError(e) => Self::Network(e.to_string()),
+            alloy::contract::Error::TransportError(e) => e.into(),
             _ => Self::Other(value.to_string()),
         }
     }
@@ -50,7 +59,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl From<Error> for services::Error {
     fn from(err: Error) -> Self {
         match err {
-            Error::Network(err) => Self::Network(err),
+            Error::Network { msg: err, .. } => Self::Network(err),
             Error::Other(err) | Error::TxExecution(err) => Self::Other(err),
         }
     }
@@ -90,7 +99,7 @@ mod tests {
             });
 
             let our_error = crate::error::Error::from(err);
-            let Error::Network(msg) = our_error else {
+            let Error::Network { msg, .. } = our_error else {
                 panic!("Expected Network got: {}", our_error)
             };
 
