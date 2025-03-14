@@ -68,6 +68,7 @@ impl From<Error> for services::Error {
 #[cfg(test)]
 mod tests {
     use alloy::rpc::json_rpc::ErrorPayload;
+    use alloy::transports::{RpcError, TransportErrorKind};
 
     use super::*;
 
@@ -104,6 +105,44 @@ mod tests {
             };
 
             assert!(msg.contains("some message"));
+        }
+    }
+
+    #[test]
+    fn correctly_detects_irrecoverable_backend_gone_error() {
+        let err = RpcError::Transport(TransportErrorKind::BackendGone);
+        let our_error = crate::error::Error::from(err);
+        match our_error {
+            Error::Network { msg, recoverable } => {
+                assert!(!recoverable, "BackendGone error should be irrecoverable");
+                assert!(msg.contains("backend connection task has stopped"),);
+            }
+            _ => panic!(
+                "Expected Network error for BackendGone, got: {:?}",
+                our_error
+            ),
+        }
+    }
+
+    #[test]
+    fn correctly_detects_irrecoverable_pubsub_unavailable_error() {
+        let err = RpcError::Transport(TransportErrorKind::PubsubUnavailable);
+        let our_error = crate::error::Error::from(err);
+        match our_error {
+            Error::Network { msg, recoverable } => {
+                assert!(
+                    !recoverable,
+                    "PubsubUnavailable error should be irrecoverable"
+                );
+                assert!(
+                    msg.contains("subscriptions are not available on this provider"),
+                    "Error message should mention PubsubUnavailable"
+                );
+            }
+            _ => panic!(
+                "Expected Network error for PubsubUnavailable, got: {:?}",
+                our_error
+            ),
         }
     }
 }
