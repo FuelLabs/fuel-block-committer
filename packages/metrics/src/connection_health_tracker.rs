@@ -11,7 +11,6 @@ pub struct ConnectionHealthTracker {
     max_consecutive_failures: usize,
     // how many consecutive failures there currently are
     consecutive_failures: Arc<AtomicUsize>,
-    // flag for permanent failure
     permanent_failure: Arc<AtomicBool>,
 }
 
