@@ -119,11 +119,7 @@ pub struct SimulationPoint {
     pub block_height: u64,
     pub immediate_fee: f64,
     pub algorithm_fee: f64,
-
-    /// The "immediate" path's L2 blocks behind
     pub immediate_l2_behind: u32,
-
-    /// The "algorithm" path's L2 blocks behind
     pub algo_l2_behind: u32,
 }
 
