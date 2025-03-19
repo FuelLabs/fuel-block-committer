@@ -42,6 +42,10 @@ async fn main() -> Result<()> {
             .service(web::resource("/").route(web::get().to(handlers::index_html)))
             .service(web::resource("/fees").route(web::get().to(handlers::get_fees)))
             .service(web::resource("/simulate").route(web::post().to(handlers::simulate_fees)))
+            .service(
+                web::resource("/block_time_info")
+                    .route(web::get().to(handlers::get_block_time_info)),
+            )
     })
     .bind(addr)?;
 

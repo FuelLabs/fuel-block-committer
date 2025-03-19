@@ -1,8 +1,8 @@
-use std::time::Duration;
-
 use actix_web::{HttpResponse, Responder, ResponseError, web};
 use anyhow::Result;
 use eth::HttpClient;
+use itertools::Itertools;
+use serde_json::json;
 use services::{
     fee_metrics_tracker::service::calculate_blob_tx_fee,
     fees::{Api, FeesAtHeight, SequentialBlockFees, cache::CachingApi},
@@ -170,14 +170,10 @@ impl FeeHandler {
                 FeeError::InternalError("Failed to determine fee acceptability".into())
             })?;
 
-        let block_gap = self.last_block_height - block_fee.height;
-        let block_time = self.last_block_time - Duration::from_secs(12 * block_gap);
-
         let convert = |wei| format!("{:.4}", (wei as f64) / 1e18);
 
         Ok(FeeDataPoint {
             block_height: block_fee.height,
-            block_time: block_time.to_rfc3339(),
             current_fee: convert(current_fee_wei),
             short_fee: convert(short_fee_wei),
             long_fee: convert(long_fee_wei),
@@ -268,39 +264,96 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
     }
 }
 
+pub async fn get_block_time_info(state: web::Data<AppState>) -> impl Responder {
+    // Get the current height from the fee API.
+    let current_height = match state.fee_api.current_height().await {
+        Ok(height) => height,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Error fetching current height: {:?}", e));
+        }
+    };
+
+    // Get the block time for the current height.
+    let last_block_time = match state.fee_api.inner().get_block_time(current_height).await {
+        Ok(Some(time)) => time,
+        Ok(None) => {
+            return HttpResponse::InternalServerError()
+                .body("Last block time not found".to_string());
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Error fetching block time: {:?}", e));
+        }
+    };
+
+    // Here we assume a constant block interval (e.g., 12 seconds)
+    let block_interval: u64 = 12;
+
+    HttpResponse::Ok().json(json!({
+        "last_block_height": current_height,
+        "last_block_time": last_block_time.to_rfc3339(),
+        "block_interval": block_interval
+    }))
+}
+
 pub async fn simulate_fees(
     state: web::Data<AppState>,
     params: web::Json<SimulationParams>,
 ) -> impl Responder {
-    // Use the inner FeeParams to initialize the FeeHandler
-    let fee_params = params.fee_params.clone();
-    let handler = match FeeHandler::new(state.clone(), fee_params).await {
-        Ok(h) => h,
-        Err(e) => return e.error_response(),
-    };
+    let ending_height = FeeHandler::resolve_ending_height(&state, &params.fee_params)
+        .await
+        .unwrap();
+    let start_height = ending_height.saturating_sub(params.fee_params.amount_of_blocks);
+    let fees = FeeHandler::fetch_fees(&state, start_height, ending_height)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect_vec();
 
-    // Get fee data for the period (this will be the same data that populates the graph)
-    let fee_data = match handler.calculate_fee_data().await {
-        Ok(data) => data,
-        Err(e) => return e.error_response(),
-    };
+    let config = FeeHandler::parse_config(&params.fee_params).unwrap();
+    let sma_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
 
-    // Run simulation using the fee data and the blob influx parameters
-    let sim_result = run_simulation(&fee_data, params.blob_interval_minutes, params.blob_count);
+    // Pass the bundling parameters and also the fee algo and num_blobs from the FeeHandler.
+    let sim_result = run_simulation(
+        &fees,
+        params.bundling_interval_blocks,
+        params.bundle_blob_count,
+        &sma_algo,
+    )
+    .await;
     HttpResponse::Ok().json(sim_result)
 }
 
-/// Run a simulation over the fee data period. The simulation uses the fee data’s timestamps as the simulation timeframe.
-/// Blobs arrive every `blob_interval_minutes` (with `blob_count` blobs per arrival).
-/// Two totals are computed:
-/// - immediate_total_fee: if each blob were committed immediately at the fee rate at arrival time,
-/// - algorithm_total_fee: if blobs are committed only when the fee is acceptable (using the fee data’s `acceptable` flag).
-fn run_simulation(
-    fee_data: &[FeeDataPoint],
-    blob_interval_minutes: u32,
-    blob_count: u32,
+/// Looks up the fee entry corresponding to a given block height.
+/// Assumes fee_history is sorted by block_height.
+fn fees_at_height(fee_history: &[FeesAtHeight], current_height: u64) -> (&FeesAtHeight, u64) {
+    for entry in fee_history {
+        if entry.height >= current_height {
+            return (entry, entry.height);
+        }
+    }
+    let last = fee_history.last().unwrap();
+    (last, last.height)
+}
+
+/// Runs the simulation by stepping through block heights.
+/// At each step, it adds a full bundle (bundle_blob_count blobs) to the backlog,
+/// computes L2 blocks behind as:
+///
+///     l2_blocks_behind = backlog × (bundling_interval_blocks / bundle_blob_count)
+///
+/// Then, it attempts to commit up to 6 blobs (commit_blob_count = min(backlog, 6)) at that step.
+/// For each commit, it uses the precise helper calculate_blob_tx_fee with the actual commit_blob_count
+/// and the current fee structure. The fee algorithm is called with commit_blob_count, the computed
+/// l2_blocks_behind, and the current block height.
+pub async fn run_simulation(
+    fee_history: &[FeesAtHeight],
+    bundling_interval_blocks: u32, // e.g. 3600 L2 blocks => 1 hour if L2 has 1 block/sec
+    bundle_blob_count: u32,        // e.g. 6 blobs per bundle
+    fee_algo: &SmaFeeAlgo<CachingApi<HttpClient>>,
 ) -> SimulationResult {
-    if fee_data.is_empty() {
+    if fee_history.is_empty() {
         return SimulationResult {
             immediate_total_fee: 0.0,
             algorithm_total_fee: 0.0,
@@ -309,83 +362,111 @@ fn run_simulation(
         };
     }
 
-    // Use the fee data's first and last block times as simulation start and end.
-    let start_time = DateTime::parse_from_rfc3339(&fee_data.first().unwrap().block_time)
-        .unwrap()
-        .with_timezone(&Utc);
-    let end_time = DateTime::parse_from_rfc3339(&fee_data.last().unwrap().block_time)
-        .unwrap()
-        .with_timezone(&Utc);
+    // Track total fees (in wei) for each approach
+    let mut immediate_total_fee: u128 = 0;
+    let mut algorithm_total_fee: u128 = 0;
 
-    let mut immediate_total_fee = 0.0;
-    let mut algorithm_total_fee = 0.0;
-    let mut backlog: u32 = 0;
-    let mut timeline: Vec<SimulationPoint> = Vec::new();
+    // Accumulators for L2 blocks (1 block/sec) over each L1 block (~12 sec).
+    // Each L1 block adds ~12 L2 blocks (assuming 12-second L1 blocks).
+    let mut immediate_l2_blocks_acc = 0;
+    let mut algo_l2_blocks_acc = 0;
 
-    // Helper: get fee and acceptable flag at a given time from fee_data.
-    // This searches for the first fee data point whose time is >= the given time.
-    fn fee_at_time(fee_data: &[FeeDataPoint], time: DateTime<Utc>) -> (f64, bool) {
-        for data in fee_data {
-            let dt = DateTime::parse_from_rfc3339(&data.block_time)
-                .unwrap()
-                .with_timezone(&Utc);
-            if dt >= time {
-                let fee: f64 = data.current_fee.parse().unwrap_or(0.0);
-                return (fee, data.acceptable);
+    // For the algorithm path, track how many blobs are in backlog waiting to commit.
+    let mut backlog_blobs: u32 = 0;
+
+    let mut timeline = Vec::with_capacity(fee_history.len());
+
+    for entry in fee_history {
+        // --------------------------
+        // 1) "Immediate" approach
+        // --------------------------
+        // Each L1 block means ~12 new L2 blocks have passed.
+        immediate_l2_blocks_acc += 12;
+
+        // Whenever we have enough L2 blocks to form a bundle, commit right away (one bundle).
+        // We might need a loop if we accumulate multiple intervals, but a single check
+        // is often enough unless you expect big block gaps.
+        while immediate_l2_blocks_acc >= bundling_interval_blocks {
+            let fee = calculate_blob_tx_fee(bundle_blob_count, &entry.fees);
+            immediate_total_fee = immediate_total_fee.saturating_add(fee);
+
+            immediate_l2_blocks_acc -= bundling_interval_blocks;
+        }
+
+        // --------------------------
+        // 2) "Algorithm" approach
+        // --------------------------
+        algo_l2_blocks_acc += 12;
+
+        // Produce a new bundle of `bundle_blob_count` blobs whenever we accumulate enough L2 blocks
+        // to justify bundling. This just *adds* them to the backlog; we haven't committed yet.
+        while algo_l2_blocks_acc >= bundling_interval_blocks {
+            backlog_blobs = backlog_blobs.saturating_add(bundle_blob_count);
+            algo_l2_blocks_acc -= bundling_interval_blocks;
+        }
+
+        // The L2 "blocks behind" metric from your original code:
+        // backlog_blobs times (bundling_interval_blocks / bundle_blob_count)
+        // (Though you might want to refine or scale this differently, depending on your definition.)
+        let l2_blocks_behind =
+            backlog_blobs.saturating_mul(bundling_interval_blocks / bundle_blob_count.max(1));
+
+        // Decide how many blobs you *attempt* to commit now, e.g. up to 6.
+        let commit_blob_count = backlog_blobs.min(6);
+        if commit_blob_count > 0 {
+            let effective_fee = calculate_blob_tx_fee(commit_blob_count, &entry.fees);
+
+            let acceptable = fee_algo
+                .fees_acceptable(commit_blob_count, l2_blocks_behind, entry.height)
+                .await
+                .unwrap_or(false);
+
+            if acceptable {
+                // Pay the fee, remove those blobs from backlog
+                algorithm_total_fee = algorithm_total_fee.saturating_add(effective_fee);
+                backlog_blobs = backlog_blobs.saturating_sub(commit_blob_count);
             }
         }
-        // Fallback: use the last fee data point.
-        let last = fee_data.last().unwrap();
-        let fee: f64 = last.current_fee.parse().unwrap_or(0.0);
-        (fee, last.acceptable)
-    }
 
-    let mut current_time = start_time;
-    // Iterate through the simulation period in steps of blob_interval_minutes.
-    while current_time <= end_time {
-        // Get the fee at the current simulation time.
-        let (fee, acceptable) = fee_at_time(fee_data, current_time);
-
-        // Immediate mode: all arriving blobs commit at the current fee.
-        immediate_total_fee += fee * (blob_count as f64);
-
-        // Algorithm-driven mode:
-        // New blobs arrive and are added to the backlog.
-        backlog += blob_count;
-        // If the fee is acceptable, commit all blobs in the backlog.
-        if acceptable && backlog > 0 {
-            algorithm_total_fee += fee * (backlog as f64);
-            backlog = 0;
-        }
-
+        // --------------------------
+        // 3) Record a simulation point for plotting
+        // --------------------------
         timeline.push(SimulationPoint {
-            time: current_time.to_rfc3339(),
-            immediate_fee: immediate_total_fee,
-            algorithm_fee: algorithm_total_fee,
-            backlog,
-        });
-
-        // Step forward in time by the blob interval.
-        current_time += Duration::from_secs(blob_interval_minutes as u64 * 60);
-    }
-
-    // If there are any remaining blobs in the backlog at the end, commit them at the last fee.
-    if backlog > 0 {
-        let (last_fee, _) = fee_at_time(fee_data, end_time);
-        algorithm_total_fee += last_fee * (backlog as f64);
-        backlog = 0;
-        timeline.push(SimulationPoint {
-            time: end_time.to_rfc3339(),
-            immediate_fee: immediate_total_fee,
-            algorithm_fee: algorithm_total_fee,
-            backlog,
+            block_height: entry.height,
+            // Convert wei → ETH
+            immediate_fee: immediate_total_fee as f64 / 1e18,
+            algorithm_fee: algorithm_total_fee as f64 / 1e18,
+            backlog: backlog_blobs,
+            l2_blocks_behind,
         });
     }
 
-    let eth_saved = immediate_total_fee - algorithm_total_fee;
+    // --------------------------
+    // 4) If any leftover backlog needs committing at the end
+    // --------------------------
+    if backlog_blobs > 0 {
+        let last = fee_history.last().unwrap();
+        let fee = calculate_blob_tx_fee(backlog_blobs, &last.fees);
+        algorithm_total_fee = algorithm_total_fee.saturating_add(fee);
+
+        backlog_blobs = 0;
+        timeline.push(SimulationPoint {
+            block_height: last.height,
+            immediate_fee: immediate_total_fee as f64 / 1e18,
+            algorithm_fee: algorithm_total_fee as f64 / 1e18,
+            backlog: 0,
+            l2_blocks_behind: 0,
+        });
+    }
+
+    // --------------------------
+    // 5) Return final results
+    // --------------------------
+    let eth_saved = (immediate_total_fee.saturating_sub(algorithm_total_fee)) as f64 / 1e18;
+
     SimulationResult {
-        immediate_total_fee,
-        algorithm_total_fee,
+        immediate_total_fee: immediate_total_fee as f64 / 1e18,
+        algorithm_total_fee: algorithm_total_fee as f64 / 1e18,
         eth_saved,
         timeline,
     }

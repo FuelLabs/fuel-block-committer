@@ -29,6 +29,7 @@ pub struct FeeParams {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub always_acceptable_fee: u128,
     pub num_blobs: u32,
+    #[serde(default)]
     pub num_l2_blocks_behind: u32,
 }
 
@@ -64,9 +65,6 @@ pub struct FeeDataPoint {
     #[serde(rename = "blockHeight")]
     pub block_height: u64,
 
-    #[serde(rename = "blockTime")]
-    pub block_time: String, // ISO 8601 format
-
     #[serde(rename = "currentFee")]
     pub current_fee: String, // ETH with 4 decimal places
 
@@ -101,10 +99,10 @@ pub struct FeeResponse {
 pub struct SimulationParams {
     #[serde(flatten)]
     pub fee_params: FeeParams,
-    #[serde(default = "default_blob_count")]
-    pub blob_count: u32,
-    #[serde(default = "default_blob_interval_minutes")]
-    pub blob_interval_minutes: u32,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub bundling_interval_blocks: u32,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub bundle_blob_count: u32,
 }
 
 fn default_blob_count() -> u32 {
@@ -115,13 +113,13 @@ fn default_blob_interval_minutes() -> u32 {
     60
 }
 
-/// A point on the simulation timeline.
 #[derive(Debug, Serialize)]
 pub struct SimulationPoint {
-    pub time: String,       // ISO 8601
-    pub immediate_fee: f64, // cumulative fee (ETH) if blobs were committed immediately
-    pub algorithm_fee: f64, // cumulative fee (ETH) using the algorithm-driven mode
-    pub backlog: u32,       // number of blobs waiting to be committed
+    pub block_height: u64,     // current block height at this simulation step
+    pub immediate_fee: f64,    // cumulative fee (ETH) if committed immediately
+    pub algorithm_fee: f64,    // cumulative fee (ETH) using algorithm-driven commits
+    pub backlog: u32,          // number of blobs waiting to be committed
+    pub l2_blocks_behind: u32, // computed L2 blocks behind at this step
 }
 
 /// The full simulation result.
