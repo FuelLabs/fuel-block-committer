@@ -12,6 +12,8 @@ use services::{
 use thiserror::Error;
 use tracing::{error, info};
 
+use crate::models::{SimulationParams, SimulationPoint, SimulationResult};
+
 use super::{
     models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats},
     state::AppState,
@@ -263,5 +265,128 @@ pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>)
     match handler.get_fees_response().await {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(e) => e.error_response(),
+    }
+}
+
+pub async fn simulate_fees(
+    state: web::Data<AppState>,
+    params: web::Json<SimulationParams>,
+) -> impl Responder {
+    // Use the inner FeeParams to initialize the FeeHandler
+    let fee_params = params.fee_params.clone();
+    let handler = match FeeHandler::new(state.clone(), fee_params).await {
+        Ok(h) => h,
+        Err(e) => return e.error_response(),
+    };
+
+    // Get fee data for the period (this will be the same data that populates the graph)
+    let fee_data = match handler.calculate_fee_data().await {
+        Ok(data) => data,
+        Err(e) => return e.error_response(),
+    };
+
+    // Run simulation using the fee data and the blob influx parameters
+    let sim_result = run_simulation(&fee_data, params.blob_interval_minutes, params.blob_count);
+    HttpResponse::Ok().json(sim_result)
+}
+
+/// Run a simulation over the fee data period. The simulation uses the fee data’s timestamps as the simulation timeframe.
+/// Blobs arrive every `blob_interval_minutes` (with `blob_count` blobs per arrival).
+/// Two totals are computed:
+/// - immediate_total_fee: if each blob were committed immediately at the fee rate at arrival time,
+/// - algorithm_total_fee: if blobs are committed only when the fee is acceptable (using the fee data’s `acceptable` flag).
+fn run_simulation(
+    fee_data: &[FeeDataPoint],
+    blob_interval_minutes: u32,
+    blob_count: u32,
+) -> SimulationResult {
+    if fee_data.is_empty() {
+        return SimulationResult {
+            immediate_total_fee: 0.0,
+            algorithm_total_fee: 0.0,
+            eth_saved: 0.0,
+            timeline: vec![],
+        };
+    }
+
+    // Use the fee data's first and last block times as simulation start and end.
+    let start_time = DateTime::parse_from_rfc3339(&fee_data.first().unwrap().block_time)
+        .unwrap()
+        .with_timezone(&Utc);
+    let end_time = DateTime::parse_from_rfc3339(&fee_data.last().unwrap().block_time)
+        .unwrap()
+        .with_timezone(&Utc);
+
+    let mut immediate_total_fee = 0.0;
+    let mut algorithm_total_fee = 0.0;
+    let mut backlog: u32 = 0;
+    let mut timeline: Vec<SimulationPoint> = Vec::new();
+
+    // Helper: get fee and acceptable flag at a given time from fee_data.
+    // This searches for the first fee data point whose time is >= the given time.
+    fn fee_at_time(fee_data: &[FeeDataPoint], time: DateTime<Utc>) -> (f64, bool) {
+        for data in fee_data {
+            let dt = DateTime::parse_from_rfc3339(&data.block_time)
+                .unwrap()
+                .with_timezone(&Utc);
+            if dt >= time {
+                let fee: f64 = data.current_fee.parse().unwrap_or(0.0);
+                return (fee, data.acceptable);
+            }
+        }
+        // Fallback: use the last fee data point.
+        let last = fee_data.last().unwrap();
+        let fee: f64 = last.current_fee.parse().unwrap_or(0.0);
+        (fee, last.acceptable)
+    }
+
+    let mut current_time = start_time;
+    // Iterate through the simulation period in steps of blob_interval_minutes.
+    while current_time <= end_time {
+        // Get the fee at the current simulation time.
+        let (fee, acceptable) = fee_at_time(fee_data, current_time);
+
+        // Immediate mode: all arriving blobs commit at the current fee.
+        immediate_total_fee += fee * (blob_count as f64);
+
+        // Algorithm-driven mode:
+        // New blobs arrive and are added to the backlog.
+        backlog += blob_count;
+        // If the fee is acceptable, commit all blobs in the backlog.
+        if acceptable && backlog > 0 {
+            algorithm_total_fee += fee * (backlog as f64);
+            backlog = 0;
+        }
+
+        timeline.push(SimulationPoint {
+            time: current_time.to_rfc3339(),
+            immediate_fee: immediate_total_fee,
+            algorithm_fee: algorithm_total_fee,
+            backlog,
+        });
+
+        // Step forward in time by the blob interval.
+        current_time += Duration::from_secs(blob_interval_minutes as u64 * 60);
+    }
+
+    // If there are any remaining blobs in the backlog at the end, commit them at the last fee.
+    if backlog > 0 {
+        let (last_fee, _) = fee_at_time(fee_data, end_time);
+        algorithm_total_fee += last_fee * (backlog as f64);
+        backlog = 0;
+        timeline.push(SimulationPoint {
+            time: end_time.to_rfc3339(),
+            immediate_fee: immediate_total_fee,
+            algorithm_fee: algorithm_total_fee,
+            backlog,
+        });
+    }
+
+    let eth_saved = immediate_total_fee - algorithm_total_fee;
+    SimulationResult {
+        immediate_total_fee,
+        algorithm_total_fee,
+        eth_saved,
+        timeline,
     }
 }

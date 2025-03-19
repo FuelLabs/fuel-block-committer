@@ -30,6 +30,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 trait-variant = { workspace = true }
+# TODO: segfault
+serde-aux = "4.6"
 
 [dev-dependencies]
 test-case = { workspace = true }

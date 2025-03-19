@@ -41,6 +41,7 @@ async fn main() -> Result<()> {
             .app_data(Data::new(state.clone()))
             .service(web::resource("/").route(web::get().to(handlers::index_html)))
             .service(web::resource("/fees").route(web::get().to(handlers::get_fees)))
+            .service(web::resource("/simulate").route(web::post().to(handlers::simulate_fees)))
     })
     .bind(addr)?;
 

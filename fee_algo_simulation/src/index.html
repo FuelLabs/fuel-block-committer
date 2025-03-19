@@ -13,7 +13,7 @@
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
-      background-color: #f8f9fa; /* Light grey background */
+      background-color: #f8f9fa;
     }
     #chart {
       width: 100%;
@@ -22,22 +22,25 @@
     .stats {
       margin-top: 20px;
     }
-    /* Responsive design */
     @media (max-width: 768px) {
       #chart {
         height: 400px;
       }
     }
-    /* Loading indicator style */
     #loading {
       display: none;
       font-weight: bold;
       color: #555;
     }
-    /* Indicator for required fields */
     .required::after {
       content: " *";
       color: red;
+    }
+    /* Simulation plot sizes */
+    #simPricePlot, #simBacklogPlot {
+      width: 100%;
+      height: 400px;
+      margin-top: 20px;
     }
   </style>
 </head>
@@ -82,7 +85,7 @@
               <div class="form-text">e.g., 8 hours worth</div>
             </div>
             <div class="col-md-6">
-              <label for="numL2BlocksBehind" class="form-label required">Number of L2 Blocks Behind:</label>
+              <label for="l2Behind" class="form-label required">Number of L2 Blocks Behind:</label>
               <input type="number" class="form-control" id="l2Behind" value="0" required />
             </div>
           </div>
@@ -117,11 +120,29 @@
             <button type="button" class="btn btn-primary me-2" onclick="setPreset(1500)">Last 5 Hours (~1.5k blocks)</button>
             <button type="button" class="btn btn-secondary" onclick="resetFields()">Reset</button>
           </div>
+
+          <!-- Simulation Settings -->
+          <div class="card mb-4">
+            <div class="card-body">
+              <h2 class="card-title">Simulation Settings</h2>
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <label for="blobCount" class="form-label required">Blobs per Interval:</label>
+                  <input type="number" class="form-control" id="blobCount" value="6" required />
+                </div>
+                <div class="col-md-6">
+                  <label for="blobInterval" class="form-label required">Interval (minutes):</label>
+                  <input type="number" class="form-control" id="blobInterval" value="60" required />
+                </div>
+              </div>
+              <button type="button" class="btn btn-success" onclick="fetchAndSimulate()">Run Simulation</button>
+            </div>
+          </div>
         </form>
       </div>
     </div>
 
-    <!-- Chart Area -->
+    <!-- Chart Area (Fee Graph) -->
     <div class="card mb-4">
       <div class="card-body">
         <div id="chart"></div>
@@ -129,7 +150,7 @@
     </div>
 
     <!-- Statistics Section -->
-    <div class="card">
+    <div class="card mb-4">
       <div class="card-body stats">
         <h2 class="card-title">Statistics</h2>
         <div class="row">
@@ -157,6 +178,19 @@
         </div>
       </div>
     </div>
+
+    <!-- Simulation Results Section -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="card-title">Simulation Results</h2>
+        <p>Immediate Commit Total Fee: <span id="simImmediateFee">0</span> ETH</p>
+        <p>Algorithm-driven Commit Total Fee: <span id="simAlgorithmFee">0</span> ETH</p>
+        <p>ETH Saved: <span id="simEthSaved">0</span> ETH</p>
+        <!-- These divs will hold our simulation plots -->
+        <div id="simPricePlot"></div>
+        <div id="simBacklogPlot"></div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -174,7 +208,6 @@
      */
     function resetFields() {
       document.getElementById('feeForm').reset();
-      // Re-set default values if needed
       document.getElementById('endingHeight').value = "";
       document.getElementById('amountOfBlocks').value = "300";
       document.getElementById('short').value = "25";
@@ -209,12 +242,9 @@
           }
         }
       }
-
-      // Handle case where the last data point is acceptable
       if (start !== null) {
         regions.push({ start: start, end: data[data.length - 1].blockHeight });
       }
-
       return regions;
     }
 
@@ -234,31 +264,23 @@
       const numBlobs           = parseInt(document.getElementById('numBlobs').value, 10);
       const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
 
-      // Input Validation
       if (isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
           isNaN(maxL2) || isNaN(startMultiplier) || isNaN(endMultiplier) ||
           isNaN(numBlobs) || isNaN(numL2BlocksBehind)) {
-
         alert('Please ensure all input fields are filled out correctly.');
         return;
       }
-
-      // Validate numBlobs
       if (numBlobs < 1 || numBlobs > 6) {
         alert('Number of Blobs must be between 1 and 6.');
         return;
       }
-
-      // Additional Validation for Multipliers
       if (startMultiplier <= 0 || endMultiplier <= 0) {
         alert('Multipliers must be greater than 0.');
         return;
       }
 
-      // Show loading indicator
       document.getElementById('loading').style.display = 'block';
 
-      // Construct query string with updated multiplier parameters
       const params = {
         amount_of_blocks: amountOfBlocks,
         short: shortSma,
@@ -270,14 +292,11 @@
         num_blobs: numBlobs,
         num_l2_blocks_behind: numL2BlocksBehind,
       };
-
-      // Only include ending_height if it is provided
       if (endingHeightValue !== null && !isNaN(endingHeightValue)) {
         params.ending_height = endingHeightValue;
       }
 
       const qs = new URLSearchParams(params).toString();
-
       const url = '/fees?' + qs;
       try {
         const resp = await fetch(url);
@@ -285,44 +304,29 @@
           throw new Error(`Error: ${resp.status}`);
         }
         const response = await resp.json();
-
-        // Extract data and stats
         const data = response.data;
         const stats = response.stats;
 
-        // Populate the endingHeight field with the latest block height if it was initially empty
         if (endingHeightValue === null) {
           const maxBlockHeight = data.reduce((max, d) => d.blockHeight > max ? d.blockHeight : max, 0);
           if (maxBlockHeight > 0) {
             endingHeightInput.value = maxBlockHeight;
           }
         }
-
-        // Update statistics in the UI
         document.getElementById('percentageAcceptable').innerText = `${stats.percentageAcceptable.toFixed(2)}%`;
         document.getElementById('percentile95GapSize').innerText = `${stats.percentile95GapSize} blocks`;
         document.getElementById('longestUnacceptableStreak').innerText = `${stats.longestUnacceptableStreak} blocks`;
 
-        // Prepare data for plotting
         const x = data.map(d => d.blockTime);
         const currentFees = data.map(d => parseFloat(d.currentFee).toFixed(6));
         const shortFees   = data.map(d => parseFloat(d.shortFee).toFixed(6));
         const longFees    = data.map(d => parseFloat(d.longFee).toFixed(6));
-
-        // Identify acceptable regions
         const acceptableRegions = getAcceptableRegions(data);
-
-        // Map block heights to block times for shapes
         const shapes = acceptableRegions.map(region => {
-          // Find the blockTime for the start block
           const startBlock = data.find(d => d.blockHeight === region.start);
-          // Find the blockTime for the end block
           const endBlock = data.find(d => d.blockHeight === region.end);
-          // Extract blockTime strings
           const x0 = startBlock ? startBlock.blockTime : null;
           const x1 = endBlock ? endBlock.blockTime : null;
-
-          // Only add shapes if both x0 and x1 are found
           if (x0 && x1) {
             return {
               type: 'rect',
@@ -332,15 +336,13 @@
               y0: 0,
               x1: x1,
               y1: 1,
-              fillcolor: 'rgba(0, 255, 0, 0.2)', // Semi-transparent green
-              line: {
-                width: 0,
-              },
+              fillcolor: 'rgba(0, 255, 0, 0.2)',
+              line: { width: 0 },
             };
           } else {
             return null;
           }
-        }).filter(shape => shape !== null); // Remove null entries
+        }).filter(shape => shape !== null);
 
         const traceCurrent = {
           x, 
@@ -366,36 +368,129 @@
           line: {color: 'green'},
           hoverinfo: 'x+y',
         };
-
         const layout = {
           title: 'Fees vs. Block Time',
           titlefont: { size: 20 },
-          xaxis: { 
-            title: 'Block Time (UTC)',
-            type: 'date',
-            tickformat: '%Y-%m-%d %H:%M:%S',
-          },
-          yaxis: { 
-            title: 'Fee (ETH)',
-            tickformat: '.6f',
-          },
+          xaxis: { title: 'Block Time (UTC)', type: 'date', tickformat: '%Y-%m-%d %H:%M:%S' },
+          yaxis: { title: 'Fee (ETH)', tickformat: '.6f' },
           legend: { orientation: 'h', x: 0, y: 1.1 },
-          shapes: shapes, // Add the shaded regions with correct block times
+          shapes: shapes,
         };
 
         Plotly.newPlot('chart', [traceCurrent, traceShort, traceLong], layout);
       } catch (err) {
-        // Display error message in the stats section
         document.getElementById('percentageAcceptable').innerText = `Error: ${err.message}`;
         document.getElementById('percentile95GapSize').innerText = `-`;
         document.getElementById('longestUnacceptableStreak').innerText = `-`;
-        // Clear the chart
         Plotly.purge('chart');
         console.error(err);
         alert('Failed to fetch data. Please check your inputs and try again.');
       } finally {
-        // Hide loading indicator
         document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    /**
+     * Fetches simulation data from the server using a POST request with a JSON body and displays the results,
+     * including two plots: one for cumulative fee over time and one for backlog over time.
+     */
+    async function fetchAndSimulate() {
+      const endingHeightInput = document.getElementById('endingHeight');
+      const endingHeightValue = endingHeightInput.value ? parseInt(endingHeightInput.value, 10) : null;
+      const amountOfBlocks     = parseInt(document.getElementById('amountOfBlocks').value, 10);
+      const shortSma           = parseInt(document.getElementById('short').value, 10);
+      const longSma            = parseInt(document.getElementById('long').value, 10);
+      const maxL2              = parseInt(document.getElementById('maxL2').value, 10);
+      const startMultiplier    = parseFloat(document.getElementById('startMultiplier').value);
+      const endMultiplier      = parseFloat(document.getElementById('endMultiplier').value);
+      const alwaysAcceptable   = document.getElementById('alwaysAcceptable').value;
+      const numBlobs           = parseInt(document.getElementById('numBlobs').value, 10);
+      const numL2BlocksBehind  = parseInt(document.getElementById('l2Behind').value, 10);
+      const blobCount          = parseInt(document.getElementById('blobCount').value, 10);
+      const blobInterval       = parseInt(document.getElementById('blobInterval').value, 10);
+
+      if (isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
+          isNaN(maxL2) || isNaN(startMultiplier) || isNaN(endMultiplier) ||
+          isNaN(numBlobs) || isNaN(numL2BlocksBehind) ||
+          isNaN(blobCount) || isNaN(blobInterval)) {
+        alert('Please ensure all input fields are filled out correctly.');
+        return;
+      }
+
+      let simData = {
+        amount_of_blocks: amountOfBlocks,
+        short: shortSma,
+        long: longSma,
+        max_l2_blocks_behind: maxL2,
+        start_max_fee_multiplier: startMultiplier,
+        end_max_fee_multiplier: endMultiplier,
+        always_acceptable_fee: alwaysAcceptable,
+        num_blobs: numBlobs,
+        num_l2_blocks_behind: numL2BlocksBehind,
+        blob_count: blobCount,
+        blob_interval_minutes: blobInterval
+      };
+      if (endingHeightValue !== null && !isNaN(endingHeightValue)) {
+        simData.ending_height = endingHeightValue;
+      }
+
+      try {
+        const resp = await fetch('/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(simData)
+        });
+        if (!resp.ok) {
+          throw new Error(`Error: ${resp.status}`);
+        }
+        const simResult = await resp.json();
+        document.getElementById('simImmediateFee').innerText = simResult.immediate_total_fee.toFixed(6);
+        document.getElementById('simAlgorithmFee').innerText = simResult.algorithm_total_fee.toFixed(6);
+        document.getElementById('simEthSaved').innerText = simResult.eth_saved.toFixed(6);
+
+        // Extract timeline data for plotting.
+        const timeline = simResult.timeline;
+        const times = timeline.map(point => point.time);
+        const immediateFees = timeline.map(point => point.immediate_fee);
+        const algorithmFees = timeline.map(point => point.algorithm_fee);
+        const backlogs = timeline.map(point => point.backlog);
+
+        // Price Paid Plot (cumulative fees over time)
+        const priceTraceImmediate = {
+          x: times,
+          y: immediateFees,
+          mode: 'lines',
+          name: 'Immediate Fee'
+        };
+        const priceTraceAlgorithm = {
+          x: times,
+          y: algorithmFees,
+          mode: 'lines',
+          name: 'Algorithm Fee'
+        };
+        const priceLayout = {
+          title: 'Cumulative Fee Paid Over Time',
+          xaxis: { title: 'Time', type: 'date' },
+          yaxis: { title: 'Fee (ETH)' }
+        };
+        Plotly.newPlot('simPricePlot', [priceTraceImmediate, priceTraceAlgorithm], priceLayout);
+
+        // Backlog Plot
+        const backlogTrace = {
+          x: times,
+          y: backlogs,
+          mode: 'lines+markers',
+          name: 'Backlog'
+        };
+        const backlogLayout = {
+          title: 'Blob Backlog Over Time',
+          xaxis: { title: 'Time', type: 'date' },
+          yaxis: { title: 'Number of Blobs in Backlog' }
+        };
+        Plotly.newPlot('simBacklogPlot', [backlogTrace], backlogLayout);
+      } catch (err) {
+        alert('Simulation failed: ' + err.message);
+        console.error(err);
       }
     }
 
