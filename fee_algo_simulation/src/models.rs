@@ -103,6 +103,7 @@ pub struct SimulationParams {
     pub bundling_interval_blocks: u32,
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub bundle_blob_count: u32,
+    pub finalization_time_minutes: u32,
 }
 
 fn default_blob_count() -> u32 {
@@ -115,11 +116,15 @@ fn default_blob_interval_minutes() -> u32 {
 
 #[derive(Debug, Serialize)]
 pub struct SimulationPoint {
-    pub block_height: u64,     // current block height at this simulation step
-    pub immediate_fee: f64,    // cumulative fee (ETH) if committed immediately
-    pub algorithm_fee: f64,    // cumulative fee (ETH) using algorithm-driven commits
-    pub backlog: u32,          // number of blobs waiting to be committed
-    pub l2_blocks_behind: u32, // computed L2 blocks behind at this step
+    pub block_height: u64,
+    pub immediate_fee: f64,
+    pub algorithm_fee: f64,
+
+    /// The "immediate" path's L2 blocks behind
+    pub immediate_l2_behind: u32,
+
+    /// The "algorithm" path's L2 blocks behind
+    pub algo_l2_behind: u32,
 }
 
 /// The full simulation result.

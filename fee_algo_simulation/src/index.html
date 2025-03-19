@@ -120,7 +120,7 @@
                 <div class="col-md-6">
                   <label for="bundlingInterval" class="form-label required">Bundling Interval (blocks):</label>
                   <input type="number" class="form-control" id="bundlingInterval" value="3600" required />
-                  <div class="form-text">Number of blocks per bundle (e.g., 3600)</div>
+                  <div class="form-text">Number of L2 blocks per bundle (e.g., 3600 = ~1 hour if 1 L2 block/sec)</div>
                 </div>
                 <div class="col-md-6">
                   <label for="bundleBlobCount" class="form-label required">Bundle Blob Count:</label>
@@ -128,18 +128,29 @@
                   <div class="form-text">Number of blobs produced per bundle</div>
                 </div>
               </div>
+              <!-- New finalization time input, default 5 minutes -->
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <label for="finalizationTime" class="form-label required">Finalization Time (minutes):</label>
+                  <input type="number" class="form-control" id="finalizationTime" value="5" required />
+                  <div class="form-text">No more than 1 commit can occur within this many minutes</div>
+                </div>
+                <div class="col-md-6"></div>
+              </div>
               <button type="button" class="btn btn-success" onclick="fetchAndSimulate()">Run Simulation</button>
             </div>
           </div>
         </form>
       </div>
     </div>
+
     <!-- Chart Area (Fee Graph) -->
     <div class="card mb-4">
       <div class="card-body">
         <div id="chart"></div>
       </div>
     </div>
+
     <!-- Statistics Section -->
     <div class="card mb-4">
       <div class="card-body stats">
@@ -169,6 +180,7 @@
         </div>
       </div>
     </div>
+
     <!-- Simulation Results Section -->
     <div class="card mb-4">
       <div class="card-body">
@@ -181,13 +193,14 @@
       </div>
     </div>
   </div>
+
   <script>
-    // Global variables for conversion.
+    // Global variables for conversion (front-end only).
     let lastBlockTime = null;
     let lastBlockHeight = null;
-    let blockInterval = null; // seconds
+    let blockInterval = null; // L1 block time in seconds
 
-    // Fetch block time info from /block_time_info.
+    // Fetch block time info from /block_time_info (so we can convert block heights -> timestamps).
     async function fetchBlockTimeInfo() {
       try {
         console.log("Fetching block time info...");
@@ -204,7 +217,7 @@
       }
     }
 
-    // Convert an absolute block height to a timestamp.
+    // Convert an absolute L1 block height to a timestamp for chart display.
     function blockHeightToTimestamp(blockHeight) {
       if (!lastBlockTime || lastBlockHeight === null || blockInterval === null) {
         return new Date();
@@ -214,7 +227,7 @@
       return new Date(lastBlockTime.getTime() - deltaMilliseconds);
     }
 
-    // Read block height from a point.
+    // Read the block height from a data point. Adjust if your JSON differs.
     function getBlockHeight(point) {
       return point.block_height !== undefined ? point.block_height : point.blockHeight;
     }
@@ -237,10 +250,11 @@
       document.getElementById('numBlobs').value = "6";
       document.getElementById('bundlingInterval').value = "3600";
       document.getElementById('bundleBlobCount').value = "6";
+      document.getElementById('finalizationTime').value = "5";
       fetchAndPlot();
     }
 
-    // Determine acceptable regions for shading in the fee graph.
+    // Regions of "acceptable" fees shading in the main fee chart.
     function getAcceptableRegions(data) {
       let regions = [];
       let start = null;
@@ -248,14 +262,19 @@
         if (data[i].acceptable) {
           if (start === null) { start = getBlockHeight(data[i]); }
         } else {
-          if (start !== null) { regions.push({ start: start, end: getBlockHeight(data[i - 1]) }); start = null; }
+          if (start !== null) {
+            regions.push({ start: start, end: getBlockHeight(data[i - 1]) });
+            start = null;
+          }
         }
       }
-      if (start !== null) { regions.push({ start: start, end: getBlockHeight(data[data.length - 1]) }); }
+      if (start !== null) {
+        regions.push({ start: start, end: getBlockHeight(data[data.length - 1]) });
+      }
       return regions;
     }
 
-    // Fetch fee data and plot fee graph.
+    // Fetch fee data from /fees and plot the main fee chart.
     async function fetchAndPlot() {
       console.log("Fetching fee data and plotting fee graph...");
       const endingHeightInput = document.getElementById('endingHeight');
@@ -299,6 +318,7 @@
       }
       const qs = new URLSearchParams(params).toString();
       const url = '/fees?' + qs;
+
       try {
         const resp = await fetch(url);
         if (!resp.ok) { throw new Error(`Error: ${resp.status}`); }
@@ -306,10 +326,14 @@
         console.log("Fee Data Response:", response);
         const data = response.data;
         const stats = response.stats;
+
         if (endingHeightValue === null) {
           const maxBlockHeight = data.reduce((max, d) => getBlockHeight(d) > max ? getBlockHeight(d) : max, 0);
-          if (maxBlockHeight > 0) { endingHeightInput.value = maxBlockHeight; }
+          if (maxBlockHeight > 0) {
+            endingHeightInput.value = maxBlockHeight;
+          }
         }
+
         document.getElementById('percentageAcceptable').innerText = `${stats.percentageAcceptable.toFixed(2)}%`;
         document.getElementById('percentile95GapSize').innerText = `${stats.percentile95GapSize} blocks`;
         document.getElementById('longestUnacceptableStreak').innerText = `${stats.longestUnacceptableStreak} blocks`;
@@ -318,10 +342,6 @@
         const currentFees = data.map(d => parseFloat(d.currentFee));
         const shortFees = data.map(d => parseFloat(d.shortFee));
         const longFees = data.map(d => parseFloat(d.longFee));
-        console.log("Fee Graph Times:", times);
-        console.log("Current Fees:", currentFees);
-        console.log("Short Fees:", shortFees);
-        console.log("Long Fees:", longFees);
 
         const acceptableRegions = getAcceptableRegions(data);
         const shapes = acceptableRegions.map(region => {
@@ -364,6 +384,7 @@
           line: { color: 'green' },
           hoverinfo: 'x+y'
         };
+
         const layout = {
           title: 'Fees vs. Time (Extrapolated from Block Heights)',
           titlefont: { size: 20 },
@@ -385,12 +406,9 @@
       }
     }
 
-    // Fetch and plot simulation data.
-    // We assume the simulation endpoint returns absolute block heights.
+    // Fetch and simulate data from /simulate, then plot results
     async function fetchAndSimulate() {
-      console.log("fetchAndSimulate triggered.");
       const endingHeightInput = document.getElementById('endingHeight');
-      // Use ending height from input if provided; otherwise use global lastBlockHeight.
       const endingHeightValue = endingHeightInput.value ? parseInt(endingHeightInput.value, 10) : lastBlockHeight;
       const amountOfBlocks = parseInt(document.getElementById('amountOfBlocks').value, 10);
       const shortSma = parseInt(document.getElementById('short').value, 10);
@@ -402,10 +420,12 @@
       const numBlobs = parseInt(document.getElementById('numBlobs').value, 10);
       const bundlingInterval = parseInt(document.getElementById('bundlingInterval').value, 10);
       const bundleBlobCount = parseInt(document.getElementById('bundleBlobCount').value, 10);
+      const finalizationTime = parseInt(document.getElementById('finalizationTime').value, 10);
 
       if (isNaN(amountOfBlocks) || isNaN(shortSma) || isNaN(longSma) ||
           isNaN(maxL2) || isNaN(startMultiplier) || isNaN(endMultiplier) ||
-          isNaN(numBlobs) || isNaN(bundlingInterval) || isNaN(bundleBlobCount)) {
+          isNaN(numBlobs) || isNaN(bundlingInterval) || isNaN(bundleBlobCount) ||
+          isNaN(finalizationTime)) {
         alert('Please ensure all input fields are filled out correctly.');
         return;
       }
@@ -420,7 +440,8 @@
         always_acceptable_fee: alwaysAcceptable,
         num_blobs: numBlobs,
         bundling_interval_blocks: bundlingInterval,
-        bundle_blob_count: bundleBlobCount
+        bundle_blob_count: bundleBlobCount,
+        finalization_time_minutes: finalizationTime
       };
       if (endingHeightValue !== null && !isNaN(endingHeightValue)) {
         simData.ending_height = endingHeightValue;
@@ -436,38 +457,58 @@
         if (!resp.ok) { throw new Error(`Error: ${resp.status}`); }
         const simResult = await resp.json();
         console.log("Simulation Result from server:", simResult);
+
         document.getElementById('simImmediateFee').innerText = simResult.immediate_total_fee.toFixed(6);
         document.getElementById('simAlgorithmFee').innerText = simResult.algorithm_total_fee.toFixed(6);
         document.getElementById('simEthSaved').innerText = simResult.eth_saved.toFixed(6);
 
-        // For simulation, assume the timeline returns absolute block heights.
+        // timeline includes { block_height, immediate_fee, algorithm_fee, immediate_l2_behind, algo_l2_behind }
         const timeline = simResult.timeline;
-        console.log("Timeline Array (Simulation):", timeline);
-        const times = timeline.map(point => blockHeightToTimestamp(getBlockHeight(point)));
-        console.log("Converted Times (Simulation):", times);
-        const immediateFees = timeline.map(point => parseFloat(point.immediate_fee));
-        const algorithmFees = timeline.map(point => parseFloat(point.algorithm_fee));
-        const l2BlocksBehind = timeline.map(point => parseFloat(point.l2_blocks_behind));
+        const times = timeline.map(pt => blockHeightToTimestamp(pt.block_height));
 
-        console.log("Immediate Fees (Simulation):", immediateFees);
-        console.log("Algorithm Fees (Simulation):", algorithmFees);
-        console.log("L2 Blocks Behind (Simulation):", l2BlocksBehind);
+        // 1) Cumulative Fee Chart
+        const immediateFees = timeline.map(pt => pt.immediate_fee);
+        const algorithmFees = timeline.map(pt => pt.algorithm_fee);
 
         const priceTraceImmediate = { x: times, y: immediateFees, mode: 'lines', name: 'Immediate Fee' };
         const priceTraceAlgorithm = { x: times, y: algorithmFees, mode: 'lines', name: 'Algorithm Fee' };
-        const priceLayout = { title: 'Cumulative Fee Paid Over Time (Simulation)', xaxis: { title: 'Time', type: 'date' }, yaxis: { title: 'Fee (ETH)' } };
+        const priceLayout = {
+          title: 'Cumulative Fee Paid Over Time (Simulation)',
+          xaxis: { title: 'Time', type: 'date' },
+          yaxis: { title: 'Fee (ETH)' }
+        };
         Plotly.newPlot('simPricePlot', [priceTraceImmediate, priceTraceAlgorithm], priceLayout);
 
-        const backlogTrace = { x: times, y: l2BlocksBehind, mode: 'lines+markers', name: 'L2 Blocks Behind' };
-        const backlogLayout = { title: 'Computed L2 Blocks Behind Over Time (Simulation)', xaxis: { title: 'Time', type: 'date' }, yaxis: { title: 'L2 Blocks Behind' } };
-        Plotly.newPlot('simBacklogPlot', [backlogTrace], backlogLayout);
+        // 2) L2 Blocks Behind Chart
+        const immediateL2Behind = timeline.map(pt => pt.immediate_l2_behind);
+        const algoL2Behind = timeline.map(pt => pt.algo_l2_behind);
+
+        const behindTraceImmediate = {
+          x: times,
+          y: immediateL2Behind,
+          mode: 'lines',
+          name: 'Immediate L2 Behind'
+        };
+        const behindTraceAlgo = {
+          x: times,
+          y: algoL2Behind,
+          mode: 'lines',
+          name: 'Algorithm L2 Behind'
+        };
+        const behindLayout = {
+          title: 'L2 Blocks Behind Over Time',
+          xaxis: { title: 'Time', type: 'date' },
+          yaxis: { title: 'Number of L2 Blocks' }
+        };
+        Plotly.newPlot('simBacklogPlot', [behindTraceImmediate, behindTraceAlgo], behindLayout);
+
       } catch (err) {
         alert('Simulation failed: ' + err.message);
         console.error("Error in fetchAndSimulate:", err);
       }
     }
 
-    // On page load, fetch block time info then fetch fee data and plot.
+    // On page load, fetch block time info then fetch fee data and plot initial chart.
     fetchBlockTimeInfo().then(fetchAndPlot);
   </script>
 </body>

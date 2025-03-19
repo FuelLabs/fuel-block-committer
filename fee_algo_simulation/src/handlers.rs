@@ -304,6 +304,7 @@ pub async fn simulate_fees(
     let ending_height = FeeHandler::resolve_ending_height(&state, &params.fee_params)
         .await
         .unwrap();
+
     let start_height = ending_height.saturating_sub(params.fee_params.amount_of_blocks);
     let fees = FeeHandler::fetch_fees(&state, start_height, ending_height)
         .await
@@ -314,14 +315,15 @@ pub async fn simulate_fees(
     let config = FeeHandler::parse_config(&params.fee_params).unwrap();
     let sma_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
 
-    // Pass the bundling parameters and also the fee algo and num_blobs from the FeeHandler.
     let sim_result = run_simulation(
         &fees,
         params.bundling_interval_blocks,
         params.bundle_blob_count,
+        params.finalization_time_minutes, // <-- pass here
         &sma_algo,
     )
     .await;
+
     HttpResponse::Ok().json(sim_result)
 }
 
@@ -349,8 +351,9 @@ fn fees_at_height(fee_history: &[FeesAtHeight], current_height: u64) -> (&FeesAt
 /// l2_blocks_behind, and the current block height.
 pub async fn run_simulation(
     fee_history: &[FeesAtHeight],
-    bundling_interval_blocks: u32, // e.g. 3600 L2 blocks => 1 hour if L2 has 1 block/sec
-    bundle_blob_count: u32,        // e.g. 6 blobs per bundle
+    bundling_interval_blocks: u32,
+    bundle_blob_count: u32,
+    finalization_time_minutes: u32,
     fee_algo: &SmaFeeAlgo<CachingApi<HttpClient>>,
 ) -> SimulationResult {
     if fee_history.is_empty() {
@@ -362,108 +365,125 @@ pub async fn run_simulation(
         };
     }
 
-    // Track total fees (in wei) for each approach
+    let finalization_time_seconds = (finalization_time_minutes as u64) * 60;
+
     let mut immediate_total_fee: u128 = 0;
     let mut algorithm_total_fee: u128 = 0;
 
-    // Accumulators for L2 blocks (1 block/sec) over each L1 block (~12 sec).
-    // Each L1 block adds ~12 L2 blocks (assuming 12-second L1 blocks).
-    let mut immediate_l2_blocks_acc = 0;
-    let mut algo_l2_blocks_acc = 0;
+    // TIME: each L1 block is ~12s
+    let mut current_time: u64 = 0;
 
-    // For the algorithm path, track how many blobs are in backlog waiting to commit.
-    let mut backlog_blobs: u32 = 0;
+    // "Immediate" approach
+    let mut immediate_l2_blocks_acc = 0;
+    let mut immediate_backlog_blobs = 0;
+    let mut last_commit_time_immediate: u64 = 0;
+
+    // "Algorithm" approach
+    let mut algo_l2_blocks_acc = 0;
+    let mut algo_backlog_blobs = 0;
+    let mut last_commit_time_algo: u64 = 0;
 
     let mut timeline = Vec::with_capacity(fee_history.len());
 
     for entry in fee_history {
-        // --------------------------
-        // 1) "Immediate" approach
-        // --------------------------
-        // Each L1 block means ~12 new L2 blocks have passed.
+        // One L1 block => 12 seconds
+        current_time += 12;
+
+        // ====================================
+        // 1) Immediate Approach
+        // ====================================
         immediate_l2_blocks_acc += 12;
-
-        // Whenever we have enough L2 blocks to form a bundle, commit right away (one bundle).
-        // We might need a loop if we accumulate multiple intervals, but a single check
-        // is often enough unless you expect big block gaps.
         while immediate_l2_blocks_acc >= bundling_interval_blocks {
-            let fee = calculate_blob_tx_fee(bundle_blob_count, &entry.fees);
-            immediate_total_fee = immediate_total_fee.saturating_add(fee);
-
+            immediate_backlog_blobs += bundle_blob_count;
             immediate_l2_blocks_acc -= bundling_interval_blocks;
         }
 
-        // --------------------------
-        // 2) "Algorithm" approach
-        // --------------------------
-        algo_l2_blocks_acc += 12;
+        if immediate_backlog_blobs > 0 {
+            let dt = current_time.saturating_sub(last_commit_time_immediate);
+            if dt >= finalization_time_seconds {
+                // Commit everything
+                let fee = calculate_blob_tx_fee(immediate_backlog_blobs, &entry.fees);
+                immediate_total_fee = immediate_total_fee.saturating_add(fee);
+                immediate_backlog_blobs = 0;
+                last_commit_time_immediate = current_time;
+            }
+        }
 
-        // Produce a new bundle of `bundle_blob_count` blobs whenever we accumulate enough L2 blocks
-        // to justify bundling. This just *adds* them to the backlog; we haven't committed yet.
+        // How many L2 blocks behind for "immediate" path?
+        // For each `bundle_blob_count` backlog, that's `bundling_interval_blocks` L2 blocks not committed.
+        let immediate_l2_behind = immediate_backlog_blobs
+            .saturating_mul(bundling_interval_blocks / bundle_blob_count.max(1));
+
+        // ====================================
+        // 2) Algorithm Approach
+        // ====================================
+        algo_l2_blocks_acc += 12;
         while algo_l2_blocks_acc >= bundling_interval_blocks {
-            backlog_blobs = backlog_blobs.saturating_add(bundle_blob_count);
+            algo_backlog_blobs += bundle_blob_count;
             algo_l2_blocks_acc -= bundling_interval_blocks;
         }
 
-        // The L2 "blocks behind" metric from your original code:
-        // backlog_blobs times (bundling_interval_blocks / bundle_blob_count)
-        // (Though you might want to refine or scale this differently, depending on your definition.)
-        let l2_blocks_behind =
-            backlog_blobs.saturating_mul(bundling_interval_blocks / bundle_blob_count.max(1));
+        // Compute how many L2 blocks behind for the algo approach
+        let algo_l2_behind =
+            algo_backlog_blobs.saturating_mul(bundling_interval_blocks / bundle_blob_count.max(1));
 
-        // Decide how many blobs you *attempt* to commit now, e.g. up to 6.
-        let commit_blob_count = backlog_blobs.min(6);
+        // Possibly commit up to 6
+        let commit_blob_count = algo_backlog_blobs.min(6);
         if commit_blob_count > 0 {
-            let effective_fee = calculate_blob_tx_fee(commit_blob_count, &entry.fees);
-
+            let fee = calculate_blob_tx_fee(commit_blob_count, &entry.fees);
             let acceptable = fee_algo
-                .fees_acceptable(commit_blob_count, l2_blocks_behind, entry.height)
+                .fees_acceptable(commit_blob_count, algo_l2_behind, entry.height)
                 .await
                 .unwrap_or(false);
 
             if acceptable {
-                // Pay the fee, remove those blobs from backlog
-                algorithm_total_fee = algorithm_total_fee.saturating_add(effective_fee);
-                backlog_blobs = backlog_blobs.saturating_sub(commit_blob_count);
+                let dt = current_time.saturating_sub(last_commit_time_algo);
+                if dt >= finalization_time_seconds {
+                    // Commit up to 6
+                    algorithm_total_fee = algorithm_total_fee.saturating_add(fee);
+                    algo_backlog_blobs -= commit_blob_count;
+                    last_commit_time_algo = current_time;
+                }
             }
         }
 
-        // --------------------------
-        // 3) Record a simulation point for plotting
-        // --------------------------
+        // Recompute after possibly committing
+        let algo_l2_behind_after =
+            algo_backlog_blobs.saturating_mul(bundling_interval_blocks / bundle_blob_count.max(1));
+
+        // ====================================
+        // 3) Record timeline point
+        // ====================================
         timeline.push(SimulationPoint {
             block_height: entry.height,
-            // Convert wei → ETH
             immediate_fee: immediate_total_fee as f64 / 1e18,
             algorithm_fee: algorithm_total_fee as f64 / 1e18,
-            backlog: backlog_blobs,
-            l2_blocks_behind,
+            immediate_l2_behind,
+            // Use the updated behind if you like:
+            algo_l2_behind: algo_l2_behind_after,
         });
     }
 
-    // --------------------------
-    // 4) If any leftover backlog needs committing at the end
-    // --------------------------
-    if backlog_blobs > 0 {
+    // ====================================
+    // 4) Leftover backlog for algo
+    // ====================================
+    if algo_backlog_blobs > 0 {
         let last = fee_history.last().unwrap();
-        let fee = calculate_blob_tx_fee(backlog_blobs, &last.fees);
+        let fee = calculate_blob_tx_fee(algo_backlog_blobs, &last.fees);
         algorithm_total_fee = algorithm_total_fee.saturating_add(fee);
 
-        backlog_blobs = 0;
         timeline.push(SimulationPoint {
             block_height: last.height,
             immediate_fee: immediate_total_fee as f64 / 1e18,
             algorithm_fee: algorithm_total_fee as f64 / 1e18,
-            backlog: 0,
-            l2_blocks_behind: 0,
+            immediate_l2_behind: immediate_backlog_blobs
+                .saturating_mul(bundling_interval_blocks / bundle_blob_count.max(1)),
+            algo_l2_behind: 0,
         });
+        algo_backlog_blobs = 0;
     }
 
-    // --------------------------
-    // 5) Return final results
-    // --------------------------
     let eth_saved = (immediate_total_fee.saturating_sub(algorithm_total_fee)) as f64 / 1e18;
-
     SimulationResult {
         immediate_total_fee: immediate_total_fee as f64 / 1e18,
         algorithm_total_fee: algorithm_total_fee as f64 / 1e18,
