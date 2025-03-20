@@ -2,7 +2,6 @@ use std::num::{NonZeroU32, NonZeroU64};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use serde_aux::prelude::*;
 use services::{
     fees::FeesAtHeight,
     state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods},
@@ -26,8 +25,7 @@ pub struct FeeParams {
     pub max_l2_blocks_behind: u32,
     pub start_max_fee_multiplier: f64,
     pub end_max_fee_multiplier: f64,
-    #[serde(deserialize_with = "deserialize_number_from_string")]
-    pub always_acceptable_fee: u128,
+    pub always_acceptable_fee: String,
     pub num_blobs: u32,
     #[serde(default)]
     pub num_l2_blocks_behind: u32,
@@ -48,12 +46,17 @@ impl TryFrom<FeeParams> for AlgoConfig {
         let multiplier_range =
             FeeMultiplierRange::new(value.start_max_fee_multiplier, value.end_max_fee_multiplier)?;
 
+        let always_acceptable_fee = value
+            .always_acceptable_fee
+            .parse()
+            .context("always_acceptable_fee must be a valid u128")?;
+
         Ok(AlgoConfig {
             sma_periods,
             fee_thresholds: FeeThresholds {
                 max_l2_blocks_behind,
                 multiplier_range,
-                always_acceptable_fee: value.always_acceptable_fee,
+                always_acceptable_fee,
             },
         })
     }
@@ -99,19 +102,9 @@ pub struct FeeResponse {
 pub struct SimulationParams {
     #[serde(flatten)]
     pub fee_params: FeeParams,
-    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub bundling_interval_blocks: u32,
-    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub bundle_blob_count: u32,
     pub finalization_time_minutes: u32,
-}
-
-fn default_blob_count() -> u32 {
-    6
-}
-
-fn default_blob_interval_minutes() -> u32 {
-    60
 }
 
 #[derive(Debug, Serialize)]

@@ -7,10 +7,9 @@ use services::{
     fee_metrics_tracker::service::calculate_blob_tx_fee,
     fees::{Api, FeesAtHeight, SequentialBlockFees, cache::CachingApi},
     state_committer::{AlgoConfig, SmaFeeAlgo},
-    types::{DateTime, Utc},
 };
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::models::{SimulationParams, SimulationPoint, SimulationResult};
 
@@ -52,8 +51,6 @@ struct FeeHandler {
     params: FeeParams,
     config: AlgoConfig,
     seq_fees: SequentialBlockFees,
-    last_block_height: u64,
-    last_block_time: DateTime<Utc>,
     sma_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
 }
 
@@ -63,7 +60,6 @@ impl FeeHandler {
         let start_height = ending_height.saturating_sub(params.amount_of_blocks);
         let config = Self::parse_config(&params)?;
         let seq_fees = Self::fetch_fees(&state, start_height, ending_height).await?;
-        let last_block = Self::get_last_block_info(&state, &seq_fees).await?;
         let sma_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
 
         Ok(Self {
@@ -71,8 +67,6 @@ impl FeeHandler {
             params,
             config,
             seq_fees,
-            last_block_height: last_block.0,
-            last_block_time: last_block.1,
             sma_algo,
         })
     }
@@ -113,28 +107,6 @@ impl FeeHandler {
             error!("Error fetching sequential fees: {:?}", e);
             FeeError::InternalError("Failed to fetch sequential fees".into())
         })
-    }
-
-    async fn get_last_block_info(
-        state: &web::Data<AppState>,
-        seq_fees: &SequentialBlockFees,
-    ) -> Result<(u64, DateTime<Utc>), FeeError> {
-        let last_block = seq_fees.last();
-        let last_block_time = state
-            .fee_api
-            .inner()
-            .get_block_time(last_block.height)
-            .await
-            .map_err(|e| {
-                error!("Error fetching last block time: {:?}", e);
-                FeeError::InternalError("Failed to fetch last block time".into())
-            })?
-            .ok_or_else(|| {
-                error!("Last block time not found");
-                FeeError::InternalError("Last block time not found".into())
-            })?;
-        info!("Last block time: {}", last_block_time);
-        Ok((last_block.height, last_block_time))
     }
 
     async fn calculate_fee_data(&self) -> Result<Vec<FeeDataPoint>, FeeError> {
@@ -325,18 +297,6 @@ pub async fn simulate_fees(
     .await;
 
     HttpResponse::Ok().json(sim_result)
-}
-
-/// Looks up the fee entry corresponding to a given block height.
-/// Assumes fee_history is sorted by block_height.
-fn fees_at_height(fee_history: &[FeesAtHeight], current_height: u64) -> (&FeesAtHeight, u64) {
-    for entry in fee_history {
-        if entry.height >= current_height {
-            return (entry, entry.height);
-        }
-    }
-    let last = fee_history.last().unwrap();
-    (last, last.height)
 }
 
 // Each L1 block is 12 seconds
