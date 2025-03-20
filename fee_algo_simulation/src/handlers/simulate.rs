@@ -1,8 +1,20 @@
-use super::*;
 use crate::{handlers::error::FeeError, utils::ETH_BLOCK_TIME}; // Our custom error
+use crate::{
+    models::{SimulationParams, SimulationPoint, SimulationResult},
+    state::AppState,
+};
+use actix_web::ResponseError;
 use actix_web::{Responder, web};
+use anyhow::Result;
+use eth::HttpClient;
+use itertools::Itertools;
+use services::{
+    fee_metrics_tracker::service::calculate_blob_tx_fee,
+    fees::{Api, Fees, FeesAtHeight, cache::CachingApi},
+    state_committer::{AlgoConfig, SmaFeeAlgo},
+};
+use tracing::error;
 
-// ImmediateSim
 struct ImmediateSim {
     l2_behind: u32,
     total_fee_wei: u128,

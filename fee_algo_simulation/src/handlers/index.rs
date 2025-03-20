@@ -1,4 +1,4 @@
-use super::*;
+use actix_web::HttpResponse;
 
 pub async fn index_html() -> HttpResponse {
     let contents = include_str!("index.html");

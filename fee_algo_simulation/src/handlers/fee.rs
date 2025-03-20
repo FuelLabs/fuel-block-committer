@@ -1,6 +1,20 @@
-use super::*;
-use crate::handlers::error::FeeError; // use the error mod
+use crate::handlers::error::FeeError;
+use crate::{
+    models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats},
+    state::AppState,
+    utils::{last_n_blocks, wei_to_eth_string},
+};
+use actix_web::ResponseError;
 use actix_web::{Responder, web};
+use anyhow::Result;
+use eth::HttpClient;
+use services::{
+    fee_metrics_tracker::service::calculate_blob_tx_fee,
+    fees::{Api, FeesAtHeight, SequentialBlockFees, cache::CachingApi},
+    state_committer::{AlgoConfig, SmaFeeAlgo},
+};
+use std::num::NonZeroU64;
+use tracing::error;
 
 pub struct FeeHandler {
     state: web::Data<AppState>,

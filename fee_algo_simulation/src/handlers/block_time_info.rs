@@ -1,7 +1,10 @@
+use crate::state::AppState;
 use crate::utils::ETH_BLOCK_TIME;
+use actix_web::HttpResponse;
+use serde_json::json;
+use tracing::error;
 
-use super::*;
-
+use services::fees::Api;
 pub async fn get_block_time_info(state: actix_web::web::Data<AppState>) -> HttpResponse {
     let current_height = match state.fee_api.current_height().await {
         Ok(h) => h,
