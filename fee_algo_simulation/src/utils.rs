@@ -7,6 +7,7 @@ use xdg::BaseDirectories;
 use super::models::SavedFees;
 
 pub const ETH_BLOCK_TIME: u64 = 12;
+pub const FUEL_BLOCK_TIME: u64 = 1;
 
 /// Path to the fee cache file.
 pub fn fee_file() -> PathBuf {

@@ -9,26 +9,31 @@ use services::{
 };
 use tracing::error;
 
-use crate::{handlers::error::FeeError, utils::ETH_BLOCK_TIME}; // Our custom error
+use crate::{
+    handlers::error::FeeError,
+    utils::{ETH_BLOCK_TIME, FUEL_BLOCK_TIME},
+};
 use crate::{
     models::{SimulationParams, SimulationPoint, SimulationResult},
     state::AppState,
 };
 
+const MAX_BLOBS_PER_COMMIT: u64 = 6;
+
 struct ImmediateSim {
-    l2_behind: u32,
+    l2_behind: u64,
     total_fee_wei: u128,
     last_commit_time: u64,
     finalization_time_seconds: u64,
-    bundle_blob_count: u32,
-    bundling_interval_blocks: u32,
+    bundle_blob_count: u64,
+    bundling_interval_blocks: u64,
 }
 
 impl ImmediateSim {
     fn new(
         finalization_time_seconds: u64,
-        bundle_blob_count: u32,
-        bundling_interval_blocks: u32,
+        bundle_blob_count: u64,
+        bundling_interval_blocks: u64,
     ) -> Self {
         Self {
             l2_behind: 0,
@@ -40,59 +45,64 @@ impl ImmediateSim {
         }
     }
 
-    fn on_l1_block(&mut self, block_fees: &Fees, current_time: u64, newly_produced_l2: u32) {
+    fn on_l1_block(&mut self, block_fees: &Fees, current_time: u64, newly_produced_l2: u64) {
         self.l2_behind += newly_produced_l2;
-        self.maybe_commit_all(block_fees, current_time);
+        self.maybe_commit(block_fees, current_time);
     }
 
     fn leftover_commit(&mut self, block_fees: &Fees, current_time: u64) {
-        self.maybe_commit_all(block_fees, current_time);
+        self.maybe_commit(block_fees, current_time);
     }
 
-    fn maybe_commit_all(&mut self, block_fees: &Fees, current_time: u64) {
+    fn maybe_commit(&mut self, block_fees: &Fees, current_time: u64) {
         let dt = current_time.saturating_sub(self.last_commit_time);
         if dt < self.finalization_time_seconds {
             return;
         }
 
-        let bundles = self.l2_behind / self.bundling_interval_blocks;
-        if bundles > 0 {
-            let total_blobs = bundles * self.bundle_blob_count;
-            let fee = calculate_blob_tx_fee(total_blobs, block_fees);
-            self.total_fee_wei = self.total_fee_wei.saturating_add(fee);
-
-            self.l2_behind -= bundles * self.bundling_interval_blocks;
-            self.last_commit_time = current_time;
+        let total_bundles = self.l2_behind / self.bundling_interval_blocks;
+        if total_bundles == 0 {
+            return;
         }
+
+        let total_blobs = total_bundles * self.bundle_blob_count;
+        let commit_blobs = total_blobs.min(MAX_BLOBS_PER_COMMIT);
+
+        let fee = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+        self.total_fee_wei = self.total_fee_wei.saturating_add(fee);
+
+        let fraction = commit_blobs as f64 / self.bundle_blob_count as f64;
+        let l2_reduction = (fraction * self.bundling_interval_blocks as f64).round() as u64;
+        self.l2_behind = self.l2_behind.saturating_sub(l2_reduction);
+
+        self.last_commit_time = current_time;
     }
 
     fn total_fee_wei(&self) -> u128 {
         self.total_fee_wei
     }
 
-    fn l2_behind(&self) -> u32 {
+    fn l2_behind(&self) -> u64 {
         self.l2_behind
     }
 }
 
 struct AlgorithmSim {
-    l2_behind: u32,
+    l2_behind: u64,
     total_fee_wei: u128,
     last_commit_time: u64,
     finalization_time_seconds: u64,
-    bundle_blob_count: u32,
-    bundling_interval_blocks: u32,
+    bundle_blob_count: u64,
+    bundling_interval_blocks: u64,
     fee_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
-    max_bundles_per_commit: u32,
 }
 
 impl AlgorithmSim {
     fn new(
         finalization_time_seconds: u64,
-        bundle_blob_count: u32,
-        bundling_interval_blocks: u32,
+        bundle_blob_count: u64,
+        bundling_interval_blocks: u64,
         fee_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
-        max_bundles_per_commit: u32,
     ) -> Self {
         Self {
             l2_behind: 0,
@@ -102,7 +112,6 @@ impl AlgorithmSim {
             bundle_blob_count,
             bundling_interval_blocks,
             fee_algo,
-            max_bundles_per_commit,
         }
     }
 
@@ -111,10 +120,10 @@ impl AlgorithmSim {
         block_fees: &Fees,
         block_height: u64,
         current_time: u64,
-        newly_produced_l2: u32,
+        newly_produced_l2: u64,
     ) -> Result<(), FeeError> {
         self.l2_behind += newly_produced_l2;
-        self.maybe_commit_partial(block_fees, block_height, current_time)
+        self.maybe_commit(block_fees, block_height, current_time)
             .await?;
         Ok(())
     }
@@ -125,11 +134,11 @@ impl AlgorithmSim {
         block_height: u64,
         current_time: u64,
     ) -> Result<(), FeeError> {
-        self.maybe_commit_partial(block_fees, block_height, current_time)
+        self.maybe_commit(block_fees, block_height, current_time)
             .await
     }
 
-    async fn maybe_commit_partial(
+    async fn maybe_commit(
         &mut self,
         block_fees: &Fees,
         block_height: u64,
@@ -145,19 +154,23 @@ impl AlgorithmSim {
             return Ok(());
         }
 
-        let bundles_to_commit = total_bundles.min(self.max_bundles_per_commit);
-        let commit_blob_count = bundles_to_commit * self.bundle_blob_count;
+        let total_blobs = total_bundles * self.bundle_blob_count;
+        let commit_blobs = total_blobs.min(MAX_BLOBS_PER_COMMIT);
 
-        let fee_wei = calculate_blob_tx_fee(commit_blob_count, block_fees);
+        let fee_wei = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
         let acceptable = self
             .fee_algo
-            .fees_acceptable(commit_blob_count, self.l2_behind(), block_height)
+            .fees_acceptable(commit_blobs as u32, self.l2_behind() as u32, block_height)
             .await
             .map_err(|_| FeeError::InternalError("Error checking fee acceptability".into()))?;
 
         if acceptable {
             self.total_fee_wei = self.total_fee_wei.saturating_add(fee_wei);
-            self.l2_behind -= bundles_to_commit * self.bundling_interval_blocks;
+
+            let fraction = commit_blobs as f64 / self.bundle_blob_count as f64;
+            let l2_reduction = (fraction * self.bundling_interval_blocks as f64).round() as u64;
+            self.l2_behind = self.l2_behind.saturating_sub(l2_reduction);
+
             self.last_commit_time = current_time;
         }
 
@@ -168,7 +181,7 @@ impl AlgorithmSim {
         self.total_fee_wei
     }
 
-    fn l2_behind(&self) -> u32 {
+    fn l2_behind(&self) -> u64 {
         self.l2_behind
     }
 }
@@ -185,7 +198,7 @@ impl SimulateHandler {
         fee_history: Vec<FeesAtHeight>,
         fee_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
     ) -> Self {
-        let finalization_time_seconds = (params.finalization_time_minutes as u64) * 60;
+        let finalization_time_seconds = params.finalization_time_minutes * 60;
 
         let immediate = ImmediateSim::new(
             finalization_time_seconds,
@@ -198,7 +211,6 @@ impl SimulateHandler {
             params.bundle_blob_count,
             params.bundling_interval_blocks,
             fee_algo,
-            6, // e.g. up to 6 bundles per commit
         );
 
         Self {
@@ -224,10 +236,11 @@ impl SimulateHandler {
         for entry in &self.fee_history {
             current_time += ETH_BLOCK_TIME;
 
-            self.immediate.on_l1_block(&entry.fees, current_time, 12);
-
+            let new_fuel_blocks = ETH_BLOCK_TIME / FUEL_BLOCK_TIME;
+            self.immediate
+                .on_l1_block(&entry.fees, current_time, new_fuel_blocks);
             self.algorithm
-                .on_l1_block(&entry.fees, entry.height, current_time, 12)
+                .on_l1_block(&entry.fees, entry.height, current_time, new_fuel_blocks)
                 .await?;
 
             timeline.push(SimulationPoint {
@@ -239,6 +252,7 @@ impl SimulateHandler {
             });
         }
 
+        // Process leftover commits.
         let last_block_fees = &self.fee_history.last().unwrap().fees;
         let last_block_height = self.fee_history.last().unwrap().height;
 

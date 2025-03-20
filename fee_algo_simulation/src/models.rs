@@ -102,9 +102,9 @@ pub struct FeeResponse {
 pub struct SimulationParams {
     #[serde(flatten)]
     pub fee_params: FeeParams,
-    pub bundling_interval_blocks: u32,
-    pub bundle_blob_count: u32,
-    pub finalization_time_minutes: u32,
+    pub bundling_interval_blocks: u64,
+    pub bundle_blob_count: u64,
+    pub finalization_time_minutes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -112,8 +112,8 @@ pub struct SimulationPoint {
     pub block_height: u64,
     pub immediate_fee: f64,
     pub algorithm_fee: f64,
-    pub immediate_l2_behind: u32,
-    pub algo_l2_behind: u32,
+    pub immediate_l2_behind: u64,
+    pub algo_l2_behind: u64,
 }
 
 #[derive(Debug, Serialize)]
