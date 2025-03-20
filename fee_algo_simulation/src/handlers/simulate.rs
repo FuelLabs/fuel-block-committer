@@ -45,36 +45,55 @@ impl ImmediateSim {
         }
     }
 
-    fn on_l1_block(&mut self, block_fees: &Fees, current_time: u64, newly_produced_l2: u64) {
-        self.l2_behind += newly_produced_l2;
-        self.maybe_commit(block_fees, current_time);
-    }
-
-    fn leftover_commit(&mut self, block_fees: &Fees, current_time: u64) {
-        self.maybe_commit(block_fees, current_time);
-    }
-
-    fn maybe_commit(&mut self, block_fees: &Fees, current_time: u64) {
+    /// Called on every L1 block – attempts a commit only if there is enough L2 backlog
+    /// for at least one full bundle
+    fn commit_full(&mut self, block_fees: &Fees, current_time: u64) {
         let dt = current_time.saturating_sub(self.last_commit_time);
         if dt < self.finalization_time_seconds {
             return;
         }
+        // Only commit if we have at least one full bundle.
+        if self.l2_behind < self.bundling_interval_blocks {
+            return;
+        }
+        let full_bundles = self.l2_behind / self.bundling_interval_blocks;
 
-        let total_bundles = self.l2_behind / self.bundling_interval_blocks;
-        if total_bundles == 0 {
+        let total_blobs = full_bundles * self.bundle_blob_count;
+
+        let commit_blobs = total_blobs.min(MAX_BLOBS_PER_COMMIT);
+
+        // If this number is not an exact multiple of bundle_blob_count,
+        // that would mean a partial bundle is being committed – so skip.
+        if commit_blobs % self.bundle_blob_count != 0 {
             return;
         }
 
-        let total_blobs = total_bundles * self.bundle_blob_count;
-        let commit_blobs = total_blobs.min(MAX_BLOBS_PER_COMMIT);
+        let fee = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+        self.total_fee_wei = self.total_fee_wei.saturating_add(fee);
 
+        let used_bundles = commit_blobs / self.bundle_blob_count;
+        self.l2_behind = self
+            .l2_behind
+            .saturating_sub(used_bundles * self.bundling_interval_blocks);
+        self.last_commit_time = current_time;
+    }
+
+    fn commit_partial(&mut self, block_fees: &Fees, current_time: u64) {
+        if self.l2_behind == 0 {
+            return;
+        }
+
+        let computed_blobs = (self.l2_behind as f64 / self.bundling_interval_blocks as f64)
+            * self.bundle_blob_count as f64;
+
+        let commit_blobs = computed_blobs.round().max(1.0) as u64;
+        let commit_blobs = commit_blobs.min(MAX_BLOBS_PER_COMMIT);
         let fee = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
         self.total_fee_wei = self.total_fee_wei.saturating_add(fee);
 
         let fraction = commit_blobs as f64 / self.bundle_blob_count as f64;
         let l2_reduction = (fraction * self.bundling_interval_blocks as f64).round() as u64;
         self.l2_behind = self.l2_behind.saturating_sub(l2_reduction);
-
         self.last_commit_time = current_time;
     }
 
@@ -84,6 +103,16 @@ impl ImmediateSim {
 
     fn l2_behind(&self) -> u64 {
         self.l2_behind
+    }
+
+    fn on_l1_block(&mut self, block_fees: &Fees, current_time: u64, newly_produced_l2: u64) {
+        self.l2_behind += newly_produced_l2;
+        self.commit_full(block_fees, current_time);
+    }
+
+    // Called at the end to flush any remaining backlog.
+    fn leftover_commit(&mut self, block_fees: &Fees, current_time: u64) {
+        self.commit_partial(block_fees, current_time);
     }
 }
 
@@ -115,30 +144,7 @@ impl AlgorithmSim {
         }
     }
 
-    async fn on_l1_block(
-        &mut self,
-        block_fees: &Fees,
-        block_height: u64,
-        current_time: u64,
-        newly_produced_l2: u64,
-    ) -> Result<(), FeeError> {
-        self.l2_behind += newly_produced_l2;
-        self.maybe_commit(block_fees, block_height, current_time)
-            .await?;
-        Ok(())
-    }
-
-    async fn leftover_commit(
-        &mut self,
-        block_fees: &Fees,
-        block_height: u64,
-        current_time: u64,
-    ) -> Result<(), FeeError> {
-        self.maybe_commit(block_fees, block_height, current_time)
-            .await
-    }
-
-    async fn maybe_commit(
+    async fn commit_full(
         &mut self,
         block_fees: &Fees,
         block_height: u64,
@@ -149,15 +155,16 @@ impl AlgorithmSim {
             return Ok(());
         }
 
-        let total_bundles = self.l2_behind / self.bundling_interval_blocks;
-        if total_bundles == 0 {
+        if self.l2_behind < self.bundling_interval_blocks {
             return Ok(());
         }
 
-        let total_blobs = total_bundles * self.bundle_blob_count;
+        let full_bundles = self.l2_behind / self.bundling_interval_blocks;
+        let total_blobs = full_bundles * self.bundle_blob_count;
         let commit_blobs = total_blobs.min(MAX_BLOBS_PER_COMMIT);
 
         let fee_wei = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+
         let acceptable = self
             .fee_algo
             .fees_acceptable(commit_blobs as u32, self.l2_behind() as u32, block_height)
@@ -166,15 +173,58 @@ impl AlgorithmSim {
 
         if acceptable {
             self.total_fee_wei = self.total_fee_wei.saturating_add(fee_wei);
-
-            let fraction = commit_blobs as f64 / self.bundle_blob_count as f64;
-            let l2_reduction = (fraction * self.bundling_interval_blocks as f64).round() as u64;
-            self.l2_behind = self.l2_behind.saturating_sub(l2_reduction);
-
+            let used_bundles = commit_blobs / self.bundle_blob_count;
+            self.l2_behind = self
+                .l2_behind
+                .saturating_sub(used_bundles * self.bundling_interval_blocks);
             self.last_commit_time = current_time;
         }
+        Ok(())
+    }
+
+    async fn commit_partial(
+        &mut self,
+        block_fees: &Fees,
+        current_time: u64,
+    ) -> Result<(), FeeError> {
+        if self.l2_behind == 0 {
+            return Ok(());
+        }
+
+        let computed_blobs = (self.l2_behind as f64 / self.bundling_interval_blocks as f64)
+            * self.bundle_blob_count as f64;
+        let commit_blobs = computed_blobs.round().max(1.0) as u64;
+        let commit_blobs = commit_blobs.min(MAX_BLOBS_PER_COMMIT);
+        let fee_wei = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+
+        self.total_fee_wei = self.total_fee_wei.saturating_add(fee_wei);
+        let fraction = commit_blobs as f64 / self.bundle_blob_count as f64;
+        let l2_reduction = (fraction * self.bundling_interval_blocks as f64).round() as u64;
+        self.l2_behind = self.l2_behind.saturating_sub(l2_reduction);
+        self.last_commit_time = current_time;
 
         Ok(())
+    }
+
+    async fn on_l1_block(
+        &mut self,
+        block_fees: &Fees,
+        block_height: u64,
+        current_time: u64,
+        newly_produced_l2: u64,
+    ) -> Result<(), FeeError> {
+        self.l2_behind += newly_produced_l2;
+        self.commit_full(block_fees, block_height, current_time)
+            .await?;
+        Ok(())
+    }
+
+    async fn leftover_commit(
+        &mut self,
+        block_fees: &Fees,
+        current_time: u64,
+    ) -> Result<(), FeeError> {
+        self.commit_partial(block_fees, current_time).await
     }
 
     fn total_fee_wei(&self) -> u128 {
@@ -262,7 +312,7 @@ impl SimulateHandler {
             self.immediate
                 .leftover_commit(last_block_fees, current_time);
             self.algorithm
-                .leftover_commit(last_block_fees, last_block_height, current_time)
+                .leftover_commit(last_block_fees, current_time)
                 .await?;
 
             timeline.push(SimulationPoint {
