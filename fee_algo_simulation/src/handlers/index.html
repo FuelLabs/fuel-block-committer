@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <title>Fee Algo Simulator</title>
   <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
   <!-- Plotly JS -->
-  <script src="https://cdn.plot.ly/plotly-2.25.2.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.plot.ly/plotly-2.25.2.min.js" integrity="sha384-kIW8v2UtFMvKjRSuXvClzSkXUW9Yw38cOFK6iSkOgBbm425jZL8Fp2X15blqjcTI" crossorigin="anonymous"></script>
   <style>
     /* Custom Styles */
     body {
@@ -128,7 +128,7 @@
                   <div class="form-text">Number of blobs produced per bundle</div>
                 </div>
               </div>
-              <!-- New finalization time input, default 5 minutes -->
+
               <div class="row mb-3">
                 <div class="col-md-6">
                   <label for="finalizationTime" class="form-label required">Finalization Time (minutes):</label>
@@ -195,7 +195,6 @@
   </div>
 
   <script>
-    // Global variables for conversion (front-end only).
     let lastBlockTime = null;
     let lastBlockHeight = null;
     let blockInterval = null; // L1 block time in seconds
@@ -227,7 +226,7 @@
       return new Date(lastBlockTime.getTime() - deltaMilliseconds);
     }
 
-    // Read the block height from a data point. Adjust if your JSON differs.
+    // Read the block height from a data point
     function getBlockHeight(point) {
       return point.block_height !== undefined ? point.block_height : point.blockHeight;
     }
@@ -276,7 +275,6 @@
 
     // Fetch fee data from /fees and plot the main fee chart.
     async function fetchAndPlot() {
-      console.log("Fetching fee data and plotting fee graph...");
       const endingHeightInput = document.getElementById('endingHeight');
       const endingHeightValue = endingHeightInput.value ? parseInt(endingHeightInput.value, 10) : null;
       const amountOfBlocks = parseInt(document.getElementById('amountOfBlocks').value, 10);
@@ -323,7 +321,6 @@
         const resp = await fetch(url);
         if (!resp.ok) { throw new Error(`Error: ${resp.status}`); }
         const response = await resp.json();
-        console.log("Fee Data Response:", response);
         const data = response.data;
         const stats = response.stats;
 
@@ -447,7 +444,6 @@
         simData.ending_height = endingHeightValue;
       }
 
-      console.log("Simulation data being sent:", simData);
       try {
         const resp = await fetch('/simulate', {
           method: 'POST',
@@ -456,7 +452,6 @@
         });
         if (!resp.ok) { throw new Error(`Error: ${resp.status}`); }
         const simResult = await resp.json();
-        console.log("Simulation Result from server:", simResult);
 
         document.getElementById('simImmediateFee').innerText = simResult.immediate_total_fee.toFixed(6);
         document.getElementById('simAlgorithmFee').innerText = simResult.algorithm_total_fee.toFixed(6);
