@@ -93,7 +93,6 @@ impl FeeHandler {
     async fn process_block_fee(&self, block_fee: &FeesAtHeight) -> Result<FeeDataPoint, FeeError> {
         let current_fee_wei = calculate_blob_tx_fee(self.params.num_blobs, &block_fee.fees);
 
-        // short & long
         let short_fee_wei = self
             .fetch_fee(block_fee.height, self.config.sma_periods.short)
             .await?;
@@ -101,7 +100,6 @@ impl FeeHandler {
             .fetch_fee(block_fee.height, self.config.sma_periods.long)
             .await?;
 
-        // Acceptable check
         let acceptable = self
             .sma_algo
             .fees_acceptable(
@@ -189,7 +187,6 @@ impl FeeHandler {
     }
 }
 
-/// GET /fees
 pub async fn get_fees(state: web::Data<AppState>, params: web::Query<FeeParams>) -> impl Responder {
     let handler = match FeeHandler::new(state.clone(), params.into_inner()).await {
         Ok(h) => h,

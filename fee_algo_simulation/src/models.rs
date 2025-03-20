@@ -116,7 +116,6 @@ pub struct SimulationPoint {
     pub algo_l2_behind: u32,
 }
 
-/// The full simulation result.
 #[derive(Debug, Serialize)]
 pub struct SimulationResult {
     pub immediate_total_fee: f64,

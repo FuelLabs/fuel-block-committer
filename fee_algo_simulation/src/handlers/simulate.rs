@@ -19,7 +19,6 @@ struct ImmediateSim {
     l2_behind: u32,
     total_fee_wei: u128,
     last_commit_time: u64,
-
     finalization_time_seconds: u64,
     bundle_blob_count: u32,
     bundling_interval_blocks: u32,
@@ -76,16 +75,13 @@ impl ImmediateSim {
     }
 }
 
-// AlgorithmSim
 struct AlgorithmSim {
     l2_behind: u32,
     total_fee_wei: u128,
     last_commit_time: u64,
-
     finalization_time_seconds: u64,
     bundle_blob_count: u32,
     bundling_interval_blocks: u32,
-
     fee_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
     max_bundles_per_commit: u32,
 }
@@ -155,7 +151,7 @@ impl AlgorithmSim {
         let fee_wei = calculate_blob_tx_fee(commit_blob_count, block_fees);
         let acceptable = self
             .fee_algo
-            .fees_acceptable(commit_blob_count, 0, block_height)
+            .fees_acceptable(commit_blob_count, self.l2_behind(), block_height)
             .await
             .map_err(|_| FeeError::InternalError("Error checking fee acceptability".into()))?;
 
@@ -177,10 +173,8 @@ impl AlgorithmSim {
     }
 }
 
-// SimulateHandler
 struct SimulateHandler {
     fee_history: Vec<FeesAtHeight>,
-
     immediate: ImmediateSim,
     algorithm: AlgorithmSim,
 }
@@ -226,14 +220,12 @@ impl SimulateHandler {
 
         let mut timeline = Vec::new();
         let mut current_time = 0u64;
-        // 1) Main loop
+
         for entry in &self.fee_history {
             current_time += ETH_BLOCK_TIME;
 
-            // immediate approach
             self.immediate.on_l1_block(&entry.fees, current_time, 12);
 
-            // algorithm approach
             self.algorithm
                 .on_l1_block(&entry.fees, entry.height, current_time, 12)
                 .await?;
@@ -247,7 +239,6 @@ impl SimulateHandler {
             });
         }
 
-        // 2) leftover loop
         let last_block_fees = &self.fee_history.last().unwrap().fees;
         let last_block_height = self.fee_history.last().unwrap().height;
 
@@ -282,12 +273,10 @@ impl SimulateHandler {
     }
 }
 
-/// POST /simulate
 pub async fn simulate_fees(
     state: web::Data<AppState>,
     params: web::Json<SimulationParams>,
 ) -> impl Responder {
-    // 1) Figure out end height
     let ending_height = match params.fee_params.ending_height {
         Some(h) => h,
         None => match state.fee_api.current_height().await {
@@ -301,7 +290,6 @@ pub async fn simulate_fees(
     };
     let start_height = ending_height.saturating_sub(params.fee_params.amount_of_blocks);
 
-    // 2) parse config -> AlgoConfig
     let config = match AlgoConfig::try_from(params.fee_params.clone()) {
         Ok(c) => c,
         Err(e) => {
@@ -310,10 +298,8 @@ pub async fn simulate_fees(
         }
     };
 
-    // 3) build SmaFeeAlgo
     let fee_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
 
-    // 4) fetch fees in [start..=end]
     let block_fees = match state.fee_api.fees(start_height..=ending_height).await {
         Ok(seq) => seq.into_iter().collect_vec(),
         Err(e) => {
@@ -322,13 +308,11 @@ pub async fn simulate_fees(
         }
     };
 
-    // 5) run simulation
     let sim_handler = SimulateHandler::new(params.into_inner(), block_fees, fee_algo);
     let sim_result = match sim_handler.run_simulation().await {
         Ok(r) => r,
         Err(e) => return e.error_response(),
     };
 
-    // 6) return JSON
     actix_web::HttpResponse::Ok().json(sim_result)
 }
