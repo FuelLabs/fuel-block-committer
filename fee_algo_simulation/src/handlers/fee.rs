@@ -1,11 +1,6 @@
-use crate::handlers::error::FeeError;
-use crate::{
-    models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats},
-    state::AppState,
-    utils::{last_n_blocks, wei_to_eth_string},
-};
-use actix_web::ResponseError;
-use actix_web::{Responder, web};
+use std::num::NonZeroU64;
+
+use actix_web::{Responder, ResponseError, web};
 use anyhow::Result;
 use eth::HttpClient;
 use services::{
@@ -13,8 +8,14 @@ use services::{
     fees::{Api, FeesAtHeight, SequentialBlockFees, cache::CachingApi},
     state_committer::{AlgoConfig, SmaFeeAlgo},
 };
-use std::num::NonZeroU64;
 use tracing::error;
+
+use crate::{
+    handlers::error::FeeError,
+    models::{FeeDataPoint, FeeParams, FeeResponse, FeeStats},
+    state::AppState,
+    utils::{last_n_blocks, wei_to_eth_string},
+};
 
 pub struct FeeHandler {
     state: web::Data<AppState>,

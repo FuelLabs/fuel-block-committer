@@ -1,10 +1,4 @@
-use crate::{handlers::error::FeeError, utils::ETH_BLOCK_TIME}; // Our custom error
-use crate::{
-    models::{SimulationParams, SimulationPoint, SimulationResult},
-    state::AppState,
-};
-use actix_web::ResponseError;
-use actix_web::{Responder, web};
+use actix_web::{Responder, ResponseError, web};
 use anyhow::Result;
 use eth::HttpClient;
 use itertools::Itertools;
@@ -14,6 +8,12 @@ use services::{
     state_committer::{AlgoConfig, SmaFeeAlgo},
 };
 use tracing::error;
+
+use crate::{handlers::error::FeeError, utils::ETH_BLOCK_TIME}; // Our custom error
+use crate::{
+    models::{SimulationParams, SimulationPoint, SimulationResult},
+    state::AppState,
+};
 
 struct ImmediateSim {
     l2_behind: u32,

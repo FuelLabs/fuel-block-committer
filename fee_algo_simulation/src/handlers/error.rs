@@ -1,5 +1,4 @@
-use actix_web::HttpResponse;
-use actix_web::ResponseError;
+use actix_web::{HttpResponse, ResponseError};
 use thiserror::Error;
 use tracing::error;
 
