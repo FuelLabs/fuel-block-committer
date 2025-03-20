@@ -437,8 +437,6 @@ pub async fn run_simulation(
 
         // record timeline point
         timeline.push(SimulationPoint {
-            // If you have time_in_seconds in your struct, add:
-            // time_in_seconds: current_time,
             block_height: entry.height,
             immediate_fee: immediate_total_fee as f64 / 1e18,
             algorithm_fee: algorithm_total_fee as f64 / 1e18,
