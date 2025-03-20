@@ -39,12 +39,14 @@ async fn main() -> Result<()> {
     let server = actix_web::HttpServer::new(move || {
         actix_web::App::new()
             .app_data(Data::new(state.clone()))
-            .service(web::resource("/").route(web::get().to(handlers::index_html)))
-            .service(web::resource("/fees").route(web::get().to(handlers::get_fees)))
-            .service(web::resource("/simulate").route(web::post().to(handlers::simulate_fees)))
+            .service(web::resource("/").route(web::get().to(handlers::index::index_html)))
+            .service(web::resource("/fees").route(web::get().to(handlers::fee::get_fees)))
+            .service(
+                web::resource("/simulate").route(web::post().to(handlers::simulate::simulate_fees)),
+            )
             .service(
                 web::resource("/block_time_info")
-                    .route(web::get().to(handlers::get_block_time_info)),
+                    .route(web::get().to(handlers::block_time_info::get_block_time_info)),
             )
     })
     .bind(addr)?;

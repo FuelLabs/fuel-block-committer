@@ -6,6 +6,8 @@ use xdg::BaseDirectories;
 
 use super::models::SavedFees;
 
+pub const ETH_BLOCK_TIME: u64 = 12;
+
 /// Path to the fee cache file.
 pub fn fee_file() -> PathBuf {
     let xdg = BaseDirectories::with_prefix("fee_simulation").unwrap();
@@ -48,4 +50,8 @@ pub fn save_cache(cache: impl IntoIterator<Item = (u64, Fees)>) -> anyhow::Resul
 
 pub fn last_n_blocks(current_block: u64, n: std::num::NonZeroU64) -> RangeInclusive<u64> {
     current_block.saturating_sub(n.get().saturating_sub(1))..=current_block
+}
+
+pub fn wei_to_eth_string(wei: u128) -> String {
+    format!("{:.4}", (wei as f64) / 1e18)
 }
