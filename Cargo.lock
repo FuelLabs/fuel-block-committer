@@ -2979,7 +2979,6 @@ dependencies = [
  "futures",
  "itertools 0.13.0",
  "serde",
- "serde-aux",
  "serde_json",
  "services",
  "thiserror 1.0.69",
@@ -4855,15 +4854,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
-name = "ordered-float"
-version = "2.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "ouroboros"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6062,28 +6052,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-aux"
-version = "4.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5290c39c5f6992b9dddbda28541d965dba46468294e6018a408fa297e6c602de"
-dependencies = [
- "chrono",
- "serde",
- "serde-value",
- "serde_json",
-]
-
-[[package]]
-name = "serde-value"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
-dependencies = [
- "ordered-float",
- "serde",
-]
-
-[[package]]
 name = "serde_derive"
 version = "1.0.215"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6181,7 +6149,6 @@ dependencies = [
  "rand",
  "rayon",
  "serde",
- "serde-aux",
  "services",
  "sqlx",
  "storage",

@@ -27,5 +27,3 @@ tracing-subscriber = { workspace = true, features = [
   "env-filter",
 ] }
 xdg = { workspace = true }
-# TODO: segfault
-serde-aux = "4.6"
