@@ -491,7 +491,7 @@ pub async fn eigen_adapter(
         config.key.clone(),
         config.rpc.clone(),
         Throughput {
-            bytes_per_sec: 1_200_000.try_into().unwrap(),
+            bytes_per_sec: 1_000_000.try_into().unwrap(),
             max_burst: 16_000_000.try_into().unwrap(),
             calls_per_sec: 1.try_into().unwrap(),
         },
