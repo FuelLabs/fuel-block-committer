@@ -137,6 +137,50 @@ impl L1Provider for WebsocketClient {
     }
 }
 
+/// Blanket implementation for references to types that implement L1Provider
+#[async_trait]
+impl<T: L1Provider + ?Sized> L1Provider for &T {
+    async fn get_block_number(&self) -> EthResult<u64> {
+        (*self).get_block_number().await
+    }
+
+    async fn get_transaction_response(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> EthResult<Option<TransactionResponse>> {
+        (*self).get_transaction_response(tx_hash).await
+    }
+
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> EthResult<bool> {
+        (*self).is_squeezed_out(tx_hash).await
+    }
+
+    async fn balance(&self, address: Address) -> EthResult<U256> {
+        (*self).balance(address).await
+    }
+
+    async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+        reward_percentiles: &[f64],
+    ) -> EthResult<FeeHistory> {
+        (*self).fees(height_range, reward_percentiles).await
+    }
+
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmpty<Fragment>,
+        previous_tx: Option<services::types::L1Tx>,
+        priority: Priority,
+    ) -> EthResult<(L1Tx, FragmentsSubmitted)> {
+        (*self).submit_state_fragments(fragments, previous_tx, priority).await
+    }
+
+    async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx> {
+        (*self).submit(hash, height).await
+    }
+}
+
 /// Creates a factory that produces real WebsocketClient instances
 pub fn create_real_provider_factory(
     contract_address: Address,
@@ -177,34 +221,34 @@ pub fn create_real_provider_factory(
 pub mod tests {
     use super::*;
     use mockall::predicate::*;
-    use std::sync::Mutex;
     use std::collections::HashMap;
+    use std::sync::Mutex;
 
     /// Creates a mock provider factory for testing
     pub fn create_mock_provider_factory(
         providers: Vec<(String, MockL1Provider)>,
     ) -> ProviderFactory {
-        // Store providers in a HashMap for lookup
-        let mut provider_map = HashMap::new();
-        for (url, provider) in providers {
-            provider_map.insert(url, provider);
-        }
-        
-        // Wrap in an Arc<Mutex> to allow lookups from multiple closures
-        let providers_mutex = Arc::new(Mutex::new(provider_map));
-        
+        // Create a map of providers
+        let provider_map: HashMap<String, Arc<MockL1Provider>> = providers
+            .into_iter()
+            .map(|(url, provider)| (url, Arc::new(provider)))
+            .collect();
+
+        // Wrap in an Arc to allow sharing
+        let shared_map = Arc::new(provider_map);
+
         Box::new(move |config: &ProviderConfig| {
-            let providers = providers_mutex.clone();
+            let providers = shared_map.clone();
             let url = config.url.clone();
 
             Box::pin(async move {
-                // Find and clone the mock provider for this URL
-                let mut providers_guard = providers.lock().unwrap();
-                let provider = providers_guard
-                    .remove(&url)
-                    .unwrap_or_else(|| panic!("No mock provider configured for URL: {}", url));
-                
-                Ok(Arc::new(provider) as Arc<dyn L1Provider>)
+                // Get a reference to the provider
+                let provider = providers
+                    .get(&url)
+                    .ok_or_else(|| EthError::Other(format!("No mock provider configured for URL: {}", url)))?
+                    .clone();
+
+                Ok(provider as Arc<dyn L1Provider>)
             })
         })
     }
