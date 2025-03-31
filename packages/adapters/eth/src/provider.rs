@@ -144,8 +144,8 @@ pub fn create_real_provider_factory(
     tx_config: TxConfig,
 ) -> ProviderFactory {
     Box::new(move |config: &ProviderConfig| {
-        let contract_address = contract_address.clone();
-        let signers = signers;
+        let contract_address = contract_address;
+        let signers = signers.clone();
         let tx_config = tx_config.clone();
         let url_str = config.url.clone();
 
@@ -160,7 +160,7 @@ pub fn create_real_provider_factory(
             let client = WebsocketClient::connect(
                 url,
                 contract_address,
-                signers,
+                signers.clone(),
                 unhealthy_after_n_errors,
                 tx_config,
             )
@@ -234,21 +234,6 @@ pub mod tests {
 
     #[async_trait]
     impl L1Provider for MockL1Provider {
-        async fn send_raw_transaction(&self, _bytes: Bytes) -> EthResult<TxHash> {
-            self.record_call("send_raw_transaction").await;
-            tracing::debug!("Mock [{}] handling send_raw_transaction", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::TxHash(h))) => Ok(h),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => panic!("Mock [{}] expected TxHash but got {:?}", self.id, other),
-                None => panic!(
-                    "Mock [{}] ran out of responses for send_raw_transaction",
-                    self.id
-                ),
-            }
-        }
-
         async fn get_block_number(&self) -> EthResult<u64> {
             self.record_call("get_block_number").await;
             tracing::debug!("Mock [{}] handling get_block_number", self.id);

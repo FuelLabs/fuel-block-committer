@@ -530,7 +530,7 @@ mod tests {
         let mock_responses = create_mock_responses(&configs, responses);
         let factory = create_mock_provider_factory(mock_responses);
 
-        let client = FailoverClient::new(configs, factory);
+        let mut client = FailoverClient::new(configs, factory);
 
         // Initial call should use the first provider
         let initial_result = client.get_block_number().await.unwrap();

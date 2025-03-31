@@ -33,9 +33,8 @@ where
         .try_collect()
         .await?;
 
-    Ok(fees
-        .try_into()
-        .map_err(|e| crate::error::Error::Other(format!("{e}")))?)
+    fees.try_into()
+        .map_err(|e| crate::error::Error::Other(format!("{e}")))
 }
 
 fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<FeesAtHeight>> {
@@ -288,7 +287,7 @@ mod tests {
         let result = unpack_fee_history(fees.clone());
 
         // then
-        let expected_error = services::Error::Other(format!("missing rewards field: {:?}", fees));
+        let expected_error = crate::Error::Other(format!("missing rewards field: {:?}", fees));
         assert_eq!(
             result.unwrap_err(),
             expected_error,
@@ -312,7 +311,7 @@ mod tests {
 
         // then
         let expected_error =
-            services::Error::Other(format!("discrepancy in lengths of fee fields: {:?}", fees));
+            crate::Error::Other(format!("discrepancy in lengths of fee fields: {:?}", fees));
         assert_eq!(
             result.unwrap_err(),
             expected_error,
@@ -336,7 +335,7 @@ mod tests {
 
         // then
         let expected_error =
-            services::Error::Other(format!("discrepancy in lengths of fee fields: {:?}", fees));
+            crate::Error::Other(format!("discrepancy in lengths of fee fields: {:?}", fees));
         assert_eq!(
             result.unwrap_err(),
             expected_error,
@@ -360,7 +359,7 @@ mod tests {
 
         // then
         let expected_error =
-            services::Error::Other("should have had at least one reward percentile".to_string());
+            crate::Error::Other("should have had at least one reward percentile".to_string());
         assert_eq!(
             result.unwrap_err(),
             expected_error,

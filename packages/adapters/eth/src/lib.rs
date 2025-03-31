@@ -8,6 +8,7 @@ mod metrics;
 mod provider;
 mod websocket;
 
+pub use std::sync::Arc;
 pub use alloy::primitives::Address;
 pub use aws::*;
 pub use blob_encoder::BlobEncoder;

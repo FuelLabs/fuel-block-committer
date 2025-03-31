@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr, time::Duration};
+use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr, sync::Arc, time::Duration};
 
 use ::metrics::{HealthChecker, RegistersMetrics, prometheus::core::Collector};
 use alloy::{
@@ -226,8 +226,10 @@ impl AcceptablePriorityFeePercentages {
 trait CompositeSigner: alloy::signers::Signer + TxSigner<Signature> {}
 impl<T: alloy::signers::Signer + TxSigner<Signature>> CompositeSigner for T {}
 
+#[derive(Clone)]
 pub struct Signer {
-    signer: Box<dyn CompositeSigner + 'static + Send + Sync>,
+    signer: Arc<dyn CompositeSigner + 'static + Send + Sync>,
+    chain_id: Option<ChainId>,
 }
 
 #[async_trait::async_trait]
@@ -251,33 +253,37 @@ impl alloy::signers::Signer<Signature> for Signer {
     }
 
     fn address(&self) -> Address {
-        alloy::signers::Signer::<Signature>::address(&self.signer)
+        alloy::signers::Signer::<Signature>::address(&*self.signer)
     }
 
     fn chain_id(&self) -> Option<ChainId> {
-        self.signer.chain_id()
+        self.chain_id
     }
 
     fn set_chain_id(&mut self, chain_id: Option<ChainId>) {
-        self.signer.set_chain_id(chain_id)
+        self.chain_id = chain_id;
     }
 }
 
 impl Signer {
     pub async fn make_aws_signer(client: &AwsClient, key: String) -> Result<Self> {
         let signer = client.make_signer(key).await?;
+        let chain_id = alloy::signers::Signer::chain_id(&signer);
 
         Ok(Signer {
-            signer: Box::new(signer),
+            signer: Arc::new(signer),
+            chain_id,
         })
     }
 
     pub fn make_private_key_signer(key: &str) -> Result<Self> {
         let signer = PrivateKeySigner::from_str(key)
             .map_err(|_| Error::Other("Invalid private key".to_string()))?;
+        let chain_id = signer.chain_id();
 
         Ok(Signer {
-            signer: Box::new(signer),
+            signer: Arc::new(signer),
+            chain_id,
         })
     }
 }
@@ -286,6 +292,16 @@ pub struct Signers {
     pub main: Signer,
     pub blob: Option<Signer>,
 }
+
+impl Clone for Signers {
+    fn clone(&self) -> Self {
+        Self {
+            main: self.main.clone(),
+            blob: self.blob.clone(),
+        }
+    }
+}
+
 impl Signers {
     pub async fn for_keys(keys: L1Keys) -> Result<Self> {
         let aws_client = if keys.uses_aws() {
@@ -343,7 +359,7 @@ impl WebsocketClient {
     }
 
     pub(crate) async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx> {
-        Ok(self.inner.submit(hash, height).await?)
+        self.inner.submit(hash, height).await
     }
 
     pub(crate) fn commit_interval(&self) -> NonZeroU32 {
@@ -351,14 +367,14 @@ impl WebsocketClient {
     }
 
     pub(crate) async fn _get_block_number(&self) -> Result<u64> {
-        Ok(self.inner.get_block_number().await?)
+        self.inner.get_block_number().await
     }
 
     pub(crate) async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
     ) -> Result<Option<TransactionResponse>> {
-        Ok(self.inner.get_transaction_response(tx_hash).await?)
+        self.inner.get_transaction_response(tx_hash).await
     }
 
     pub(crate) async fn fees(
