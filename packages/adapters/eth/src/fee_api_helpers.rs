@@ -3,11 +3,10 @@ use std::{future::Future, ops::RangeInclusive};
 use alloy::rpc::types::FeeHistory;
 use futures::{StreamExt, TryStreamExt, stream};
 use itertools::{Itertools, izip};
-use services::{
-    Result,
-    fees::{Fees, FeesAtHeight, SequentialBlockFees},
-};
+use services::fees::{Fees, FeesAtHeight, SequentialBlockFees};
 use static_assertions::const_assert;
+
+use crate::Result;
 
 pub async fn batch_requests<'a, 'b, Fut, F>(
     height_range: RangeInclusive<u64>,
@@ -34,8 +33,9 @@ where
         .try_collect()
         .await?;
 
-    fees.try_into()
-        .map_err(|e| services::Error::Other(format!("{e}")))
+    Ok(fees
+        .try_into()
+        .map_err(|e| crate::error::Error::Other(format!("{e}")))?)
 }
 
 fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<FeesAtHeight>> {
@@ -54,7 +54,7 @@ fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<FeesAtHeight>> {
     }
 
     let Some(nested_rewards) = fees.reward.as_ref() else {
-        return Err(services::Error::Other(format!(
+        return Err(crate::Error::Other(format!(
             "missing rewards field: {fees:?}"
         )));
     };
@@ -62,7 +62,7 @@ fn unpack_fee_history(fees: FeeHistory) -> Result<Vec<FeesAtHeight>> {
     if number_of_blocks != nested_rewards.len()
         || number_of_blocks != fees.base_fee_per_blob_gas.len() - 1
     {
-        return Err(services::Error::Other(format!(
+        return Err(crate::Error::Other(format!(
             "discrepancy in lengths of fee fields: {fees:?}"
         )));
     }

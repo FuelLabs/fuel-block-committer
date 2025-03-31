@@ -11,7 +11,6 @@ use alloy::{
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
-    Result,
     state_committer::port::l1::Priority,
     types::{
         BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
@@ -24,7 +23,7 @@ use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{AwsClient, AwsConfig, fee_api_helpers::batch_requests};
+use crate::{AwsClient, AwsConfig, Error, Result, fee_api_helpers::batch_requests};
 
 mod connection;
 mod health_tracking_middleware;
@@ -39,21 +38,28 @@ pub struct WebsocketClient {
 impl services::block_committer::port::l1::Contract for WebsocketClient {
     delegate! {
         to self {
-            async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
             fn commit_interval(&self) -> NonZeroU32;
         }
+    }
+
+    async fn submit(&self, hash: [u8; 32], height: u32) -> services::Result<BlockSubmissionTx> {
+        Ok(self.submit(hash, height).await?)
     }
 }
 
 impl services::state_listener::port::l1::Api for WebsocketClient {
-    delegate! {
-        to (*self) {
-            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
-            async fn is_squeezed_out(&self, tx_hash: [u8; 32],) -> Result<bool>;
-        }
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::Result<bool> {
+        Ok(self.is_squeezed_out(tx_hash).await?)
     }
 
-    async fn get_block_number(&self) -> Result<L1Height> {
+    async fn get_transaction_response(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> services::Result<Option<TransactionResponse>> {
+        Ok(self.get_transaction_response(tx_hash).await?)
+    }
+
+    async fn get_block_number(&self) -> services::Result<L1Height> {
         let block_num = self._get_block_number().await?;
         let height = L1Height::try_from(block_num)?;
 
@@ -62,21 +68,20 @@ impl services::state_listener::port::l1::Api for WebsocketClient {
 }
 
 impl services::wallet_balance_tracker::port::l1::Api for WebsocketClient {
-    delegate! {
-        to (*self) {
-            async fn balance(&self, address: Address) -> Result<U256>;
-        }
+    async fn balance(&self, address: Address) -> services::Result<U256> {
+        Ok(self.balance(address).await?)
     }
 }
 
 impl services::block_committer::port::l1::Api for WebsocketClient {
-    delegate! {
-        to (*self) {
-            async fn get_transaction_response(&self, tx_hash: [u8; 32],) -> Result<Option<TransactionResponse>>;
-        }
+    async fn get_transaction_response(
+        &self,
+        tx_hash: [u8; 32],
+    ) -> services::Result<Option<TransactionResponse>> {
+        Ok(self.get_transaction_response(tx_hash).await?)
     }
 
-    async fn get_block_number(&self) -> Result<L1Height> {
+    async fn get_block_number(&self) -> services::Result<L1Height> {
         let block_num = self._get_block_number().await?;
         let height = L1Height::try_from(block_num)?;
 
@@ -85,35 +90,37 @@ impl services::block_committer::port::l1::Api for WebsocketClient {
 }
 
 impl services::fees::Api for WebsocketClient {
-    async fn current_height(&self) -> Result<u64> {
-        self._get_block_number().await
+    async fn current_height(&self) -> services::Result<u64> {
+        Ok(self._get_block_number().await?)
     }
 
     async fn fees(
         &self,
         height_range: RangeInclusive<u64>,
-    ) -> Result<services::fees::SequentialBlockFees> {
-        batch_requests(height_range, move |sub_range, percentiles| async move {
+    ) -> services::Result<services::fees::SequentialBlockFees> {
+        let fees = batch_requests(height_range, move |sub_range, percentiles| async move {
             self.fees(sub_range, percentiles).await
         })
-        .await
+        .await?;
+
+        Ok(fees)
     }
 }
 
 impl services::state_committer::port::l1::Api for WebsocketClient {
-    async fn current_height(&self) -> Result<u64> {
-        self._get_block_number().await
+    async fn current_height(&self) -> services::Result<u64> {
+        Ok(self._get_block_number().await?)
     }
 
-    delegate! {
-        to (*self) {
-            async fn submit_state_fragments(
-                &self,
-                fragments: NonEmpty<Fragment>,
-                previous_tx: Option<services::types::L1Tx>,
-                priority: Priority
-            ) -> Result<(L1Tx, FragmentsSubmitted)>;
-        }
+    async fn submit_state_fragments(
+        &self,
+        fragments: NonEmpty<Fragment>,
+        previous_tx: Option<services::types::L1Tx>,
+        priority: Priority,
+    ) -> services::Result<(L1Tx, FragmentsSubmitted)> {
+        Ok(self
+            .submit_state_fragments(fragments, previous_tx, priority)
+            .await?)
     }
 }
 
@@ -190,14 +197,14 @@ impl Default for AcceptablePriorityFeePercentages {
 impl AcceptablePriorityFeePercentages {
     pub fn new(min: f64, max: f64) -> Result<Self> {
         if min > max {
-            return Err(services::Error::Other(
+            return Err(crate::Error::Other(
                 "min reward percentile must be less than or equal to max reward percentile"
                     .to_string(),
             ));
         }
 
         if min <= 0.0 || max > 100.0 {
-            return Err(services::Error::Other(
+            return Err(crate::Error::Other(
                 "reward percentiles must be > 0 and <= 100".to_string(),
             ));
         }
@@ -267,7 +274,7 @@ impl Signer {
 
     pub fn make_private_key_signer(key: &str) -> Result<Self> {
         let signer = PrivateKeySigner::from_str(key)
-            .map_err(|_| services::Error::Other("Invalid private key".to_string()))?;
+            .map_err(|_| Error::Other("Invalid private key".to_string()))?;
 
         Ok(Signer {
             signer: Box::new(signer),
