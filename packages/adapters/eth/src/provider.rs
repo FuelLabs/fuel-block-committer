@@ -15,6 +15,7 @@ use services::types::{
 
 /// Trait defining the necessary L1 provider operations
 /// This is implemented by WebsocketClient and mocks for testing
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait L1Provider: Send + Sync {
     /// Get the current block number from the L1 network
@@ -139,12 +140,12 @@ impl L1Provider for WebsocketClient {
 /// Creates a factory that produces real WebsocketClient instances
 pub fn create_real_provider_factory(
     contract_address: Address,
-    signers: crate::websocket::Signers,
+    signers: Arc<crate::websocket::Signers>,
     unhealthy_after_n_errors: usize,
     tx_config: TxConfig,
 ) -> ProviderFactory {
     Box::new(move |config: &ProviderConfig| {
-        let contract_address = contract_address;
+        let contract_address = contract_address.clone();
         let signers = signers.clone();
         let tx_config = tx_config.clone();
         let url_str = config.url.clone();
@@ -160,7 +161,7 @@ pub fn create_real_provider_factory(
             let client = WebsocketClient::connect(
                 url,
                 contract_address,
-                signers.clone(),
+                (*signers).clone(),
                 unhealthy_after_n_errors,
                 tx_config,
             )
@@ -175,216 +176,35 @@ pub fn create_real_provider_factory(
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::collections::{HashMap, VecDeque};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use tokio::sync::Mutex;
-
-    /// A mock implementation of L1Provider for testing
-    #[derive(Debug)]
-    pub struct MockL1Provider {
-        id: String,
-        call_counts: Mutex<HashMap<String, usize>>,
-        responses: Mutex<VecDeque<EthResult<MockResponseType>>>,
-    }
-
-    /// Types of responses the mock can return
-    #[derive(Clone, Debug)]
-    pub enum MockResponseType {
-        BlockNumber(u64),
-        TxHash(TxHash),
-        TransactionResponse(Option<TransactionResponse>),
-        SqueezedOut(bool),
-        Balance(U256),
-        FeeHistory(FeeHistory),
-        StateFragments((L1Tx, FragmentsSubmitted)),
-        BlockSubmission(BlockSubmissionTx),
-    }
-
-    impl MockL1Provider {
-        /// Create a new MockL1Provider with the given ID and pre-programmed responses
-        pub fn new(id: &str, responses: Vec<EthResult<MockResponseType>>) -> Arc<Self> {
-            Arc::new(Self {
-                id: id.to_string(),
-                call_counts: Mutex::new(HashMap::new()),
-                responses: Mutex::new(responses.into()),
-            })
-        }
-
-        /// Get the next response from the queue
-        async fn next_response(&self) -> Option<EthResult<MockResponseType>> {
-            self.responses.lock().await.pop_front()
-        }
-
-        /// Record a method call
-        async fn record_call(&self, method_name: &str) {
-            let mut counts = self.call_counts.lock().await;
-            *counts.entry(method_name.to_string()).or_insert(0) += 1;
-        }
-
-        /// Get the call count for a method
-        pub async fn get_call_count(&self, method_name: &str) -> usize {
-            self.call_counts
-                .lock()
-                .await
-                .get(method_name)
-                .cloned()
-                .unwrap_or(0)
-        }
-    }
-
-    #[async_trait]
-    impl L1Provider for MockL1Provider {
-        async fn get_block_number(&self) -> EthResult<u64> {
-            self.record_call("get_block_number").await;
-            tracing::debug!("Mock [{}] handling get_block_number", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::BlockNumber(n))) => Ok(n),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => panic!(
-                    "Mock [{}] expected BlockNumber but got {:?}",
-                    self.id, other
-                ),
-                None => panic!(
-                    "Mock [{}] ran out of responses for get_block_number",
-                    self.id
-                ),
-            }
-        }
-
-        async fn get_transaction_response(
-            &self,
-            _tx_hash: [u8; 32],
-        ) -> EthResult<Option<TransactionResponse>> {
-            self.record_call("get_transaction_response").await;
-            tracing::debug!("Mock [{}] handling get_transaction_response", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::TransactionResponse(r))) => Ok(r),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => panic!(
-                    "Mock [{}] expected TransactionResponse but got {:?}",
-                    self.id, other
-                ),
-                None => panic!(
-                    "Mock [{}] ran out of responses for get_transaction_response",
-                    self.id
-                ),
-            }
-        }
-
-        async fn is_squeezed_out(&self, _tx_hash: [u8; 32]) -> EthResult<bool> {
-            self.record_call("is_squeezed_out").await;
-            tracing::debug!("Mock [{}] handling is_squeezed_out", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::SqueezedOut(b))) => Ok(b),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => panic!(
-                    "Mock [{}] expected SqueezedOut but got {:?}",
-                    self.id, other
-                ),
-                None => panic!(
-                    "Mock [{}] ran out of responses for is_squeezed_out",
-                    self.id
-                ),
-            }
-        }
-
-        async fn balance(&self, _address: Address) -> EthResult<U256> {
-            self.record_call("balance").await;
-            tracing::debug!("Mock [{}] handling balance", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::Balance(b))) => Ok(b),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => {
-                    panic!("Mock [{}] expected Balance but got {:?}", self.id, other)
-                }
-                None => panic!("Mock [{}] ran out of responses for balance", self.id),
-            }
-        }
-
-        async fn fees(
-            &self,
-            _height_range: RangeInclusive<u64>,
-            _reward_percentiles: &[f64],
-        ) -> EthResult<FeeHistory> {
-            self.record_call("fees").await;
-            tracing::debug!("Mock [{}] handling fees", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::FeeHistory(f))) => Ok(f),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => {
-                    panic!("Mock [{}] expected FeeHistory but got {:?}", self.id, other)
-                }
-                None => panic!("Mock [{}] ran out of responses for fees", self.id),
-            }
-        }
-
-        async fn submit_state_fragments(
-            &self,
-            _fragments: NonEmpty<Fragment>,
-            _previous_tx: Option<services::types::L1Tx>,
-            _priority: Priority,
-        ) -> EthResult<(L1Tx, FragmentsSubmitted)> {
-            self.record_call("submit_state_fragments").await;
-            tracing::debug!("Mock [{}] handling submit_state_fragments", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::StateFragments(r))) => Ok(r),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => panic!(
-                    "Mock [{}] expected StateFragments but got {:?}",
-                    self.id, other
-                ),
-                None => panic!(
-                    "Mock [{}] ran out of responses for submit_state_fragments",
-                    self.id
-                ),
-            }
-        }
-
-        async fn submit(&self, _hash: [u8; 32], _height: u32) -> EthResult<BlockSubmissionTx> {
-            self.record_call("submit").await;
-            tracing::debug!("Mock [{}] handling submit", self.id);
-
-            match self.next_response().await {
-                Some(Ok(MockResponseType::BlockSubmission(b))) => Ok(b),
-                Some(Err(e)) => Err(e),
-                Some(Ok(other)) => panic!(
-                    "Mock [{}] expected BlockSubmission but got {:?}",
-                    self.id, other
-                ),
-                None => panic!("Mock [{}] ran out of responses for submit", self.id),
-            }
-        }
-    }
+    use mockall::predicate::*;
+    use std::sync::Mutex;
+    use std::collections::HashMap;
 
     /// Creates a mock provider factory for testing
     pub fn create_mock_provider_factory(
-        mock_responses: Arc<Mutex<HashMap<String, Vec<EthResult<MockResponseType>>>>>,
+        providers: Vec<(String, MockL1Provider)>,
     ) -> ProviderFactory {
+        // Store providers in a HashMap for lookup
+        let mut provider_map = HashMap::new();
+        for (url, provider) in providers {
+            provider_map.insert(url, provider);
+        }
+        
+        // Wrap in an Arc<Mutex> to allow lookups from multiple closures
+        let providers_mutex = Arc::new(Mutex::new(provider_map));
+        
         Box::new(move |config: &ProviderConfig| {
-            let responses_map_clone = mock_responses.clone();
-            let config_clone = config.clone();
+            let providers = providers_mutex.clone();
+            let url = config.url.clone();
 
             Box::pin(async move {
-                tracing::debug!("Mock factory called for config: {:?}", config_clone);
-                let mut map = responses_map_clone.lock().await;
-
-                // Get the pre-programmed responses for this specific URL
-                let responses = map.remove(&config_clone.url).unwrap_or_else(|| {
-                    panic!(
-                        "Mock factory: No responses configured for URL {}",
-                        config_clone.url
-                    );
-                });
-
-                // Create the mock provider instance for this config
-                let provider = MockL1Provider::new(&config_clone.url, responses);
-                Ok(provider as Arc<dyn L1Provider>)
+                // Find and clone the mock provider for this URL
+                let mut providers_guard = providers.lock().unwrap();
+                let provider = providers_guard
+                    .remove(&url)
+                    .unwrap_or_else(|| panic!("No mock provider configured for URL: {}", url));
+                
+                Ok(Arc::new(provider) as Arc<dyn L1Provider>)
             })
         })
     }

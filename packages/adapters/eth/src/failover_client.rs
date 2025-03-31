@@ -195,7 +195,7 @@ impl FailoverClient {
     /// Core abstraction to execute operations with failover logic
     async fn execute_operation<F, Fut, T>(&self, operation_factory: F) -> EthResult<T>
     where
-        F: Fn(Arc<dyn L1Provider>) -> Fut + Send + Sync + 'static,
+        F: Fn(Arc<dyn L1Provider>) -> Fut + Send + Sync,
         Fut: Future<Output = EthResult<T>> + Send,
         T: Send,
     {
@@ -206,28 +206,32 @@ impl FailoverClient {
             }
 
             // Get or establish the active provider
-            let provider_instance = {
-                let mut guard = self.active_provider.lock().await;
-                if guard.is_none() {
-                    // Lazy connection attempt if no provider is active
-                    debug!("No active provider. Attempting initial connection/failover...");
-                    // Unlock the guard *before* calling try_connect_next to avoid deadlock potential
-                    drop(guard);
-                    match self.try_connect_next().await {
-                        Ok(_) => (),
-                        Err(e) => return Err(e), // Propagate error (likely all providers failed)
+            let mut guard = self.active_provider.lock().await;
+            let provider_instance =
+                {
+                    if guard.is_none() {
+                        // Lazy connection attempt if no provider is active
+                        debug!("No active provider. Attempting initial connection/failover...");
+                        // Unlock the guard *before* calling try_connect_next to avoid deadlock potential
+                        drop(guard);
+                        match self.try_connect_next().await {
+                            Ok(_) => (),
+                            Err(e) => return Err(e), // Propagate error (likely all providers failed)
+                        }
+
+                        // Re-acquire the lock to get the newly connected provider
+                        guard = self.active_provider.lock().await;
                     }
 
-                    // Re-acquire the lock to get the newly connected provider
-                    guard = self.active_provider.lock().await;
-                }
-
-                // Clone the Arc to release the lock sooner
-                guard.clone().ok_or_else(|| {
+                    // Clone the Arc to release the lock sooner
+                    guard.as_ref().ok_or_else(|| {
                     error!("Error: Active provider is None despite not being permanently failed");
                     EthError::Other("No active provider".into())
-                })?
-            }; // Lock guard is dropped here
+                })?.clone()
+                };
+
+            // Drop the mutex guard to avoid holding the lock during the operation
+            drop(guard);
 
             // Execute the actual operation by calling the factory closure
             let result = operation_factory(provider_instance).await;
@@ -391,32 +395,27 @@ impl FailoverClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::tests::{MockL1Provider, MockResponseType, create_mock_provider_factory};
-    use std::collections::HashMap;
-
-    // Helper function to create a map of mock responses
-    fn create_mock_responses(
-        configs: &[ProviderConfig],
-        responses: Vec<Vec<EthResult<MockResponseType>>>,
-    ) -> Arc<Mutex<HashMap<String, Vec<EthResult<MockResponseType>>>>> {
-        let mut map = HashMap::new();
-        for (i, config) in configs.iter().enumerate() {
-            map.insert(
-                config.url.clone(),
-                responses.get(i).cloned().unwrap_or_default(),
-            );
-        }
-        Arc::new(Mutex::new(map))
-    }
+    use crate::provider::MockL1Provider;
+    use crate::provider::tests::create_mock_provider_factory;
+    use mockall::predicate::*;
 
     #[tokio::test]
     async fn test_successful_call_first_provider() {
         // Given: A client with a single provider that returns success
-        let configs = vec![ProviderConfig::new("mock://p1")];
-        let responses = vec![vec![Ok(MockResponseType::BlockNumber(100))]];
-        let mock_responses = create_mock_responses(&configs, responses);
-        let factory = create_mock_provider_factory(mock_responses);
-
+        let config_urls = vec!["mock://p1"];
+        let configs = vec![ProviderConfig::new(config_urls[0])];
+        
+        // Create mock provider and set expectations
+        let mut mock_provider = MockL1Provider::new();
+        mock_provider
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Ok(100));
+            
+        // Pack providers into (url, provider) pairs
+        let providers = vec![(config_urls[0].to_string(), mock_provider)];
+        
+        let factory = create_mock_provider_factory(providers);
         let client = FailoverClient::new(configs, factory);
 
         // When: Making a call to get_block_number
@@ -432,20 +431,38 @@ mod tests {
     #[tokio::test]
     async fn test_failover_on_fatal_error() {
         // Given: A client with two providers where the first one returns a fatal error and the second succeeds
+        let config_urls = vec!["mock://p1", "mock://p2"];
         let configs = vec![
-            ProviderConfig::new("mock://p1"),
-            ProviderConfig::new("mock://p2"),
+            ProviderConfig::new(config_urls[0]),
+            ProviderConfig::new(config_urls[1]),
         ];
-        let responses = vec![
-            vec![Err(EthError::Network {
-                msg: "Backend connection dropped".into(),
-                recoverable: false,
-            })],
-            vec![Ok(MockResponseType::BlockNumber(200))],
+        
+        // Create first mock provider with fatal error
+        let mut mock_provider1 = MockL1Provider::new();
+        mock_provider1
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| {
+                Err(EthError::Network {
+                    msg: "Backend connection dropped".into(),
+                    recoverable: false,
+                })
+            });
+            
+        // Create second mock provider that succeeds
+        let mut mock_provider2 = MockL1Provider::new();
+        mock_provider2
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Ok(200));
+        
+        // Pack providers into (url, provider) pairs
+        let providers = vec![
+            (config_urls[0].to_string(), mock_provider1),
+            (config_urls[1].to_string(), mock_provider2),
         ];
-        let mock_responses = create_mock_responses(&configs, responses);
-        let factory = create_mock_provider_factory(mock_responses);
-
+        
+        let factory = create_mock_provider_factory(providers);
         let client = FailoverClient::new(configs, factory);
 
         // When: Making a call to get_block_number
@@ -461,37 +478,38 @@ mod tests {
     #[tokio::test]
     async fn test_failover_on_transient_error_threshold() {
         // Given: A client with two providers where the first one returns transient errors
+        let config_urls = vec!["mock://p1", "mock://p2"];
         let configs = vec![
-            ProviderConfig::new("mock://p1"),
-            ProviderConfig::new("mock://p2"),
+            ProviderConfig::new(config_urls[0]),
+            ProviderConfig::new(config_urls[1]),
         ];
-
-        // First provider has 4 responses: 3 transient errors (below threshold), then 1 more to trigger failover
-        let p1_responses = vec![
-            Err(EthError::Network {
-                msg: "Timeout".into(),
-                recoverable: true,
-            }),
-            Err(EthError::Network {
-                msg: "Timeout".into(),
-                recoverable: true,
-            }),
-            Err(EthError::Network {
-                msg: "Timeout".into(),
-                recoverable: true,
-            }),
-            Err(EthError::Network {
-                msg: "Timeout".into(),
-                recoverable: true,
-            }),
+        
+        // Create first mock provider with transient errors
+        let mut mock_provider1 = MockL1Provider::new();
+        mock_provider1
+            .expect_get_block_number()
+            .times(4)
+            .returning(|| {
+                Err(EthError::Network {
+                    msg: "Timeout".into(),
+                    recoverable: true,
+                })
+            });
+        
+        // Create second mock provider that succeeds
+        let mut mock_provider2 = MockL1Provider::new();
+        mock_provider2
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Ok(200));
+        
+        // Pack providers into (url, provider) pairs
+        let providers = vec![
+            (config_urls[0].to_string(), mock_provider1),
+            (config_urls[1].to_string(), mock_provider2),
         ];
-
-        // Second provider succeeds
-        let p2_responses = vec![Ok(MockResponseType::BlockNumber(200))];
-
-        let mock_responses = create_mock_responses(&configs, vec![p1_responses, p2_responses]);
-        let factory = create_mock_provider_factory(mock_responses);
-
+        
+        let factory = create_mock_provider_factory(providers);
         let client = FailoverClient::new(configs, factory);
 
         // When: Making multiple calls to get_block_number
@@ -519,17 +537,33 @@ mod tests {
     #[tokio::test]
     async fn test_external_fault_report_triggers_failover() {
         // Given: A client with two providers, both working
+        let config_urls = vec!["mock://p1", "mock://p2"];
         let configs = vec![
-            ProviderConfig::new("mock://p1"),
-            ProviderConfig::new("mock://p2"),
+            ProviderConfig::new(config_urls[0]),
+            ProviderConfig::new(config_urls[1]),
         ];
-        let responses = vec![
-            vec![Ok(MockResponseType::BlockNumber(100))],
-            vec![Ok(MockResponseType::BlockNumber(200))],
+        
+        // Create first mock provider
+        let mut mock_provider1 = MockL1Provider::new();
+        mock_provider1
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Ok(100));
+        
+        // Create second mock provider
+        let mut mock_provider2 = MockL1Provider::new();
+        mock_provider2
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Ok(300));
+        
+        // Pack providers into (url, provider) pairs
+        let providers = vec![
+            (config_urls[0].to_string(), mock_provider1),
+            (config_urls[1].to_string(), mock_provider2),
         ];
-        let mock_responses = create_mock_responses(&configs, responses);
-        let factory = create_mock_provider_factory(mock_responses);
-
+        
+        let factory = create_mock_provider_factory(providers);
         let mut client = FailoverClient::new(configs, factory);
 
         // Initial call should use the first provider
@@ -542,56 +576,63 @@ mod tests {
             .report_current_connection_issue("Transactions disappeared from mempool".into())
             .await;
 
-        // Then: The next call should use the second provider
-        // Since we've already consumed the responses for the first provider, we'll need to prepare new ones
-        let new_responses = vec![
-            vec![],                                       // No more responses for p1
-            vec![Ok(MockResponseType::BlockNumber(300))], // New response for p2
-        ];
-        let new_mock_responses = create_mock_responses(
-            &[
-                ProviderConfig::new("mock://p1"),
-                ProviderConfig::new("mock://p2"),
-            ],
-            new_responses,
-        );
-
-        let new_factory = create_mock_provider_factory(new_mock_responses);
-        client.provider_factory = new_factory;
-
         // Now check that we're using the second provider
         assert_eq!(client.current_index.load(Ordering::Relaxed), 1);
+        
+        // Next call should use the second provider
+        let result = client.get_block_number().await.unwrap();
+        assert_eq!(result, 300);
     }
 
     #[tokio::test]
     async fn test_all_providers_fail() {
         // Given: A client with two providers, both failing with fatal errors
+        let config_urls = vec!["mock://p1", "mock://p2"];
         let configs = vec![
-            ProviderConfig::new("mock://p1"),
-            ProviderConfig::new("mock://p2"),
+            ProviderConfig::new(config_urls[0]),
+            ProviderConfig::new(config_urls[1]),
         ];
-        let responses = vec![
-            vec![Err(EthError::Network {
-                msg: "Backend connection dropped".into(),
-                recoverable: false,
-            })],
-            vec![Err(EthError::Network {
-                msg: "Backend connection dropped".into(),
-                recoverable: false,
-            })],
+        
+        // Create first mock provider with fatal error
+        let mut mock_provider1 = MockL1Provider::new();
+        mock_provider1
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| {
+                Err(EthError::Network {
+                    msg: "Backend connection dropped".into(),
+                    recoverable: false,
+                })
+            });
+        
+        // Create second mock provider with fatal error
+        let mut mock_provider2 = MockL1Provider::new();
+        mock_provider2
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| {
+                Err(EthError::Network {
+                    msg: "Backend connection dropped".into(),
+                    recoverable: false,
+                })
+            });
+        
+        // Pack providers into (url, provider) pairs
+        let providers = vec![
+            (config_urls[0].to_string(), mock_provider1),
+            (config_urls[1].to_string(), mock_provider2),
         ];
-        let mock_responses = create_mock_responses(&configs, responses);
-        let factory = create_mock_provider_factory(mock_responses);
-
+        
+        let factory = create_mock_provider_factory(providers);
         let client = FailoverClient::new(configs, factory);
 
         // When: Making a call
         let result = client.get_block_number().await;
 
-        // Then: The call should fail and the client should be permanently failed
+        // Then: We should get an error and the client should be marked as permanently failed
         assert!(result.is_err());
         assert!(client.permanently_failed.load(Ordering::Relaxed));
-
+        
         // And subsequent calls should immediately fail without attempting connection
         let second_result = client.get_block_number().await;
         assert!(second_result.is_err());
@@ -600,14 +641,25 @@ mod tests {
     #[tokio::test]
     async fn test_request_errors_dont_trigger_failover() {
         // Given: A client with a provider that returns a request error (non-connection)
-        let configs = vec![ProviderConfig::new("mock://p1")];
-        let responses = vec![vec![
-            Err(EthError::TxExecution("Insufficient funds".into())),
-            Ok(MockResponseType::BlockNumber(100)), // This should be used on the second call
-        ]];
-        let mock_responses = create_mock_responses(&configs, responses);
-        let factory = create_mock_provider_factory(mock_responses);
-
+        let config_urls = vec!["mock://p1"];
+        let configs = vec![ProviderConfig::new(config_urls[0])];
+        
+        // Create mock provider with request error then success
+        let mut mock_provider = MockL1Provider::new();
+        mock_provider
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Err(EthError::TxExecution("Insufficient funds".into())));
+        
+        mock_provider
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Ok(100));
+        
+        // Pack provider into (url, provider) pair
+        let providers = vec![(config_urls[0].to_string(), mock_provider)];
+        
+        let factory = create_mock_provider_factory(providers);
         let client = FailoverClient::new(configs, factory);
 
         // When: Making a call that results in a request error
