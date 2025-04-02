@@ -6,8 +6,8 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
-use tokio::sync::{Mutex, MutexGuard, RwLock};
-use tracing::{debug, error, info, warn};
+use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::error::{Error as EthError, Result as EthResult};
 use crate::provider::{L1Provider, ProviderConfig, ProviderFactory};
@@ -41,48 +41,73 @@ pub struct FailoverClient<P> {
     /// Factory to create new provider instances
     provider_factory: ProviderFactory<P>,
     /// The currently active provider
-    active_provider: Arc<Mutex<Tracked<Arc<P>>>>,
+    active_provider: Arc<Mutex<ProviderHandle<P>>>,
 }
 
-struct Tracked<P> {
+struct ProviderHandle<P> {
     name: String,
-    provider: P,
+    provider: Arc<P>,
+    health: Arc<Health>,
+}
+
+impl<P> Clone for ProviderHandle<P> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            provider: Arc::clone(&self.provider),
+            health: Arc::clone(&self.health),
+        }
+    }
+}
+
+struct Health {
     max_transient_errors: usize,
     transient_error_count: AtomicUsize,
     permanently_failed: AtomicBool,
 }
 
-impl<P> Tracked<P> {
-    fn new(name: String, provider: P, max_transient_errors: usize) -> Self {
-        Self {
-            name,
-            provider,
+impl<P> ProviderHandle<P> {
+    fn new(name: String, provider: Arc<P>, max_transient_errors: usize) -> Self {
+        let health = Health {
             max_transient_errors,
             transient_error_count: AtomicUsize::new(0),
             permanently_failed: AtomicBool::new(false),
+        };
+        Self {
+            name,
+            provider,
+            health: Arc::new(health),
         }
     }
 
     pub fn reset_transient_error_count(&self) {
-        self.transient_error_count.store(0, Ordering::Relaxed);
+        self.health
+            .transient_error_count
+            .store(0, Ordering::Relaxed);
     }
 
     pub fn note_transient_error(&self, reason: impl Display) {
-        let current_count = self.transient_error_count.fetch_add(1, Ordering::Relaxed) + 1;
+        let current_count = self
+            .health
+            .transient_error_count
+            .fetch_add(1, Ordering::Relaxed)
+            + 1;
 
         warn!(
             "Transient connection error detected: {reason} (Count: {current_count}/{TRANSIENT_ERROR_THRESHOLD})",
         );
     }
 
-    pub fn is_unhealthy(&self) -> bool {
-        self.transient_error_count.load(Ordering::Relaxed) >= self.max_transient_errors
-            || self.permanently_failed.load(Ordering::Relaxed)
+    pub fn is_healthy(&self) -> bool {
+        self.health.transient_error_count.load(Ordering::Relaxed) < self.health.max_transient_errors
+            || !self.health.permanently_failed.load(Ordering::Relaxed)
     }
 
     pub fn note_permanent_failure(&self, reason: impl Display) {
         warn!("Provider '{}' permanently failed: {reason}", self.name);
-        self.permanently_failed.store(true, Ordering::Relaxed);
+        self.health
+            .permanently_failed
+            .store(true, Ordering::Relaxed);
     }
 }
 
@@ -121,19 +146,18 @@ impl<P> FailoverClient<P> {
     }
 
     /// Try to connect to the next available provider that hasn't failed yet
-    async fn get_provider(&self) -> EthResult<MutexGuard<Tracked<Arc<P>>>> {
-        let mut current_provider_lock = self.active_provider.lock().await;
+    async fn get_healthy_provider(&self) -> EthResult<ProviderHandle<P>> {
+        let mut current_provider_handle_lock = self.active_provider.lock().await;
 
-        if !current_provider_lock.is_unhealthy() {
-            return Ok(current_provider_lock);
+        if current_provider_handle_lock.is_healthy() {
+            return Ok(current_provider_handle_lock.clone());
         }
 
         let mut configs = self.configs.lock().await;
-        let provider =
+        let provider_handle =
             connect_to_first_available_provider(&self.provider_factory, &mut configs).await?;
-        *current_provider_lock = provider;
-
-        Err(EthError::Other("no more providers available".into()))
+        *current_provider_handle_lock = provider_handle.clone();
+        Ok(provider_handle)
     }
 
     pub async fn make_current_connection_permanently_failed(
@@ -154,7 +178,7 @@ impl<P> FailoverClient<P> {
         Fut: Future<Output = EthResult<T>> + Send,
         T: Send,
     {
-        let provider = self.get_provider().await?;
+        let provider = self.get_healthy_provider().await?;
 
         let result = operation_factory(Arc::clone(&provider.provider)).await;
 
@@ -288,15 +312,11 @@ impl<P> FailoverClient<P> {
 async fn connect_to_first_available_provider<P>(
     provider_factory: &ProviderFactory<P>,
     configs: &mut VecDeque<ProviderConfig>,
-) -> EthResult<Tracked<Arc<P>>> {
+) -> EthResult<ProviderHandle<P>> {
     while let Some(config) = configs.pop_front() {
         match (provider_factory)(&config).await {
             Ok(provider) => {
-                let tracked = Tracked::new(
-                    config.name,
-                    Arc::clone(&provider),
-                    TRANSIENT_ERROR_THRESHOLD,
-                );
+                let tracked = ProviderHandle::new(config.name, provider, TRANSIENT_ERROR_THRESHOLD);
                 return Ok(tracked);
             }
             Err(err) => {
@@ -309,352 +329,4 @@ async fn connect_to_first_available_provider<P>(
     }
 
     Err(EthError::Other("no more providers available".into()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::provider::MockL1Provider;
-    use crate::provider::tests::create_mock_provider_factory;
-    use mockall::predicate::*;
-
-    // #[tokio::test]
-    // async fn test_successful_call_first_provider() {
-    //     // Given: A client with a single provider that returns success
-    //     let config_urls = vec!["mock://p1"];
-    //     let configs = vec![ProviderConfig::new("first", config_urls[0])];
-    //
-    //     // Create mock provider and set expectations
-    //     let mut mock_provider = MockL1Provider::new();
-    //     mock_provider
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| Ok(100));
-    //
-    //     // Pack providers into (url, provider) pairs
-    //     let providers = vec![(config_urls[0].to_string(), mock_provider)];
-    //
-    //     let factory = create_mock_provider_factory(providers);
-    //     let client = FailoverClient::connect(configs, factory).await?;
-    //
-    //     // When: Making a call to get_block_number
-    //     let block_num = client.get_block_number().await.unwrap();
-    //
-    //     // Then: We should get the expected response
-    //     assert_eq!(block_num, 100);
-    //     assert_eq!(client.current_index.load(Ordering::Relaxed), 0);
-    //     assert_eq!(client.transient_error_count.load(Ordering::Relaxed), 0);
-    //     assert!(!client.permanently_failed.load(Ordering::Relaxed));
-    // }
-
-    // #[tokio::test]
-    // async fn test_failover_on_fatal_error() {
-    //     // Given: A client with two providers where the first one returns a fatal error and the second succeeds
-    //     let config_urls = vec!["mock://p1", "mock://p2"];
-    //     let configs = vec![
-    //         ProviderConfig::new("first", config_urls[0]),
-    //         ProviderConfig::new("second", config_urls[1]),
-    //     ];
-    //
-    //     // Create first mock provider with fatal error
-    //     let mut mock_provider1 = MockL1Provider::new();
-    //     mock_provider1
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| {
-    //             Err(EthError::Network {
-    //                 msg: "Backend connection dropped".into(),
-    //                 recoverable: false,
-    //             })
-    //         });
-    //
-    //     // Create second mock provider - we don't retry operations after failover
-    //     let mut mock_provider2 = MockL1Provider::new();
-    //     // But we'll need this provider for subsequent operations
-    //     mock_provider2
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| Ok(200));
-    //
-    //     // Pack providers into (url, provider) pairs
-    //     let providers = vec![
-    //         (String::from("mock://p1"), mock_provider1),
-    //         (String::from("mock://p2"), mock_provider2),
-    //     ];
-    //
-    //     let factory = create_mock_provider_factory(providers);
-    //     let client = FailoverClient::connect(configs, factory).await.unwrap();
-    //
-    //     // When: Making a call to get_block_number, it will fail with provider 1 and trigger failover
-    //     let result = client.get_block_number().await;
-    //
-    //     // Then: The operation should fail but the client should have failed over to provider 2
-    //     assert!(result.is_err());
-    //
-    //     // Check that provider 1 is marked as failed
-    //     {
-    //         let failed_providers = client.failed_providers.lock().await;
-    //         assert_eq!(failed_providers.len(), 1);
-    //         assert!(failed_providers.contains(&0));
-    //     }
-    //
-    //     // Verify we've switched to provider 2
-    //     assert_eq!(client.current_index.load(Ordering::Relaxed), 1);
-    //     assert_eq!(client.transient_error_count.load(Ordering::Relaxed), 0);
-    //     assert!(!client.permanently_failed.load(Ordering::Relaxed));
-    //
-    //     // A subsequent call should succeed using provider 2
-    //     let second_result = client.get_block_number().await;
-    //     assert!(second_result.is_ok());
-    //     assert_eq!(second_result.unwrap(), 200);
-    // }
-
-    // #[tokio::test]
-    // async fn test_failover_on_transient_error_threshold() {
-    //     // Given: A client with two providers where the first one returns transient errors
-    //     let config_urls = vec!["mock://p1", "mock://p2"];
-    //     let configs = vec![
-    //         ProviderConfig::new(config_urls[0]),
-    //         ProviderConfig::new(config_urls[1]),
-    //     ];
-    //
-    //     // Create first mock provider with transient errors
-    //     let mut mock_provider1 = MockL1Provider::new();
-    //     mock_provider1
-    //         .expect_get_block_number()
-    //         .times(TRANSIENT_ERROR_THRESHOLD) // We need exactly THRESHOLD errors to trigger failover
-    //         .returning(|| {
-    //             Err(EthError::Network {
-    //                 msg: "Timeout".into(),
-    //                 recoverable: true,
-    //             })
-    //         });
-    //
-    //     // Create second mock provider for later calls
-    //     let mut mock_provider2 = MockL1Provider::new();
-    //     mock_provider2
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| Ok(200));
-    //
-    //     // Pack providers into (url, provider) pairs
-    //     let providers = vec![
-    //         (String::from("mock://p1"), mock_provider1),
-    //         (String::from("mock://p2"), mock_provider2),
-    //     ];
-    //
-    //     let factory = create_mock_provider_factory(providers);
-    //     let client = FailoverClient::new(configs, factory);
-    //
-    //     // Make calls until we reach the threshold
-    //     for i in 1..=TRANSIENT_ERROR_THRESHOLD {
-    //         let result = client.get_block_number().await;
-    //         assert!(result.is_err());
-    //         // On the last error, failover should be triggered
-    //     }
-    //
-    //     // After the last error, failover should have happened
-    //     // Check that provider 1 is marked as failed
-    //     {
-    //         let failed_providers = client.failed_providers.lock().await;
-    //         assert_eq!(failed_providers.len(), 1);
-    //         assert!(failed_providers.contains(&0));
-    //     }
-    //
-    //     // Verify we've switched to provider 2
-    //     assert_eq!(client.current_index.load(Ordering::Relaxed), 1);
-    //
-    //     // A subsequent call should succeed using provider 2
-    //     let final_result = client.get_block_number().await;
-    //     assert!(final_result.is_ok());
-    //     assert_eq!(final_result.unwrap(), 200);
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_external_fault_report_triggers_failover() {
-    //     // Given: A client with two providers, both working
-    //     let config_urls = vec!["mock://p1", "mock://p2"];
-    //     let configs = vec![
-    //         ProviderConfig::new(config_urls[0]),
-    //         ProviderConfig::new(config_urls[1]),
-    //     ];
-    //
-    //     // Create first mock provider
-    //     let mut mock_provider1 = MockL1Provider::new();
-    //     mock_provider1
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| Ok(100));
-    //
-    //     // Create second mock provider
-    //     let mut mock_provider2 = MockL1Provider::new();
-    //     mock_provider2
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| Ok(300));
-    //
-    //     // Pack providers into (url, provider) pairs
-    //     let providers = vec![
-    //         (String::from("mock://p1"), mock_provider1),
-    //         (String::from("mock://p2"), mock_provider2),
-    //     ];
-    //
-    //     let factory = create_mock_provider_factory(providers);
-    //     let client = FailoverClient::new(configs, factory);
-    //
-    //     // Initial call should use the first provider
-    //     let initial_result = client.get_block_number().await.unwrap();
-    //     assert_eq!(initial_result, 100);
-    //     assert_eq!(client.current_index.load(Ordering::Relaxed), 0);
-    //
-    //     // When: An external system reports an issue
-    //     client
-    //         .make_current_connection_permanently_failed(
-    //             "Transactions disappeared from mempool".into(),
-    //         )
-    //         .await;
-    //
-    //     // Then: We should have marked provider 1 as failed
-    //     {
-    //         let failed_providers = client.failed_providers.lock().await;
-    //         assert_eq!(failed_providers.len(), 1);
-    //         assert!(failed_providers.contains(&0));
-    //     }
-    //
-    //     // And switched to provider 2
-    //     assert_eq!(client.current_index.load(Ordering::Relaxed), 1);
-    //
-    //     // Next call should use the second provider
-    //     let result = client.get_block_number().await.unwrap();
-    //     assert_eq!(result, 300);
-    //
-    //     // If we try to report a fault on provider 2, we should be marked as permanently failed
-    //     // since we've exhausted all available providers
-    //     client
-    //         .make_current_connection_permanently_failed("Another issue".into())
-    //         .await;
-    //
-    //     // Verify both providers are marked as failed and client is permanently failed
-    //     {
-    //         let failed_providers = client.failed_providers.lock().await;
-    //         assert_eq!(failed_providers.len(), 2);
-    //         assert!(failed_providers.contains(&0));
-    //         assert!(failed_providers.contains(&1));
-    //     }
-    //
-    //     assert!(client.permanently_failed.load(Ordering::Relaxed));
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_all_providers_fail() {
-    //     // Given: A client with two providers
-    //     let config_urls = vec!["mock://p1", "mock://p2"];
-    //     let configs = vec![
-    //         ProviderConfig::new(config_urls[0]),
-    //         ProviderConfig::new(config_urls[1]),
-    //     ];
-    //
-    //     // Create first mock provider that will fail
-    //     let mut mock_provider1 = MockL1Provider::new();
-    //     mock_provider1
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| {
-    //             Err(EthError::Network {
-    //                 msg: "Backend connection dropped".into(),
-    //                 recoverable: false,
-    //             })
-    //         });
-    //
-    //     // Create second mock provider that will also fail when used in a later call
-    //     let mut mock_provider2 = MockL1Provider::new();
-    //     mock_provider2
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| {
-    //             Err(EthError::Network {
-    //                 msg: "Backend connection dropped".into(),
-    //                 recoverable: false,
-    //             })
-    //         });
-    //
-    //     // Pack providers into (url, provider) pairs
-    //     let providers = vec![
-    //         (String::from("mock://p1"), mock_provider1),
-    //         (String::from("mock://p2"), mock_provider2),
-    //     ];
-    //
-    //     let factory = create_mock_provider_factory(providers);
-    //     let client = FailoverClient::new(configs, factory);
-    //
-    //     // First call - provider 1 fails
-    //     let result1 = client.get_block_number().await;
-    //     assert!(result1.is_err());
-    //
-    //     // Provider 1 should be marked as failed and we should be using provider 2
-    //     {
-    //         let failed_providers = client.failed_providers.lock().await;
-    //         assert_eq!(failed_providers.len(), 1);
-    //         assert!(failed_providers.contains(&0));
-    //     }
-    //     assert_eq!(client.current_index.load(Ordering::Relaxed), 1);
-    //     assert!(!client.permanently_failed.load(Ordering::Relaxed));
-    //
-    //     // Second call - provider 2 fails
-    //     let result2 = client.get_block_number().await;
-    //     assert!(result2.is_err());
-    //
-    //     // Both providers should now be marked as failed
-    //     {
-    //         let failed_providers = client.failed_providers.lock().await;
-    //         assert_eq!(failed_providers.len(), 2);
-    //         assert!(failed_providers.contains(&0));
-    //         assert!(failed_providers.contains(&1));
-    //     }
-    //     assert!(client.permanently_failed.load(Ordering::Relaxed));
-    //
-    //     // Third call - should immediately fail without trying any provider
-    //     let result3 = client.get_block_number().await;
-    //     assert!(result3.is_err());
-    //     // Error message should indicate that all providers are permanently failed
-    //     assert!(matches!(result3, Err(EthError::Other(msg)) if msg.contains("permanently failed")));
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_request_errors_dont_trigger_failover() {
-    //     // Given: A client with a provider that returns a request error (non-connection)
-    //     let config_urls = vec!["mock://p1"];
-    //     let configs = vec![ProviderConfig::new(config_urls[0])];
-    //
-    //     // Create mock provider with request error then success
-    //     let mut mock_provider = MockL1Provider::new();
-    //     mock_provider
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| Err(EthError::TxExecution("Insufficient funds".into())));
-    //
-    //     mock_provider
-    //         .expect_get_block_number()
-    //         .times(1)
-    //         .returning(|| Ok(100));
-    //
-    //     // Pack provider into (url, provider) pair
-    //     let providers = vec![(config_urls[0].to_string(), mock_provider)];
-    //
-    //     let factory = create_mock_provider_factory(providers);
-    //     let client = FailoverClient::new(configs, factory);
-    //
-    //     // When: Making a call that results in a request error
-    //     let result = client.get_block_number().await;
-    //
-    //     // Then: The call should fail but not trigger failover
-    //     assert!(result.is_err());
-    //     assert_eq!(client.current_index.load(Ordering::Relaxed), 0);
-    //     assert_eq!(client.transient_error_count.load(Ordering::Relaxed), 0);
-    //     assert!(!client.permanently_failed.load(Ordering::Relaxed));
-    //
-    //     // And the next call should still use the same provider
-    //     let second_result = client.get_block_number().await.unwrap();
-    //     assert_eq!(second_result, 100);
-    // }
 }
