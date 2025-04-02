@@ -12,8 +12,8 @@ use tokio::sync::Mutex;
 use tracing::warn;
 
 use crate::{
-    L1Provider,
     error::{Error as EthError, Result as EthResult},
+    provider::L1Provider,
 };
 use alloy::primitives::Address;
 use alloy::rpc::types::FeeHistory;
@@ -362,3 +362,179 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
 
     Err(EthError::Other("no more providers available".into()))
 }
+
+use ::metrics::{
+    RegistersMetrics,
+    prometheus::{IntCounter, Opts, core::Collector},
+};
+
+#[derive(Clone)]
+pub struct Metrics {
+    pub(crate) eth_network_errors: IntCounter,
+}
+
+impl RegistersMetrics for Metrics {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
+        vec![Box::new(self.eth_network_errors.clone())]
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        let eth_network_errors = IntCounter::with_opts(Opts::new(
+            "eth_network_errors",
+            "Number of network errors encountered while running Ethereum RPCs.",
+        ))
+        .expect("eth_network_errors metric to be correctly configured");
+
+        Self { eth_network_errors }
+    }
+}
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use ::metrics::prometheus::{Registry, proto::Metric};
+//
+//     #[tokio::test]
+//     async fn recoverable_error_does_not_immediately_make_unhealthy() {
+//         // given: an adapter whose submit method returns a recoverable network error
+//         // and a threshold of 2 (so one error does not cross the limit).
+//         let mut eth_adapter = MockEthApi::new();
+//         eth_adapter.expect_submit().returning(|_, _| {
+//             Err(Error::Network {
+//                 msg: "Recoverable error".into(),
+//                 recoverable: true,
+//             })
+//         });
+//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 2);
+//         let health_check = adapter.connection_health_checker();
+//
+//         // when: a single submit call is made that returns a recoverable error.
+//         let _ = adapter.submit([0; 32], 0).await;
+//
+//         // then: the connection should still be healthy (failure count 1 is less than threshold 2).
+//         assert!(health_check.healthy());
+//     }
+//
+//     #[tokio::test]
+//     async fn successful_call_resets_recoverable_error() {
+//         // given: an adapter that first returns a recoverable error on submit (threshold = 1)
+//         // and then returns success on get_block_number.
+//         let mut eth_adapter = MockEthApi::new();
+//         eth_adapter.expect_submit().returning(|_, _| {
+//             Err(Error::Network {
+//                 msg: "Recoverable error".into(),
+//                 recoverable: true,
+//             })
+//         });
+//         eth_adapter
+//             .expect_get_block_number()
+//             .returning(|| Ok(10u32.into()));
+//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 1);
+//         let health_check = adapter.connection_health_checker();
+//
+//         // given (pre-condition): Trigger a recoverable error to mark the connection unhealthy.
+//         let _ = adapter.submit([0; 32], 0).await;
+//         assert!(!health_check.healthy());
+//
+//         // when: a single successful get_block_number call is made.
+//         let _ = adapter.get_block_number().await;
+//
+//         // then: the connection health should be reset to healthy.
+//         assert!(health_check.healthy());
+//     }
+//
+//     #[tokio::test]
+//     async fn permanent_error_makes_connection_unhealthy() {
+//         // given: an adapter whose submit method returns a permanent (non-recoverable) error.
+//         let mut eth_adapter = MockEthApi::new();
+//         eth_adapter.expect_submit().returning(|_, _| {
+//             Err(Error::Network {
+//                 msg: "Permanent error".into(),
+//                 recoverable: false,
+//             })
+//         });
+//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
+//         let health_check = adapter.connection_health_checker();
+//
+//         // when: a single submit call is made that returns a permanent error.
+//         let _ = adapter.submit([0; 32], 0).await;
+//
+//         // then: the connection should be unhealthy.
+//         assert!(!health_check.healthy());
+//     }
+//
+//     #[tokio::test]
+//     async fn subsequent_success_does_not_reset_permanent_failure() {
+//         // given: an adapter whose submit method returns a permanent error
+//         // and whose get_block_number method returns success.
+//         let mut eth_adapter = MockEthApi::new();
+//         eth_adapter.expect_submit().returning(|_, _| {
+//             Err(Error::Network {
+//                 msg: "Permanent error".into(),
+//                 recoverable: false,
+//             })
+//         });
+//         eth_adapter
+//             .expect_get_block_number()
+//             .returning(|| Ok(42u32.into()));
+//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
+//         let health_check = adapter.connection_health_checker();
+//
+//         // given (pre-condition): Trigger a permanent error.
+//         let _ = adapter.submit([0; 32], 0).await;
+//         assert!(!health_check.healthy());
+//
+//         // when: a single successful get_block_number call is made.
+//         let _ = adapter.get_block_number().await;
+//
+//         // then: the connection remains unhealthy because the permanent failure flag is set.
+//         assert!(!health_check.healthy());
+//     }
+//
+//     #[tokio::test]
+//     async fn other_error_does_not_affect_health_submit() {
+//         // given: an adapter whose submit method returns a non-network error.
+//         let mut eth_adapter = MockEthApi::new();
+//         eth_adapter
+//             .expect_submit()
+//             .returning(|_, _| Err(Error::Other("Some error".into())));
+//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
+//         let health_check = adapter.connection_health_checker();
+//
+//         // when: a single submit call is made that returns a non-network error.
+//         let _ = adapter.submit([0; 32], 0).await;
+//
+//         // then: the connection health remains healthy.
+//         assert!(health_check.healthy());
+//     }
+//
+//     #[tokio::test]
+//     async fn submit_network_error_increments_metrics() {
+//         // given: an adapter whose submit method returns a recoverable network error
+//         let mut eth_adapter = MockEthApi::new();
+//         eth_adapter.expect_submit().returning(|_, _| {
+//             Err(Error::Network {
+//                 msg: "Recoverable error".into(),
+//                 recoverable: true,
+//             })
+//         });
+//         let registry = Registry::new();
+//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
+//         adapter.register_metrics(&registry);
+//
+//         // when: a single submit call is made that returns a network error.
+//         let _ = adapter.submit([0; 32], 0).await;
+//
+//         // then: the "eth_network_errors" metric should be incremented to 1.
+//         let metrics = registry.gather();
+//         let counter = metrics
+//             .iter()
+//             .find(|m| m.get_name() == "eth_network_errors")
+//             .and_then(|m| m.get_metric().first())
+//             .map(Metric::get_counter)
+//             .unwrap();
+//         assert_eq!(counter.get_value(), 1f64);
+//     }
+// }

@@ -40,7 +40,6 @@ impl DeployedContract {
                 main: Signer::make_aws_signer(&aws_client, key.id).await?,
                 blob: None,
             },
-            5,
             eth::TxConfig {
                 tx_max_fee,
                 send_tx_request_timeout,

@@ -1,7 +1,10 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use clock::SystemClock;
-use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
+use eth::{
+    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, ProviderConfig, Signers,
+    WebsocketClientFactory,
+};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,
@@ -230,25 +233,29 @@ pub async fn l1_adapter(
     internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let l1 = L1::connect(
-        config.eth.rpc.clone(),
-        config.eth.state_contract_address,
-        Signers::for_keys(config.eth.l1_keys.clone()).await?,
+    let signers = Arc::new(Signers::for_keys(config.eth.l1_keys.clone()).await?);
+    let tx_config = eth::TxConfig {
+        tx_max_fee: u128::from(config.app.tx_fees.max),
+        send_tx_request_timeout: config.app.send_tx_request_timeout,
+        acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::new(
+            config.app.tx_fees.min_reward_perc,
+            config.app.tx_fees.max_reward_perc,
+        )?,
+    };
+    let factory =
+        WebsocketClientFactory::new(config.eth.state_contract_address, signers, tx_config);
+    let client = FailoverClient::connect(
+        vec![ProviderConfig::new("main", config.eth.rpc)],
+        factory,
         internal_config.eth_errors_before_unhealthy,
-        eth::TxConfig {
-            tx_max_fee: u128::from(config.app.tx_fees.max),
-            send_tx_request_timeout: config.app.send_tx_request_timeout,
-            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::new(
-                config.app.tx_fees.min_reward_perc,
-                config.app.tx_fees.max_reward_perc,
-            )?,
-        },
     )
     .await?;
 
+    let l1 = client;
+
     l1.register_metrics(registry);
 
-    let health_check = l1.connection_health_checker();
+    let health_check = todo!();
 
     Ok((l1, health_check))
 }

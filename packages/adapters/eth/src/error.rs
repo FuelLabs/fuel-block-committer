@@ -3,7 +3,7 @@ use alloy::{
     transports::{RpcError, TransportErrorKind},
 };
 
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum Error {
     #[error("network error: {msg}, recoverable: {recoverable}")]
     Network { msg: String, recoverable: bool },
