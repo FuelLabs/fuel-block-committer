@@ -206,40 +206,33 @@ impl<P> FailoverClient<P> {
         Fut: std::future::Future<Output = EthResult<T>> + Send,
         T: Send,
     {
-        // Acquire a healthy provider outside the lock so we don't hold it across await points
         let provider = self.get_healthy_provider().await?;
 
-        // Now do the operation
         let result = operation_factory(Arc::clone(&provider.provider)).await;
 
         match result {
             Ok(value) => {
-                // If it succeeds, reset transient error count
                 provider.reset_transient_error_count();
                 Ok(value)
             }
-            Err(error) => {
-                match Self::classify_error(&error) {
-                    ErrorClassification::Fatal => {
-                        provider.note_permanent_failure(&error);
-                        Err(error)
-                    }
-                    ErrorClassification::Transient => {
-                        provider.note_transient_error(&error);
-                        Err(error)
-                    }
-                    ErrorClassification::Other => {
-                        // "Other" means the error is not connection/failover related
-                        Err(error)
-                    }
+            Err(error) => match Self::classify_error(&error) {
+                ErrorClassification::Fatal => {
+                    provider.note_permanent_failure(&error);
+                    Err(error)
                 }
-            }
+                ErrorClassification::Transient => {
+                    provider.note_transient_error(&error);
+                    Err(error)
+                }
+                ErrorClassification::Other => Err(error),
+            },
         }
     }
+}
 
-    // Public methods implementing L1Provider trait, using `execute_operation`.
-
-    pub async fn get_block_number(&self) -> EthResult<u64>
+#[async_trait::async_trait]
+impl<P: L1Provider> L1Provider for FailoverClient<P> {
+    async fn get_block_number(&self) -> EthResult<u64>
     where
         P: L1Provider,
     {
@@ -247,7 +240,7 @@ impl<P> FailoverClient<P> {
             .await
     }
 
-    pub async fn get_transaction_response(
+    async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
     ) -> EthResult<Option<TransactionResponse>>
@@ -260,7 +253,7 @@ impl<P> FailoverClient<P> {
         .await
     }
 
-    pub async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> EthResult<bool>
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> EthResult<bool>
     where
         P: L1Provider,
     {
@@ -270,7 +263,7 @@ impl<P> FailoverClient<P> {
         .await
     }
 
-    pub async fn balance(&self, address: Address) -> EthResult<U256>
+    async fn balance(&self, address: Address) -> EthResult<U256>
     where
         P: L1Provider,
     {
@@ -278,7 +271,7 @@ impl<P> FailoverClient<P> {
             .await
     }
 
-    pub async fn fees(
+    async fn fees(
         &self,
         height_range: RangeInclusive<u64>,
         reward_percentiles: &[f64],
@@ -294,7 +287,7 @@ impl<P> FailoverClient<P> {
         .await
     }
 
-    pub async fn submit_state_fragments(
+    async fn submit_state_fragments(
         &self,
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<L1Tx>,
@@ -311,7 +304,7 @@ impl<P> FailoverClient<P> {
         .await
     }
 
-    pub async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx>
+    async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx>
     where
         P: L1Provider,
     {
