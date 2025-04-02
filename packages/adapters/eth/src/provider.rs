@@ -55,32 +55,18 @@ pub trait L1Provider: Send + Sync {
 /// A struct that holds configuration for a provider
 #[derive(Clone, Debug)]
 pub struct ProviderConfig {
+    /// Optional name for logging purposes
+    pub name: String,
     /// The URL to connect to
     pub url: String,
-    /// Optional name for logging purposes
-    pub name: Option<String>,
 }
 
 impl ProviderConfig {
-    /// Create a new ProviderConfig with a URL
-    pub fn new(url: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
         Self {
+            name: name.into(),
             url: url.into(),
-            name: None,
         }
-    }
-
-    /// Create a new ProviderConfig with a URL and name
-    pub fn with_name(url: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            url: url.into(),
-            name: Some(name.into()),
-        }
-    }
-
-    /// Get a display name for this provider, either the configured name or the URL
-    pub fn display_name(&self) -> &str {
-        self.name.as_deref().unwrap_or(&self.url)
     }
 }
 
