@@ -11,7 +11,6 @@ use std::{
 use tokio::sync::Mutex;
 use tracing::warn;
 
-use crate::provider::ProviderConfig;
 use crate::{
     L1Provider,
     error::{Error as EthError, Result as EthResult},
@@ -23,8 +22,26 @@ use services::types::{
     BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
 };
 
-/// A trait that knows how to build a `P: L1Provider` from a `ProviderConfig`.
-#[async_trait::async_trait]
+/// A struct that holds configuration for a provider
+#[derive(Clone, Debug)]
+pub struct ProviderConfig {
+    /// Optional name for logging purposes
+    pub name: String,
+    /// The URL to connect to
+    pub url: String,
+}
+
+impl ProviderConfig {
+    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            url: url.into(),
+        }
+    }
+}
+
+#[allow(async_fn_in_trait)]
+#[trait_variant::make(Send)]
 pub trait ProviderInit: Send + Sync {
     type Provider: L1Provider;
 
@@ -257,7 +274,6 @@ where
     }
 }
 
-#[async_trait::async_trait]
 impl<I> L1Provider for FailoverClient<I>
 where
     I: ProviderInit,
