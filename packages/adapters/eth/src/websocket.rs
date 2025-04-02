@@ -2,8 +2,11 @@ use std::{
     cmp::min, num::NonZeroU32, ops::RangeInclusive, str::FromStr, sync::Arc, time::Duration,
 };
 
-use crate::estimation::{MaxTxFeesPerGas, TransactionRequestExt};
-use ::metrics::RegistersMetrics;
+use crate::{
+    estimation::{MaxTxFeesPerGas, TransactionRequestExt},
+    websocket::metrics::Metrics,
+};
+use ::metrics::{RegistersMetrics, prometheus::core::Collector};
 use alloy::{
     consensus::{SignableTransaction, Transaction},
     eips::{
@@ -22,7 +25,6 @@ use alloy::{
     sol,
 };
 use itertools::Itertools;
-use metrics::prometheus::{self, histogram_opts};
 use serde::Deserialize;
 use services::{
     state_committer::port::l1::Priority,
@@ -139,7 +141,7 @@ impl WebsocketClient {
         })
     }
 
-    fn set_metrics(&mut self, metrics: Metrics) {
+    fn set_metrics(&mut self, metrics: metrics::Metrics) {
         self.metrics = metrics;
     }
 
@@ -249,7 +251,7 @@ pub struct WebsocketClientFactory {
     contract_address: Address,
     signers: Arc<crate::websocket::Signers>,
     tx_config: TxConfig,
-    metrics: Metrics,
+    metrics: metrics::Metrics,
 }
 
 impl WebsocketClientFactory {
@@ -290,7 +292,7 @@ impl ProviderInit for WebsocketClientFactory {
 }
 
 impl RegistersMetrics for WebsocketClientFactory {
-    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![
             Box::new(self.metrics.blobs_per_tx.clone()),
             Box::new(self.metrics.blob_unused_bytes.clone()),
@@ -711,31 +713,7 @@ impl Signers {
     }
 }
 
-#[derive(Clone)]
-struct Metrics {
-    blobs_per_tx: prometheus::Histogram,
-    blob_unused_bytes: prometheus::Histogram,
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        Self {
-            blobs_per_tx: prometheus::Histogram::with_opts(histogram_opts!(
-                "blob_per_tx",
-                "Number of blobs per blob transaction",
-                vec![1.0f64, 2., 3., 4., 5., 6.]
-            ))
-            .expect("to be correctly configured"),
-
-            blob_unused_bytes: prometheus::Histogram::with_opts(histogram_opts!(
-                "blob_unused_bytes",
-                "unused bytes per blob",
-                metrics::custom_exponential_buckets(1000f64, BYTES_PER_BLOB as f64, 20)
-            ))
-            .expect("to be correctly configured"),
-        }
-    }
-}
+mod metrics;
 
 #[cfg(test)]
 mod tests {

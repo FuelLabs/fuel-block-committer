@@ -23,12 +23,9 @@ use services::types::{
     BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
 };
 
-/// A struct that holds configuration for a provider
 #[derive(Clone, Debug)]
 pub struct ProviderConfig {
-    /// Optional name for logging purposes
     pub name: String,
-    /// The URL to connect to
     pub url: String,
 }
 
