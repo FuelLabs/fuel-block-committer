@@ -23,8 +23,6 @@ use services::types::{
     BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
 };
 
-const TRANSIENT_ERROR_THRESHOLD: usize = 3;
-
 /// A trait that knows how to build a `P: L1Provider` from a `ProviderConfig`.
 #[async_trait::async_trait]
 pub trait ProviderInit: Send + Sync {
@@ -55,6 +53,8 @@ where
     initializer: I,
     // Shared mutable state: the provider configs + active provider
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
+    // Maximum number of transient errors before considering a provider unhealthy
+    transient_error_threshold: usize,
 }
 
 /// The combined, shared state of this client:
@@ -118,7 +118,8 @@ impl<P> ProviderHandle<P> {
 
         warn!(
             "Transient connection error detected: {reason} \
-             (Count: {current_count}/{TRANSIENT_ERROR_THRESHOLD})"
+             (Count: {current_count}/{})",
+            self.health.max_transient_errors
         );
     }
 
@@ -128,7 +129,7 @@ impl<P> ProviderHandle<P> {
             return false;
         }
 
-        // If the transient error count is below threshold, it’s still considered healthy.
+        // If the transient error count is below threshold, it's still considered healthy.
         self.health.transient_error_count.load(Ordering::Relaxed) < self.health.max_transient_errors
     }
 
@@ -147,12 +148,20 @@ where
     /// Create a new FailoverClient with the given provider configurations and initializer.
     /// This attempts to connect to the first available provider and stores both
     /// the `configs` and the `active_provider` together in `SharedState`.
-    pub async fn connect(provider_configs: Vec<ProviderConfig>, initializer: I) -> EthResult<Self> {
+    pub async fn connect(
+        provider_configs: Vec<ProviderConfig>,
+        initializer: I,
+        transient_error_threshold: usize,
+    ) -> EthResult<Self> {
         let mut configs = VecDeque::from(provider_configs);
 
         // Attempt to connect right away
-        let provider_handle =
-            connect_to_first_available_provider(&initializer, &mut configs).await?;
+        let provider_handle = connect_to_first_available_provider(
+            &initializer,
+            &mut configs,
+            transient_error_threshold,
+        )
+        .await?;
 
         // Wrap it all in a single Mutex
         let shared_state = SharedState {
@@ -163,6 +172,7 @@ where
         Ok(Self {
             initializer,
             shared_state: Arc::new(Mutex::new(shared_state)),
+            transient_error_threshold,
         })
     }
 
@@ -193,11 +203,13 @@ where
             return Ok(state.active_provider.clone());
         }
 
-        // If not healthy, attempt to connect to another provider
-        let handle =
-            connect_to_first_available_provider(&self.initializer, &mut state.configs).await?;
+        let handle = connect_to_first_available_provider(
+            &self.initializer,
+            &mut state.configs,
+            self.transient_error_threshold,
+        )
+        .await?;
 
-        // Replace the active provider with our newly connected one
         state.active_provider = handle.clone();
         Ok(handle)
     }
@@ -315,11 +327,12 @@ where
 async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
     configs: &mut VecDeque<ProviderConfig>,
+    transient_error_threshold: usize,
 ) -> EthResult<ProviderHandle<I::Provider>> {
     while let Some(config) = configs.pop_front() {
         match initializer.initialize(&config).await {
             Ok(provider) => {
-                let tracked = ProviderHandle::new(config.name, provider, TRANSIENT_ERROR_THRESHOLD);
+                let tracked = ProviderHandle::new(config.name, provider, transient_error_threshold);
                 return Ok(tracked);
             }
             Err(err) => {
