@@ -1,4 +1,3 @@
-
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use metrics::prometheus::{self, histogram_opts};
 

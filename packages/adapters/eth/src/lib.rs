@@ -10,6 +10,8 @@ mod port_impls;
 mod provider;
 mod websocket;
 
+pub use std::sync::Arc;
+
 pub use alloy::primitives::Address;
 pub use aws::*;
 pub use blob_encoder::BlobEncoder;
@@ -17,8 +19,8 @@ pub use error::{Error, Result};
 pub use failover_client::{FailoverClient, ProviderConfig};
 pub use http::Provider as HttpClient;
 pub use provider::L1Provider;
-pub use std::sync::Arc;
 pub use websocket::{
-    WebsocketClient, config::AcceptablePriorityFeePercentages, config::L1Key, config::L1Keys,
-    config::Signer, config::Signers, config::TxConfig, factory::WebsocketClientFactory,
+    WebsocketClient,
+    config::{AcceptablePriorityFeePercentages, L1Key, L1Keys, Signer, Signers, TxConfig},
+    factory::WebsocketClientFactory,
 };

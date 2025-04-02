@@ -9,18 +9,19 @@ use std::{
     },
 };
 
+use alloy::{primitives::Address, rpc::types::FeeHistory};
+use services::{
+    state_committer::port::l1::Priority,
+    types::{
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
+    },
+};
 use tokio::sync::Mutex;
 use tracing::warn;
 
 use crate::{
     error::{Error as EthError, Result as EthResult},
     provider::L1Provider,
-};
-use alloy::primitives::Address;
-use alloy::rpc::types::FeeHistory;
-use services::state_committer::port::l1::Priority;
-use services::types::{
-    BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
 };
 
 #[derive(Clone, Debug)]

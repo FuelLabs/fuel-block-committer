@@ -1,11 +1,5 @@
-use std::{
-    cmp::min, num::NonZeroU32, ops::RangeInclusive,
-};
+use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
 
-use crate::{
-    estimation::{MaxTxFeesPerGas, TransactionRequestExt},
-    websocket::metrics::Metrics,
-};
 use ::metrics::RegistersMetrics;
 use alloy::{
     consensus::Transaction,
@@ -30,7 +24,12 @@ use services::{
 use tracing::info;
 use url::Url;
 
-use crate::{Error, Result, blob_encoder, provider::L1Provider};
+use crate::{
+    Error, Result, blob_encoder,
+    estimation::{MaxTxFeesPerGas, TransactionRequestExt},
+    provider::L1Provider,
+    websocket::metrics::Metrics,
+};
 
 pub mod config;
 pub mod factory;

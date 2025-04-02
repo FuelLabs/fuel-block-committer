@@ -1,14 +1,15 @@
-use alloy::primitives::Address;
-use alloy::rpc::types::FeeHistory;
+use std::{num::NonZeroU32, ops::RangeInclusive};
+
+use alloy::{primitives::Address, rpc::types::FeeHistory};
 use delegate::delegate;
-use std::num::NonZeroU32;
-use std::ops::RangeInclusive;
+use services::{
+    state_committer::port::l1::Priority,
+    types::{
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
+    },
+};
 
 use crate::error::Result;
-use services::state_committer::port::l1::Priority;
-use services::types::{
-    BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
-};
 
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]

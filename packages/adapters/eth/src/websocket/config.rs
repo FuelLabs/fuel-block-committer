@@ -1,31 +1,15 @@
-use crate::AwsConfig;
-use crate::Error;
-use crate::Result;
+use std::{str::FromStr, sync::Arc, time::Duration};
 
-use alloy::signers::local::PrivateKeySigner;
-
-use crate::AwsClient;
-
-use alloy::primitives::B256;
-
-use alloy::consensus::SignableTransaction;
-
-use alloy::primitives::Address;
-
-use alloy::primitives::ChainId;
-
-use std::str::FromStr;
-use std::sync::Arc;
-
-use alloy::signers::Signature;
-
-use alloy::network::TxSigner;
-
+use alloy::{
+    consensus::SignableTransaction,
+    network::TxSigner,
+    primitives::{Address, B256, ChainId},
+    signers::{Signature, local::PrivateKeySigner},
+};
+use serde::Deserialize;
 use services::state_committer::port::l1::Priority;
 
-use std::time::Duration;
-
-use serde::Deserialize;
+use crate::{AwsClient, AwsConfig, Error, Result};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum L1Key {
