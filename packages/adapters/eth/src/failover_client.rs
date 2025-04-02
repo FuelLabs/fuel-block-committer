@@ -37,7 +37,7 @@ enum ErrorClassification {
 /// when connection issues are detected
 pub struct FailoverClient<P> {
     /// List of provider configurations
-    configs: Arc<RwLock<VecDeque<ProviderConfig>>>,
+    configs: Arc<Mutex<VecDeque<ProviderConfig>>>,
     /// Factory to create new provider instances
     provider_factory: ProviderFactory<P>,
     /// The currently active provider
@@ -96,7 +96,7 @@ impl<P> FailoverClient<P> {
         let provider = connect_to_first_available_provider(&provider_factory, &mut configs).await?;
 
         Ok(Self {
-            configs: Arc::new(RwLock::new(provider_configs.into())),
+            configs: Arc::new(Mutex::new(configs)),
             provider_factory,
             active_provider: Arc::new(Mutex::new(provider)),
         })
@@ -128,7 +128,7 @@ impl<P> FailoverClient<P> {
             return Ok(current_provider_lock);
         }
 
-        let mut configs = self.configs.write().await;
+        let mut configs = self.configs.lock().await;
         let provider =
             connect_to_first_available_provider(&self.provider_factory, &mut configs).await?;
         *current_provider_lock = provider;
