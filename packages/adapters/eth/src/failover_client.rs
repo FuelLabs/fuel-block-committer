@@ -72,19 +72,18 @@ where
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     // Maximum number of transient errors before considering a provider unhealthy
     transient_error_threshold: usize,
-    initial_state: ReadonlyState,
+    permanent_cache: PermanentCache,
 }
 
+/// Exists so that primitive getters don't have to be async and fallable just because they have to
+/// go through the fail over logic.
 #[derive(Clone)]
-struct ReadonlyState {
+struct PermanentCache {
     commit_interval: NonZeroU32,
     contract_caller_address: Address,
     blob_poster_address: Option<Address>,
 }
 
-/// The combined, shared state of this client:
-/// - The deque of provider configs
-/// - The currently active provider handle
 struct SharedState<P> {
     configs: VecDeque<ProviderConfig>,
     active_provider: ProviderHandle<P>,
@@ -202,7 +201,7 @@ where
             initializer,
             shared_state: Arc::new(Mutex::new(shared_state)),
             transient_error_threshold,
-            initial_state: ReadonlyState {
+            permanent_cache: PermanentCache {
                 commit_interval,
                 contract_caller_address,
                 blob_poster_address,
@@ -355,15 +354,15 @@ where
     }
 
     fn commit_interval(&self) -> NonZeroU32 {
-        self.initial_state.commit_interval
+        self.permanent_cache.commit_interval
     }
 
     fn blob_poster_address(&self) -> Option<Address> {
-        self.initial_state.blob_poster_address
+        self.permanent_cache.blob_poster_address
     }
 
     fn contract_caller_address(&self) -> Address {
-        self.initial_state.contract_caller_address
+        self.permanent_cache.contract_caller_address
     }
 }
 
