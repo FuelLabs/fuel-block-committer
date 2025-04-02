@@ -85,12 +85,8 @@ impl ProviderConfig {
 }
 
 /// A factory that can create an L1Provider from a ProviderConfig
-pub type ProviderFactory = Box<
-    dyn Fn(&ProviderConfig) -> BoxFuture<'static, EthResult<Arc<dyn L1Provider>>>
-        + Send
-        + Sync
-        + 'static,
->;
+pub type ProviderFactory<P> =
+    Box<dyn Fn(&ProviderConfig) -> BoxFuture<'static, EthResult<Arc<P>>> + Send + Sync + 'static>;
 
 /// Implementation of L1Provider for WebsocketClient
 #[async_trait]
@@ -173,7 +169,9 @@ impl<T: L1Provider + ?Sized> L1Provider for &T {
         previous_tx: Option<services::types::L1Tx>,
         priority: Priority,
     ) -> EthResult<(L1Tx, FragmentsSubmitted)> {
-        (*self).submit_state_fragments(fragments, previous_tx, priority).await
+        (*self)
+            .submit_state_fragments(fragments, previous_tx, priority)
+            .await
     }
 
     async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx> {
@@ -187,9 +185,9 @@ pub fn create_real_provider_factory(
     signers: Arc<crate::websocket::Signers>,
     unhealthy_after_n_errors: usize,
     tx_config: TxConfig,
-) -> ProviderFactory {
+) -> ProviderFactory<WebsocketClient> {
     Box::new(move |config: &ProviderConfig| {
-        let contract_address = contract_address.clone();
+        let contract_address = contract_address;
         let signers = signers.clone();
         let tx_config = tx_config.clone();
         let url_str = config.url.clone();
@@ -212,7 +210,7 @@ pub fn create_real_provider_factory(
             .await
             .map_err(|e| EthError::Other(format!("Failed to connect: {}", e)))?;
 
-            Ok(Arc::new(client) as Arc<dyn L1Provider>)
+            Ok(Arc::new(client))
         })
     })
 }
@@ -220,14 +218,12 @@ pub fn create_real_provider_factory(
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use mockall::predicate::*;
     use std::collections::HashMap;
-    use std::sync::Mutex;
 
     /// Creates a mock provider factory for testing
     pub fn create_mock_provider_factory(
         providers: Vec<(String, MockL1Provider)>,
-    ) -> ProviderFactory {
+    ) -> ProviderFactory<MockL1Provider> {
         // Create a map of providers
         let provider_map: HashMap<String, Arc<MockL1Provider>> = providers
             .into_iter()
@@ -245,10 +241,12 @@ pub mod tests {
                 // Get a reference to the provider
                 let provider = providers
                     .get(&url)
-                    .ok_or_else(|| EthError::Other(format!("No mock provider configured for URL: {}", url)))?
+                    .ok_or_else(|| {
+                        EthError::Other(format!("No mock provider configured for URL: {}", url))
+                    })?
                     .clone();
 
-                Ok(provider as Arc<dyn L1Provider>)
+                Ok(provider)
             })
         })
     }

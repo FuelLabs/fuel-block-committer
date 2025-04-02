@@ -32,15 +32,15 @@ enum ErrorClassification {
 
 /// A client that manages multiple L1 providers and fails over between them
 /// when connection issues are detected
-pub struct FailoverClient {
+pub struct FailoverClient<P> {
     /// List of provider configurations
     configs: Vec<ProviderConfig>,
     /// Factory to create new provider instances
-    provider_factory: ProviderFactory,
+    provider_factory: ProviderFactory<P>,
     /// Index of the currently active provider in the configs list
     current_index: AtomicUsize,
     /// The currently active provider
-    active_provider: Mutex<Option<Arc<dyn L1Provider>>>,
+    active_provider: Mutex<Option<Arc<P>>>,
     /// Whether all providers have been tried and failed
     permanently_failed: AtomicBool,
     /// Counter for tracking consecutive transient errors
@@ -50,9 +50,12 @@ pub struct FailoverClient {
     failed_providers: Mutex<Vec<usize>>,
 }
 
-impl FailoverClient {
+impl<P> FailoverClient<P> {
     /// Create a new FailoverClient with the given provider configurations and factory
-    pub fn new(provider_configs: Vec<ProviderConfig>, provider_factory: ProviderFactory) -> Self {
+    pub fn new(
+        provider_configs: Vec<ProviderConfig>,
+        provider_factory: ProviderFactory<P>,
+    ) -> Self {
         Self {
             configs: provider_configs,
             provider_factory,
@@ -90,7 +93,7 @@ impl FailoverClient {
 
         let mut active_provider_guard = self.active_provider.lock().await;
         let current_provider_index = self.current_index.load(Ordering::Relaxed);
-        
+
         // Mark the current provider as failed, but only if we actually have an active provider
         // (this prevents marking a provider as failed during initial connection)
         if active_provider_guard.is_some() {
@@ -99,7 +102,7 @@ impl FailoverClient {
                 failed_providers.push(current_provider_index);
             }
         }
-        
+
         // Drop the previous provider
         *active_provider_guard = None;
 
@@ -222,7 +225,7 @@ impl FailoverClient {
     /// Core abstraction to execute operations with failover logic
     async fn execute_operation<F, Fut, T>(&self, operation_factory: F) -> EthResult<T>
     where
-        F: Fn(Arc<dyn L1Provider>) -> Fut + Send + Sync,
+        F: Fn(Arc<P>) -> Fut + Send + Sync,
         Fut: Future<Output = EthResult<T>> + Send,
         T: Send,
     {
@@ -282,7 +285,7 @@ impl FailoverClient {
                         );
                         // Reset any transient error count when handling a fatal error
                         self.transient_error_count.store(0, Ordering::Relaxed);
-                        
+
                         // Try to connect to next provider, but don't retry the current operation
                         // Just mark the current one as failed and return the original error
                         if let Err(e) = self.try_connect_next().await {
@@ -290,7 +293,7 @@ impl FailoverClient {
                             error!("Failover failed after fatal error: {:?}", e);
                             return Err(e);
                         }
-                        
+
                         // Successfully failed over to a new provider, but still return the original error
                         // The next call will use the new provider
                         Err(error)
@@ -304,10 +307,12 @@ impl FailoverClient {
                         );
 
                         if current_count >= TRANSIENT_ERROR_THRESHOLD {
-                            warn!("Transient error threshold exceeded. Marking provider as unhealthy and triggering failover.");
+                            warn!(
+                                "Transient error threshold exceeded. Marking provider as unhealthy and triggering failover."
+                            );
                             // Reset the counter immediately when we trigger failover
                             self.transient_error_count.store(0, Ordering::Relaxed);
-                            
+
                             // Try to connect to next provider, but don't retry the current operation
                             if let Err(e) = self.try_connect_next().await {
                                 // If we couldn't fail over, it means all providers are now unhealthy
@@ -315,7 +320,7 @@ impl FailoverClient {
                                 return Err(e);
                             }
                         }
-                        
+
                         // Return original error regardless - either we failed over but still return the error,
                         // or we're below the threshold so just return the error
                         Err(error)
@@ -338,7 +343,10 @@ impl FailoverClient {
 
     // Public methods that implement the L1Provider trait methods using execute_operation
 
-    pub async fn get_block_number(&self) -> EthResult<u64> {
+    pub async fn get_block_number(&self) -> EthResult<u64>
+    where
+        P: L1Provider,
+    {
         self.execute_operation(|provider| async move { provider.get_block_number().await })
             .await
     }
@@ -346,7 +354,10 @@ impl FailoverClient {
     pub async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
-    ) -> EthResult<Option<TransactionResponse>> {
+    ) -> EthResult<Option<TransactionResponse>>
+    where
+        P: L1Provider,
+    {
         self.execute_operation(move |provider| {
             let tx_hash_clone = tx_hash;
             async move { provider.get_transaction_response(tx_hash_clone).await }
@@ -354,7 +365,10 @@ impl FailoverClient {
         .await
     }
 
-    pub async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> EthResult<bool> {
+    pub async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> EthResult<bool>
+    where
+        P: L1Provider,
+    {
         self.execute_operation(move |provider| {
             let tx_hash_clone = tx_hash;
             async move { provider.is_squeezed_out(tx_hash_clone).await }
@@ -362,7 +376,10 @@ impl FailoverClient {
         .await
     }
 
-    pub async fn balance(&self, address: Address) -> EthResult<U256> {
+    pub async fn balance(&self, address: Address) -> EthResult<U256>
+    where
+        P: L1Provider,
+    {
         self.execute_operation(move |provider| {
             let address_clone = address;
             async move { provider.balance(address_clone).await }
@@ -374,7 +391,10 @@ impl FailoverClient {
         &self,
         height_range: RangeInclusive<u64>,
         reward_percentiles: &[f64],
-    ) -> EthResult<FeeHistory> {
+    ) -> EthResult<FeeHistory>
+    where
+        P: L1Provider,
+    {
         let reward_percentiles = reward_percentiles.to_vec();
         self.execute_operation(move |provider| {
             let range_clone = height_range.clone();
@@ -390,7 +410,10 @@ impl FailoverClient {
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<services::types::L1Tx>,
         priority: Priority,
-    ) -> EthResult<(L1Tx, FragmentsSubmitted)> {
+    ) -> EthResult<(L1Tx, FragmentsSubmitted)>
+    where
+        P: L1Provider,
+    {
         self.execute_operation(move |provider| {
             let fragments_clone = fragments.clone();
             let previous_tx_clone = previous_tx.clone();
@@ -405,7 +428,10 @@ impl FailoverClient {
         .await
     }
 
-    pub async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx> {
+    pub async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx>
+    where
+        P: L1Provider,
+    {
         self.execute_operation(move |provider| {
             let hash_clone = hash;
             let height_clone = height;
@@ -522,7 +548,7 @@ mod tests {
             ProviderConfig::new(config_urls[0]),
             ProviderConfig::new(config_urls[1]),
         ];
-        
+
         // Create first mock provider with transient errors
         let mut mock_provider1 = MockL1Provider::new();
         mock_provider1
@@ -534,20 +560,20 @@ mod tests {
                     recoverable: true,
                 })
             });
-        
+
         // Create second mock provider for later calls
         let mut mock_provider2 = MockL1Provider::new();
         mock_provider2
             .expect_get_block_number()
             .times(1)
             .returning(|| Ok(200));
-        
+
         // Pack providers into (url, provider) pairs
         let providers = vec![
             (String::from("mock://p1"), mock_provider1),
             (String::from("mock://p2"), mock_provider2),
         ];
-        
+
         let factory = create_mock_provider_factory(providers);
         let client = FailoverClient::new(configs, factory);
 
@@ -557,7 +583,7 @@ mod tests {
             assert!(result.is_err());
             // On the last error, failover should be triggered
         }
-        
+
         // After the last error, failover should have happened
         // Check that provider 1 is marked as failed
         {
@@ -565,10 +591,10 @@ mod tests {
             assert_eq!(failed_providers.len(), 1);
             assert!(failed_providers.contains(&0));
         }
-        
+
         // Verify we've switched to provider 2
         assert_eq!(client.current_index.load(Ordering::Relaxed), 1);
-        
+
         // A subsequent call should succeed using provider 2
         let final_result = client.get_block_number().await;
         assert!(final_result.is_ok());
@@ -656,7 +682,7 @@ mod tests {
             ProviderConfig::new(config_urls[0]),
             ProviderConfig::new(config_urls[1]),
         ];
-        
+
         // Create first mock provider that will fail
         let mut mock_provider1 = MockL1Provider::new();
         mock_provider1
@@ -668,7 +694,7 @@ mod tests {
                     recoverable: false,
                 })
             });
-        
+
         // Create second mock provider that will also fail when used in a later call
         let mut mock_provider2 = MockL1Provider::new();
         mock_provider2
@@ -680,20 +706,20 @@ mod tests {
                     recoverable: false,
                 })
             });
-        
+
         // Pack providers into (url, provider) pairs
         let providers = vec![
             (String::from("mock://p1"), mock_provider1),
             (String::from("mock://p2"), mock_provider2),
         ];
-        
+
         let factory = create_mock_provider_factory(providers);
         let client = FailoverClient::new(configs, factory);
 
         // First call - provider 1 fails
         let result1 = client.get_block_number().await;
         assert!(result1.is_err());
-        
+
         // Provider 1 should be marked as failed and we should be using provider 2
         {
             let failed_providers = client.failed_providers.lock().await;
@@ -702,11 +728,11 @@ mod tests {
         }
         assert_eq!(client.current_index.load(Ordering::Relaxed), 1);
         assert!(!client.permanently_failed.load(Ordering::Relaxed));
-        
+
         // Second call - provider 2 fails
         let result2 = client.get_block_number().await;
         assert!(result2.is_err());
-        
+
         // Both providers should now be marked as failed
         {
             let failed_providers = client.failed_providers.lock().await;
@@ -715,7 +741,7 @@ mod tests {
             assert!(failed_providers.contains(&1));
         }
         assert!(client.permanently_failed.load(Ordering::Relaxed));
-        
+
         // Third call - should immediately fail without trying any provider
         let result3 = client.get_block_number().await;
         assert!(result3.is_err());
