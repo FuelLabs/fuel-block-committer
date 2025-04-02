@@ -6,12 +6,12 @@ use crate::{
     estimation::{MaxTxFeesPerGas, TransactionRequestExt},
     websocket::metrics::Metrics,
 };
-use ::metrics::{RegistersMetrics, prometheus::core::Collector};
+use ::metrics::RegistersMetrics;
 use alloy::{
     consensus::{SignableTransaction, Transaction},
     eips::{
         BlockNumberOrTag,
-        eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
+        eip4844::DATA_GAS_PER_BLOB,
     },
     network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, B256, ChainId},
@@ -37,9 +37,11 @@ use url::Url;
 
 use crate::{
     AwsClient, AwsConfig, Error, Result, blob_encoder,
-    failover_client::{ProviderConfig, ProviderInit},
     provider::L1Provider,
 };
+
+pub mod factory;
+mod metrics;
 
 pub type WsProvider = alloy::providers::fillers::FillProvider<
     alloy::providers::fillers::JoinFill<
@@ -243,60 +245,6 @@ impl WebsocketClient {
             (Some(gas_used), Some(gas_price)) => gas_used.saturating_mul(gas_price),
             _ => 0,
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct WebsocketClientFactory {
-    contract_address: Address,
-    signers: Arc<crate::websocket::Signers>,
-    tx_config: TxConfig,
-    metrics: metrics::Metrics,
-}
-
-impl WebsocketClientFactory {
-    pub fn new(
-        contract_address: Address,
-        signers: Arc<crate::websocket::Signers>,
-        tx_config: TxConfig,
-    ) -> Self {
-        Self {
-            contract_address,
-            signers,
-            tx_config,
-            metrics: Default::default(),
-        }
-    }
-}
-
-impl ProviderInit for WebsocketClientFactory {
-    type Provider = WebsocketClient;
-
-    async fn initialize(&self, config: &ProviderConfig) -> Result<Arc<Self::Provider>> {
-        let contract_address = self.contract_address;
-        let signers = self.signers.clone();
-        let tx_config = self.tx_config.clone();
-        let url_str = config.url.clone();
-
-        let url = Url::parse(&url_str).map_err(|e| Error::Other(format!("Invalid URL: {}", e)))?;
-
-        let mut client =
-            WebsocketClient::connect(url, contract_address, (*signers).clone(), tx_config)
-                .await
-                .map_err(|e| Error::Other(format!("Failed to connect: {}", e)))?;
-
-        client.set_metrics(self.metrics.clone());
-
-        Ok(Arc::new(client))
-    }
-}
-
-impl RegistersMetrics for WebsocketClientFactory {
-    fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![
-            Box::new(self.metrics.blobs_per_tx.clone()),
-            Box::new(self.metrics.blob_unused_bytes.clone()),
-        ]
     }
 }
 
@@ -712,8 +660,6 @@ impl Signers {
         })
     }
 }
-
-mod metrics;
 
 #[cfg(test)]
 mod tests {

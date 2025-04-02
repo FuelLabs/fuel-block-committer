@@ -20,5 +20,5 @@ pub use provider::L1Provider;
 pub use std::sync::Arc;
 pub use websocket::{
     AcceptablePriorityFeePercentages, L1Key, L1Keys, Signer, Signers, TxConfig, WebsocketClient,
-    WebsocketClientFactory,
+    factory::WebsocketClientFactory,
 };
