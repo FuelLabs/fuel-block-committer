@@ -4,8 +4,9 @@ mod connection_health_tracker;
 pub use connection_health_tracker::*;
 
 pub type HealthChecker = Box<dyn HealthCheck>;
+#[async_trait::async_trait]
 pub trait HealthCheck: Send + Sync {
-    fn healthy(&self) -> bool;
+    async fn healthy(&self) -> bool;
 }
 
 pub use prometheus;

@@ -1,6 +1,5 @@
 use std::{cmp::min, num::NonZeroU32, ops::RangeInclusive};
 
-use ::metrics::RegistersMetrics;
 use alloy::{
     consensus::Transaction,
     eips::{BlockNumberOrTag, eip4844::DATA_GAS_PER_BLOB},

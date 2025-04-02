@@ -44,8 +44,9 @@ impl ConnectionHealthTracker {
     }
 }
 
+#[async_trait::async_trait]
 impl HealthCheck for ConnectionHealthTracker {
-    fn healthy(&self) -> bool {
+    async fn healthy(&self) -> bool {
         if self.permanent_failure.load(Ordering::Relaxed) {
             return false;
         }

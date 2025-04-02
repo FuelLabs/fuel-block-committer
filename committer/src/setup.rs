@@ -249,7 +249,7 @@ pub async fn l1_adapter(
     )
     .await?;
 
-    let health_check = todo!();
+    let health_check = client.health_checker();
 
     Ok((client, health_check))
 }

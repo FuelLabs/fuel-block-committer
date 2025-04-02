@@ -10,6 +10,7 @@ use std::{
 };
 
 use alloy::{primitives::Address, rpc::types::FeeHistory};
+use metrics::{HealthCheck, HealthChecker};
 use services::{
     state_committer::port::l1::Priority,
     types::{
@@ -72,11 +73,11 @@ where
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     // Maximum number of transient errors before considering a provider unhealthy
     transient_error_threshold: usize,
+    /// Exists so that primitive getters don't have to be async and fallable just because they have to
+    /// go through the failover logic.
     permanent_cache: PermanentCache,
 }
 
-/// Exists so that primitive getters don't have to be async and fallable just because they have to
-/// go through the fail over logic.
 #[derive(Clone)]
 struct PermanentCache {
     commit_interval: NonZeroU32,
@@ -207,6 +208,13 @@ where
                 blob_poster_address,
             },
         })
+    }
+
+    pub fn health_checker(&self) -> HealthChecker
+    where
+        Self: Clone + 'static,
+    {
+        Box::new(self.clone())
     }
 
     /// Tries to classify the error for failover logic
@@ -416,6 +424,16 @@ impl Default for Metrics {
         .expect("eth_network_errors metric to be correctly configured");
 
         Self { eth_network_errors }
+    }
+}
+
+#[async_trait::async_trait]
+impl<I> HealthCheck for FailoverClient<I>
+where
+    I: ProviderInit,
+{
+    async fn healthy(&self) -> bool {
+        self.get_healthy_provider().await.is_ok()
     }
 }
 
