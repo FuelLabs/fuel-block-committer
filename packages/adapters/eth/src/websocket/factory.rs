@@ -1,19 +1,17 @@
 use std::sync::Arc;
 
 use crate::{
-    Error, ProviderConfig, Result,
-    failover_client::ProviderInit,
-    websocket::metrics::Metrics,
+    Error, ProviderConfig, Result, failover_client::ProviderInit, websocket::metrics::Metrics,
 };
 use ::metrics::{RegistersMetrics, prometheus::core::Collector};
 use alloy::primitives::Address;
 use url::Url;
 
-use super::{TxConfig, WebsocketClient};
+use super::{WebsocketClient, config::TxConfig};
 #[derive(Clone)]
 pub struct WebsocketClientFactory {
     contract_address: Address,
-    signers: Arc<crate::websocket::Signers>,
+    signers: Arc<crate::websocket::config::Signers>,
     tx_config: TxConfig,
     metrics: Metrics,
 }
@@ -21,7 +19,7 @@ pub struct WebsocketClientFactory {
 impl WebsocketClientFactory {
     pub fn new(
         contract_address: Address,
-        signers: Arc<crate::websocket::Signers>,
+        signers: Arc<crate::websocket::config::Signers>,
         tx_config: TxConfig,
     ) -> Self {
         Self {
