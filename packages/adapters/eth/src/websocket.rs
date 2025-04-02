@@ -2,6 +2,7 @@ use std::{
     cmp::min, num::NonZeroU32, ops::RangeInclusive, str::FromStr, sync::Arc, time::Duration,
 };
 
+use crate::estimation::{MaxTxFeesPerGas, TransactionRequestExt};
 use ::metrics::RegistersMetrics;
 use alloy::{
     consensus::{SignableTransaction, Transaction},
@@ -20,27 +21,21 @@ use alloy::{
     signers::{Signature, local::PrivateKeySigner},
     sol,
 };
-use delegate::delegate;
-use estimation::{MaxTxFeesPerGas, TransactionRequestExt};
 use itertools::Itertools;
 use metrics::prometheus::{self, histogram_opts};
 use serde::Deserialize;
 use services::{
     state_committer::port::l1::Priority,
     types::{
-        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Height, L1Tx, NonEmpty,
-        TransactionResponse, U256,
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
     },
 };
 use tracing::info;
 use url::Url;
 
-mod estimation;
-
 use crate::{
     AwsClient, AwsConfig, Error, Result, blob_encoder,
     failover_client::{ProviderConfig, ProviderInit},
-    fee_api_helpers::batch_requests,
     provider::L1Provider,
 };
 
@@ -93,6 +88,79 @@ pub struct WebsocketClient {
 }
 
 impl WebsocketClient {
+    pub async fn connect(
+        url: Url,
+        contract_address: Address,
+        signers: Signers,
+        tx_config: TxConfig,
+    ) -> Result<Self> {
+        let blob_poster_address = signers
+            .blob
+            .as_ref()
+            .map(|signer| TxSigner::address(&signer));
+        let contract_caller_address = TxSigner::address(&signers.main);
+
+        let address = TxSigner::address(&signers.main);
+        let ws = WsConnect::new(url);
+        let provider = Self::provider_with_signer(ws.clone(), signers.main).await?;
+
+        let (blob_provider, blob_signer_address) = if let Some(signer) = signers.blob {
+            let blob_signer_address = TxSigner::address(&signer);
+            let blob_provider = Self::provider_with_signer(ws, signer).await?;
+            (Some(blob_provider), Some(blob_signer_address))
+        } else {
+            (None, None)
+        };
+
+        let contract_address = Address::from_slice(contract_address.as_ref());
+        let contract = FuelStateContract::new(contract_address, provider.clone());
+
+        let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
+
+        let commit_interval = u32::try_from(interval_u256)
+            .map_err(|e| Error::Other(e.to_string()))
+            .and_then(|value| {
+                NonZeroU32::new(value).ok_or_else(|| {
+                    Error::Other("l1 contract reported a commit interval of 0".to_string())
+                })
+            })?;
+
+        Ok(Self {
+            provider,
+            main_address: address,
+            blob_provider,
+            blob_signer_address,
+            contract,
+            commit_interval,
+            tx_config,
+            metrics: Default::default(),
+            blob_poster_address,
+            contract_caller_address,
+        })
+    }
+
+    fn set_metrics(&mut self, metrics: Metrics) {
+        self.metrics = metrics;
+    }
+
+    #[cfg(feature = "test-helpers")]
+    pub async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool> {
+        Ok(self
+            .contract
+            .finalized(hash.into(), U256::from(height))
+            .call()
+            .await?
+            ._0)
+    }
+
+    pub fn blob_poster_address(&self) -> Option<Address> {
+        self.blob_poster_address
+    }
+
+    pub fn contract_caller_address(&self) -> Address {
+        self.contract_caller_address
+    }
+
     async fn current_fees(&self, priority: Priority) -> Result<MaxTxFeesPerGas> {
         let priority_perc = self
             .tx_config
@@ -118,9 +186,7 @@ impl WebsocketClient {
                 .saturating_mul(DATA_GAS_PER_BLOB as u128),
         )
     }
-}
 
-impl WebsocketClient {
     async fn provider_with_signer<S>(ws: WsConnect, signer: S) -> Result<WsProvider>
     where
         S: TxSigner<alloy::signers::Signature> + Send + Sync + 'static,
@@ -178,10 +244,12 @@ impl WebsocketClient {
     }
 }
 
+#[derive(Clone)]
 pub struct WebsocketClientFactory {
     contract_address: Address,
     signers: Arc<crate::websocket::Signers>,
     tx_config: TxConfig,
+    metrics: Metrics,
 }
 
 impl WebsocketClientFactory {
@@ -194,6 +262,7 @@ impl WebsocketClientFactory {
             contract_address,
             signers,
             tx_config,
+            metrics: Default::default(),
         }
     }
 }
@@ -209,11 +278,23 @@ impl ProviderInit for WebsocketClientFactory {
 
         let url = Url::parse(&url_str).map_err(|e| Error::Other(format!("Invalid URL: {}", e)))?;
 
-        let client = WebsocketClient::connect(url, contract_address, (*signers).clone(), tx_config)
-            .await
-            .map_err(|e| Error::Other(format!("Failed to connect: {}", e)))?;
+        let mut client =
+            WebsocketClient::connect(url, contract_address, (*signers).clone(), tx_config)
+                .await
+                .map_err(|e| Error::Other(format!("Failed to connect: {}", e)))?;
+
+        client.set_metrics(self.metrics.clone());
 
         Ok(Arc::new(client))
+    }
+}
+
+impl RegistersMetrics for WebsocketClientFactory {
+    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+        vec![
+            Box::new(self.metrics.blobs_per_tx.clone()),
+            Box::new(self.metrics.blob_unused_bytes.clone()),
+        ]
     }
 }
 
@@ -409,117 +490,17 @@ impl L1Provider for WebsocketClient {
 
         Ok((l1_tx, fragments_submitted))
     }
-}
 
-impl WebsocketClient {
-    pub(crate) fn commit_interval(&self) -> NonZeroU32 {
+    fn commit_interval(&self) -> NonZeroU32 {
         self.commit_interval
     }
 
-    #[cfg(feature = "test-helpers")]
-    pub async fn finalized(&self, hash: [u8; 32], height: u32) -> Result<bool> {
-        Ok(self
-            .contract
-            .finalized(hash.into(), U256::from(height))
-            .call()
-            .await?
-            ._0)
-    }
-}
-
-impl RegistersMetrics for WebsocketClient {
-    fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
-        vec![
-            Box::new(self.metrics.blobs_per_tx.clone()),
-            Box::new(self.metrics.blob_unused_bytes.clone()),
-        ]
-    }
-}
-
-impl services::block_committer::port::l1::Contract for WebsocketClient {
-    delegate! {
-        to self {
-            fn commit_interval(&self) -> NonZeroU32;
-        }
+    fn blob_poster_address(&self) -> Option<Address> {
+        self.blob_poster_address
     }
 
-    async fn submit(&self, hash: [u8; 32], height: u32) -> services::Result<BlockSubmissionTx> {
-        Ok(L1Provider::submit(&self, hash, height).await?)
-    }
-}
-
-impl services::state_listener::port::l1::Api for WebsocketClient {
-    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::Result<bool> {
-        Ok(L1Provider::is_squeezed_out(&self, tx_hash).await?)
-    }
-
-    async fn get_transaction_response(
-        &self,
-        tx_hash: [u8; 32],
-    ) -> services::Result<Option<TransactionResponse>> {
-        Ok(L1Provider::get_transaction_response(&self, tx_hash).await?)
-    }
-
-    async fn get_block_number(&self) -> services::Result<L1Height> {
-        let block_num = L1Provider::get_block_number(&self).await?;
-        let height = L1Height::try_from(block_num)?;
-
-        Ok(height)
-    }
-}
-
-impl services::wallet_balance_tracker::port::l1::Api for WebsocketClient {
-    async fn balance(&self, address: Address) -> services::Result<U256> {
-        Ok(L1Provider::balance(&self, address).await?)
-    }
-}
-
-impl services::block_committer::port::l1::Api for WebsocketClient {
-    async fn get_transaction_response(
-        &self,
-        tx_hash: [u8; 32],
-    ) -> services::Result<Option<TransactionResponse>> {
-        Ok(L1Provider::get_transaction_response(&self, tx_hash).await?)
-    }
-
-    async fn get_block_number(&self) -> services::Result<L1Height> {
-        let block_num = L1Provider::get_block_number(&self).await?;
-        let height = L1Height::try_from(block_num)?;
-
-        Ok(height)
-    }
-}
-
-impl services::fees::Api for WebsocketClient {
-    async fn current_height(&self) -> services::Result<u64> {
-        Ok(self.get_block_number().await?)
-    }
-
-    async fn fees(
-        &self,
-        height_range: RangeInclusive<u64>,
-    ) -> services::Result<services::fees::SequentialBlockFees> {
-        let fees = batch_requests(height_range, move |sub_range, percentiles| async move {
-            L1Provider::fees(&self, sub_range, percentiles).await
-        })
-        .await?;
-
-        Ok(fees)
-    }
-}
-
-impl services::state_committer::port::l1::Api for WebsocketClient {
-    async fn current_height(&self) -> services::Result<u64> {
-        Ok(self.get_block_number().await?)
-    }
-
-    async fn submit_state_fragments(
-        &self,
-        fragments: NonEmpty<Fragment>,
-        previous_tx: Option<services::types::L1Tx>,
-        priority: Priority,
-    ) -> services::Result<(L1Tx, FragmentsSubmitted)> {
-        Ok(L1Provider::submit_state_fragments(&self, fragments, previous_tx, priority).await?)
+    fn contract_caller_address(&self) -> Address {
+        self.contract_caller_address
     }
 }
 
@@ -727,67 +708,6 @@ impl Signers {
             main: main_signer,
             blob: blob_signer,
         })
-    }
-}
-
-impl WebsocketClient {
-    pub async fn connect(
-        url: Url,
-        contract_address: Address,
-        signers: Signers,
-        tx_config: TxConfig,
-    ) -> Result<Self> {
-        let blob_poster_address = signers
-            .blob
-            .as_ref()
-            .map(|signer| TxSigner::address(&signer));
-        let contract_caller_address = TxSigner::address(&signers.main);
-
-        let address = TxSigner::address(&signers.main);
-        let ws = WsConnect::new(url);
-        let provider = Self::provider_with_signer(ws.clone(), signers.main).await?;
-
-        let (blob_provider, blob_signer_address) = if let Some(signer) = signers.blob {
-            let blob_signer_address = TxSigner::address(&signer);
-            let blob_provider = Self::provider_with_signer(ws, signer).await?;
-            (Some(blob_provider), Some(blob_signer_address))
-        } else {
-            (None, None)
-        };
-
-        let contract_address = Address::from_slice(contract_address.as_ref());
-        let contract = FuelStateContract::new(contract_address, provider.clone());
-
-        let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
-
-        let commit_interval = u32::try_from(interval_u256)
-            .map_err(|e| Error::Other(e.to_string()))
-            .and_then(|value| {
-                NonZeroU32::new(value).ok_or_else(|| {
-                    Error::Other("l1 contract reported a commit interval of 0".to_string())
-                })
-            })?;
-
-        Ok(Self {
-            provider,
-            main_address: address,
-            blob_provider,
-            blob_signer_address,
-            contract,
-            commit_interval,
-            tx_config,
-            metrics: Default::default(),
-            blob_poster_address,
-            contract_caller_address,
-        })
-    }
-
-    pub fn blob_poster_address(&self) -> Option<Address> {
-        self.blob_poster_address
-    }
-
-    pub fn contract_caller_address(&self) -> Address {
-        self.contract_caller_address
     }
 }
 

@@ -74,6 +74,7 @@ impl services::fees::Api for Provider {
 
         Ok(fees)
     }
+
     async fn current_height(&self) -> services::Result<u64> {
         self.provider
             .get_block_number()

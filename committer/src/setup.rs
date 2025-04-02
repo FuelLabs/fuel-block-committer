@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use clock::SystemClock;
 use eth::{
-    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, ProviderConfig, Signers,
-    WebsocketClientFactory,
+    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, L1Provider, ProviderConfig,
+    Signers, WebsocketClientFactory,
 };
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -11,14 +11,10 @@ use metrics::{
     prometheus::{IntGauge, Registry},
 };
 use services::{
-    BlockBundler, BlockBundlerConfig, Runner,
-    block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_metrics_tracker::service::FeeMetricsTracker,
-    fees::cache::CachingApi,
-    state_committer::port::Storage,
-    state_listener::service::StateListener,
-    state_pruner::service::StatePruner,
-    wallet_balance_tracker::service::WalletBalanceTracker,
+    BlockBundler, BlockBundlerConfig, Runner, block_committer::service::BlockCommitter,
+    fee_metrics_tracker::service::FeeMetricsTracker, fees::cache::CachingApi,
+    state_committer::port::Storage, state_listener::service::StateListener,
+    state_pruner::service::StatePruner, wallet_balance_tracker::service::WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -244,20 +240,18 @@ pub async fn l1_adapter(
     };
     let factory =
         WebsocketClientFactory::new(config.eth.state_contract_address, signers, tx_config);
+    factory.register_metrics(registry);
+
     let client = FailoverClient::connect(
-        vec![ProviderConfig::new("main", config.eth.rpc)],
+        vec![ProviderConfig::new("main", config.eth.rpc.as_str())],
         factory,
         internal_config.eth_errors_before_unhealthy,
     )
     .await?;
 
-    let l1 = client;
-
-    l1.register_metrics(registry);
-
     let health_check = todo!();
 
-    Ok((l1, health_check))
+    Ok((client, health_check))
 }
 
 fn schedule_polling(

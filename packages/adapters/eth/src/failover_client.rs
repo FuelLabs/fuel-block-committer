@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
     fmt::Display,
+    num::NonZeroU32,
     ops::RangeInclusive,
     sync::{
         Arc,
@@ -62,6 +63,7 @@ enum ErrorClassification {
 
 /// A client that manages multiple L1 providers and fails over between them
 /// when connection issues are detected.
+#[derive(Clone)]
 pub struct FailoverClient<I>
 where
     I: ProviderInit,
@@ -72,6 +74,14 @@ where
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     // Maximum number of transient errors before considering a provider unhealthy
     transient_error_threshold: usize,
+    initial_state: ReadonlyState,
+}
+
+#[derive(Clone)]
+struct ReadonlyState {
+    commit_interval: NonZeroU32,
+    contract_caller_address: Address,
+    blob_poster_address: Option<Address>,
 }
 
 /// The combined, shared state of this client:
@@ -180,6 +190,10 @@ where
         )
         .await?;
 
+        let commit_interval = provider_handle.provider.commit_interval();
+        let contract_caller_address = provider_handle.provider.contract_caller_address();
+        let blob_poster_address = provider_handle.provider.blob_poster_address();
+
         // Wrap it all in a single Mutex
         let shared_state = SharedState {
             configs,
@@ -190,6 +204,11 @@ where
             initializer,
             shared_state: Arc::new(Mutex::new(shared_state)),
             transient_error_threshold,
+            initial_state: ReadonlyState {
+                commit_interval,
+                contract_caller_address,
+                blob_poster_address,
+            },
         })
     }
 
@@ -335,6 +354,18 @@ where
     async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx> {
         self.execute_operation(move |provider| async move { provider.submit(hash, height).await })
             .await
+    }
+
+    fn commit_interval(&self) -> NonZeroU32 {
+        self.initial_state.commit_interval
+    }
+
+    fn blob_poster_address(&self) -> Option<Address> {
+        self.initial_state.blob_poster_address
+    }
+
+    fn contract_caller_address(&self) -> Address {
+        self.initial_state.contract_caller_address
     }
 }
 
