@@ -11,9 +11,11 @@ use std::{
 use tokio::sync::Mutex;
 use tracing::warn;
 
-// Suppose these come from your own crates:
-use crate::error::{Error as EthError, Result as EthResult};
-use crate::provider::{L1Provider, ProviderConfig, ProviderFactory};
+use crate::provider::ProviderConfig;
+use crate::{
+    L1Provider,
+    error::{Error as EthError, Result as EthResult},
+};
 use alloy::primitives::Address;
 use alloy::rpc::types::FeeHistory;
 use services::state_committer::port::l1::Priority;
@@ -22,6 +24,15 @@ use services::types::{
 };
 
 const TRANSIENT_ERROR_THRESHOLD: usize = 3;
+
+/// A trait that knows how to build a `P: L1Provider` from a `ProviderConfig`.
+#[async_trait::async_trait]
+pub trait ProviderInit: Send + Sync {
+    type Provider: L1Provider;
+
+    /// Create a new provider from the given config.
+    async fn initialize(&self, config: &ProviderConfig) -> EthResult<Arc<Self::Provider>>;
+}
 
 /// Enum to classify error types for failover decisions
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -35,11 +46,15 @@ enum ErrorClassification {
 }
 
 /// A client that manages multiple L1 providers and fails over between them
-/// when connection issues are detected
-pub struct FailoverClient<P> {
-    // Factory to create new provider instances
-    provider_factory: ProviderFactory<P>,
-    shared_state: Arc<Mutex<SharedState<P>>>,
+/// when connection issues are detected.
+pub struct FailoverClient<I>
+where
+    I: ProviderInit,
+{
+    // Some object that can create providers of type I::Provider
+    initializer: I,
+    // Shared mutable state: the provider configs + active provider
+    shared_state: Arc<Mutex<SharedState<I::Provider>>>,
 }
 
 /// The combined, shared state of this client:
@@ -102,7 +117,8 @@ impl<P> ProviderHandle<P> {
             + 1;
 
         warn!(
-            "Transient connection error detected: {reason} (Count: {current_count}/{TRANSIENT_ERROR_THRESHOLD})",
+            "Transient connection error detected: {reason} \
+             (Count: {current_count}/{TRANSIENT_ERROR_THRESHOLD})"
         );
     }
 
@@ -124,18 +140,19 @@ impl<P> ProviderHandle<P> {
     }
 }
 
-impl<P> FailoverClient<P> {
-    /// Create a new FailoverClient with the given provider configurations and factory.
+impl<I> FailoverClient<I>
+where
+    I: ProviderInit,
+{
+    /// Create a new FailoverClient with the given provider configurations and initializer.
     /// This attempts to connect to the first available provider and stores both
     /// the `configs` and the `active_provider` together in `SharedState`.
-    pub async fn connect(
-        provider_configs: Vec<ProviderConfig>,
-        provider_factory: ProviderFactory<P>,
-    ) -> EthResult<Self> {
+    pub async fn connect(provider_configs: Vec<ProviderConfig>, initializer: I) -> EthResult<Self> {
         let mut configs = VecDeque::from(provider_configs);
+
         // Attempt to connect right away
         let provider_handle =
-            connect_to_first_available_provider(&provider_factory, &mut configs).await?;
+            connect_to_first_available_provider(&initializer, &mut configs).await?;
 
         // Wrap it all in a single Mutex
         let shared_state = SharedState {
@@ -144,7 +161,7 @@ impl<P> FailoverClient<P> {
         };
 
         Ok(Self {
-            provider_factory,
+            initializer,
             shared_state: Arc::new(Mutex::new(shared_state)),
         })
     }
@@ -167,9 +184,8 @@ impl<P> FailoverClient<P> {
         }
     }
 
-    /// Retrieves the currently active provider if it's healthy, or tries to failover to the next.
-    async fn get_healthy_provider(&self) -> EthResult<ProviderHandle<P>> {
-        // Lock the entire shared state
+    /// Retrieves the currently active provider if it's healthy, or tries to fail over to the next.
+    async fn get_healthy_provider(&self) -> EthResult<ProviderHandle<I::Provider>> {
         let mut state = self.shared_state.lock().await;
 
         // Check if the active provider is healthy
@@ -179,7 +195,7 @@ impl<P> FailoverClient<P> {
 
         // If not healthy, attempt to connect to another provider
         let handle =
-            connect_to_first_available_provider(&self.provider_factory, &mut state.configs).await?;
+            connect_to_first_available_provider(&self.initializer, &mut state.configs).await?;
 
         // Replace the active provider with our newly connected one
         state.active_provider = handle.clone();
@@ -195,14 +211,13 @@ impl<P> FailoverClient<P> {
             .await
             .active_provider
             .note_permanent_failure(reason);
-
         Ok(())
     }
 
     /// Core abstraction to execute operations with failover logic
     async fn execute_operation<F, Fut, T>(&self, operation_factory: F) -> EthResult<T>
     where
-        F: FnOnce(Arc<P>) -> Fut + Send + Sync,
+        F: FnOnce(Arc<I::Provider>) -> Fut + Send + Sync,
         Fut: std::future::Future<Output = EthResult<T>> + Send,
         T: Send,
     {
@@ -231,11 +246,11 @@ impl<P> FailoverClient<P> {
 }
 
 #[async_trait::async_trait]
-impl<P: L1Provider> L1Provider for FailoverClient<P> {
-    async fn get_block_number(&self) -> EthResult<u64>
-    where
-        P: L1Provider,
-    {
+impl<I> L1Provider for FailoverClient<I>
+where
+    I: ProviderInit,
+{
+    async fn get_block_number(&self) -> EthResult<u64> {
         self.execute_operation(|provider| async move { provider.get_block_number().await })
             .await
     }
@@ -243,30 +258,21 @@ impl<P: L1Provider> L1Provider for FailoverClient<P> {
     async fn get_transaction_response(
         &self,
         tx_hash: [u8; 32],
-    ) -> EthResult<Option<TransactionResponse>>
-    where
-        P: L1Provider,
-    {
+    ) -> EthResult<Option<TransactionResponse>> {
         self.execute_operation(move |provider| async move {
             provider.get_transaction_response(tx_hash).await
         })
         .await
     }
 
-    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> EthResult<bool>
-    where
-        P: L1Provider,
-    {
+    async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> EthResult<bool> {
         self.execute_operation(
             move |provider| async move { provider.is_squeezed_out(tx_hash).await },
         )
         .await
     }
 
-    async fn balance(&self, address: Address) -> EthResult<U256>
-    where
-        P: L1Provider,
-    {
+    async fn balance(&self, address: Address) -> EthResult<U256> {
         self.execute_operation(move |provider| async move { provider.balance(address).await })
             .await
     }
@@ -275,10 +281,7 @@ impl<P: L1Provider> L1Provider for FailoverClient<P> {
         &self,
         height_range: RangeInclusive<u64>,
         reward_percentiles: &[f64],
-    ) -> EthResult<FeeHistory>
-    where
-        P: L1Provider,
-    {
+    ) -> EthResult<FeeHistory> {
         self.execute_operation(move |provider| async move {
             provider
                 .fees(height_range.clone(), reward_percentiles)
@@ -292,10 +295,7 @@ impl<P: L1Provider> L1Provider for FailoverClient<P> {
         fragments: NonEmpty<Fragment>,
         previous_tx: Option<L1Tx>,
         priority: Priority,
-    ) -> EthResult<(L1Tx, FragmentsSubmitted)>
-    where
-        P: L1Provider,
-    {
+    ) -> EthResult<(L1Tx, FragmentsSubmitted)> {
         self.execute_operation(move |provider| async move {
             provider
                 .submit_state_fragments(fragments.clone(), previous_tx.clone(), priority)
@@ -304,10 +304,7 @@ impl<P: L1Provider> L1Provider for FailoverClient<P> {
         .await
     }
 
-    async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx>
-    where
-        P: L1Provider,
-    {
+    async fn submit(&self, hash: [u8; 32], height: u32) -> EthResult<BlockSubmissionTx> {
         self.execute_operation(move |provider| async move { provider.submit(hash, height).await })
             .await
     }
@@ -315,19 +312,19 @@ impl<P: L1Provider> L1Provider for FailoverClient<P> {
 
 /// Attempts to connect to the first available provider, removing each config from
 /// the front of the deque if it fails.
-async fn connect_to_first_available_provider<P>(
-    provider_factory: &ProviderFactory<P>,
+async fn connect_to_first_available_provider<I: ProviderInit>(
+    initializer: &I,
     configs: &mut VecDeque<ProviderConfig>,
-) -> EthResult<ProviderHandle<P>> {
+) -> EthResult<ProviderHandle<I::Provider>> {
     while let Some(config) = configs.pop_front() {
-        match (provider_factory)(&config).await {
+        match initializer.initialize(&config).await {
             Ok(provider) => {
                 let tracked = ProviderHandle::new(config.name, provider, TRANSIENT_ERROR_THRESHOLD);
                 return Ok(tracked);
             }
             Err(err) => {
                 warn!(
-                    "could not failover to remote provider {}: {err}",
+                    "Could not fail over to remote provider {}: {err}",
                     config.name
                 );
             }
