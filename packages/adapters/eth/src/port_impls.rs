@@ -114,4 +114,8 @@ where
 
         Ok(height)
     }
+
+    async fn note_tx_failure(&self, reason: &str) -> services::Result<()> {
+        Ok(self.note_tx_failure(reason).await?)
+    }
 }

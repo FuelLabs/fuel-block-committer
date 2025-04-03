@@ -10,7 +10,6 @@ use clap::{Parser, command};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
-use serde_json;
 use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
 use storage::DbConfig;
 use url::Url;
@@ -112,7 +111,7 @@ impl RpcConfig {
             url: url.into(),
         }
     }
-    
+
     // Parse the URL for validation
     pub fn parse_url(&self) -> Result<Url, url::ParseError> {
         Url::parse(&self.url)
@@ -150,25 +149,28 @@ where
     if value.is_empty() {
         return Err(serde::de::Error::custom("RPC configs cannot be empty"));
     }
-    
+
     // Parse the JSON array
-    let configs: Vec<RpcConfig> = serde_json::from_str(&value)
-        .map_err(|err| serde::de::Error::custom(format!("Invalid JSON format for RPC configs: {}", err)))?;
-    
+    let configs: Vec<RpcConfig> = serde_json::from_str(&value).map_err(|err| {
+        serde::de::Error::custom(format!("Invalid JSON format for RPC configs: {}", err))
+    })?;
+
     if configs.is_empty() {
-        return Err(serde::de::Error::custom("At least one RPC endpoint must be configured"));
+        return Err(serde::de::Error::custom(
+            "At least one RPC endpoint must be configured",
+        ));
     }
-    
-    // Validate URLs 
+
+    // Validate URLs
     for config in &configs {
         if let Err(e) = config.parse_url() {
             return Err(serde::de::Error::custom(format!(
-                "Invalid URL in RPC config '{}': {} - {}", 
+                "Invalid URL in RPC config '{}': {} - {}",
                 config.name, config.url, e
             )));
         }
     }
-    
+
     Ok(configs)
 }
 
@@ -365,6 +367,8 @@ pub struct Internal {
     pub cost_request_limit: usize,
     pub l1_blocks_cached_for_fee_metrics_tracker: usize,
     pub import_batches: ImportBatches,
+    pub tx_failure_threshold: usize,
+    pub tx_failure_time_window: Duration,
 }
 
 /// Manages batching of incoming fuel blocks before importing them into the database, optimizing memory usage
@@ -395,6 +399,8 @@ impl Default for Internal {
             cost_request_limit: 1000,
             l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
             import_batches: ImportBatches::default(),
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
         }
     }
 }

@@ -7,6 +7,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use alloy::{primitives::Address, rpc::types::FeeHistory};
@@ -73,9 +74,14 @@ where
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     // Maximum number of transient errors before considering a provider unhealthy
     transient_error_threshold: usize,
+    // Configuration for transaction failure tracking
+    tx_failure_threshold: usize,
+    tx_failure_time_window: Duration,
     /// Exists so that primitive getters don't have to be async and fallable just because they have to
     /// go through the failover logic.
     permanent_cache: PermanentCache,
+    // Metrics for monitoring
+    metrics: Metrics,
 }
 
 #[derive(Clone)]
@@ -112,14 +118,27 @@ struct Health {
     max_transient_errors: usize,
     transient_error_count: AtomicUsize,
     permanently_failed: AtomicBool,
+    // Track transactions that failed not due to network errors but due to mempool issues
+    tx_failure_window: Mutex<VecDeque<Instant>>,
+    tx_failure_threshold: usize, // Number of failed transactions to trigger unhealthy state
+    tx_failure_time_window: Duration, // Time window to consider for failures
 }
 
 impl<P> ProviderHandle<P> {
-    fn new(name: String, provider: Arc<P>, max_transient_errors: usize) -> Self {
+    fn new(
+        name: String,
+        provider: Arc<P>,
+        max_transient_errors: usize,
+        tx_failure_threshold: usize,
+        tx_failure_time_window: Duration,
+    ) -> Self {
         let health = Health {
             max_transient_errors,
             transient_error_count: AtomicUsize::new(0),
             permanently_failed: AtomicBool::new(false),
+            tx_failure_window: Mutex::new(VecDeque::with_capacity(tx_failure_threshold + 1)),
+            tx_failure_threshold,
+            tx_failure_time_window,
         };
         Self {
             name,
@@ -164,6 +183,44 @@ impl<P> ProviderHandle<P> {
             .permanently_failed
             .store(true, Ordering::Relaxed);
     }
+
+    pub async fn note_tx_failure(&self, reason: impl Display) {
+        let now = Instant::now();
+        let mut failure_window = self.health.tx_failure_window.lock().await;
+
+        // Remove old entries outside the time window
+        while let Some(timestamp) = failure_window.front() {
+            if now.duration_since(*timestamp) > self.health.tx_failure_time_window {
+                failure_window.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        // Add the new failure timestamp
+        failure_window.push_back(now);
+
+        // If we've accumulated too many failures in the time window, mark the provider as failed
+        if failure_window.len() >= self.health.tx_failure_threshold {
+            let failure_msg = format!(
+                "Provider '{}' marked unhealthy due to {} transaction failures within {:?}: {}",
+                self.name,
+                failure_window.len(),
+                self.health.tx_failure_time_window,
+                reason
+            );
+            self.note_permanent_failure(failure_msg);
+        } else {
+            warn!(
+                "Transaction failure detected on provider '{}': {}. ({} of {} failures within {:?})",
+                self.name,
+                reason,
+                failure_window.len(),
+                self.health.tx_failure_threshold,
+                self.health.tx_failure_time_window
+            );
+        }
+    }
 }
 
 impl<I> FailoverClient<I>
@@ -177,6 +234,8 @@ where
         provider_configs: Vec<ProviderConfig>,
         initializer: I,
         transient_error_threshold: usize,
+        tx_failure_threshold: usize,
+        tx_failure_time_window: Duration,
     ) -> EthResult<Self> {
         let mut configs = VecDeque::from(provider_configs);
 
@@ -185,6 +244,8 @@ where
             &initializer,
             &mut configs,
             transient_error_threshold,
+            tx_failure_threshold,
+            tx_failure_time_window,
         )
         .await?;
 
@@ -202,11 +263,14 @@ where
             initializer,
             shared_state: Arc::new(Mutex::new(shared_state)),
             transient_error_threshold,
+            tx_failure_threshold,
+            tx_failure_time_window,
             permanent_cache: PermanentCache {
                 commit_interval,
                 contract_caller_address,
                 blob_poster_address,
             },
+            metrics: Default::default(),
         })
     }
 
@@ -248,6 +312,8 @@ where
             &self.initializer,
             &mut state.configs,
             self.transient_error_threshold,
+            self.tx_failure_threshold,
+            self.tx_failure_time_window,
         )
         .await?;
 
@@ -295,6 +361,18 @@ where
                 ErrorClassification::Other => Err(error),
             },
         }
+    }
+
+    /// Note a transaction failure for the current provider
+    pub async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
+        // Get the current provider without checking health since we want to mark it
+        let provider = self.shared_state.lock().await.active_provider.clone();
+        provider.note_tx_failure(reason).await;
+
+        // Increment the tx failures counter
+        self.metrics.eth_tx_failures.inc();
+
+        Ok(())
     }
 }
 
@@ -372,6 +450,10 @@ where
     fn contract_caller_address(&self) -> Address {
         self.permanent_cache.contract_caller_address
     }
+
+    async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
+        self.note_tx_failure(reason).await
+    }
 }
 
 /// Attempts to connect to the first available provider, removing each config from
@@ -380,11 +462,19 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
     configs: &mut VecDeque<ProviderConfig>,
     transient_error_threshold: usize,
+    tx_failure_threshold: usize,
+    tx_failure_time_window: Duration,
 ) -> EthResult<ProviderHandle<I::Provider>> {
     while let Some(config) = configs.pop_front() {
         match initializer.initialize(&config).await {
             Ok(provider) => {
-                let tracked = ProviderHandle::new(config.name, provider, transient_error_threshold);
+                let tracked = ProviderHandle::new(
+                    config.name,
+                    provider,
+                    transient_error_threshold,
+                    tx_failure_threshold,
+                    tx_failure_time_window,
+                );
                 return Ok(tracked);
             }
             Err(err) => {
@@ -407,11 +497,15 @@ use ::metrics::{
 #[derive(Clone)]
 pub struct Metrics {
     pub(crate) eth_network_errors: IntCounter,
+    pub(crate) eth_tx_failures: IntCounter,
 }
 
 impl RegistersMetrics for Metrics {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![Box::new(self.eth_network_errors.clone())]
+        vec![
+            Box::new(self.eth_network_errors.clone()),
+            Box::new(self.eth_tx_failures.clone()),
+        ]
     }
 }
 
@@ -423,7 +517,16 @@ impl Default for Metrics {
         ))
         .expect("eth_network_errors metric to be correctly configured");
 
-        Self { eth_network_errors }
+        let eth_tx_failures = IntCounter::with_opts(Opts::new(
+            "eth_tx_failures",
+            "Number of transaction failures potentially caused by provider issues.",
+        ))
+        .expect("eth_tx_failures metric to be correctly configured");
+
+        Self {
+            eth_network_errors,
+            eth_tx_failures,
+        }
     }
 }
 
@@ -434,6 +537,18 @@ where
 {
     async fn healthy(&self) -> bool {
         self.get_healthy_provider().await.is_ok()
+    }
+}
+
+impl<I> RegistersMetrics for FailoverClient<I>
+where
+    I: ProviderInit,
+{
+    fn metrics(&self) -> Vec<Box<dyn Collector>> {
+        vec![
+            Box::new(self.metrics.eth_network_errors.clone()),
+            Box::new(self.metrics.eth_tx_failures.clone()),
+        ]
     }
 }
 
