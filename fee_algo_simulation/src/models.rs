@@ -27,6 +27,7 @@ pub struct FeeParams {
     pub end_max_fee_multiplier: f64,
     pub always_acceptable_fee: String,
     pub num_blobs: u32,
+    #[serde(default)]
     pub num_l2_blocks_behind: u32,
 }
 
@@ -34,11 +35,6 @@ impl TryFrom<FeeParams> for AlgoConfig {
     type Error = anyhow::Error;
 
     fn try_from(value: FeeParams) -> Result<Self, Self::Error> {
-        let always_acceptable_fee = value
-            .always_acceptable_fee
-            .parse()
-            .context("invalid always_acceptable_fee value")?;
-
         let short = NonZeroU64::new(value.short).context("short sma period must be non-zero")?;
         let long = NonZeroU64::new(value.long).context("long sma period must be non-zero")?;
 
@@ -49,6 +45,11 @@ impl TryFrom<FeeParams> for AlgoConfig {
 
         let multiplier_range =
             FeeMultiplierRange::new(value.start_max_fee_multiplier, value.end_max_fee_multiplier)?;
+
+        let always_acceptable_fee = value
+            .always_acceptable_fee
+            .parse()
+            .context("always_acceptable_fee must be a valid u128")?;
 
         Ok(AlgoConfig {
             sma_periods,
@@ -66,9 +67,6 @@ impl TryFrom<FeeParams> for AlgoConfig {
 pub struct FeeDataPoint {
     #[serde(rename = "blockHeight")]
     pub block_height: u64,
-
-    #[serde(rename = "blockTime")]
-    pub block_time: String, // ISO 8601 format
 
     #[serde(rename = "currentFee")]
     pub current_fee: String, // ETH with 4 decimal places
@@ -99,4 +97,29 @@ pub struct FeeStats {
 pub struct FeeResponse {
     pub data: Vec<FeeDataPoint>,
     pub stats: FeeStats,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct SimulationParams {
+    #[serde(flatten)]
+    pub fee_params: FeeParams,
+    pub bundling_interval_blocks: u64,
+    pub bundle_blob_count: u64,
+    pub finalization_time_minutes: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SimulationPoint {
+    pub block_height: u64,
+    pub immediate_fee: f64,
+    pub algorithm_fee: f64,
+    pub immediate_l2_behind: u64,
+    pub algo_l2_behind: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SimulationResult {
+    pub immediate_total_fee: f64,
+    pub algorithm_total_fee: f64,
+    pub eth_saved: f64,
+    pub timeline: Vec<SimulationPoint>,
 }

@@ -1,0 +1,382 @@
+use actix_web::{Responder, ResponseError, web};
+use anyhow::Result;
+use eth::HttpClient;
+use itertools::Itertools;
+use services::{
+    fee_metrics_tracker::service::calculate_blob_tx_fee,
+    fees::{Api, Fees, FeesAtHeight, cache::CachingApi},
+    state_committer::{AlgoConfig, SmaFeeAlgo},
+};
+use tracing::error;
+
+use crate::{
+    handlers::error::FeeError,
+    utils::{ETH_BLOCK_TIME, FUEL_BLOCK_TIME},
+};
+use crate::{
+    models::{SimulationParams, SimulationPoint, SimulationResult},
+    state::AppState,
+};
+
+const MAX_BLOBS_PER_COMMIT: u64 = 6;
+
+struct ImmediateSim {
+    l2_behind: u64,
+    total_fee_wei: u128,
+    last_commit_time: u64,
+    finalization_time_seconds: u64,
+    bundle_blob_count: u64,
+    bundling_interval_blocks: u64,
+}
+
+impl ImmediateSim {
+    fn new(
+        finalization_time_seconds: u64,
+        bundle_blob_count: u64,
+        bundling_interval_blocks: u64,
+    ) -> Self {
+        Self {
+            l2_behind: 0,
+            total_fee_wei: 0,
+            last_commit_time: 0,
+            finalization_time_seconds,
+            bundle_blob_count,
+            bundling_interval_blocks,
+        }
+    }
+
+    /// Called on every L1 block – attempts a commit only if there is enough L2 backlog
+    /// for at least one full bundle
+    fn commit_full(&mut self, block_fees: &Fees, current_time: u64) {
+        let dt = current_time.saturating_sub(self.last_commit_time);
+        if dt < self.finalization_time_seconds {
+            return;
+        }
+        // Only commit if we have at least one full bundle.
+        if self.l2_behind < self.bundling_interval_blocks {
+            return;
+        }
+        let full_bundles = self.l2_behind / self.bundling_interval_blocks;
+
+        let total_blobs = full_bundles * self.bundle_blob_count;
+
+        let commit_blobs = total_blobs.min(MAX_BLOBS_PER_COMMIT);
+
+        // If this number is not an exact multiple of bundle_blob_count,
+        // that would mean a partial bundle is being committed – so skip.
+        if commit_blobs % self.bundle_blob_count != 0 {
+            return;
+        }
+
+        let fee = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+        self.total_fee_wei = self.total_fee_wei.saturating_add(fee);
+
+        let used_bundles = commit_blobs / self.bundle_blob_count;
+        self.l2_behind = self
+            .l2_behind
+            .saturating_sub(used_bundles * self.bundling_interval_blocks);
+        self.last_commit_time = current_time;
+    }
+
+    fn commit_partial(&mut self, block_fees: &Fees, current_time: u64) {
+        if self.l2_behind == 0 {
+            return;
+        }
+
+        let computed_blobs = (self.l2_behind as f64 / self.bundling_interval_blocks as f64)
+            * self.bundle_blob_count as f64;
+
+        let commit_blobs = computed_blobs.round().max(1.0) as u64;
+        let commit_blobs = commit_blobs.min(MAX_BLOBS_PER_COMMIT);
+        let fee = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+        self.total_fee_wei = self.total_fee_wei.saturating_add(fee);
+
+        let fraction = commit_blobs as f64 / self.bundle_blob_count as f64;
+        let l2_reduction = (fraction * self.bundling_interval_blocks as f64).round() as u64;
+        self.l2_behind = self.l2_behind.saturating_sub(l2_reduction);
+        self.last_commit_time = current_time;
+    }
+
+    fn total_fee_wei(&self) -> u128 {
+        self.total_fee_wei
+    }
+
+    fn l2_behind(&self) -> u64 {
+        self.l2_behind
+    }
+
+    fn on_l1_block(&mut self, block_fees: &Fees, current_time: u64, newly_produced_l2: u64) {
+        self.l2_behind += newly_produced_l2;
+        self.commit_full(block_fees, current_time);
+    }
+
+    // Called at the end to flush any remaining backlog.
+    fn leftover_commit(&mut self, block_fees: &Fees, current_time: u64) {
+        self.commit_partial(block_fees, current_time);
+    }
+}
+
+struct AlgorithmSim {
+    l2_behind: u64,
+    total_fee_wei: u128,
+    last_commit_time: u64,
+    finalization_time_seconds: u64,
+    bundle_blob_count: u64,
+    bundling_interval_blocks: u64,
+    fee_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
+}
+
+impl AlgorithmSim {
+    fn new(
+        finalization_time_seconds: u64,
+        bundle_blob_count: u64,
+        bundling_interval_blocks: u64,
+        fee_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
+    ) -> Self {
+        Self {
+            l2_behind: 0,
+            total_fee_wei: 0,
+            last_commit_time: 0,
+            finalization_time_seconds,
+            bundle_blob_count,
+            bundling_interval_blocks,
+            fee_algo,
+        }
+    }
+
+    async fn commit_full(
+        &mut self,
+        block_fees: &Fees,
+        block_height: u64,
+        current_time: u64,
+    ) -> Result<(), FeeError> {
+        let dt = current_time.saturating_sub(self.last_commit_time);
+        if dt < self.finalization_time_seconds {
+            return Ok(());
+        }
+
+        if self.l2_behind < self.bundling_interval_blocks {
+            return Ok(());
+        }
+
+        let full_bundles = self.l2_behind / self.bundling_interval_blocks;
+        let total_blobs = full_bundles * self.bundle_blob_count;
+        let commit_blobs = total_blobs.min(MAX_BLOBS_PER_COMMIT);
+
+        let fee_wei = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+
+        let acceptable = self
+            .fee_algo
+            .fees_acceptable(commit_blobs as u32, self.l2_behind() as u32, block_height)
+            .await
+            .map_err(|_| FeeError::InternalError("Error checking fee acceptability".into()))?;
+
+        if acceptable {
+            self.total_fee_wei = self.total_fee_wei.saturating_add(fee_wei);
+            let used_bundles = commit_blobs / self.bundle_blob_count;
+            self.l2_behind = self
+                .l2_behind
+                .saturating_sub(used_bundles * self.bundling_interval_blocks);
+            self.last_commit_time = current_time;
+        }
+        Ok(())
+    }
+
+    async fn commit_partial(
+        &mut self,
+        block_fees: &Fees,
+        current_time: u64,
+    ) -> Result<(), FeeError> {
+        if self.l2_behind == 0 {
+            return Ok(());
+        }
+
+        let computed_blobs = (self.l2_behind as f64 / self.bundling_interval_blocks as f64)
+            * self.bundle_blob_count as f64;
+        let commit_blobs = computed_blobs.round().max(1.0) as u64;
+        let commit_blobs = commit_blobs.min(MAX_BLOBS_PER_COMMIT);
+        let fee_wei = calculate_blob_tx_fee(commit_blobs as u32, block_fees);
+
+        self.total_fee_wei = self.total_fee_wei.saturating_add(fee_wei);
+        let fraction = commit_blobs as f64 / self.bundle_blob_count as f64;
+        let l2_reduction = (fraction * self.bundling_interval_blocks as f64).round() as u64;
+        self.l2_behind = self.l2_behind.saturating_sub(l2_reduction);
+        self.last_commit_time = current_time;
+
+        Ok(())
+    }
+
+    async fn on_l1_block(
+        &mut self,
+        block_fees: &Fees,
+        block_height: u64,
+        current_time: u64,
+        newly_produced_l2: u64,
+    ) -> Result<(), FeeError> {
+        self.l2_behind += newly_produced_l2;
+        self.commit_full(block_fees, block_height, current_time)
+            .await?;
+        Ok(())
+    }
+
+    async fn leftover_commit(
+        &mut self,
+        block_fees: &Fees,
+        current_time: u64,
+    ) -> Result<(), FeeError> {
+        self.commit_partial(block_fees, current_time).await
+    }
+
+    fn total_fee_wei(&self) -> u128 {
+        self.total_fee_wei
+    }
+
+    fn l2_behind(&self) -> u64 {
+        self.l2_behind
+    }
+}
+
+struct SimulateHandler {
+    fee_history: Vec<FeesAtHeight>,
+    immediate: ImmediateSim,
+    algorithm: AlgorithmSim,
+}
+
+impl SimulateHandler {
+    fn new(
+        params: SimulationParams,
+        fee_history: Vec<FeesAtHeight>,
+        fee_algo: SmaFeeAlgo<CachingApi<HttpClient>>,
+    ) -> Self {
+        let finalization_time_seconds = params.finalization_time_minutes * 60;
+
+        let immediate = ImmediateSim::new(
+            finalization_time_seconds,
+            params.bundle_blob_count,
+            params.bundling_interval_blocks,
+        );
+
+        let algorithm = AlgorithmSim::new(
+            finalization_time_seconds,
+            params.bundle_blob_count,
+            params.bundling_interval_blocks,
+            fee_algo,
+        );
+
+        Self {
+            fee_history,
+            immediate,
+            algorithm,
+        }
+    }
+
+    async fn run_simulation(mut self) -> Result<SimulationResult, FeeError> {
+        if self.fee_history.is_empty() {
+            return Ok(SimulationResult {
+                immediate_total_fee: 0.0,
+                algorithm_total_fee: 0.0,
+                eth_saved: 0.0,
+                timeline: vec![],
+            });
+        }
+
+        let mut timeline = Vec::new();
+        let mut current_time = 0u64;
+
+        for entry in &self.fee_history {
+            current_time += ETH_BLOCK_TIME;
+
+            let new_fuel_blocks = ETH_BLOCK_TIME / FUEL_BLOCK_TIME;
+            self.immediate
+                .on_l1_block(&entry.fees, current_time, new_fuel_blocks);
+            self.algorithm
+                .on_l1_block(&entry.fees, entry.height, current_time, new_fuel_blocks)
+                .await?;
+
+            timeline.push(SimulationPoint {
+                block_height: entry.height,
+                immediate_fee: self.immediate.total_fee_wei() as f64 / 1e18,
+                algorithm_fee: self.algorithm.total_fee_wei() as f64 / 1e18,
+                immediate_l2_behind: self.immediate.l2_behind(),
+                algo_l2_behind: self.algorithm.l2_behind(),
+            });
+        }
+
+        // Process leftover commits.
+        let last_block_fees = &self.fee_history.last().unwrap().fees;
+        let last_block_height = self.fee_history.last().unwrap().height;
+
+        while self.immediate.l2_behind() > 0 || self.algorithm.l2_behind() > 0 {
+            current_time += ETH_BLOCK_TIME;
+
+            self.immediate
+                .leftover_commit(last_block_fees, current_time);
+            self.algorithm
+                .leftover_commit(last_block_fees, current_time)
+                .await?;
+
+            timeline.push(SimulationPoint {
+                block_height: last_block_height,
+                immediate_fee: self.immediate.total_fee_wei() as f64 / 1e18,
+                algorithm_fee: self.algorithm.total_fee_wei() as f64 / 1e18,
+                immediate_l2_behind: self.immediate.l2_behind(),
+                algo_l2_behind: self.algorithm.l2_behind(),
+            });
+        }
+
+        let immediate_fee = self.immediate.total_fee_wei();
+        let algorithm_fee = self.algorithm.total_fee_wei();
+        let eth_saved = (immediate_fee.saturating_sub(algorithm_fee)) as f64 / 1e18;
+
+        Ok(SimulationResult {
+            immediate_total_fee: immediate_fee as f64 / 1e18,
+            algorithm_total_fee: algorithm_fee as f64 / 1e18,
+            eth_saved,
+            timeline,
+        })
+    }
+}
+
+pub async fn simulate_fees(
+    state: web::Data<AppState>,
+    params: web::Json<SimulationParams>,
+) -> impl Responder {
+    let ending_height = match params.fee_params.ending_height {
+        Some(h) => h,
+        None => match state.fee_api.current_height().await {
+            Ok(h2) => h2,
+            Err(e) => {
+                error!("Error fetching current height: {:?}", e);
+                return FeeError::InternalError("Could not fetch current height".into())
+                    .error_response();
+            }
+        },
+    };
+    let start_height = ending_height.saturating_sub(params.fee_params.amount_of_blocks);
+
+    let config = match AlgoConfig::try_from(params.fee_params.clone()) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Error parsing config: {:?}", e);
+            return FeeError::BadRequest("Invalid configuration".into()).error_response();
+        }
+    };
+
+    let fee_algo = SmaFeeAlgo::new(state.fee_api.clone(), config);
+
+    let block_fees = match state.fee_api.fees(start_height..=ending_height).await {
+        Ok(seq) => seq.into_iter().collect_vec(),
+        Err(e) => {
+            error!("Error fetching fees for simulate: {:?}", e);
+            return FeeError::InternalError("Failed to fetch fees".to_string()).error_response();
+        }
+    };
+
+    let sim_handler = SimulateHandler::new(params.into_inner(), block_fees, fee_algo);
+    let sim_result = match sim_handler.run_simulation().await {
+        Ok(r) => r,
+        Err(e) => return e.error_response(),
+    };
+
+    actix_web::HttpResponse::Ok().json(sim_result)
+}
