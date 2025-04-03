@@ -110,7 +110,7 @@ impl WholeStack {
         let committer = {
             let committer_builder = Committer::default()
                 .with_show_logs(logs)
-                .with_eth_rpc((eth_node).ws_url().clone())
+                .with_primary_eth_rpc((eth_node).ws_url().clone())
                 .with_fuel_rpc(fuel_node.url())
                 .with_db_port(db.port())
                 .with_db_name(db.db_name())
@@ -221,7 +221,7 @@ pub async fn start_committer(
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
         .with_show_logs(true)
-        .with_eth_rpc((eth_node).ws_url().clone())
+        .with_primary_eth_rpc((eth_node).ws_url().clone())
         .with_fuel_rpc(fuel_node_url.clone())
         .with_db_port(random_db.port())
         .with_db_name(random_db.db_name())

@@ -10,6 +10,7 @@ use clap::{Parser, command};
 use eth::{Address, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
+use serde_json;
 use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
 use storage::DbConfig;
 use url::Url;
@@ -52,6 +53,13 @@ impl Config {
             ));
         }
 
+        // Check if we have at least one RPC endpoint
+        if self.eth.rpc_configs.is_empty() {
+            return Err(crate::errors::Error::Other(
+                "No Ethereum RPC endpoints configured".to_string(),
+            ));
+        }
+
         if let Err(e) = self.validated_fee_algo_config() {
             return Err(crate::errors::Error::Other(format!(
                 "Invalid fee algo config: {e}",
@@ -90,15 +98,78 @@ pub struct Fuel {
     pub num_buffered_requests: NonZeroU32,
 }
 
+/// RPC endpoint configuration with a name and URL
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct RpcConfig {
+    pub name: String,
+    pub url: String, // Stored as a string for serialization/deserialization
+}
+
+impl RpcConfig {
+    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            url: url.into(),
+        }
+    }
+    
+    // Parse the URL for validation
+    pub fn parse_url(&self) -> Result<Url, url::ParseError> {
+        Url::parse(&self.url)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
     /// L1 keys for state contract calls and postings.
     pub l1_keys: L1Keys,
-    /// Ethereum RPC endpoint URL.
-    #[serde(deserialize_with = "parse_url")]
-    pub rpc: Url,
+    /// Multiple Ethereum RPC endpoints as a JSON array.
+    /// Format: '[{"name":"main","url":"https://ethereum.example.com"}, {"name":"backup","url":"https://backup.example.com"}]'
+    #[serde(deserialize_with = "parse_rpc_configs")]
+    pub rpc_configs: Vec<RpcConfig>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+}
+
+impl Eth {
+    /// Get all RPC configurations
+    pub fn get_provider_configs(&self) -> Vec<eth::ProviderConfig> {
+        self.rpc_configs
+            .iter()
+            .map(|config| eth::ProviderConfig::new(config.name.clone(), config.url.clone()))
+            .collect()
+    }
+}
+
+fn parse_rpc_configs<'de, D>(deserializer: D) -> Result<Vec<RpcConfig>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // First, deserialize the value as a string
+    let value: String = Deserialize::deserialize(deserializer)?;
+    if value.is_empty() {
+        return Err(serde::de::Error::custom("RPC configs cannot be empty"));
+    }
+    
+    // Parse the JSON array
+    let configs: Vec<RpcConfig> = serde_json::from_str(&value)
+        .map_err(|err| serde::de::Error::custom(format!("Invalid JSON format for RPC configs: {}", err)))?;
+    
+    if configs.is_empty() {
+        return Err(serde::de::Error::custom("At least one RPC endpoint must be configured"));
+    }
+    
+    // Validate URLs 
+    for config in &configs {
+        if let Err(e) = config.parse_url() {
+            return Err(serde::de::Error::custom(format!(
+                "Invalid URL in RPC config '{}': {} - {}", 
+                config.name, config.url, e
+            )));
+        }
+    }
+    
+    Ok(configs)
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
@@ -187,7 +258,7 @@ pub struct BundleConfig {
     /// Time to wait for additional blocks before starting bundling.
     ///
     /// This timeout starts from the last time a bundle was created or from app startup.
-    /// Bundling will occur when this timeout expires, even if byte or block thresholds aren’t met.
+    /// Bundling will occur when this timeout expires, even if byte or block thresholds aren't met.
     #[serde(deserialize_with = "human_readable_duration")]
     pub accumulation_timeout: Duration,
 

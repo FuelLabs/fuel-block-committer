@@ -2,6 +2,7 @@ use std::{path::Path, time::Duration};
 
 use anyhow::Context;
 use services::types::{Address, BundleCost};
+use serde_json;
 use url::Url;
 
 #[derive(Default)]
@@ -10,7 +11,7 @@ pub struct Committer {
     main_key_arn: Option<String>,
     blob_key_arn: Option<String>,
     state_contract_address: Option<String>,
-    eth_rpc: Option<Url>,
+    eth_rpc_configs: Vec<(String, Url)>,
     fuel_rpc: Option<Url>,
     db_port: Option<u16>,
     db_name: Option<String>,
@@ -47,12 +48,31 @@ impl Committer {
 
         let main_key = format!("Kms({})", get_field!(main_key_arn));
         let blob_key = self.blob_key_arn.map(|k| format!("Kms({k})"));
+        
+        // Ensure eth_rpc_configs is not empty
+        if self.eth_rpc_configs.is_empty() {
+            return Err(anyhow::anyhow!("At least one Ethereum RPC endpoint must be configured"));
+        }
+        
+        // Create a JSON array of RPC configs
+        let configs = self.eth_rpc_configs.iter()
+            .map(|(name, url)| {
+                serde_json::json!({
+                    "name": name,
+                    "url": url.as_str()
+                })
+            })
+            .collect::<Vec<_>>();
+        
+        let json_str = serde_json::to_string(&configs)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize RPC configs: {}", e))?;
+        
         cmd.env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__L1_KEYS__MAIN", main_key)
-            .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
+            .env("COMMITTER__ETH__RPC_CONFIGS", json_str)
             .env(
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
                 get_field!(state_contract_address),
@@ -233,11 +253,6 @@ impl Committer {
         self
     }
 
-    pub fn with_eth_rpc(mut self, eth_rpc: Url) -> Self {
-        self.eth_rpc = Some(eth_rpc);
-        self
-    }
-
     pub fn with_fuel_rpc(mut self, fuel_rpc: Url) -> Self {
         self.fuel_rpc = Some(fuel_rpc);
         self
@@ -255,6 +270,21 @@ impl Committer {
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
         self.show_logs = show_logs;
+        self
+    }
+
+    pub fn with_eth_rpc_configs(mut self, configs: Vec<(String, Url)>) -> Self {
+        self.eth_rpc_configs = configs;
+        self
+    }
+
+    pub fn with_additional_eth_rpc(mut self, name: String, url: Url) -> Self {
+        self.eth_rpc_configs.push((name, url));
+        self
+    }
+
+    pub fn with_primary_eth_rpc(mut self, url: Url) -> Self {
+        self.eth_rpc_configs.push(("primary".to_string(), url));
         self
     }
 }
