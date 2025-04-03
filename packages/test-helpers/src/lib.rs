@@ -447,6 +447,20 @@ pub struct Setup {
 }
 
 impl Setup {
+    pub async fn get_tx_by_hash(&self, hash: [u8; 32]) -> services::Result<Option<L1Tx>> {
+        use services::state_committer::port::Storage;
+
+        // Get all non-finalized transactions
+        let all_txs = self.db().get_latest_pending_txs().await?;
+
+        // Find the transaction with the given hash
+        let tx = all_txs.into_iter().find(|tx| tx.hash == hash);
+
+        Ok(tx)
+    }
+}
+
+impl Setup {
     pub async fn init() -> Self {
         let db = PostgresProcess::shared()
             .await
