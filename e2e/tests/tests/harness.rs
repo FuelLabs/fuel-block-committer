@@ -39,6 +39,7 @@ async fn submitted_state_and_was_finalized() -> Result<()> {
     // given
     let show_logs = false;
     let blob_support = true;
+    eprintln!("about to start deployment");
     let stack = WholeStack::deploy_default(show_logs, blob_support).await?;
 
     let num_iterations = 10;

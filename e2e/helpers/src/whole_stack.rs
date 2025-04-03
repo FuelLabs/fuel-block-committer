@@ -44,23 +44,29 @@ pub struct WholeStack {
 
 impl WholeStack {
     pub async fn deploy_default(logs: bool, blob_support: bool) -> anyhow::Result<Self> {
+        eprintln!("starting kms");
         let kms = start_kms(logs).await?;
 
+        eprintln!("starting eth");
         let eth_node = start_eth(logs).await?;
         let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
 
         let request_timeout = Duration::from_secs(5);
         let max_fee = 1_000_000_000_000;
 
+        eprintln!("deployed_contract");
         let (contract_args, deployed_contract) =
             deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
 
+        eprintln!("starting fuel node");
         let fuel_node = FuelNodeType::Local(start_fuel_node(logs).await?);
 
+        eprintln!("startng db");
         let db = start_db().await?;
 
+        eprintln!("start committer");
         let committer = start_committer(
-            logs,
+            true,
             blob_support,
             db.clone(),
             &eth_node,
@@ -214,7 +220,7 @@ pub async fn start_committer(
     secondary_key: &KmsKey,
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
-        .with_show_logs(logs)
+        .with_show_logs(true)
         .with_eth_rpc((eth_node).ws_url().clone())
         .with_fuel_rpc(fuel_node_url.clone())
         .with_db_port(random_db.port())
