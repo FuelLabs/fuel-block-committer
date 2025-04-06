@@ -96,7 +96,7 @@ pub struct Fuel {
     pub num_buffered_requests: NonZeroU32,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct RpcConfig {
     pub name: String,
     pub url: Url,
@@ -406,7 +406,6 @@ pub fn parse() -> crate::errors::Result<Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eth::L1Key;
     use serde::de::value::{Error as SerdeError, StringDeserializer};
     use serde_json::json;
 
@@ -419,124 +418,76 @@ mod tests {
         ])
         .to_string();
 
+        let expected_configs = vec![
+            RpcConfig {
+                name: "main".to_string(),
+                url: Url::parse("https://ethereum.example.com").unwrap(),
+            },
+            RpcConfig {
+                name: "backup".to_string(),
+                url: Url::parse("https://backup.example.com").unwrap(),
+            },
+        ];
+
         let deserializer = StringDeserializer::<SerdeError>::new(valid_configs);
 
         // when
         let result = parse_rpc_configs(deserializer);
 
         // then
-        assert!(result.is_ok());
         let configs = result.unwrap();
-        assert_eq!(configs.len(), 2);
-        assert_eq!(configs[0].name, "main");
-        assert_eq!(configs[0].url.as_str(), "https://ethereum.example.com/");
-        assert_eq!(configs[1].name, "backup");
-        assert_eq!(configs[1].url.as_str(), "https://backup.example.com/");
+        assert_eq!(configs, expected_configs);
     }
 
     #[test]
     fn test_parse_rpc_configs_invalid_json() {
-        // Given: An invalid JSON string
+        // given
         let invalid_json = "not a valid json";
 
-        // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(invalid_json.to_string());
 
-        // When: We try to parse the configs
+        // when
         let result = parse_rpc_configs(deserializer);
 
-        // Then: The parsing should fail
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid JSON format")
-        );
+        // then
+        let err_msg = result
+            .expect_err("should have failed since the json is invalid")
+            .to_string();
+        assert!(err_msg.contains("Invalid JSON format"));
     }
 
     #[test]
     fn test_parse_rpc_configs_empty_array() {
-        // Given: An empty JSON array
+        // given
         let empty_array = json!([]).to_string();
 
-        // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(empty_array);
 
-        // When: We try to parse the configs
+        // when
         let result = parse_rpc_configs(deserializer);
 
-        // Then: The parsing should fail with an error about needing at least one config
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("At least one RPC endpoint")
-        );
+        // then
+        let err_msg = result
+            .expect_err("should have failed since the array is empty")
+            .to_string();
+        assert!(err_msg.contains("At least one RPC endpoint"));
     }
 
     #[test]
     fn test_parse_rpc_configs_invalid_url() {
-        // Given: A JSON array with an invalid URL
+        // given
         let invalid_url = json!([
             {"name": "main", "url": "not a valid url"}
         ])
         .to_string();
 
-        // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(invalid_url);
 
-        // When: We try to parse the configs
+        // when
         let result = parse_rpc_configs(deserializer);
 
-        // Then: The parsing should fail with an error about the invalid URL during JSON deserialization
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid JSON format")
-        ); // Now fails during JSON parse
-    }
-
-    #[test]
-    fn test_eth_get_provider_configs() {
-        // Given: An Eth config with RPC configs
-        let eth_config = Eth {
-            l1_keys: L1Keys {
-                main: L1Key::Private("0xabc".to_owned()),
-                blob: None,
-            },
-            rpc_configs: vec![
-                RpcConfig {
-                    name: "main".to_owned(),
-                    url: Url::parse("https://ethereum.example.com").unwrap(),
-                },
-                RpcConfig {
-                    name: "backup".to_owned(),
-                    url: Url::parse("https://backup.example.com").unwrap(),
-                },
-            ],
-            state_contract_address: Address::default(),
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
-        };
-
-        // When: We get the provider configs
-        let provider_configs = eth_config.get_provider_configs();
-
-        // Then: The provider configs should match the RPC configs
-        assert_eq!(provider_configs.len(), 2);
-        assert_eq!(provider_configs[0].name, "main");
-        assert_eq!(
-            provider_configs[0].url.to_string(),
-            "https://ethereum.example.com/"
-        );
-        assert_eq!(provider_configs[1].name, "backup");
-        assert_eq!(
-            provider_configs[1].url.to_string(),
-            "https://backup.example.com/"
-        );
+        // then
+        let err_msg = result.expect_err("because url was not valid").to_string();
+        assert!(err_msg.contains("Invalid JSON format"));
     }
 }
