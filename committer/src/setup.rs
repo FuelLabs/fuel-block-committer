@@ -1,9 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use clock::SystemClock;
 use eth::{
-    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, L1Provider,
-    Signers, WebsocketClientFactory,
+    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, L1Provider, Signers,
+    WebsocketClientFactory,
 };
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -229,7 +229,7 @@ pub async fn l1_adapter(
     internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let signers = Arc::new(Signers::for_keys(config.eth.l1_keys.clone()).await?);
+    let signers = Signers::for_keys(config.eth.l1_keys.clone()).await?;
     let tx_config = eth::TxConfig {
         tx_max_fee: u128::from(config.app.tx_fees.max),
         send_tx_request_timeout: config.app.send_tx_request_timeout,
@@ -244,7 +244,7 @@ pub async fn l1_adapter(
 
     // Get provider configs from the Eth configuration
     let provider_configs = config.eth.get_provider_configs();
-    
+
     let client = FailoverClient::connect(
         provider_configs,
         factory,

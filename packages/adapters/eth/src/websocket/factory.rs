@@ -10,7 +10,7 @@ use crate::{
 #[derive(Clone)]
 pub struct WebsocketClientFactory {
     contract_address: Address,
-    signers: Arc<crate::websocket::config::Signers>,
+    signers: crate::websocket::config::Signers,
     tx_config: TxConfig,
     metrics: Metrics,
 }
@@ -18,7 +18,7 @@ pub struct WebsocketClientFactory {
 impl WebsocketClientFactory {
     pub fn new(
         contract_address: Address,
-        signers: Arc<crate::websocket::config::Signers>,
+        signers: crate::websocket::config::Signers,
         tx_config: TxConfig,
     ) -> Self {
         Self {
@@ -40,7 +40,7 @@ impl ProviderInit for WebsocketClientFactory {
         let url = config.url.clone();
 
         let mut client =
-            WebsocketClient::connect(url, contract_address, (*signers).clone(), tx_config)
+            WebsocketClient::connect(url, contract_address, signers.clone(), tx_config)
                 .await
                 .map_err(|e| Error::Other(format!("Failed to connect: {}", e)))?;
 

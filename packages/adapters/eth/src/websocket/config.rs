@@ -176,18 +176,10 @@ impl Signer {
     }
 }
 
+#[derive(Clone)]
 pub struct Signers {
     pub main: Signer,
     pub blob: Option<Signer>,
-}
-
-impl Clone for Signers {
-    fn clone(&self) -> Self {
-        Self {
-            main: self.main.clone(),
-            blob: self.blob.clone(),
-        }
-    }
 }
 
 impl Signers {
