@@ -429,3 +429,118 @@ pub fn parse() -> crate::errors::Result<Config> {
 
     Ok(config.try_deserialize()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eth::L1Key;
+    use serde_json::json;
+    use serde::de::value::{Error as SerdeError, StringDeserializer};
+
+    #[test]
+    fn test_parse_rpc_configs() {
+        // Given: A properly formatted JSON array of RPC configs
+        let valid_configs = json!([
+            {"name": "main", "url": "https://ethereum.example.com"},
+            {"name": "backup", "url": "https://backup.example.com"}
+        ])
+        .to_string();
+
+        // Need to first create a string deserializer
+        let deserializer = StringDeserializer::<SerdeError>::new(valid_configs);
+        
+        // When: We parse the configs
+        let result = parse_rpc_configs(deserializer);
+
+        // Then: The configs should be parsed correctly
+        assert!(result.is_ok());
+        let configs = result.unwrap();
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].name, "main");
+        assert_eq!(configs[0].url, "https://ethereum.example.com");
+        assert_eq!(configs[1].name, "backup");
+        assert_eq!(configs[1].url, "https://backup.example.com");
+    }
+
+    #[test]
+    fn test_parse_rpc_configs_invalid_json() {
+        // Given: An invalid JSON string
+        let invalid_json = "not a valid json";
+
+        // Need to first create a string deserializer
+        let deserializer = StringDeserializer::<SerdeError>::new(invalid_json.to_string());
+        
+        // When: We try to parse the configs
+        let result = parse_rpc_configs(deserializer);
+
+        // Then: The parsing should fail
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid JSON format"));
+    }
+
+    #[test]
+    fn test_parse_rpc_configs_empty_array() {
+        // Given: An empty JSON array
+        let empty_array = json!([]).to_string();
+
+        // Need to first create a string deserializer
+        let deserializer = StringDeserializer::<SerdeError>::new(empty_array);
+        
+        // When: We try to parse the configs
+        let result = parse_rpc_configs(deserializer);
+
+        // Then: The parsing should fail with an error about needing at least one config
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("At least one RPC endpoint")
+        );
+    }
+
+    #[test]
+    fn test_parse_rpc_configs_invalid_url() {
+        // Given: A JSON array with an invalid URL
+        let invalid_url = json!([
+            {"name": "main", "url": "not a valid url"}
+        ])
+        .to_string();
+
+        // Need to first create a string deserializer
+        let deserializer = StringDeserializer::<SerdeError>::new(invalid_url);
+        
+        // When: We try to parse the configs
+        let result = parse_rpc_configs(deserializer);
+
+        // Then: The parsing should fail with an error about the invalid URL
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid URL"));
+    }
+
+    #[test]
+    fn test_eth_get_provider_configs() {
+        // Given: An Eth config with RPC configs
+        let eth_config = Eth {
+            l1_keys: L1Keys {
+                main: L1Key::Private("0xabc".to_owned()),
+                blob: None,
+            },
+            rpc_configs: vec![
+                RpcConfig::new("main", "https://ethereum.example.com"),
+                RpcConfig::new("backup", "https://backup.example.com"),
+            ],
+            state_contract_address: Address::default(),
+        };
+
+        // When: We get the provider configs
+        let provider_configs = eth_config.get_provider_configs();
+
+        // Then: The provider configs should match the RPC configs
+        assert_eq!(provider_configs.len(), 2);
+        assert_eq!(provider_configs[0].name, "main");
+        assert_eq!(provider_configs[0].url, "https://ethereum.example.com");
+        assert_eq!(provider_configs[1].name, "backup");
+        assert_eq!(provider_configs[1].url, "https://backup.example.com");
+    }
+}
