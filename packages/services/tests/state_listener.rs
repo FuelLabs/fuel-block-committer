@@ -291,6 +291,9 @@ async fn reorg_threw_out_tx_from_block_into_pool_and_got_squeezed_out() -> Resul
         .once()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(true) }));
+    l1.expect_note_tx_failure()
+        .once()
+        .return_once(|_| Box::pin(async { Ok(()) }));
     let mut listener = StateListener::new(
         l1,
         setup.db(),
@@ -404,6 +407,10 @@ async fn a_pending_tx_got_squeezed_out() -> Result<()> {
         .once()
         .return_once(|_| Box::pin(async { Ok(true) }));
 
+    l1.expect_note_tx_failure()
+        .once()
+        .return_once(|_| Box::pin(async { Ok(()) }));
+
     let mut sut = StateListener::new(
         l1,
         setup.db(),
@@ -489,6 +496,8 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
     l1.expect_is_squeezed_out()
         .with(eq(orig_tx_hash))
         .returning(|_| Box::pin(async { Ok(true) }));
+    l1.expect_note_tx_failure()
+        .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
         .once()
@@ -594,6 +603,8 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
     l1.expect_is_squeezed_out()
         .with(eq(orig_tx_hash))
         .returning(|_| Box::pin(async { Ok(true) }));
+    l1.expect_note_tx_failure()
+        .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
         .once()
