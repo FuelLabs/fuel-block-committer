@@ -1,10 +1,9 @@
+use crate::{Error, Result};
 use alloy::signers::aws::AwsSigner;
 use aws_config::{Region, SdkConfig, default_provider::credentials::DefaultCredentialsChain};
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{Client, config::BehaviorVersion};
-
-use crate::Error;
 
 #[derive(Debug, Clone)]
 pub struct AwsConfig {
@@ -70,7 +69,7 @@ impl AwsClient {
         &self.client
     }
 
-    pub async fn make_signer(&self, key_arn: String) -> crate::Result<AwsSigner> {
+    pub async fn make_signer(&self, key_arn: String) -> Result<AwsSigner> {
         AwsSigner::new(self.client.clone(), key_arn, None)
             .await
             .map_err(|err| Error::Other(format!("Error making aws signer: {err:?}")))
