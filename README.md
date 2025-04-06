@@ -17,6 +17,7 @@ The Fuel Block Committer is a standalone service dedicated to uploading Fuel Blo
     - [Bundle Configuration](#bundle-configuration)
   - [Configuration Validation](#configuration-validation)
 - [Running the Fee Algo Simulator](#running-the-fee-algo-simulator)
+- [RPC Failover](#rpc-failover)
 
 ## Building
 
@@ -77,10 +78,11 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Format:** `Kms(<KEY_ARN>)` or `Private(<PRIVATE_KEY>)`
   - **Example:** `Kms(arn:aws:kms:us-east-1:123456789012:key/efgh-5678)`
 
-- **`COMMITTER__ETH__RPC`**
+- **`COMMITTER__ETH__RPC_CONFIGS`**
 
-  - **Description:** URL to the Ethereum RPC endpoint.
-  - **Example:** `https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID`
+  - **Description:** Multiple Ethereum WebSocket RPC endpoints specified as a JSON array.
+  - **Format:** JSON array of objects with `name` and `url` fields
+  - **Example:** `'[{"name":"main","url":"wss://eth.example.com/ws"},{"name":"backup","url":"wss://backup.example.com/ws"}]'`
 
 - **`COMMITTER__ETH__STATE_CONTRACT_ADDRESS`**
   - **Description:** Ethereum address of the Fuel chain state contract.
@@ -345,3 +347,18 @@ To run the Fee Algo Simulator, execute the following command:
 ```shell
 cargo run --release --bin fee_algo_simulation
 ```
+
+## RPC Failover
+
+The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. This capability:
+
+The failover mechanism uses the following monitoring parameters (hardcoded internally):
+
+- **Transaction Failure Threshold**: 5 transaction failures within a 5-minute window will mark a provider as unhealthy. Transaction failures are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
+- **Consecutive Error Threshold**: 3 consecutive errors from an Ethereum or Fuel provider will mark it as unhealthy.
+
+When a provider is marked as unhealthy, the system automatically switches to the next available provider in the list. However, once all providers in the list become unhealthy, the system will remain in an unhealthy state and requires a restart to recover. There is no automatic periodic checking of previously unhealthy providers.
+
+The service will signal its unhealthy state to external monitoring systems (via health checks), which can then trigger an automatic restart of the service.
+
+To configure RPC failover, simply specify multiple WebSocket RPC endpoints using the `COMMITTER__ETH__RPC_CONFIGS` environment variable (using `wss://` URLs).
