@@ -277,16 +277,6 @@ impl Committer {
         self
     }
 
-    pub fn with_eth_rpc_configs(mut self, configs: Vec<(String, Url)>) -> Self {
-        self.eth_rpc_configs = configs;
-        self
-    }
-
-    pub fn with_additional_eth_rpc(mut self, name: String, url: Url) -> Self {
-        self.eth_rpc_configs.push((name, url));
-        self
-    }
-
     pub fn with_primary_eth_rpc(mut self, url: Url) -> Self {
         self.eth_rpc_configs.push(("primary".to_string(), url));
         self
