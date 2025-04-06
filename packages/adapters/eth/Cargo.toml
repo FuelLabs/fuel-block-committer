@@ -40,11 +40,6 @@ url = { workspace = true }
 trait-variant = { workspace = true }
 
 [dev-dependencies]
-tracing-subscriber = { workspace = true, features = [
-  "env-filter",
-  "fmt",
-  "json",
-] }
 eth = { workspace = true, features = ["test-helpers"] }
 alloy = { workspace = true, features = [
   "signer-local",
