@@ -1,8 +1,8 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use services::types::{Address, BundleCost};
 use serde_json;
+use services::types::{Address, BundleCost};
 use url::Url;
 
 #[derive(Default)]
@@ -48,14 +48,16 @@ impl Committer {
 
         let main_key = format!("Kms({})", get_field!(main_key_arn));
         let blob_key = self.blob_key_arn.map(|k| format!("Kms({k})"));
-        
-        // Ensure eth_rpc_configs is not empty
+
         if self.eth_rpc_configs.is_empty() {
-            return Err(anyhow::anyhow!("At least one Ethereum RPC endpoint must be configured"));
+            return Err(anyhow::anyhow!(
+                "At least one Ethereum RPC endpoint must be configured"
+            ));
         }
-        
-        // Create a JSON array of RPC configs
-        let configs = self.eth_rpc_configs.iter()
+
+        let configs = self
+            .eth_rpc_configs
+            .iter()
             .map(|(name, url)| {
                 serde_json::json!({
                     "name": name,
@@ -63,10 +65,10 @@ impl Committer {
                 })
             })
             .collect::<Vec<_>>();
-        
+
         let json_str = serde_json::to_string(&configs)
             .map_err(|e| anyhow::anyhow!("Failed to serialize RPC configs: {}", e))?;
-        
+
         cmd.env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ID", "test")
