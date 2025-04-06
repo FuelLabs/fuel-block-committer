@@ -552,150 +552,564 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use ::metrics::prometheus::{Registry, proto::Metric};
-//
-//     #[tokio::test]
-//     async fn recoverable_error_does_not_immediately_make_unhealthy() {
-//         // given: an adapter whose submit method returns a recoverable network error
-//         // and a threshold of 2 (so one error does not cross the limit).
-//         let mut eth_adapter = MockEthApi::new();
-//         eth_adapter.expect_submit().returning(|_, _| {
-//             Err(Error::Network {
-//                 msg: "Recoverable error".into(),
-//                 recoverable: true,
-//             })
-//         });
-//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 2);
-//         let health_check = adapter.connection_health_checker();
-//
-//         // when: a single submit call is made that returns a recoverable error.
-//         let _ = adapter.submit([0; 32], 0).await;
-//
-//         // then: the connection should still be healthy (failure count 1 is less than threshold 2).
-//         assert!(health_check.healthy());
-//     }
-//
-//     #[tokio::test]
-//     async fn successful_call_resets_recoverable_error() {
-//         // given: an adapter that first returns a recoverable error on submit (threshold = 1)
-//         // and then returns success on get_block_number.
-//         let mut eth_adapter = MockEthApi::new();
-//         eth_adapter.expect_submit().returning(|_, _| {
-//             Err(Error::Network {
-//                 msg: "Recoverable error".into(),
-//                 recoverable: true,
-//             })
-//         });
-//         eth_adapter
-//             .expect_get_block_number()
-//             .returning(|| Ok(10u32.into()));
-//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 1);
-//         let health_check = adapter.connection_health_checker();
-//
-//         // given (pre-condition): Trigger a recoverable error to mark the connection unhealthy.
-//         let _ = adapter.submit([0; 32], 0).await;
-//         assert!(!health_check.healthy());
-//
-//         // when: a single successful get_block_number call is made.
-//         let _ = adapter.get_block_number().await;
-//
-//         // then: the connection health should be reset to healthy.
-//         assert!(health_check.healthy());
-//     }
-//
-//     #[tokio::test]
-//     async fn permanent_error_makes_connection_unhealthy() {
-//         // given: an adapter whose submit method returns a permanent (non-recoverable) error.
-//         let mut eth_adapter = MockEthApi::new();
-//         eth_adapter.expect_submit().returning(|_, _| {
-//             Err(Error::Network {
-//                 msg: "Permanent error".into(),
-//                 recoverable: false,
-//             })
-//         });
-//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
-//         let health_check = adapter.connection_health_checker();
-//
-//         // when: a single submit call is made that returns a permanent error.
-//         let _ = adapter.submit([0; 32], 0).await;
-//
-//         // then: the connection should be unhealthy.
-//         assert!(!health_check.healthy());
-//     }
-//
-//     #[tokio::test]
-//     async fn subsequent_success_does_not_reset_permanent_failure() {
-//         // given: an adapter whose submit method returns a permanent error
-//         // and whose get_block_number method returns success.
-//         let mut eth_adapter = MockEthApi::new();
-//         eth_adapter.expect_submit().returning(|_, _| {
-//             Err(Error::Network {
-//                 msg: "Permanent error".into(),
-//                 recoverable: false,
-//             })
-//         });
-//         eth_adapter
-//             .expect_get_block_number()
-//             .returning(|| Ok(42u32.into()));
-//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
-//         let health_check = adapter.connection_health_checker();
-//
-//         // given (pre-condition): Trigger a permanent error.
-//         let _ = adapter.submit([0; 32], 0).await;
-//         assert!(!health_check.healthy());
-//
-//         // when: a single successful get_block_number call is made.
-//         let _ = adapter.get_block_number().await;
-//
-//         // then: the connection remains unhealthy because the permanent failure flag is set.
-//         assert!(!health_check.healthy());
-//     }
-//
-//     #[tokio::test]
-//     async fn other_error_does_not_affect_health_submit() {
-//         // given: an adapter whose submit method returns a non-network error.
-//         let mut eth_adapter = MockEthApi::new();
-//         eth_adapter
-//             .expect_submit()
-//             .returning(|_, _| Err(Error::Other("Some error".into())));
-//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
-//         let health_check = adapter.connection_health_checker();
-//
-//         // when: a single submit call is made that returns a non-network error.
-//         let _ = adapter.submit([0; 32], 0).await;
-//
-//         // then: the connection health remains healthy.
-//         assert!(health_check.healthy());
-//     }
-//
-//     #[tokio::test]
-//     async fn submit_network_error_increments_metrics() {
-//         // given: an adapter whose submit method returns a recoverable network error
-//         let mut eth_adapter = MockEthApi::new();
-//         eth_adapter.expect_submit().returning(|_, _| {
-//             Err(Error::Network {
-//                 msg: "Recoverable error".into(),
-//                 recoverable: true,
-//             })
-//         });
-//         let registry = Registry::new();
-//         let adapter = HealthTrackingMiddleware::new(eth_adapter, 3);
-//         adapter.register_metrics(&registry);
-//
-//         // when: a single submit call is made that returns a network error.
-//         let _ = adapter.submit([0; 32], 0).await;
-//
-//         // then: the "eth_network_errors" metric should be incremented to 1.
-//         let metrics = registry.gather();
-//         let counter = metrics
-//             .iter()
-//             .find(|m| m.get_name() == "eth_network_errors")
-//             .and_then(|m| m.get_metric().first())
-//             .map(Metric::get_counter)
-//             .unwrap();
-//         assert_eq!(counter.get_value(), 1f64);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::MockL1Provider; // Use the existing mock
+    use mockall::predicate::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // A simple provider initializer that returns pre-configured providers
+    struct TestProviderInitializer {
+        providers: Vec<Arc<MockL1Provider>>,
+        current_index: AtomicUsize,
+    }
+
+    impl TestProviderInitializer {
+        fn new(providers: Vec<Arc<MockL1Provider>>) -> Self {
+            Self {
+                providers,
+                current_index: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl Clone for TestProviderInitializer {
+        fn clone(&self) -> Self {
+            Self {
+                providers: self.providers.clone(),
+                current_index: AtomicUsize::new(self.current_index.load(Ordering::Relaxed)),
+            }
+        }
+    }
+
+    impl ProviderInit for TestProviderInitializer {
+        type Provider = MockL1Provider;
+
+        async fn initialize(&self, config: &ProviderConfig) -> EthResult<Arc<Self::Provider>> {
+            let index = self.current_index.fetch_add(1, Ordering::SeqCst);
+
+            if index >= self.providers.len() {
+                return Err(EthError::Other(format!(
+                    "Failed to initialize provider: {}",
+                    config.name
+                )));
+            }
+
+            Ok(self.providers[index].clone())
+        }
+    }
+
+    // An initializer that always fails
+    #[derive(Debug)]
+    struct FailingProviderInitializer;
+
+    impl Clone for FailingProviderInitializer {
+        fn clone(&self) -> Self {
+            Self
+        }
+    }
+
+    impl ProviderInit for FailingProviderInitializer {
+        type Provider = MockL1Provider;
+
+        async fn initialize(&self, config: &ProviderConfig) -> EthResult<Arc<Self::Provider>> {
+            Err(EthError::Other(format!(
+                "Failed to connect to {}",
+                config.name
+            )))
+        }
+    }
+
+    // Convenience function to create a mock provider with defaults
+    fn create_mock_provider() -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+
+        // Set up default behavior for frequently called methods
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider
+            .expect_blob_poster_address()
+            .return_const(Some(Address::ZERO));
+
+        Arc::new(provider)
+    }
+
+    // Helper to create provider that returns a permanent network error
+    fn create_permanent_failure_provider() -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_get_block_number().returning(|| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Permanent error".into(),
+                    recoverable: false,
+                })
+            })
+        });
+        Arc::new(provider)
+    }
+
+    // Helper to create provider that returns a transient network error
+    fn create_transient_failure_provider() -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_get_block_number().returning(|| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Transient error".into(),
+                    recoverable: true,
+                })
+            })
+        });
+        Arc::new(provider)
+    }
+
+    // Helper to create provider that succeeds with a specific block number
+    fn create_successful_provider(block_number: u64) -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider
+            .expect_get_block_number()
+            .returning(move || Box::pin(async move { Ok(block_number) }));
+        Arc::new(provider)
+    }
+
+    #[tokio::test]
+    async fn recoverable_error_does_not_immediately_make_unhealthy() {
+        // Given: a provider that returns a recoverable network error
+        // and a failover client with a threshold of 2 (so one error doesn't cross the limit)
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_submit().times(1).returning(|_, _| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Recoverable error".into(),
+                    recoverable: true,
+                })
+            })
+        });
+
+        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            2, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: a single submit call is made that returns a recoverable error
+        let _ = client.submit([0; 32], 0).await;
+
+        // Then: the client should still be healthy
+        assert!(client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn exceeding_recoverable_error_threshold_triggers_failover() {
+        // Given: a provider that always returns a recoverable network error
+        // and a failover client with a threshold of 1
+        let mut first_provider = MockL1Provider::new();
+        first_provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        first_provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        first_provider
+            .expect_blob_poster_address()
+            .return_const(None);
+        first_provider.expect_submit().returning(|_, _| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Recoverable error".into(),
+                    recoverable: true,
+                })
+            })
+        });
+
+        // Second provider that returns success
+        let mut second_provider = MockL1Provider::new();
+        second_provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        second_provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        second_provider
+            .expect_blob_poster_address()
+            .return_const(None);
+        second_provider
+            .expect_submit()
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
+
+        let initializer =
+            TestProviderInitializer::new(vec![Arc::new(first_provider), Arc::new(second_provider)]);
+
+        let client = FailoverClient::connect(
+            vec![
+                ProviderConfig::new("test1", "http://example1.com"),
+                ProviderConfig::new("test2", "http://example2.com"),
+            ],
+            initializer,
+            1, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: we exceed the transient error threshold
+        let _ = client.submit([0; 32], 0).await; // First error
+        let _ = client.submit([0; 32], 0).await; // Second error, should trigger failover
+        let result = client.submit([0; 32], 0).await; // This should use the second provider
+
+        // Then: the failover should happen successfully and the call should succeed
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn successful_call_resets_transient_error_count() {
+        // Given: A provider that first errors then succeeds
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_submit().times(1).returning(|_, _| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Recoverable error".into(),
+                    recoverable: true,
+                })
+            })
+        });
+        provider
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Box::pin(async { Ok(10u64) }));
+
+        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            2, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: a submit call fails but then get_block_number succeeds
+        let _ = client.submit([0; 32], 0).await; // This fails
+        let result = client.get_block_number().await; // This succeeds
+
+        // Then: the call should succeed and reset the error count
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10u64);
+        assert!(client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn permanent_error_makes_connection_unhealthy() {
+        // Given: a provider that returns a permanent network error
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_submit().times(1).returning(|_, _| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Permanent error".into(),
+                    recoverable: false,
+                })
+            })
+        });
+
+        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            3, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: a single submit call is made that returns a permanent error
+        let _ = client.submit([0; 32], 0).await;
+
+        // Then: the connection should be immediately unhealthy
+        assert!(!client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn other_error_does_not_affect_health() {
+        // Given: a provider that returns a non-network error
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_submit().times(1).returning(|_, _| {
+            Box::pin(async { Err(EthError::Other("Some application error".into())) })
+        });
+
+        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            3, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: a submit call fails with a non-network error
+        let result = client.submit([0; 32], 0).await;
+
+        // Then: the connection health remains good despite the error
+        assert!(result.is_err());
+        assert!(client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn multiple_provider_failover_chain() {
+        // Given: Three providers where the first two fail and the third succeeds
+        let providers = vec![
+            create_permanent_failure_provider(), // First provider - permanent failure
+            create_transient_failure_provider(), // Second provider - transient errors
+            create_successful_provider(42u64),   // Third provider - succeeds
+        ];
+
+        let initializer = TestProviderInitializer::new(providers);
+
+        let client = FailoverClient::connect(
+            vec![
+                ProviderConfig::new("test1", "http://example1.com"),
+                ProviderConfig::new("test2", "http://example2.com"),
+                ProviderConfig::new("test3", "http://example3.com"),
+            ],
+            initializer,
+            1, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: we make calls that fail over through the providers
+        let _ = client.get_block_number().await; // First provider fails permanently
+        let _ = client.get_block_number().await; // Second provider first transient error
+        let _ = client.get_block_number().await; // Second provider second transient error, fails over
+        let result = client.get_block_number().await; // Third provider succeeds
+
+        // Then: we should eventually get a successful result from the third provider
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42u64);
+    }
+
+    #[tokio::test]
+    async fn tx_failure_tracking_marks_provider_unhealthy() {
+        // Given: a provider and a client with a low tx failure threshold and short window
+        let provider = create_mock_provider();
+        let initializer = TestProviderInitializer::new(vec![provider]);
+
+        let tx_failure_threshold = 2;
+        let tx_failure_time_window = Duration::from_millis(500);
+
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            3,
+            tx_failure_threshold,
+            tx_failure_time_window,
+        )
+        .await
+        .unwrap();
+
+        // When: we note multiple transaction failures within the time window
+        client.note_tx_failure("First tx failure").await.unwrap();
+        client.note_tx_failure("Second tx failure").await.unwrap();
+
+        // Then: the provider should be marked unhealthy
+        assert!(!client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn tx_failures_outside_time_window_dont_affect_health() {
+        // Given: a provider and a client with a low tx failure threshold and short window
+        let provider = create_mock_provider();
+        let initializer = TestProviderInitializer::new(vec![provider]);
+
+        let tx_failure_threshold = 2;
+        let tx_failure_time_window = Duration::from_millis(100);
+
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            3,
+            tx_failure_threshold,
+            tx_failure_time_window,
+        )
+        .await
+        .unwrap();
+
+        // When: we note a tx failure, wait longer than the time window, then note another
+        client.note_tx_failure("First tx failure").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await; // Wait longer than the time window
+        client.note_tx_failure("Second tx failure").await.unwrap();
+
+        // Then: the provider should still be healthy because the failures are outside the time window
+        assert!(client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn initializer_failures_are_handled_gracefully() {
+        // Given: an initializer that fails for all providers
+        let initializer = FailingProviderInitializer;
+
+        // When: we try to connect
+        let result = FailoverClient::connect(
+            vec![
+                ProviderConfig::new("test1", "http://example1.com"),
+                ProviderConfig::new("test2", "http://example2.com"),
+            ],
+            initializer,
+            3,
+            5,
+            Duration::from_secs(300),
+        )
+        .await;
+
+        // Then: the connection should fail with a meaningful error
+        assert!(result.is_err());
+        assert!(
+            matches!(result.err().unwrap(), EthError::Other(msg) if msg == "no more providers available")
+        );
+    }
+
+    #[tokio::test]
+    async fn manually_marking_provider_permanently_failed() {
+        // Given: a healthy provider and client
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+
+        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            3,
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: we manually mark the provider as permanently failed
+        client
+            .make_current_connection_permanently_failed("Manual failure".to_string())
+            .await
+            .unwrap();
+
+        // Then: the connection should be unhealthy
+        assert!(!client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn metrics_are_incremented_properly() {
+        // Given: a provider that returns network errors
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_submit().times(1).returning(|_, _| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Recoverable error".into(),
+                    recoverable: true,
+                })
+            })
+        });
+        provider
+            .expect_note_tx_failure()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let client = FailoverClient::connect(
+            vec![ProviderConfig::new("test", "http://example.com")],
+            initializer,
+            3,
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // Get metrics before
+        let network_errors_before = client.metrics.eth_network_errors.get();
+        let tx_failures_before = client.metrics.eth_tx_failures.get();
+
+        // When: we make a call that returns a network error and note a tx failure
+        let _ = client.submit([0; 32], 0).await;
+        client.note_tx_failure("Test failure").await.unwrap();
+
+        // Then: the metrics should be incremented
+        assert!(client.metrics.eth_network_errors.get() > network_errors_before);
+        assert!(client.metrics.eth_tx_failures.get() > tx_failures_before);
+    }
+}
