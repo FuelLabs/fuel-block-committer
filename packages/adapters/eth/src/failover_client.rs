@@ -754,16 +754,15 @@ mod tests {
         first_provider
             .expect_blob_poster_address()
             .return_const(None);
-        first_provider.expect_submit()
-            .times(2) // Expect to be called twice - once before and once after the threshold is exceeded
-            .returning(|_, _| {
-                Box::pin(async {
-                    Err(EthError::Network {
-                        msg: "Recoverable error".into(),
-                        recoverable: true,
-                    })
+        // First provider can handle up to 1 calls before being marked unhealthy
+        first_provider.expect_submit().times(1).returning(|_, _| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Recoverable error".into(),
+                    recoverable: true,
                 })
-            });
+            })
+        });
 
         // Second provider that returns success
         let mut second_provider = MockL1Provider::new();
@@ -776,10 +775,10 @@ mod tests {
         second_provider
             .expect_blob_poster_address()
             .return_const(None);
+        // Second provider needs to handle all remaining calls
         second_provider
             .expect_submit()
-            .times(1)
-            .returning(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
+            .return_once(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
 
         let initializer =
             TestProviderInitializer::new(vec![Arc::new(first_provider), Arc::new(second_provider)]);
@@ -799,7 +798,6 @@ mod tests {
 
         // When: we exceed the transient error threshold
         let _ = client.submit([0; 32], 0).await; // First error
-        let _ = client.submit([0; 32], 0).await; // Second error, should trigger failover
         let result = client.submit([0; 32], 0).await; // This should use the second provider
 
         // Then: the failover should happen successfully and the call should succeed
