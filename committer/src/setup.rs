@@ -242,7 +242,6 @@ pub async fn l1_adapter(
         WebsocketClientFactory::new(config.eth.state_contract_address, signers, tx_config);
     factory.register_metrics(registry);
 
-    // Get provider configs from the Eth configuration
     let provider_configs = config.eth.get_provider_configs();
 
     let client = FailoverClient::connect(
