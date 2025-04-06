@@ -352,10 +352,14 @@ where
             Err(error) => match Self::classify_error(&error) {
                 ErrorClassification::Fatal => {
                     provider.note_permanent_failure(&error);
+                    // Increment network errors metric for fatal errors
+                    self.metrics.eth_network_errors.inc();
                     Err(error)
                 }
                 ErrorClassification::Transient => {
                     provider.note_transient_error(&error);
+                    // Increment network errors metric for transient errors
+                    self.metrics.eth_network_errors.inc();
                     Err(error)
                 }
                 ErrorClassification::Other => Err(error),
@@ -750,14 +754,16 @@ mod tests {
         first_provider
             .expect_blob_poster_address()
             .return_const(None);
-        first_provider.expect_submit().returning(|_, _| {
-            Box::pin(async {
-                Err(EthError::Network {
-                    msg: "Recoverable error".into(),
-                    recoverable: true,
+        first_provider.expect_submit()
+            .times(2) // Expect to be called twice - once before and once after the threshold is exceeded
+            .returning(|_, _| {
+                Box::pin(async {
+                    Err(EthError::Network {
+                        msg: "Recoverable error".into(),
+                        recoverable: true,
+                    })
                 })
-            })
-        });
+            });
 
         // Second provider that returns success
         let mut second_provider = MockL1Provider::new();
