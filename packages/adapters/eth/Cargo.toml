@@ -28,6 +28,7 @@ aws-sdk-kms = { workspace = true, features = ["default"] }
 delegate = { workspace = true }
 fuel-block-committer-encoding = { workspace = true, features = ["kzg"] }
 futures = { workspace = true }
+humantime = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 metrics = { workspace = true }
 services = { workspace = true }

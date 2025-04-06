@@ -88,6 +88,18 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Description:** Ethereum address of the Fuel chain state contract.
   - **Example:** `0xYourStateContractAddress`
 
+- **`COMMITTER__ETH__TX_FAILURE_THRESHOLD`**
+  - **Description:** Maximum number of transaction failures within the specified time window before marking a provider as unhealthy.
+  - **Type:** Positive integer
+  - **Default:** `5`
+  - **Example:** `10`
+
+- **`COMMITTER__ETH__TX_FAILURE_TIME_WINDOW`**
+  - **Description:** Time window to track transaction failures in.
+  - **Format:** Human-readable duration (e.g., `5m`, `30m`)
+  - **Default:** `5m` (5 minutes)
+  - **Example:** `30m`
+
 #### Fuel Configuration
 
 - **`COMMITTER__FUEL__GRAPHQL_ENDPOINT`**
@@ -350,11 +362,9 @@ cargo run --release --bin fee_algo_simulation
 
 ## RPC Failover
 
-The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. This capability:
+The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. The failover mechanism uses the following monitoring parameters:
 
-The failover mechanism uses the following monitoring parameters (hardcoded internally):
-
-- **Transaction Failure Threshold**: 5 transaction failures within a 5-minute window will mark a provider as unhealthy. Transaction failures are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
+- **Transaction Failure Threshold**: Configurable number of transaction failures within a configurable time window will mark a provider as unhealthy. Transaction failures are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
 - **Consecutive Error Threshold**: 3 consecutive errors from an Ethereum or Fuel provider will mark it as unhealthy.
 
 When a provider is marked as unhealthy, the system automatically switches to the next available provider in the list. However, once all providers in the list become unhealthy, the system will remain in an unhealthy state and requires a restart to recover. There is no automatic periodic checking of previously unhealthy providers.

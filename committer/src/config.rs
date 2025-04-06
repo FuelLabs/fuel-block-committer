@@ -128,6 +128,12 @@ pub struct Eth {
     pub rpc_configs: Vec<RpcConfig>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+    /// Maximum number of transaction failures within the specified time window before marking a provider as unhealthy.
+    pub tx_failure_threshold: usize,
+    /// Time window to track transaction failures in.
+    /// Format: Human-readable duration (e.g., `5m`, `30m`)
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub tx_failure_time_window: Duration,
 }
 
 impl Eth {
@@ -367,8 +373,6 @@ pub struct Internal {
     pub cost_request_limit: usize,
     pub l1_blocks_cached_for_fee_metrics_tracker: usize,
     pub import_batches: ImportBatches,
-    pub tx_failure_threshold: usize,
-    pub tx_failure_time_window: Duration,
 }
 
 /// Manages batching of incoming fuel blocks before importing them into the database, optimizing memory usage
@@ -399,8 +403,6 @@ impl Default for Internal {
             cost_request_limit: 1000,
             l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
             import_batches: ImportBatches::default(),
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
         }
     }
 }
@@ -434,8 +436,8 @@ pub fn parse() -> crate::errors::Result<Config> {
 mod tests {
     use super::*;
     use eth::L1Key;
-    use serde_json::json;
     use serde::de::value::{Error as SerdeError, StringDeserializer};
+    use serde_json::json;
 
     #[test]
     fn test_parse_rpc_configs() {
@@ -448,7 +450,7 @@ mod tests {
 
         // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(valid_configs);
-        
+
         // When: We parse the configs
         let result = parse_rpc_configs(deserializer);
 
@@ -469,13 +471,18 @@ mod tests {
 
         // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(invalid_json.to_string());
-        
+
         // When: We try to parse the configs
         let result = parse_rpc_configs(deserializer);
 
         // Then: The parsing should fail
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid JSON format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid JSON format")
+        );
     }
 
     #[test]
@@ -485,7 +492,7 @@ mod tests {
 
         // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(empty_array);
-        
+
         // When: We try to parse the configs
         let result = parse_rpc_configs(deserializer);
 
@@ -509,7 +516,7 @@ mod tests {
 
         // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(invalid_url);
-        
+
         // When: We try to parse the configs
         let result = parse_rpc_configs(deserializer);
 
@@ -531,6 +538,8 @@ mod tests {
                 RpcConfig::new("backup", "https://backup.example.com"),
             ],
             state_contract_address: Address::default(),
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
         };
 
         // When: We get the provider configs

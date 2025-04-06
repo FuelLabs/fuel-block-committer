@@ -203,21 +203,21 @@ impl<P> ProviderHandle<P> {
         // If we've accumulated too many failures in the time window, mark the provider as failed
         if failure_window.len() >= self.health.tx_failure_threshold {
             let failure_msg = format!(
-                "Provider '{}' marked unhealthy due to {} transaction failures within {:?}: {}",
+                "Provider '{}' marked unhealthy due to {} transaction failures within {}: {}",
                 self.name,
                 failure_window.len(),
-                self.health.tx_failure_time_window,
+                humantime::format_duration(self.health.tx_failure_time_window),
                 reason
             );
             self.note_permanent_failure(failure_msg);
         } else {
             warn!(
-                "Transaction failure detected on provider '{}': {}. ({} of {} failures within {:?})",
+                "Transaction failure detected on provider '{}': {}. ({} of {} failures within {})",
                 self.name,
                 reason,
                 failure_window.len(),
                 self.health.tx_failure_threshold,
-                self.health.tx_failure_time_window
+                humantime::format_duration(self.health.tx_failure_time_window)
             );
         }
     }

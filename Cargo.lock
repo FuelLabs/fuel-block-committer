@@ -2886,6 +2886,7 @@ dependencies = [
  "eth",
  "fuel-block-committer-encoding",
  "futures",
+ "humantime",
  "itertools 0.13.0",
  "metrics",
  "mockall",

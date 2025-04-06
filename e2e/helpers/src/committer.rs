@@ -156,6 +156,8 @@ impl Committer {
             .env("COMMITTER__APP__TX_FEES__MAX", "4000000000000000")
             .env("COMMITTER__APP__TX_FEES__MIN_REWARD_PERC", "20")
             .env("COMMITTER__APP__TX_FEES__MAX_REWARD_PERC", "30")
+            .env("COMMITTER__ETH__TX_FAILURE_THRESHOLD", "5")
+            .env("COMMITTER__ETH__TX_FAILURE_TIME_WINDOW", "30m")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
