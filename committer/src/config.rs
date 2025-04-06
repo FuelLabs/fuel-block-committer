@@ -52,7 +52,6 @@ impl Config {
             ));
         }
 
-        // Check if we have at least one RPC endpoint
         if self.eth.rpc_configs.is_empty() {
             return Err(crate::errors::Error::Other(
                 "No Ethereum RPC endpoints configured".to_string(),
@@ -97,7 +96,6 @@ pub struct Fuel {
     pub num_buffered_requests: NonZeroU32,
 }
 
-/// RPC endpoint configuration with a name and URL
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct RpcConfig {
     pub name: String,
@@ -123,7 +121,6 @@ pub struct Eth {
 }
 
 impl Eth {
-    /// Get all RPC configurations
     pub fn get_provider_configs(&self) -> Vec<eth::ProviderConfig> {
         self.rpc_configs
             .iter()
@@ -136,13 +133,11 @@ fn parse_rpc_configs<'de, D>(deserializer: D) -> Result<Vec<RpcConfig>, D::Error
 where
     D: serde::Deserializer<'de>,
 {
-    // First, deserialize the value as a string
     let value: String = Deserialize::deserialize(deserializer)?;
     if value.is_empty() {
         return Err(serde::de::Error::custom("RPC configs cannot be empty"));
     }
 
-    // Parse the JSON array
     let configs: Vec<RpcConfig> = serde_json::from_str(&value).map_err(|err| {
         serde::de::Error::custom(format!("Invalid JSON format for RPC configs: {}", err))
     })?;
@@ -152,8 +147,6 @@ where
             "At least one RPC endpoint must be configured",
         ));
     }
-
-    // URL validation is now handled by the Url type's deserialization
 
     Ok(configs)
 }
@@ -419,20 +412,19 @@ mod tests {
 
     #[test]
     fn test_parse_rpc_configs() {
-        // Given: A properly formatted JSON array of RPC configs
+        // given
         let valid_configs = json!([
             {"name": "main", "url": "https://ethereum.example.com"},
             {"name": "backup", "url": "https://backup.example.com"}
         ])
         .to_string();
 
-        // Need to first create a string deserializer
         let deserializer = StringDeserializer::<SerdeError>::new(valid_configs);
 
-        // When: We parse the configs
+        // when
         let result = parse_rpc_configs(deserializer);
 
-        // Then: The configs should be parsed correctly
+        // then
         assert!(result.is_ok());
         let configs = result.unwrap();
         assert_eq!(configs.len(), 2);
