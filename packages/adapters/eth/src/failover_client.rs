@@ -12,6 +12,7 @@ use std::{
 
 use alloy::{primitives::Address, rpc::types::FeeHistory};
 use metrics::{HealthCheck, HealthChecker};
+use serde::{Deserialize, Serialize};
 use services::{
     state_committer::port::l1::Priority,
     types::{
@@ -26,26 +27,10 @@ use crate::{
     provider::L1Provider,
 };
 
-#[derive(Clone, Debug)]
-pub struct ProviderConfig {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct RpcEndpoint {
     pub name: String,
     pub url: url::Url,
-}
-
-impl ProviderConfig {
-    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            url: url::Url::parse(&url.into()).expect("URL should be valid"),
-        }
-    }
-
-    pub fn with_url(name: impl Into<String>, url: url::Url) -> Self {
-        Self {
-            name: name.into(),
-            url,
-        }
-    }
 }
 
 #[allow(async_fn_in_trait)]
@@ -54,7 +39,7 @@ pub trait ProviderInit: Send + Sync {
     type Provider: L1Provider;
 
     /// Create a new provider from the given config.
-    async fn initialize(&self, config: &ProviderConfig) -> EthResult<Arc<Self::Provider>>;
+    async fn initialize(&self, config: &RpcEndpoint) -> EthResult<Arc<Self::Provider>>;
 }
 
 /// Enum to classify error types for failover decisions
@@ -99,7 +84,7 @@ struct PermanentCache {
 }
 
 struct SharedState<P> {
-    configs: VecDeque<ProviderConfig>,
+    configs: VecDeque<RpcEndpoint>,
     active_provider: ProviderHandle<P>,
 }
 
@@ -238,7 +223,7 @@ where
     /// This attempts to connect to the first available provider and stores both
     /// the `configs` and the `active_provider` together in `SharedState`.
     pub async fn connect(
-        provider_configs: Vec<ProviderConfig>,
+        provider_configs: Vec<RpcEndpoint>,
         initializer: I,
         transient_error_threshold: usize,
         tx_failure_threshold: usize,
@@ -471,7 +456,7 @@ where
 /// the front of the deque if it fails.
 async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
-    configs: &mut VecDeque<ProviderConfig>,
+    configs: &mut VecDeque<RpcEndpoint>,
     transient_error_threshold: usize,
     tx_failure_threshold: usize,
     tx_failure_time_window: Duration,
@@ -597,7 +582,7 @@ mod tests {
     impl ProviderInit for TestProviderInitializer {
         type Provider = MockL1Provider;
 
-        async fn initialize(&self, config: &ProviderConfig) -> EthResult<Arc<Self::Provider>> {
+        async fn initialize(&self, config: &RpcEndpoint) -> EthResult<Arc<Self::Provider>> {
             let index = self.current_index.fetch_add(1, Ordering::SeqCst);
 
             if index >= self.providers.len() {
@@ -624,7 +609,7 @@ mod tests {
     impl ProviderInit for FailingProviderInitializer {
         type Provider = MockL1Provider;
 
-        async fn initialize(&self, config: &ProviderConfig) -> EthResult<Arc<Self::Provider>> {
+        async fn initialize(&self, config: &RpcEndpoint) -> EthResult<Arc<Self::Provider>> {
             Err(EthError::Other(format!(
                 "Failed to connect to {}",
                 config.name
@@ -731,7 +716,10 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             2, // transient_error_threshold
             5,
@@ -792,8 +780,14 @@ mod tests {
 
         let client = FailoverClient::connect(
             vec![
-                ProviderConfig::new("test1", "http://example1.com"),
-                ProviderConfig::new("test2", "http://example2.com"),
+                RpcEndpoint {
+                    name: "test1".to_owned(),
+                    url: "http://example1.com".parse().unwrap(),
+                },
+                RpcEndpoint {
+                    name: "test2".to_owned(),
+                    url: "http://example2.com".parse().unwrap(),
+                },
             ],
             initializer,
             1, // transient_error_threshold
@@ -837,7 +831,10 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             2, // transient_error_threshold
             5,
@@ -878,7 +875,10 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             3, // transient_error_threshold
             5,
@@ -911,7 +911,10 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             3, // transient_error_threshold
             5,
@@ -941,9 +944,18 @@ mod tests {
 
         let client = FailoverClient::connect(
             vec![
-                ProviderConfig::new("test1", "http://example1.com"),
-                ProviderConfig::new("test2", "http://example2.com"),
-                ProviderConfig::new("test3", "http://example3.com"),
+                RpcEndpoint {
+                    name: "test1".to_owned(),
+                    url: "http://example1.com".parse().unwrap(),
+                },
+                RpcEndpoint {
+                    name: "test2".to_owned(),
+                    url: "http://example2.com".parse().unwrap(),
+                },
+                RpcEndpoint {
+                    name: "test3".to_owned(),
+                    url: "http://example3.com".parse().unwrap(),
+                },
             ],
             initializer,
             1, // transient_error_threshold
@@ -974,7 +986,10 @@ mod tests {
         let tx_failure_time_window = Duration::from_millis(500);
 
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             3,
             tx_failure_threshold,
@@ -1001,7 +1016,10 @@ mod tests {
         let tx_failure_time_window = Duration::from_millis(100);
 
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             3,
             tx_failure_threshold,
@@ -1027,8 +1045,14 @@ mod tests {
         // When: we try to connect
         let result = FailoverClient::connect(
             vec![
-                ProviderConfig::new("test1", "http://example1.com"),
-                ProviderConfig::new("test2", "http://example2.com"),
+                RpcEndpoint {
+                    name: "test1".to_owned(),
+                    url: "http://example1.com".parse().unwrap(),
+                },
+                RpcEndpoint {
+                    name: "test2".to_owned(),
+                    url: "http://example2.com".parse().unwrap(),
+                },
             ],
             initializer,
             3,
@@ -1058,7 +1082,10 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             3,
             5,
@@ -1102,7 +1129,10 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            vec![ProviderConfig::new("test", "http://example.com")],
+            vec![RpcEndpoint {
+                name: "test".to_owned(),
+                url: "http://example.com".parse().unwrap(),
+            }],
             initializer,
             3,
             5,

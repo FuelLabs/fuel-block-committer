@@ -7,7 +7,7 @@ use std::{
 
 use byte_unit::Byte;
 use clap::{Parser, command};
-use eth::{Address, L1Keys};
+use eth::{Address, L1Keys, RpcEndpoint};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
@@ -96,12 +96,6 @@ pub struct Fuel {
     pub num_buffered_requests: NonZeroU32,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct RpcConfig {
-    pub name: String,
-    pub url: Url,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
     /// L1 keys for state contract calls and postings.
@@ -109,7 +103,7 @@ pub struct Eth {
     /// Multiple Ethereum RPC endpoints as a JSON array.
     /// Format: '[{"name":"main","url":"https://ethereum.example.com"}, {"name":"backup","url":"https://backup.example.com"}]'
     #[serde(deserialize_with = "parse_rpc_configs")]
-    pub rpc_configs: Vec<RpcConfig>,
+    pub rpc_configs: Vec<RpcEndpoint>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
     /// Maximum number of transaction failures within the specified time window before marking a provider as unhealthy.
@@ -120,16 +114,7 @@ pub struct Eth {
     pub tx_failure_time_window: Duration,
 }
 
-impl Eth {
-    pub fn get_provider_configs(&self) -> Vec<eth::ProviderConfig> {
-        self.rpc_configs
-            .iter()
-            .map(|config| eth::ProviderConfig::with_url(config.name.clone(), config.url.clone()))
-            .collect()
-    }
-}
-
-fn parse_rpc_configs<'de, D>(deserializer: D) -> Result<Vec<RpcConfig>, D::Error>
+fn parse_rpc_configs<'de, D>(deserializer: D) -> Result<Vec<RpcEndpoint>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -138,7 +123,7 @@ where
         return Err(serde::de::Error::custom("RPC configs cannot be empty"));
     }
 
-    let configs: Vec<RpcConfig> = serde_json::from_str(&value).map_err(|err| {
+    let configs: Vec<RpcEndpoint> = serde_json::from_str(&value).map_err(|err| {
         serde::de::Error::custom(format!("Invalid JSON format for RPC configs: {}", err))
     })?;
 
@@ -419,11 +404,11 @@ mod tests {
         .to_string();
 
         let expected_configs = vec![
-            RpcConfig {
+            RpcEndpoint {
                 name: "main".to_string(),
                 url: Url::parse("https://ethereum.example.com").unwrap(),
             },
-            RpcConfig {
+            RpcEndpoint {
                 name: "backup".to_string(),
                 url: Url::parse("https://backup.example.com").unwrap(),
             },

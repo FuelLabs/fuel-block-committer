@@ -16,7 +16,7 @@ pub use alloy::primitives::Address;
 pub use aws::*;
 pub use blob_encoder::BlobEncoder;
 pub use error::{Error, Result};
-pub use failover_client::{FailoverClient, ProviderConfig, ProviderInit};
+pub use failover_client::{FailoverClient, ProviderInit, RpcEndpoint};
 pub use http::Provider as HttpClient;
 pub use provider::L1Provider;
 pub use websocket::{

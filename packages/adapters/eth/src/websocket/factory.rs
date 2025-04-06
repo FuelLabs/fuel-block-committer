@@ -5,7 +5,7 @@ use alloy::primitives::Address;
 
 use super::{WebsocketClient, config::TxConfig};
 use crate::{
-    Error, ProviderConfig, Result, failover_client::ProviderInit, websocket::metrics::Metrics,
+    Error, Result, RpcEndpoint, failover_client::ProviderInit, websocket::metrics::Metrics,
 };
 #[derive(Clone)]
 pub struct WebsocketClientFactory {
@@ -33,7 +33,7 @@ impl WebsocketClientFactory {
 impl ProviderInit for WebsocketClientFactory {
     type Provider = WebsocketClient;
 
-    async fn initialize(&self, config: &ProviderConfig) -> Result<Arc<Self::Provider>> {
+    async fn initialize(&self, config: &RpcEndpoint) -> Result<Arc<Self::Provider>> {
         let contract_address = self.contract_address;
         let signers = self.signers.clone();
         let tx_config = self.tx_config.clone();
