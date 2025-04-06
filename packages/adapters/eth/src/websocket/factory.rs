@@ -38,9 +38,7 @@ impl ProviderInit for WebsocketClientFactory {
         let contract_address = self.contract_address;
         let signers = self.signers.clone();
         let tx_config = self.tx_config.clone();
-        let url_str = config.url.clone();
-
-        let url = Url::parse(&url_str).map_err(|e| Error::Other(format!("Invalid URL: {}", e)))?;
+        let url = config.url.clone();
 
         let mut client =
             WebsocketClient::connect(url, contract_address, (*signers).clone(), tx_config)

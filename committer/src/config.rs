@@ -101,20 +101,15 @@ pub struct Fuel {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct RpcConfig {
     pub name: String,
-    pub url: String, // Stored as a string for serialization/deserialization
+    pub url: Url,
 }
 
 impl RpcConfig {
-    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, url: impl Into<Url>) -> Self {
         Self {
             name: name.into(),
             url: url.into(),
         }
-    }
-
-    // Parse the URL for validation
-    pub fn parse_url(&self) -> Result<Url, url::ParseError> {
-        Url::parse(&self.url)
     }
 }
 
@@ -141,7 +136,7 @@ impl Eth {
     pub fn get_provider_configs(&self) -> Vec<eth::ProviderConfig> {
         self.rpc_configs
             .iter()
-            .map(|config| eth::ProviderConfig::new(config.name.clone(), config.url.clone()))
+            .map(|config| eth::ProviderConfig::with_url(config.name.clone(), config.url.clone()))
             .collect()
     }
 }
@@ -167,15 +162,7 @@ where
         ));
     }
 
-    // Validate URLs
-    for config in &configs {
-        if let Err(e) = config.parse_url() {
-            return Err(serde::de::Error::custom(format!(
-                "Invalid URL in RPC config '{}': {} - {}",
-                config.name, config.url, e
-            )));
-        }
-    }
+    // URL validation is now handled by the Url type's deserialization
 
     Ok(configs)
 }
@@ -459,9 +446,9 @@ mod tests {
         let configs = result.unwrap();
         assert_eq!(configs.len(), 2);
         assert_eq!(configs[0].name, "main");
-        assert_eq!(configs[0].url, "https://ethereum.example.com");
+        assert_eq!(configs[0].url.as_str(), "https://ethereum.example.com/");
         assert_eq!(configs[1].name, "backup");
-        assert_eq!(configs[1].url, "https://backup.example.com");
+        assert_eq!(configs[1].url.as_str(), "https://backup.example.com/");
     }
 
     #[test]
@@ -520,9 +507,14 @@ mod tests {
         // When: We try to parse the configs
         let result = parse_rpc_configs(deserializer);
 
-        // Then: The parsing should fail with an error about the invalid URL
+        // Then: The parsing should fail with an error about the invalid URL during JSON deserialization
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid URL"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid JSON format")
+        ); // Now fails during JSON parse
     }
 
     #[test]
@@ -534,8 +526,8 @@ mod tests {
                 blob: None,
             },
             rpc_configs: vec![
-                RpcConfig::new("main", "https://ethereum.example.com"),
-                RpcConfig::new("backup", "https://backup.example.com"),
+                RpcConfig::new("main", Url::parse("https://ethereum.example.com").unwrap()),
+                RpcConfig::new("backup", Url::parse("https://backup.example.com").unwrap()),
             ],
             state_contract_address: Address::default(),
             tx_failure_threshold: 5,
@@ -548,8 +540,14 @@ mod tests {
         // Then: The provider configs should match the RPC configs
         assert_eq!(provider_configs.len(), 2);
         assert_eq!(provider_configs[0].name, "main");
-        assert_eq!(provider_configs[0].url, "https://ethereum.example.com");
+        assert_eq!(
+            provider_configs[0].url.to_string(),
+            "https://ethereum.example.com/"
+        );
         assert_eq!(provider_configs[1].name, "backup");
-        assert_eq!(provider_configs[1].url, "https://backup.example.com");
+        assert_eq!(
+            provider_configs[1].url.to_string(),
+            "https://backup.example.com/"
+        );
     }
 }

@@ -26,17 +26,26 @@ use crate::{
     provider::L1Provider,
 };
 
+use url;
+
 #[derive(Clone, Debug)]
 pub struct ProviderConfig {
     pub name: String,
-    pub url: String,
+    pub url: url::Url,
 }
 
 impl ProviderConfig {
     pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            url: url.into(),
+            url: url::Url::parse(&url.into()).expect("URL should be valid"),
+        }
+    }
+
+    pub fn with_url(name: impl Into<String>, url: url::Url) -> Self {
+        Self {
+            name: name.into(),
+            url,
         }
     }
 }
