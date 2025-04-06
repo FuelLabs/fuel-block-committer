@@ -104,15 +104,6 @@ pub struct RpcConfig {
     pub url: Url,
 }
 
-impl RpcConfig {
-    pub fn new(name: impl Into<String>, url: impl Into<Url>) -> Self {
-        Self {
-            name: name.into(),
-            url: url.into(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
     /// L1 keys for state contract calls and postings.
@@ -526,8 +517,14 @@ mod tests {
                 blob: None,
             },
             rpc_configs: vec![
-                RpcConfig::new("main", Url::parse("https://ethereum.example.com").unwrap()),
-                RpcConfig::new("backup", Url::parse("https://backup.example.com").unwrap()),
+                RpcConfig {
+                    name: "main".to_owned(),
+                    url: Url::parse("https://ethereum.example.com").unwrap(),
+                },
+                RpcConfig {
+                    name: "backup".to_owned(),
+                    url: Url::parse("https://backup.example.com").unwrap(),
+                },
             ],
             state_contract_address: Address::default(),
             tx_failure_threshold: 5,

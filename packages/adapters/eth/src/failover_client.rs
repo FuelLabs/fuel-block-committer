@@ -26,8 +26,6 @@ use crate::{
     provider::L1Provider,
 };
 
-use url;
-
 #[derive(Clone, Debug)]
 pub struct ProviderConfig {
     pub name: String,
@@ -569,7 +567,7 @@ where
 mod tests {
     use super::*;
     use crate::provider::MockL1Provider; // Use the existing mock
-    
+
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     // A simple provider initializer that returns pre-configured providers
