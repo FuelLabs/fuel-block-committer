@@ -220,7 +220,7 @@ pub async fn start_committer(
     secondary_key: &KmsKey,
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
-        .with_show_logs(true)
+        .with_show_logs(logs)
         .with_primary_eth_rpc((eth_node).ws_url().clone())
         .with_fuel_rpc(fuel_node_url.clone())
         .with_db_port(random_db.port())

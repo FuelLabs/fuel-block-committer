@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use eth::Error;
 use metrics::prometheus::IntGauge;
 use mockall::predicate::eq;
 use services::{

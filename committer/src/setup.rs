@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use clock::SystemClock;
 use eth::{
-    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, L1Provider, ProviderConfig,
+    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, L1Provider,
     Signers, WebsocketClientFactory,
 };
 use fuel_block_committer_encoding::bundle;

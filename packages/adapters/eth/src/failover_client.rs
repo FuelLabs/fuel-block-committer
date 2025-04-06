@@ -569,7 +569,7 @@ where
 mod tests {
     use super::*;
     use crate::provider::MockL1Provider; // Use the existing mock
-    use mockall::predicate::*;
+    
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     // A simple provider initializer that returns pre-configured providers

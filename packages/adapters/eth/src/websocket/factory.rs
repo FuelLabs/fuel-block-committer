@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use ::metrics::{RegistersMetrics, prometheus::core::Collector};
 use alloy::primitives::Address;
-use url::Url;
 
 use super::{WebsocketClient, config::TxConfig};
 use crate::{

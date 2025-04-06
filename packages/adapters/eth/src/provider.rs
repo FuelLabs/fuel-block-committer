@@ -1,4 +1,4 @@
-use std::{fmt::Display, num::NonZeroU32, ops::RangeInclusive};
+use std::{num::NonZeroU32, ops::RangeInclusive};
 
 use alloy::{primitives::Address, rpc::types::FeeHistory};
 use delegate::delegate;
