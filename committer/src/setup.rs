@@ -234,11 +234,9 @@ pub async fn l1_adapter(
         WebsocketClientFactory::new(config.eth.state_contract_address, signers, tx_config);
     factory.register_metrics(registry);
 
-    let provider_configs = config.eth.endpoints.clone();
-
     let failover_config = config.eth_failover_config();
 
-    let client = FailoverClient::connect(provider_configs, factory, failover_config).await?;
+    let client = FailoverClient::connect(factory, failover_config).await?;
 
     let health_check = client.health_checker();
 
