@@ -100,6 +100,11 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Format:** Human-readable duration
   - **Example:** `30m`
 
+- **`COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD`**
+  - **Description:** Maximum number of transient errors before a provider is considered unhealthy.
+  - **Type:** Positive integer
+  - **Example:** `3`
+
 #### Fuel Configuration
 
 - **`COMMITTER__FUEL__ENDPOINT`**

@@ -85,7 +85,7 @@ impl Config {
 
     pub fn eth_failover_config(&self) -> eth::FailoverConfig {
         eth::FailoverConfig {
-            transient_error_threshold: self.eth.failover.tx_failure_threshold,
+            transient_error_threshold: self.eth.failover.transient_error_threshold,
             tx_failure_threshold: self.eth.failover.tx_failure_threshold,
             tx_failure_time_window: self.eth.failover.tx_failure_time_window,
         }
@@ -130,6 +130,8 @@ pub struct Eth {
 /// Configuration for managing RPC failover behavior
 #[derive(Debug, Clone, Deserialize)]
 pub struct FailoverConfig {
+    /// Maximum number of transient errors before considering a provider unhealthy
+    pub transient_error_threshold: usize,
     /// Maximum number of transaction failures within the specified time window before marking a provider as unhealthy.
     pub tx_failure_threshold: usize,
     /// Time window to track transaction failures in.
@@ -350,7 +352,6 @@ where
 #[derive(Debug, Clone)]
 pub struct Internal {
     pub fuel_errors_before_unhealthy: usize,
-    pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
     pub cost_request_limit: usize,
     pub l1_blocks_cached_for_fee_metrics_tracker: usize,
@@ -380,7 +381,6 @@ impl Default for Internal {
         const ETH_BLOCKS_PER_DAY: usize = 24 * 3600 / ETH_BLOCK_TIME;
         Self {
             fuel_errors_before_unhealthy: 3,
-            eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
             cost_request_limit: 1000,
             l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
