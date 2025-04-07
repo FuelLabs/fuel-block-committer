@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use clock::SystemClock;
-use eth::{
-    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, FailoverConfig, L1Provider,
-    Signers, WebsocketClientFactory,
-};
+use eth::{BlobEncoder, FailoverClient, L1Provider, Signers, WebsocketClientFactory};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,

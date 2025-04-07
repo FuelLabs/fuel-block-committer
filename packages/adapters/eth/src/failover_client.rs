@@ -77,7 +77,6 @@ where
     initializer: I,
     // Shared mutable state: the provider configs + active provider
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
-    // Health configuration
     failover_config: FailoverConfig,
     /// Exists so that primitive getters don't have to be async and fallable just because they have to
     /// go through the failover logic.
@@ -94,7 +93,7 @@ struct PermanentCache {
 }
 
 struct SharedState<P> {
-    configs: VecDeque<Endpoint>,
+    remaining_endpoints: VecDeque<Endpoint>,
     active_provider: ProviderHandle<P>,
 }
 
@@ -117,7 +116,6 @@ impl<P> Clone for ProviderHandle<P> {
 
 /// Holds health/tracking info about the provider
 struct Health {
-    failover_config: FailoverConfig,
     transient_error_count: AtomicUsize,
     permanently_failed: AtomicBool,
     // Track transactions that failed not due to network errors but due to mempool issues
@@ -125,13 +123,11 @@ struct Health {
 }
 
 impl<P> ProviderHandle<P> {
-    fn new(name: String, provider: Arc<P>, failover_config: FailoverConfig) -> Self {
-        let tx_failure_window = VecDeque::with_capacity(failover_config.tx_failure_threshold + 1);
+    fn new(name: String, provider: Arc<P>) -> Self {
         let health = Health {
-            failover_config,
             transient_error_count: AtomicUsize::new(0),
             permanently_failed: AtomicBool::new(false),
-            tx_failure_window: Mutex::new(tx_failure_window),
+            tx_failure_window: Mutex::new(VecDeque::new()),
         };
         Self {
             name,
@@ -146,7 +142,7 @@ impl<P> ProviderHandle<P> {
             .store(0, Ordering::Relaxed);
     }
 
-    pub fn note_transient_error(&self, reason: impl Display) {
+    pub fn note_transient_error(&self, reason: impl Display, transient_error_threshold: usize) {
         let current_count = self
             .health
             .transient_error_count
@@ -156,19 +152,8 @@ impl<P> ProviderHandle<P> {
         warn!(
             "Transient connection error detected on provider '{}': {reason} \
              (Count: {current_count}/{})",
-            self.name, self.health.failover_config.transient_error_threshold
+            self.name, transient_error_threshold
         );
-    }
-
-    pub fn is_healthy(&self) -> bool {
-        // If the provider is marked permanently failed, it is not healthy.
-        if self.health.permanently_failed.load(Ordering::Relaxed) {
-            return false;
-        }
-
-        // If the transient error count is below threshold, it's still considered healthy.
-        self.health.transient_error_count.load(Ordering::Relaxed)
-            < self.health.failover_config.transient_error_threshold
     }
 
     pub fn note_permanent_failure(&self, reason: impl Display) {
@@ -178,42 +163,73 @@ impl<P> ProviderHandle<P> {
             .store(true, Ordering::Relaxed);
     }
 
+    pub async fn is_healthy(&self, failover_config: &FailoverConfig) -> bool {
+        // Check if permanently failed
+        if self.health.permanently_failed.load(Ordering::Relaxed) {
+            return false;
+        }
+
+        // Check transient error count
+        let transient_error_count = self.health.transient_error_count.load(Ordering::Relaxed);
+        if transient_error_count >= failover_config.transient_error_threshold {
+            return false;
+        }
+
+        // Check transaction failures within time window
+        let tx_failures_exceed_threshold = self
+            .check_tx_failure_threshold(
+                failover_config.tx_failure_threshold,
+                failover_config.tx_failure_time_window,
+            )
+            .await;
+
+        if tx_failures_exceed_threshold {
+            return false;
+        }
+
+        true
+    }
+
+    /// Helper method to check if transaction failures exceed threshold
+    async fn check_tx_failure_threshold(
+        &self,
+        tx_failure_threshold: usize,
+        tx_failure_time_window: Duration,
+    ) -> bool {
+        let now = Instant::now();
+        let mut failure_window = self.health.tx_failure_window.lock().await;
+
+        // Create a new window containing only entries within the time window
+        let mut valid_entries = VecDeque::new();
+
+        // Process all entries in the current window
+        while let Some(timestamp) = failure_window.pop_front() {
+            if now.duration_since(timestamp) <= tx_failure_time_window {
+                // Keep entries that are within the time window
+                valid_entries.push_back(timestamp);
+            }
+            // Older entries are discarded
+        }
+
+        // Replace the window with only valid entries
+        *failure_window = valid_entries;
+
+        // Check if we've accumulated too many failures in the time window
+        failure_window.len() >= tx_failure_threshold
+    }
+
     pub async fn note_tx_failure(&self, reason: impl Display) {
         let now = Instant::now();
         let mut failure_window = self.health.tx_failure_window.lock().await;
 
-        // Remove old entries outside the time window
-        while let Some(timestamp) = failure_window.front() {
-            if now.duration_since(*timestamp) > self.health.failover_config.tx_failure_time_window {
-                failure_window.pop_front();
-            } else {
-                break;
-            }
-        }
-
-        // Add the new failure timestamp
         failure_window.push_back(now);
 
-        // If we've accumulated too many failures in the time window, mark the provider as failed
-        if failure_window.len() >= self.health.failover_config.tx_failure_threshold {
-            let failure_msg = format!(
-                "Provider '{}' marked unhealthy due to {} transaction failures within {}: {}",
-                self.name,
-                failure_window.len(),
-                humantime::format_duration(self.health.failover_config.tx_failure_time_window),
-                reason
-            );
-            self.note_permanent_failure(failure_msg);
-        } else {
-            warn!(
-                "Transaction failure detected on provider '{}': {}. ({} of {} failures within {})",
-                self.name,
-                reason,
-                failure_window.len(),
-                self.health.failover_config.tx_failure_threshold,
-                humantime::format_duration(self.health.failover_config.tx_failure_time_window)
-            );
-        }
+        warn!(
+            "Transaction failure detected on provider '{}': {}. (Current failure count: {})",
+            self.name,
+            reason,
+            failure_window.len()
+        );
     }
 }
 
@@ -223,19 +239,18 @@ where
 {
     /// This attempts to connect to the first available provider
     pub async fn connect(initializer: I, failover_config: FailoverConfig) -> EthResult<Self> {
-        let mut configs = VecDeque::from_iter(failover_config.endpoints.clone());
+        let mut remaining_endpoints = VecDeque::from_iter(failover_config.endpoints.clone());
 
         // Attempt to connect right away
         let provider_handle =
-            connect_to_first_available_provider(&initializer, &mut configs, &failover_config)
-                .await?;
+            connect_to_first_available_provider(&initializer, &mut remaining_endpoints).await?;
 
         let commit_interval = provider_handle.provider.commit_interval();
         let contract_caller_address = provider_handle.provider.contract_caller_address();
         let blob_poster_address = provider_handle.provider.blob_poster_address();
 
         let shared_state = SharedState {
-            configs,
+            remaining_endpoints,
             active_provider: provider_handle,
         };
 
@@ -281,7 +296,11 @@ where
     async fn get_healthy_provider(&self) -> EthResult<ProviderHandle<I::Provider>> {
         let mut state = self.shared_state.lock().await;
 
-        if state.active_provider.is_healthy() {
+        if state
+            .active_provider
+            .is_healthy(&self.failover_config)
+            .await
+        {
             debug!(
                 "Using current provider '{}' which is healthy",
                 state.active_provider.name
@@ -294,17 +313,32 @@ where
             state.active_provider.name
         );
 
-        let handle = connect_to_first_available_provider(
-            &self.initializer,
-            &mut state.configs,
-            &self.failover_config,
-        )
-        .await?;
+        let handle =
+            connect_to_first_available_provider(&self.initializer, &mut state.remaining_endpoints)
+                .await?;
 
         info!("Successfully failed over to provider '{}'", handle.name);
 
         state.active_provider = handle.clone();
         Ok(handle)
+    }
+
+    /// Note a transaction failure for the current provider
+    pub async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
+        // Get the current provider without checking health since we want to mark it
+        let provider = self.shared_state.lock().await.active_provider.clone();
+        let provider_name = provider.name.clone();
+
+        info!(
+            "Noting transaction failure on provider '{}': {}",
+            provider_name, reason
+        );
+
+        provider.note_tx_failure(reason).await;
+
+        self.metrics.eth_tx_failures.inc();
+
+        Ok(())
     }
 
     /// Core abstraction to execute operations with failover logic
@@ -346,7 +380,11 @@ where
                         Err(error)
                     }
                     ErrorClassification::Transient => {
-                        provider.note_transient_error(&error);
+                        provider.note_transient_error(
+                            &error,
+                            self.failover_config.transient_error_threshold,
+                        );
+
                         self.metrics.eth_network_errors.inc();
                         Err(error)
                     }
@@ -354,24 +392,6 @@ where
                 }
             }
         }
-    }
-
-    /// Note a transaction failure for the current provider
-    pub async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
-        // Get the current provider without checking health since we want to mark it
-        let provider = self.shared_state.lock().await.active_provider.clone();
-        let provider_name = provider.name.clone();
-
-        info!(
-            "Noting transaction failure on provider '{}': {}",
-            provider_name, reason
-        );
-
-        provider.note_tx_failure(reason).await;
-
-        self.metrics.eth_tx_failures.inc();
-
-        Ok(())
     }
 }
 
@@ -453,15 +473,14 @@ where
     }
 }
 
-/// Attempts to connect to the first available provider, removing each config from
+/// Attempts to connect to the first available provider, removing each endpoint from
 /// the front of the deque if it fails.
 async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
-    configs: &mut VecDeque<Endpoint>,
-    failover_config: &FailoverConfig,
+    endpoints: &mut VecDeque<Endpoint>,
 ) -> EthResult<ProviderHandle<I::Provider>> {
     let mut attempts = 0;
-    while let Some(config) = configs.pop_front() {
+    while let Some(config) = endpoints.pop_front() {
         attempts += 1;
         info!(
             "Attempting to connect to provider '{}' (attempt {})",
@@ -472,8 +491,7 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
             Ok(provider) => {
                 info!("Successfully connected to provider '{}'", config.name);
 
-                let tracked = ProviderHandle::new(config.name, provider, failover_config.clone());
-                return Ok(tracked);
+                return Ok(ProviderHandle::new(config.name, provider));
             }
             Err(err) => {
                 warn!(
@@ -565,6 +583,133 @@ mod tests {
 
     use super::*;
     use crate::provider::MockL1Provider;
+
+    // Mock implementation methods for testing
+    impl Health {
+        fn new(tx_failure_threshold: usize) -> Self {
+            let tx_failure_window = VecDeque::with_capacity(tx_failure_threshold + 1);
+
+            Self {
+                transient_error_count: AtomicUsize::new(0),
+                permanently_failed: AtomicBool::new(false),
+                tx_failure_window: Mutex::new(tx_failure_window),
+            }
+        }
+    }
+
+    impl<P> ProviderHandle<P> {
+        fn with_permanent_failure(
+            name: String,
+            provider: Arc<P>,
+            tx_failure_threshold: usize,
+        ) -> Self {
+            let health = Health::new(tx_failure_threshold);
+            health.permanently_failed.store(true, Ordering::Relaxed);
+
+            Self {
+                name,
+                provider,
+                health: Arc::new(health),
+            }
+        }
+
+        fn with_transient_errors(
+            name: String,
+            provider: Arc<P>,
+            error_count: usize,
+            tx_failure_threshold: usize,
+        ) -> Self {
+            let health = Health::new(tx_failure_threshold);
+            health
+                .transient_error_count
+                .store(error_count, Ordering::Relaxed);
+
+            Self {
+                name,
+                provider,
+                health: Arc::new(health),
+            }
+        }
+
+        // Helper for tests to check health without a failover config
+        async fn is_healthy_with_thresholds(
+            &self,
+            transient_threshold: usize,
+            tx_threshold: usize,
+            window: Duration,
+        ) -> bool {
+            let config = FailoverConfig {
+                transient_error_threshold: transient_threshold,
+                tx_failure_threshold: tx_threshold,
+                tx_failure_time_window: window,
+                endpoints: nonempty![Endpoint {
+                    name: "test".to_owned(),
+                    url: "http://example.com".parse().unwrap(),
+                }],
+            };
+
+            self.is_healthy(&config).await
+        }
+    }
+
+    #[tokio::test]
+    async fn is_healthy_checks_all_criteria() {
+        // Create a provider with different health states
+        let provider = Arc::new(create_mock_provider());
+
+        // 1. Permanently failed
+        let failed_handle =
+            ProviderHandle::with_permanent_failure("failed".to_string(), Arc::clone(&provider), 5);
+
+        // 2. Too many transient errors
+        let transient_failed = ProviderHandle::with_transient_errors(
+            "transient_failed".to_string(),
+            Arc::clone(&provider),
+            3, // Error count
+            5,
+        );
+
+        // 3. Healthy provider
+        let healthy = ProviderHandle::new("healthy".to_string(), Arc::clone(&provider));
+
+        // 4. Provider with transaction failures
+        let tx_failures = ProviderHandle::new("tx_failures".to_string(), Arc::clone(&provider));
+
+        // Add transaction failures to the VecDeque directly since note_tx_failure doesn't make judgments now
+        {
+            let now = Instant::now();
+            let mut failures = tx_failures.health.tx_failure_window.lock().await;
+            failures.push_back(now);
+            failures.push_back(now);
+        }
+
+        // Check health with consistent thresholds
+        assert!(
+            !failed_handle
+                .is_healthy_with_thresholds(3, 3, Duration::from_secs(60))
+                .await
+        );
+        assert!(
+            !transient_failed
+                .is_healthy_with_thresholds(2, 3, Duration::from_secs(60))
+                .await
+        );
+        assert!(
+            healthy
+                .is_healthy_with_thresholds(3, 3, Duration::from_secs(60))
+                .await
+        );
+        assert!(
+            !tx_failures
+                .is_healthy_with_thresholds(3, 2, Duration::from_secs(60))
+                .await
+        );
+        assert!(
+            tx_failures
+                .is_healthy_with_thresholds(3, 3, Duration::from_secs(60))
+                .await
+        );
+    }
 
     #[tokio::test]
     async fn recoverable_error_does_not_immediately_make_unhealthy() {
@@ -826,7 +971,13 @@ mod tests {
         client.note_tx_failure("First tx failure").await.unwrap();
         client.note_tx_failure("Second tx failure").await.unwrap();
 
-        // Then: the provider should be marked unhealthy
+        // Then: the provider should be marked unhealthy when we query the health
+        // Get a reference to the active provider to check its health directly
+        let provider = client.shared_state.lock().await.active_provider.clone();
+        assert!(!provider.is_healthy(&client.failover_config).await);
+
+        // This will cause client.healthy() to return false since it uses get_healthy_provider
+        // which will attempt to fail over because the current provider is unhealthy
         assert!(!client.healthy().await);
     }
 
