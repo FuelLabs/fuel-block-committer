@@ -10,7 +10,10 @@ use clap::{Parser, command};
 use eth::{Address, L1Keys, RpcEndpoint};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
-use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
+use services::{
+    state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods},
+    types::NonEmpty,
+};
 use storage::DbConfig;
 use url::Url;
 
@@ -103,7 +106,7 @@ pub struct Eth {
     /// Multiple Ethereum RPC endpoints as a JSON array.
     /// Format: '[{"name":"main","url":"wss://ethereum.example.com"}, {"name":"backup","url":"wss://backup.example.com"}]'
     #[serde(deserialize_with = "parse_endpoints")]
-    pub endpoints: Vec<RpcEndpoint>,
+    pub endpoints: NonEmpty<RpcEndpoint>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
     /// Configuration for RPC failover behavior
@@ -121,7 +124,7 @@ pub struct FailoverConfig {
     pub tx_failure_time_window: Duration,
 }
 
-fn parse_endpoints<'de, D>(deserializer: D) -> Result<Vec<RpcEndpoint>, D::Error>
+fn parse_endpoints<'de, D>(deserializer: D) -> Result<NonEmpty<RpcEndpoint>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -139,11 +142,11 @@ where
         ))
     })?;
 
-    if configs.is_empty() {
+    let Some(configs) = NonEmpty::from_vec(configs) else {
         return Err(serde::de::Error::custom(
             "At least one Ethereum endpoint must be configured",
         ));
-    }
+    };
 
     Ok(configs)
 }
@@ -405,6 +408,7 @@ mod tests {
     use super::*;
     use serde::de::value::{Error as SerdeError, StringDeserializer};
     use serde_json::json;
+    use services::types::nonempty;
 
     #[test]
     fn test_parse_endpoints() {
@@ -415,7 +419,7 @@ mod tests {
         ])
         .to_string();
 
-        let expected_configs = vec![
+        let expected_configs = nonempty![
             RpcEndpoint {
                 name: "main".to_string(),
                 url: Url::parse("https://ethereum.example.com").unwrap(),
