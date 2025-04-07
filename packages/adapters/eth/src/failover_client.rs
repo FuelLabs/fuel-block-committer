@@ -20,7 +20,7 @@ use services::{
     },
 };
 use tokio::sync::Mutex;
-use tracing::warn;
+use tracing::{debug, error, info, warn};
 
 use crate::{
     error::{Error as EthError, Result as EthResult},
@@ -153,9 +153,9 @@ impl<P> ProviderHandle<P> {
             + 1;
 
         warn!(
-            "Transient connection error detected: {reason} \
+            "Transient connection error detected on provider '{}': {reason} \
              (Count: {current_count}/{})",
-            self.health.max_transient_errors
+            self.name, self.health.max_transient_errors
         );
     }
 
@@ -170,7 +170,7 @@ impl<P> ProviderHandle<P> {
     }
 
     pub fn note_permanent_failure(&self, reason: impl Display) {
-        warn!("Provider '{}' permanently failed: {reason}", self.name);
+        error!("Provider '{}' permanently failed: {reason}", self.name);
         self.health
             .permanently_failed
             .store(true, Ordering::Relaxed);
@@ -293,8 +293,17 @@ where
         let mut state = self.shared_state.lock().await;
 
         if state.active_provider.is_healthy() {
+            debug!(
+                "Using current provider '{}' which is healthy",
+                state.active_provider.name
+            );
             return Ok(state.active_provider.clone());
         }
+
+        info!(
+            "Current provider '{}' is unhealthy, attempting to fail over to next provider",
+            state.active_provider.name
+        );
 
         let handle = connect_to_first_available_provider(
             &self.initializer,
@@ -305,6 +314,8 @@ where
         )
         .await?;
 
+        info!("Successfully failed over to provider '{}'", handle.name);
+
         state.active_provider = handle.clone();
         Ok(handle)
     }
@@ -313,6 +324,12 @@ where
         &self,
         reason: String,
     ) -> EthResult<()> {
+        let provider_name = self.shared_state.lock().await.active_provider.name.clone();
+        info!(
+            "Manually marking provider '{}' as permanently failed: {}",
+            provider_name, reason
+        );
+
         self.shared_state
             .lock()
             .await
@@ -329,27 +346,44 @@ where
         T: Send,
     {
         let provider = self.get_healthy_provider().await?;
+        let provider_name = provider.name.clone();
+
+        debug!("Executing operation on provider '{}'", provider_name);
 
         let result = operation_factory(Arc::clone(&provider.provider)).await;
 
         match result {
             Ok(value) => {
+                debug!("Operation succeeded on provider '{}'", provider_name);
                 provider.reset_transient_error_count();
                 Ok(value)
             }
-            Err(error) => match Self::classify_error(&error) {
-                ErrorClassification::Fatal => {
-                    provider.note_permanent_failure(&error);
-                    self.metrics.eth_network_errors.inc();
-                    Err(error)
+            Err(error) => {
+                let error_type = match Self::classify_error(&error) {
+                    ErrorClassification::Fatal => "fatal",
+                    ErrorClassification::Transient => "transient",
+                    ErrorClassification::Other => "other",
+                };
+
+                error!(
+                    "Operation failed on provider '{}' with {} error: {}",
+                    provider_name, error_type, error
+                );
+
+                match Self::classify_error(&error) {
+                    ErrorClassification::Fatal => {
+                        provider.note_permanent_failure(&error);
+                        self.metrics.eth_network_errors.inc();
+                        Err(error)
+                    }
+                    ErrorClassification::Transient => {
+                        provider.note_transient_error(&error);
+                        self.metrics.eth_network_errors.inc();
+                        Err(error)
+                    }
+                    ErrorClassification::Other => Err(error),
                 }
-                ErrorClassification::Transient => {
-                    provider.note_transient_error(&error);
-                    self.metrics.eth_network_errors.inc();
-                    Err(error)
-                }
-                ErrorClassification::Other => Err(error),
-            },
+            }
         }
     }
 
@@ -357,6 +391,13 @@ where
     pub async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
         // Get the current provider without checking health since we want to mark it
         let provider = self.shared_state.lock().await.active_provider.clone();
+        let provider_name = provider.name.clone();
+
+        info!(
+            "Noting transaction failure on provider '{}': {}",
+            provider_name, reason
+        );
+
         provider.note_tx_failure(reason).await;
 
         self.metrics.eth_tx_failures.inc();
@@ -452,9 +493,18 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
     tx_failure_threshold: usize,
     tx_failure_time_window: Duration,
 ) -> EthResult<ProviderHandle<I::Provider>> {
+    let mut attempts = 0;
     while let Some(config) = configs.pop_front() {
+        attempts += 1;
+        info!(
+            "Attempting to connect to provider '{}' (attempt {})",
+            config.name, attempts
+        );
+
         match initializer.initialize(&config).await {
             Ok(provider) => {
+                info!("Successfully connected to provider '{}'", config.name);
+
                 let tracked = ProviderHandle::new(
                     config.name,
                     provider,
@@ -466,13 +516,17 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
             }
             Err(err) => {
                 warn!(
-                    "Could not fail over to remote provider {}: {err}",
+                    "Could not fail over to remote provider '{}': {err}",
                     config.name
                 );
             }
         }
     }
 
+    error!(
+        "Failed to connect to any provider after {} attempts",
+        attempts
+    );
     Err(EthError::Other("no more providers available".into()))
 }
 
@@ -777,13 +831,11 @@ mod tests {
         .unwrap();
 
         // When: we make calls that fail over through the providers
-        let _ = client.get_block_number().await; // First provider fails permanently
-        let _ = client.get_block_number().await; // Second provider first transient error
-        let _ = client.get_block_number().await; // Second provider second transient error, fails over
+        assert!(client.get_block_number().await.is_err()); // First provider fails permanently
+        assert!(client.get_block_number().await.is_err()); // Second provider first transient error, fails over
         let result = client.get_block_number().await; // Third provider succeeds
 
         // Then: we should eventually get a successful result from the third provider
-        assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42u64);
     }
 
@@ -949,6 +1001,142 @@ mod tests {
         // Then: the metrics should be incremented
         assert!(client.metrics.eth_network_errors.get() > network_errors_before);
         assert!(client.metrics.eth_tx_failures.get() > tx_failures_before);
+    }
+
+    #[tokio::test]
+    async fn all_providers_permanently_failed() {
+        // Given: multiple providers that all return permanent network errors
+        let providers = vec![
+            create_permanent_failure_provider(), // First provider - permanent failure
+            create_permanent_failure_provider(), // Second provider - permanent failure
+            create_permanent_failure_provider(), // Third provider - permanent failure
+        ];
+
+        let initializer = TestProviderInitializer::new(providers);
+
+        let client = FailoverClient::connect(
+            nonempty![
+                Endpoint {
+                    name: "test1".to_owned(),
+                    url: "http://example1.com".parse().unwrap(),
+                },
+                Endpoint {
+                    name: "test2".to_owned(),
+                    url: "http://example2.com".parse().unwrap(),
+                },
+                Endpoint {
+                    name: "test3".to_owned(),
+                    url: "http://example3.com".parse().unwrap(),
+                },
+            ],
+            initializer,
+            1, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: we make calls that should fail over through each provider
+        // First call - fails with permanent error from first provider
+        let result1 = client.get_block_number().await;
+        assert!(result1.is_err());
+        assert!(matches!(
+            result1.err().unwrap(),
+            EthError::Network { recoverable: false, .. }
+        ));
+        
+        // Second call - fails with permanent error from second provider
+        let result2 = client.get_block_number().await;
+        assert!(result2.is_err());
+        assert!(matches!(
+            result2.err().unwrap(),
+            EthError::Network { recoverable: false, .. }
+        ));
+        
+        // Third call - fails with permanent error from third provider
+        let result3 = client.get_block_number().await;
+        assert!(result3.is_err());
+        assert!(matches!(
+            result3.err().unwrap(),
+            EthError::Network { recoverable: false, .. }
+        ));
+        
+        // Fourth call - should fail because there are no more providers available
+        let result4 = client.get_block_number().await;
+        assert!(result4.is_err());
+        assert!(matches!(
+            result4.err().unwrap(),
+            EthError::Other(msg) if msg == "no more providers available"
+        ));
+        
+        // And: the client should be unhealthy
+        assert!(!client.healthy().await);
+    }
+
+    #[tokio::test]
+    async fn provider_temporarily_unavailable_during_failover() {
+        // Given: a provider that fails permanently and a second provider that's temporarily unavailable
+        // but becomes available after the first failover attempt
+        let mut first_provider = create_permanent_failure_provider();
+        
+        // Create a second provider that initially fails but then succeeds
+        let mut second_provider = create_mock_provider();
+        second_provider
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| {
+                Box::pin(async {
+                    Err(EthError::Network {
+                        msg: "Temporary unavailability".into(),
+                        recoverable: true,
+                    })
+                })
+            });
+        second_provider
+            .expect_get_block_number()
+            .times(1)
+            .returning(|| Box::pin(async { Ok(42u64) }));
+
+        let initializer = TestProviderInitializer::new([first_provider, second_provider]);
+
+        let client = FailoverClient::connect(
+            nonempty![
+                Endpoint {
+                    name: "test1".to_owned(),
+                    url: "http://example1.com".parse().unwrap(),
+                },
+                Endpoint {
+                    name: "test2".to_owned(),
+                    url: "http://example2.com".parse().unwrap(),
+                },
+            ],
+            initializer,
+            1, // transient_error_threshold
+            5,
+            Duration::from_secs(300),
+        )
+        .await
+        .unwrap();
+
+        // When: we make a call that should fail over to the second provider
+        // The first call will fail with a permanent error
+        let result1 = client.get_block_number().await;
+        assert!(result1.is_err());
+        
+        // The second call will fail with a transient error
+        let result2 = client.get_block_number().await;
+        assert!(result2.is_err());
+        
+        // The third call should succeed as the second provider becomes available
+        let result3 = client.get_block_number().await;
+        
+        // Then: the third call should succeed
+        assert!(result3.is_ok());
+        assert_eq!(result3.unwrap(), 42u64);
+        
+        // And: the client should be healthy
+        assert!(client.healthy().await);
     }
 
     // A simple provider initializer that returns pre-configured mocks
