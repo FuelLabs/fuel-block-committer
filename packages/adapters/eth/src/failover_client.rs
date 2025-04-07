@@ -219,9 +219,7 @@ impl<I> FailoverClient<I>
 where
     I: ProviderInit,
 {
-    /// Create a new FailoverClient with the given provider configurations and initializer.
-    /// This attempts to connect to the first available provider and stores both
-    /// the `configs` and the `active_provider` together in `SharedState`.
+    /// This attempts to connect to the first available provider
     pub async fn connect(
         provider_configs: NonEmpty<Endpoint>,
         initializer: I,
@@ -245,7 +243,6 @@ where
         let contract_caller_address = provider_handle.provider.contract_caller_address();
         let blob_poster_address = provider_handle.provider.blob_poster_address();
 
-        // Wrap it all in a single Mutex
         let shared_state = SharedState {
             configs,
             active_provider: provider_handle,
@@ -295,7 +292,6 @@ where
     async fn get_healthy_provider(&self) -> EthResult<ProviderHandle<I::Provider>> {
         let mut state = self.shared_state.lock().await;
 
-        // Check if the active provider is healthy
         if state.active_provider.is_healthy() {
             return Ok(state.active_provider.clone());
         }
@@ -344,13 +340,11 @@ where
             Err(error) => match Self::classify_error(&error) {
                 ErrorClassification::Fatal => {
                     provider.note_permanent_failure(&error);
-                    // Increment network errors metric for fatal errors
                     self.metrics.eth_network_errors.inc();
                     Err(error)
                 }
                 ErrorClassification::Transient => {
                     provider.note_transient_error(&error);
-                    // Increment network errors metric for transient errors
                     self.metrics.eth_network_errors.inc();
                     Err(error)
                 }
@@ -365,7 +359,6 @@ where
         let provider = self.shared_state.lock().await.active_provider.clone();
         provider.note_tx_failure(reason).await;
 
-        // Increment the tx failures counter
         self.metrics.eth_tx_failures.inc();
 
         Ok(())
@@ -409,9 +402,7 @@ where
         reward_percentiles: &[f64],
     ) -> EthResult<FeeHistory> {
         self.execute_operation(move |provider| async move {
-            provider
-                .fees(height_range.clone(), reward_percentiles)
-                .await
+            provider.fees(height_range, reward_percentiles).await
         })
         .await
     }
@@ -424,7 +415,7 @@ where
     ) -> EthResult<(L1Tx, FragmentsSubmitted)> {
         self.execute_operation(move |provider| async move {
             provider
-                .submit_state_fragments(fragments.clone(), previous_tx.clone(), priority)
+                .submit_state_fragments(fragments, previous_tx, priority)
                 .await
         })
         .await
@@ -492,8 +483,8 @@ use ::metrics::{
 
 #[derive(Clone)]
 pub struct Metrics {
-    pub(crate) eth_network_errors: IntCounter,
-    pub(crate) eth_tx_failures: IntCounter,
+    eth_network_errors: IntCounter,
+    eth_tx_failures: IntCounter,
 }
 
 impl RegistersMetrics for Metrics {
