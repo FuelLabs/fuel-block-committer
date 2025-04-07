@@ -101,7 +101,7 @@ pub struct Eth {
     /// L1 keys for state contract calls and postings.
     pub l1_keys: L1Keys,
     /// Multiple Ethereum RPC endpoints as a JSON array.
-    /// Format: '[{"name":"main","url":"https://ethereum.example.com"}, {"name":"backup","url":"https://backup.example.com"}]'
+    /// Format: '[{"name":"main","url":"wss://ethereum.example.com"}, {"name":"backup","url":"wss://backup.example.com"}]'
     #[serde(deserialize_with = "parse_endpoints")]
     pub endpoints: Vec<RpcEndpoint>,
     /// Ethereum address of the fuel chain state contract.
