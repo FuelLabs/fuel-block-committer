@@ -369,9 +369,11 @@ cargo run --release --bin fee_algo_simulation
 
 The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. The failover mechanism is controlled by the following configuration parameters:
 
-- **Transaction Failure Threshold** (`COMMITTER__ETH__FAILOVER__TX_FAILURE_THRESHOLD`): Configurable number of transaction failures within a configurable time window will mark a provider as unhealthy. Transaction failures are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
-- **Consecutive Error Threshold** (`COMMITTER__ETH__FAILOVER__CONSECUTIVE_ERROR_THRESHOLD`): Number of consecutive network errors from an Ethereum provider will mark it as unhealthy.
-- **Transient Error Threshold** (`COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD`): Maximum number of transient errors (such as temporary network issues or rate limiting) before a provider is considered unhealthy. Unlike fatal errors that immediately trigger failover, transient errors accumulate until this threshold is reached.
+1. **Transient Error Threshold** (`COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD`): Maximum number of transient errors (such as temporary network issues or rate limiting) before a provider is considered unhealthy. Unlike fatal errors that immediately trigger failover, transient errors accumulate until this threshold is reached.
+
+2. **Transaction Failure Threshold** (`COMMITTER__ETH__FAILOVER__TX_FAILURE_THRESHOLD`): Maximum number of transaction failures within a configurable time window that will mark a provider as unhealthy. Transaction failures are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
+
+3. **Transaction Failure Time Window** (`COMMITTER__ETH__FAILOVER__TX_FAILURE_TIME_WINDOW`): Time window in which transaction failures are counted. If the number of transaction failures within this window exceeds the transaction failure threshold, the provider is marked as unhealthy.
 
 When a provider is marked as unhealthy, the system automatically switches to the next available provider in the list. However, once all providers in the list become unhealthy, the system will remain in an unhealthy state and requires a restart to recover. There is no automatic periodic checking of previously unhealthy providers.
 
