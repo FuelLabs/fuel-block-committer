@@ -248,8 +248,8 @@ pub async fn l1_adapter(
         provider_configs,
         factory,
         internal_config.eth_errors_before_unhealthy,
-        config.eth.tx_failure_threshold,
-        config.eth.tx_failure_time_window,
+        config.eth.failover.tx_failure_threshold,
+        config.eth.failover.tx_failure_time_window,
     )
     .await?;
 

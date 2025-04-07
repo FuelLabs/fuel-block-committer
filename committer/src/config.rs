@@ -106,6 +106,13 @@ pub struct Eth {
     pub rpc_configs: Vec<RpcEndpoint>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+    /// Configuration for RPC failover behavior
+    pub failover: FailoverConfig,
+}
+
+/// Configuration for managing RPC failover behavior
+#[derive(Debug, Clone, Deserialize)]
+pub struct FailoverConfig {
     /// Maximum number of transaction failures within the specified time window before marking a provider as unhealthy.
     pub tx_failure_threshold: usize,
     /// Time window to track transaction failures in.
