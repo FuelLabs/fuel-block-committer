@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use clock::SystemClock;
 use eth::{
-    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, L1Provider, Signers,
+    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, HealthConfig, L1Provider, Signers,
     WebsocketClientFactory,
 };
 use fuel_block_committer_encoding::bundle;
@@ -244,12 +244,16 @@ pub async fn l1_adapter(
 
     let provider_configs = config.eth.endpoints.clone();
 
+    let health_config = HealthConfig {
+        transient_error_threshold: internal_config.eth_errors_before_unhealthy,
+        tx_failure_threshold: config.eth.failover.tx_failure_threshold,
+        tx_failure_time_window: config.eth.failover.tx_failure_time_window,
+    };
+
     let client = FailoverClient::connect(
         provider_configs,
         factory,
-        internal_config.eth_errors_before_unhealthy,
-        config.eth.failover.tx_failure_threshold,
-        config.eth.failover.tx_failure_time_window,
+        health_config,
     )
     .await?;
 

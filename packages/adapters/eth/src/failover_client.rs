@@ -53,6 +53,17 @@ enum ErrorClassification {
     Other,
 }
 
+/// Configuration for health tracking
+#[derive(Debug, Clone, Copy)]
+pub struct HealthConfig {
+    /// Maximum number of transient errors before considering a provider unhealthy
+    pub transient_error_threshold: usize,
+    /// Number of failed transactions to trigger unhealthy state
+    pub tx_failure_threshold: usize,
+    /// Time window to consider for transaction failures
+    pub tx_failure_time_window: Duration,
+}
+
 /// A client that manages multiple L1 providers and fails over between them
 /// when connection issues are detected.
 #[derive(Clone)]
@@ -64,11 +75,8 @@ where
     initializer: I,
     // Shared mutable state: the provider configs + active provider
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
-    // Maximum number of transient errors before considering a provider unhealthy
-    transient_error_threshold: usize,
-    // Configuration for transaction failure tracking
-    tx_failure_threshold: usize,
-    tx_failure_time_window: Duration,
+    // Health configuration
+    health_config: HealthConfig,
     /// Exists so that primitive getters don't have to be async and fallable just because they have to
     /// go through the failover logic.
     permanent_cache: PermanentCache,
@@ -107,30 +115,22 @@ impl<P> Clone for ProviderHandle<P> {
 
 /// Holds health/tracking info about the provider
 struct Health {
-    max_transient_errors: usize,
+    health_config: HealthConfig,
     transient_error_count: AtomicUsize,
     permanently_failed: AtomicBool,
     // Track transactions that failed not due to network errors but due to mempool issues
     tx_failure_window: Mutex<VecDeque<Instant>>,
-    tx_failure_threshold: usize, /* Number of failed transactions to trigger unhealthy state */
-    tx_failure_time_window: Duration, // Time window to consider for failures
 }
 
 impl<P> ProviderHandle<P> {
-    fn new(
-        name: String,
-        provider: Arc<P>,
-        max_transient_errors: usize,
-        tx_failure_threshold: usize,
-        tx_failure_time_window: Duration,
-    ) -> Self {
+    fn new(name: String, provider: Arc<P>, health_config: HealthConfig) -> Self {
         let health = Health {
-            max_transient_errors,
+            health_config,
             transient_error_count: AtomicUsize::new(0),
             permanently_failed: AtomicBool::new(false),
-            tx_failure_window: Mutex::new(VecDeque::with_capacity(tx_failure_threshold + 1)),
-            tx_failure_threshold,
-            tx_failure_time_window,
+            tx_failure_window: Mutex::new(VecDeque::with_capacity(
+                health_config.tx_failure_threshold + 1,
+            )),
         };
         Self {
             name,
@@ -155,7 +155,7 @@ impl<P> ProviderHandle<P> {
         warn!(
             "Transient connection error detected on provider '{}': {reason} \
              (Count: {current_count}/{})",
-            self.name, self.health.max_transient_errors
+            self.name, self.health.health_config.transient_error_threshold
         );
     }
 
@@ -166,7 +166,8 @@ impl<P> ProviderHandle<P> {
         }
 
         // If the transient error count is below threshold, it's still considered healthy.
-        self.health.transient_error_count.load(Ordering::Relaxed) < self.health.max_transient_errors
+        self.health.transient_error_count.load(Ordering::Relaxed)
+            < self.health.health_config.transient_error_threshold
     }
 
     pub fn note_permanent_failure(&self, reason: impl Display) {
@@ -182,7 +183,7 @@ impl<P> ProviderHandle<P> {
 
         // Remove old entries outside the time window
         while let Some(timestamp) = failure_window.front() {
-            if now.duration_since(*timestamp) > self.health.tx_failure_time_window {
+            if now.duration_since(*timestamp) > self.health.health_config.tx_failure_time_window {
                 failure_window.pop_front();
             } else {
                 break;
@@ -193,12 +194,12 @@ impl<P> ProviderHandle<P> {
         failure_window.push_back(now);
 
         // If we've accumulated too many failures in the time window, mark the provider as failed
-        if failure_window.len() >= self.health.tx_failure_threshold {
+        if failure_window.len() >= self.health.health_config.tx_failure_threshold {
             let failure_msg = format!(
                 "Provider '{}' marked unhealthy due to {} transaction failures within {}: {}",
                 self.name,
                 failure_window.len(),
-                humantime::format_duration(self.health.tx_failure_time_window),
+                humantime::format_duration(self.health.health_config.tx_failure_time_window),
                 reason
             );
             self.note_permanent_failure(failure_msg);
@@ -208,8 +209,8 @@ impl<P> ProviderHandle<P> {
                 self.name,
                 reason,
                 failure_window.len(),
-                self.health.tx_failure_threshold,
-                humantime::format_duration(self.health.tx_failure_time_window)
+                self.health.health_config.tx_failure_threshold,
+                humantime::format_duration(self.health.health_config.tx_failure_time_window)
             );
         }
     }
@@ -223,21 +224,13 @@ where
     pub async fn connect(
         provider_configs: NonEmpty<Endpoint>,
         initializer: I,
-        transient_error_threshold: usize,
-        tx_failure_threshold: usize,
-        tx_failure_time_window: Duration,
+        health_config: HealthConfig,
     ) -> EthResult<Self> {
         let mut configs = VecDeque::from_iter(provider_configs);
 
         // Attempt to connect right away
-        let provider_handle = connect_to_first_available_provider(
-            &initializer,
-            &mut configs,
-            transient_error_threshold,
-            tx_failure_threshold,
-            tx_failure_time_window,
-        )
-        .await?;
+        let provider_handle =
+            connect_to_first_available_provider(&initializer, &mut configs, &health_config).await?;
 
         let commit_interval = provider_handle.provider.commit_interval();
         let contract_caller_address = provider_handle.provider.contract_caller_address();
@@ -251,9 +244,7 @@ where
         Ok(Self {
             initializer,
             shared_state: Arc::new(Mutex::new(shared_state)),
-            transient_error_threshold,
-            tx_failure_threshold,
-            tx_failure_time_window,
+            health_config,
             permanent_cache: PermanentCache {
                 commit_interval,
                 contract_caller_address,
@@ -308,9 +299,7 @@ where
         let handle = connect_to_first_available_provider(
             &self.initializer,
             &mut state.configs,
-            self.transient_error_threshold,
-            self.tx_failure_threshold,
-            self.tx_failure_time_window,
+            &self.health_config,
         )
         .await?;
 
@@ -471,9 +460,7 @@ where
 async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
     configs: &mut VecDeque<Endpoint>,
-    transient_error_threshold: usize,
-    tx_failure_threshold: usize,
-    tx_failure_time_window: Duration,
+    health_config: &HealthConfig,
 ) -> EthResult<ProviderHandle<I::Provider>> {
     let mut attempts = 0;
     while let Some(config) = configs.pop_front() {
@@ -487,13 +474,7 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
             Ok(provider) => {
                 info!("Successfully connected to provider '{}'", config.name);
 
-                let tracked = ProviderHandle::new(
-                    config.name,
-                    provider,
-                    transient_error_threshold,
-                    tx_failure_threshold,
-                    tx_failure_time_window,
-                );
+                let tracked = ProviderHandle::new(config.name, provider, *health_config);
                 return Ok(tracked);
             }
             Err(err) => {
@@ -602,15 +583,18 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new(vec![provider]);
+        let health_config = HealthConfig {
+            transient_error_threshold: 2,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
             initializer,
-            2, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -645,6 +629,11 @@ mod tests {
             .return_once(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
 
         let initializer = TestProviderInitializer::new([first_provider, second_provider]);
+        let health_config = HealthConfig {
+            transient_error_threshold: 1,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
 
         let client = FailoverClient::connect(
             nonempty![
@@ -658,9 +647,7 @@ mod tests {
                 },
             ],
             initializer,
-            1, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -691,15 +678,18 @@ mod tests {
             .returning(|| Box::pin(async { Ok(10u64) }));
 
         let initializer = TestProviderInitializer::new([provider]);
+        let health_config = HealthConfig {
+            transient_error_threshold: 2,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
             initializer,
-            2, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -728,15 +718,18 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new([provider]);
+        let health_config = HealthConfig {
+            transient_error_threshold: 3,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
             initializer,
-            3, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -757,15 +750,18 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new([provider]);
+        let health_config = HealthConfig {
+            transient_error_threshold: 3,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
             initializer,
-            3, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -788,6 +784,11 @@ mod tests {
         ];
 
         let initializer = TestProviderInitializer::new(providers);
+        let health_config = HealthConfig {
+            transient_error_threshold: 1,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
 
         let client = FailoverClient::connect(
             nonempty![
@@ -805,9 +806,7 @@ mod tests {
                 },
             ],
             initializer,
-            1, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -829,6 +828,11 @@ mod tests {
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(500);
+        let health_config = HealthConfig {
+            transient_error_threshold: 3,
+            tx_failure_threshold,
+            tx_failure_time_window,
+        };
 
         let client = FailoverClient::connect(
             nonempty![Endpoint {
@@ -836,9 +840,7 @@ mod tests {
                 url: "http://example.com".parse().unwrap(),
             }],
             initializer,
-            3,
-            tx_failure_threshold,
-            tx_failure_time_window,
+            health_config,
         )
         .await
         .unwrap();
@@ -859,6 +861,11 @@ mod tests {
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(100);
+        let health_config = HealthConfig {
+            transient_error_threshold: 3,
+            tx_failure_threshold,
+            tx_failure_time_window,
+        };
 
         let client = FailoverClient::connect(
             nonempty![Endpoint {
@@ -866,9 +873,7 @@ mod tests {
                 url: "http://example.com".parse().unwrap(),
             }],
             initializer,
-            3,
-            tx_failure_threshold,
-            tx_failure_time_window,
+            health_config,
         )
         .await
         .unwrap();
@@ -886,6 +891,11 @@ mod tests {
     async fn initializer_failures_are_handled_gracefully() {
         // Given: an initializer that fails for all providers
         let initializer = FailingProviderInitializer;
+        let health_config = HealthConfig {
+            transient_error_threshold: 3,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
 
         // When: we try to connect
         let result = FailoverClient::connect(
@@ -900,9 +910,7 @@ mod tests {
                 },
             ],
             initializer,
-            3,
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await;
 
@@ -930,15 +938,18 @@ mod tests {
             .returning(|_| Box::pin(async { Ok(()) }));
 
         let initializer = TestProviderInitializer::new([provider]);
+        let health_config = HealthConfig {
+            transient_error_threshold: 3,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
             initializer,
-            3,
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -966,6 +977,11 @@ mod tests {
         ];
 
         let initializer = TestProviderInitializer::new(providers);
+        let health_config = HealthConfig {
+            transient_error_threshold: 1,
+            tx_failure_threshold: 5,
+            tx_failure_time_window: Duration::from_secs(300),
+        };
 
         let client = FailoverClient::connect(
             nonempty![
@@ -983,9 +999,7 @@ mod tests {
                 },
             ],
             initializer,
-            1, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
+            health_config,
         )
         .await
         .unwrap();
@@ -1032,7 +1046,7 @@ mod tests {
             EthError::Other(msg) if msg == "no more providers available"
         ));
 
-        // And: the client should be unhealthy
+        // Then: the client should be unhealthy
         assert!(!client.healthy().await);
     }
 
