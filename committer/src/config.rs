@@ -55,12 +55,6 @@ impl Config {
             ));
         }
 
-        if self.eth.endpoints.is_empty() {
-            return Err(crate::errors::Error::Other(
-                "No Ethereum endpoints configured".to_string(),
-            ));
-        }
-
         if let Err(e) = self.validated_fee_algo_config() {
             return Err(crate::errors::Error::Other(format!(
                 "Invalid fee algo config: {e}",
