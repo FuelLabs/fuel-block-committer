@@ -546,145 +546,7 @@ mod tests {
     use services::types::nonempty;
 
     use super::*;
-    use crate::provider::MockL1Provider; // Use the existing mock
-
-    // A simple provider initializer that returns pre-configured providers
-    struct TestProviderInitializer {
-        providers: Vec<Arc<MockL1Provider>>,
-        current_index: AtomicUsize,
-    }
-
-    impl TestProviderInitializer {
-        fn new(providers: Vec<Arc<MockL1Provider>>) -> Self {
-            Self {
-                providers,
-                current_index: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    impl Clone for TestProviderInitializer {
-        fn clone(&self) -> Self {
-            Self {
-                providers: self.providers.clone(),
-                current_index: AtomicUsize::new(self.current_index.load(Ordering::Relaxed)),
-            }
-        }
-    }
-
-    impl ProviderInit for TestProviderInitializer {
-        type Provider = MockL1Provider;
-
-        async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>> {
-            let index = self.current_index.fetch_add(1, Ordering::SeqCst);
-
-            if index >= self.providers.len() {
-                return Err(EthError::Other(format!(
-                    "Failed to initialize provider: {}",
-                    config.name
-                )));
-            }
-
-            Ok(self.providers[index].clone())
-        }
-    }
-
-    // An initializer that always fails
-    #[derive(Debug)]
-    struct FailingProviderInitializer;
-
-    impl Clone for FailingProviderInitializer {
-        fn clone(&self) -> Self {
-            Self
-        }
-    }
-
-    impl ProviderInit for FailingProviderInitializer {
-        type Provider = MockL1Provider;
-
-        async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>> {
-            Err(EthError::Other(format!(
-                "Failed to connect to {}",
-                config.name
-            )))
-        }
-    }
-
-    // Convenience function to create a mock provider with defaults
-    fn create_mock_provider() -> Arc<MockL1Provider> {
-        let mut provider = MockL1Provider::new();
-
-        // Set up default behavior for frequently called methods
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider
-            .expect_blob_poster_address()
-            .return_const(Some(Address::ZERO));
-
-        Arc::new(provider)
-    }
-
-    // Helper to create provider that returns a permanent network error
-    fn create_permanent_failure_provider() -> Arc<MockL1Provider> {
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
-        provider.expect_get_block_number().returning(|| {
-            Box::pin(async {
-                Err(EthError::Network {
-                    msg: "Permanent error".into(),
-                    recoverable: false,
-                })
-            })
-        });
-        Arc::new(provider)
-    }
-
-    // Helper to create provider that returns a transient network error
-    fn create_transient_failure_provider() -> Arc<MockL1Provider> {
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
-        provider.expect_get_block_number().returning(|| {
-            Box::pin(async {
-                Err(EthError::Network {
-                    msg: "Transient error".into(),
-                    recoverable: true,
-                })
-            })
-        });
-        Arc::new(provider)
-    }
-
-    // Helper to create provider that succeeds with a specific block number
-    fn create_successful_provider(block_number: u64) -> Arc<MockL1Provider> {
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
-        provider
-            .expect_get_block_number()
-            .returning(move || Box::pin(async move { Ok(block_number) }));
-        Arc::new(provider)
-    }
+    use crate::provider::MockL1Provider;
 
     #[tokio::test]
     async fn recoverable_error_does_not_immediately_make_unhealthy() {
@@ -1145,5 +1007,143 @@ mod tests {
         // Then: the metrics should be incremented
         assert!(client.metrics.eth_network_errors.get() > network_errors_before);
         assert!(client.metrics.eth_tx_failures.get() > tx_failures_before);
+    }
+
+    // A simple provider initializer that returns pre-configured mocks
+    struct TestProviderInitializer {
+        providers: Vec<Arc<MockL1Provider>>,
+        current_index: AtomicUsize,
+    }
+
+    impl TestProviderInitializer {
+        fn new(providers: Vec<Arc<MockL1Provider>>) -> Self {
+            Self {
+                providers,
+                current_index: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl Clone for TestProviderInitializer {
+        fn clone(&self) -> Self {
+            Self {
+                providers: self.providers.clone(),
+                current_index: AtomicUsize::new(self.current_index.load(Ordering::Relaxed)),
+            }
+        }
+    }
+
+    impl ProviderInit for TestProviderInitializer {
+        type Provider = MockL1Provider;
+
+        async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>> {
+            let index = self.current_index.fetch_add(1, Ordering::SeqCst);
+
+            if index >= self.providers.len() {
+                return Err(EthError::Other(format!(
+                    "Failed to initialize provider: {}",
+                    config.name
+                )));
+            }
+
+            Ok(self.providers[index].clone())
+        }
+    }
+
+    // An initializer that always fails
+    #[derive(Debug)]
+    struct FailingProviderInitializer;
+
+    impl Clone for FailingProviderInitializer {
+        fn clone(&self) -> Self {
+            Self
+        }
+    }
+
+    impl ProviderInit for FailingProviderInitializer {
+        type Provider = MockL1Provider;
+
+        async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>> {
+            Err(EthError::Other(format!(
+                "Failed to connect to {}",
+                config.name
+            )))
+        }
+    }
+
+    // Convenience function to create a mock provider with defaults
+    fn create_mock_provider() -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+
+        // Set up default behavior for frequently called methods
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider
+            .expect_blob_poster_address()
+            .return_const(Some(Address::ZERO));
+
+        Arc::new(provider)
+    }
+
+    // Helper to create provider that returns a permanent network error
+    fn create_permanent_failure_provider() -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_get_block_number().returning(|| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Permanent error".into(),
+                    recoverable: false,
+                })
+            })
+        });
+        Arc::new(provider)
+    }
+
+    // Helper to create provider that returns a transient network error
+    fn create_transient_failure_provider() -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider.expect_get_block_number().returning(|| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Transient error".into(),
+                    recoverable: true,
+                })
+            })
+        });
+        Arc::new(provider)
+    }
+
+    // Helper to create provider that succeeds with a specific block number
+    fn create_successful_provider(block_number: u64) -> Arc<MockL1Provider> {
+        let mut provider = MockL1Provider::new();
+        provider
+            .expect_commit_interval()
+            .return_const(NonZeroU32::new(10).unwrap());
+        provider
+            .expect_contract_caller_address()
+            .return_const(Address::ZERO);
+        provider.expect_blob_poster_address().return_const(None);
+        provider
+            .expect_get_block_number()
+            .returning(move || Box::pin(async move { Ok(block_number) }));
+        Arc::new(provider)
     }
 }
