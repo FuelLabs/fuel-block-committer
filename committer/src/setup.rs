@@ -287,7 +287,7 @@ pub fn fuel_adapter(
     registry: &Registry,
 ) -> (FuelApi, HealthChecker) {
     let fuel_adapter = FuelApi::new(
-        &config.fuel.graphql_endpoint,
+        &config.fuel.endpoint,
         internal_config.fuel_errors_before_unhealthy,
         config.fuel.num_buffered_requests,
     );

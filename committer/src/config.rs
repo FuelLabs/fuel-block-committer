@@ -86,9 +86,9 @@ impl Config {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Fuel {
-    /// Fuel-core GraphQL endpoint URL.
+    /// Fuel-core endpoint URL.
     #[serde(deserialize_with = "parse_url")]
-    pub graphql_endpoint: Url,
+    pub endpoint: Url,
     /// Number of concurrent requests.
     pub num_buffered_requests: NonZeroU32,
 }

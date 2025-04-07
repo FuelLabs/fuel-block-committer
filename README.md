@@ -102,9 +102,9 @@ The Fuel Block Committer is configured primarily through environment variables.
 
 #### Fuel Configuration
 
-- **`COMMITTER__FUEL__GRAPHQL_ENDPOINT`**
+- **`COMMITTER__FUEL__ENDPOINT`**
 
-  - **Description:** URL to a Fuel Core GraphQL endpoint.
+  - **Description:** URL to a Fuel Core endpoint.
   - **Example:** `http://localhost:4000/graphql`
 
 - **`COMMITTER__FUEL__NUM_BUFFERED_REQUESTS`**

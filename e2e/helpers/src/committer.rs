@@ -68,7 +68,7 @@ impl Committer {
                 get_field!(state_contract_address),
             )
             .env(
-                "COMMITTER__FUEL__GRAPHQL_ENDPOINT",
+                "COMMITTER__FUEL__ENDPOINT",
                 get_field!(fuel_rpc).as_str(),
             )
             .env("COMMITTER__FUEL__NUM_BUFFERED_REQUESTS", "5")
