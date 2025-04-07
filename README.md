@@ -362,11 +362,13 @@ cargo run --release --bin fee_algo_simulation
 
 ## RPC Failover
 
-The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. The failover mechanism uses the following configuration parameters:
+The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. The failover mechanism is controlled by the following configuration parameters:
 
 - **Transaction Failure Threshold** (`COMMITTER__ETH__FAILOVER__TX_FAILURE_THRESHOLD`): Configurable number of transaction failures within a configurable time window will mark a provider as unhealthy. Transaction failures are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
-- **Consecutive Error Threshold**: 3 consecutive network errors from an Ethereum provider will mark it as unhealthy.
+- **Consecutive Error Threshold** (`COMMITTER__ETH__FAILOVER__CONSECUTIVE_ERROR_THRESHOLD`): Number of consecutive network errors from an Ethereum provider will mark it as unhealthy.
 
 When a provider is marked as unhealthy, the system automatically switches to the next available provider in the list. However, once all providers in the list become unhealthy, the system will remain in an unhealthy state and requires a restart to recover. There is no automatic periodic checking of previously unhealthy providers.
 
 The service will signal its unhealthy state to external monitoring systems (via health checks), which can then trigger an automatic restart of the service.
+
+To configure RPC failover, specify multiple WebSocket RPC endpoints using the `COMMITTER__ETH__RPC_CONFIGS` environment variable (using `wss://` URLs) and set the appropriate failover configuration parameters.
