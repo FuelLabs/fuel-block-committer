@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use serde_json;
+use serde_json::{self, json};
 use services::types::{Address, BundleCost};
 use url::Url;
 
@@ -11,7 +11,7 @@ pub struct Committer {
     main_key_arn: Option<String>,
     blob_key_arn: Option<String>,
     state_contract_address: Option<String>,
-    eth_rpc_configs: Vec<(String, Url)>,
+    eth_endpoint: Option<Url>,
     fuel_rpc: Option<Url>,
     db_port: Option<u16>,
     db_name: Option<String>,
@@ -49,32 +49,20 @@ impl Committer {
         let main_key = format!("Kms({})", get_field!(main_key_arn));
         let blob_key = self.blob_key_arn.map(|k| format!("Kms({k})"));
 
-        if self.eth_rpc_configs.is_empty() {
-            return Err(anyhow::anyhow!(
-                "At least one Ethereum RPC endpoint must be configured"
-            ));
-        }
-
-        let configs = self
-            .eth_rpc_configs
-            .iter()
-            .map(|(name, url)| {
-                serde_json::json!({
-                    "name": name,
-                    "url": url.as_str()
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let json_str = serde_json::to_string(&configs)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize RPC configs: {}", e))?;
+        let endpoints = {
+            let endpoint = get_field!(eth_endpoint);
+            serde_json::to_string(&vec![
+                json!({"name": "primary", "url": endpoint.to_string(),}),
+            ])
+            .expect("to be valid json")
+        };
 
         cmd.env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__L1_KEYS__MAIN", main_key)
-            .env("COMMITTER__ETH__RPC_CONFIGS", json_str)
+            .env("COMMITTER__ETH__ENDPOINTS", endpoints)
             .env(
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
                 get_field!(state_contract_address),
@@ -277,8 +265,8 @@ impl Committer {
         self
     }
 
-    pub fn with_primary_eth_rpc(mut self, url: Url) -> Self {
-        self.eth_rpc_configs.push(("primary".to_string(), url));
+    pub fn with_eth_endpoint(mut self, url: Url) -> Self {
+        self.eth_endpoint = Some(url);
         self
     }
 }

@@ -78,7 +78,7 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Format:** `Kms(<KEY_ARN>)` or `Private(<PRIVATE_KEY>)`
   - **Example:** `Kms(arn:aws:kms:us-east-1:123456789012:key/efgh-5678)`
 
-- **`COMMITTER__ETH__RPC_CONFIGS`**
+- **`COMMITTER__ETH__ENDPOINTS`**
 
   - **Description:** Multiple Ethereum WebSocket RPC endpoints specified as a JSON array.
   - **Format:** JSON array of objects with `name` and `url` fields
@@ -371,4 +371,4 @@ When a provider is marked as unhealthy, the system automatically switches to the
 
 The service will signal its unhealthy state to external monitoring systems (via health checks), which can then trigger an automatic restart of the service.
 
-To configure RPC failover, specify multiple WebSocket RPC endpoints using the `COMMITTER__ETH__RPC_CONFIGS` environment variable (using `wss://` URLs) and set the appropriate failover configuration parameters.
+To configure RPC failover, specify multiple WebSocket RPC endpoints using the `COMMITTER__ETH__ENDPOINTS` environment variable (using `wss://` URLs) and set the appropriate failover configuration parameters.

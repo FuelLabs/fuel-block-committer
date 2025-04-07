@@ -52,9 +52,9 @@ impl Config {
             ));
         }
 
-        if self.eth.rpc_configs.is_empty() {
+        if self.eth.endpoints.is_empty() {
             return Err(crate::errors::Error::Other(
-                "No Ethereum RPC endpoints configured".to_string(),
+                "No Ethereum endpoints configured".to_string(),
             ));
         }
 
@@ -102,8 +102,8 @@ pub struct Eth {
     pub l1_keys: L1Keys,
     /// Multiple Ethereum RPC endpoints as a JSON array.
     /// Format: '[{"name":"main","url":"https://ethereum.example.com"}, {"name":"backup","url":"https://backup.example.com"}]'
-    #[serde(deserialize_with = "parse_rpc_configs")]
-    pub rpc_configs: Vec<RpcEndpoint>,
+    #[serde(deserialize_with = "parse_endpoints")]
+    pub endpoints: Vec<RpcEndpoint>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
     /// Configuration for RPC failover behavior
@@ -121,22 +121,27 @@ pub struct FailoverConfig {
     pub tx_failure_time_window: Duration,
 }
 
-fn parse_rpc_configs<'de, D>(deserializer: D) -> Result<Vec<RpcEndpoint>, D::Error>
+fn parse_endpoints<'de, D>(deserializer: D) -> Result<Vec<RpcEndpoint>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value: String = Deserialize::deserialize(deserializer)?;
     if value.is_empty() {
-        return Err(serde::de::Error::custom("RPC configs cannot be empty"));
+        return Err(serde::de::Error::custom(
+            "Ethereum endpoints cannot be empty",
+        ));
     }
 
     let configs: Vec<RpcEndpoint> = serde_json::from_str(&value).map_err(|err| {
-        serde::de::Error::custom(format!("Invalid JSON format for RPC configs: {}", err))
+        serde::de::Error::custom(format!(
+            "Invalid JSON format for Ethereum endpoints: {}",
+            err
+        ))
     })?;
 
     if configs.is_empty() {
         return Err(serde::de::Error::custom(
-            "At least one RPC endpoint must be configured",
+            "At least one Ethereum endpoint must be configured",
         ));
     }
 
@@ -402,7 +407,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_parse_rpc_configs() {
+    fn test_parse_endpoints() {
         // given
         let valid_configs = json!([
             {"name": "main", "url": "https://ethereum.example.com"},
@@ -424,7 +429,7 @@ mod tests {
         let deserializer = StringDeserializer::<SerdeError>::new(valid_configs);
 
         // when
-        let result = parse_rpc_configs(deserializer);
+        let result = parse_endpoints(deserializer);
 
         // then
         let configs = result.unwrap();
@@ -432,14 +437,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_rpc_configs_invalid_json() {
+    fn test_parse_endpoints_invalid_json() {
         // given
         let invalid_json = "not a valid json";
 
         let deserializer = StringDeserializer::<SerdeError>::new(invalid_json.to_string());
 
         // when
-        let result = parse_rpc_configs(deserializer);
+        let result = parse_endpoints(deserializer);
 
         // then
         let err_msg = result
@@ -449,24 +454,24 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_rpc_configs_empty_array() {
+    fn test_parse_endpoints_empty_array() {
         // given
         let empty_array = json!([]).to_string();
 
         let deserializer = StringDeserializer::<SerdeError>::new(empty_array);
 
         // when
-        let result = parse_rpc_configs(deserializer);
+        let result = parse_endpoints(deserializer);
 
         // then
         let err_msg = result
             .expect_err("should have failed since the array is empty")
             .to_string();
-        assert!(err_msg.contains("At least one RPC endpoint"));
+        assert!(err_msg.contains("At least one Ethereum endpoint must be configured"));
     }
 
     #[test]
-    fn test_parse_rpc_configs_invalid_url() {
+    fn test_parse_endpoints_invalid_url() {
         // given
         let invalid_url = json!([
             {"name": "main", "url": "not a valid url"}
@@ -476,7 +481,7 @@ mod tests {
         let deserializer = StringDeserializer::<SerdeError>::new(invalid_url);
 
         // when
-        let result = parse_rpc_configs(deserializer);
+        let result = parse_endpoints(deserializer);
 
         // then
         let err_msg = result.expect_err("because url was not valid").to_string();
