@@ -7,7 +7,7 @@ use std::{
 
 use byte_unit::Byte;
 use clap::{Parser, command};
-use eth::{Address, L1Keys, RpcEndpoint};
+use eth::{Address, Endpoint, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use services::{
@@ -100,7 +100,7 @@ pub struct Eth {
     /// Multiple Ethereum RPC endpoints as a JSON array.
     /// Format: '[{"name":"main","url":"wss://ethereum.example.com"}, {"name":"backup","url":"wss://backup.example.com"}]'
     #[serde(deserialize_with = "parse_endpoints")]
-    pub endpoints: NonEmpty<RpcEndpoint>,
+    pub endpoints: NonEmpty<Endpoint>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
     /// Configuration for RPC failover behavior
@@ -118,7 +118,7 @@ pub struct FailoverConfig {
     pub tx_failure_time_window: Duration,
 }
 
-fn parse_endpoints<'de, D>(deserializer: D) -> Result<NonEmpty<RpcEndpoint>, D::Error>
+fn parse_endpoints<'de, D>(deserializer: D) -> Result<NonEmpty<Endpoint>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -129,11 +129,8 @@ where
         ));
     }
 
-    let configs: Vec<RpcEndpoint> = serde_json::from_str(&value).map_err(|err| {
-        serde::de::Error::custom(format!(
-            "Invalid JSON format for Ethereum endpoints: {}",
-            err
-        ))
+    let configs: Vec<Endpoint> = serde_json::from_str(&value).map_err(|err| {
+        serde::de::Error::custom(format!("Invalid JSON format for Ethereum endpoints: {err}",))
     })?;
 
     let Some(configs) = NonEmpty::from_vec(configs) else {
@@ -414,11 +411,11 @@ mod tests {
         .to_string();
 
         let expected_configs = nonempty![
-            RpcEndpoint {
+            Endpoint {
                 name: "main".to_string(),
                 url: Url::parse("https://ethereum.example.com").unwrap(),
             },
-            RpcEndpoint {
+            Endpoint {
                 name: "backup".to_string(),
                 url: Url::parse("https://backup.example.com").unwrap(),
             },

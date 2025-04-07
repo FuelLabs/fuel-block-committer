@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct RpcEndpoint {
+pub struct Endpoint {
     pub name: String,
     pub url: url::Url,
 }
@@ -39,7 +39,7 @@ pub trait ProviderInit: Send + Sync {
     type Provider: L1Provider;
 
     /// Create a new provider from the given config.
-    async fn initialize(&self, config: &RpcEndpoint) -> EthResult<Arc<Self::Provider>>;
+    async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>>;
 }
 
 /// Enum to classify error types for failover decisions
@@ -84,7 +84,7 @@ struct PermanentCache {
 }
 
 struct SharedState<P> {
-    configs: VecDeque<RpcEndpoint>,
+    configs: VecDeque<Endpoint>,
     active_provider: ProviderHandle<P>,
 }
 
@@ -223,7 +223,7 @@ where
     /// This attempts to connect to the first available provider and stores both
     /// the `configs` and the `active_provider` together in `SharedState`.
     pub async fn connect(
-        provider_configs: NonEmpty<RpcEndpoint>,
+        provider_configs: NonEmpty<Endpoint>,
         initializer: I,
         transient_error_threshold: usize,
         tx_failure_threshold: usize,
@@ -456,7 +456,7 @@ where
 /// the front of the deque if it fails.
 async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
-    configs: &mut VecDeque<RpcEndpoint>,
+    configs: &mut VecDeque<Endpoint>,
     transient_error_threshold: usize,
     tx_failure_threshold: usize,
     tx_failure_time_window: Duration,
@@ -584,7 +584,7 @@ mod tests {
     impl ProviderInit for TestProviderInitializer {
         type Provider = MockL1Provider;
 
-        async fn initialize(&self, config: &RpcEndpoint) -> EthResult<Arc<Self::Provider>> {
+        async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>> {
             let index = self.current_index.fetch_add(1, Ordering::SeqCst);
 
             if index >= self.providers.len() {
@@ -611,7 +611,7 @@ mod tests {
     impl ProviderInit for FailingProviderInitializer {
         type Provider = MockL1Provider;
 
-        async fn initialize(&self, config: &RpcEndpoint) -> EthResult<Arc<Self::Provider>> {
+        async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>> {
             Err(EthError::Other(format!(
                 "Failed to connect to {}",
                 config.name
@@ -718,7 +718,7 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
@@ -782,11 +782,11 @@ mod tests {
 
         let client = FailoverClient::connect(
             nonempty![
-                RpcEndpoint {
+                Endpoint {
                     name: "test1".to_owned(),
                     url: "http://example1.com".parse().unwrap(),
                 },
-                RpcEndpoint {
+                Endpoint {
                     name: "test2".to_owned(),
                     url: "http://example2.com".parse().unwrap(),
                 },
@@ -833,7 +833,7 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
@@ -877,7 +877,7 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
@@ -913,7 +913,7 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
@@ -946,15 +946,15 @@ mod tests {
 
         let client = FailoverClient::connect(
             nonempty![
-                RpcEndpoint {
+                Endpoint {
                     name: "test1".to_owned(),
                     url: "http://example1.com".parse().unwrap(),
                 },
-                RpcEndpoint {
+                Endpoint {
                     name: "test2".to_owned(),
                     url: "http://example2.com".parse().unwrap(),
                 },
-                RpcEndpoint {
+                Endpoint {
                     name: "test3".to_owned(),
                     url: "http://example3.com".parse().unwrap(),
                 },
@@ -988,7 +988,7 @@ mod tests {
         let tx_failure_time_window = Duration::from_millis(500);
 
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
@@ -1018,7 +1018,7 @@ mod tests {
         let tx_failure_time_window = Duration::from_millis(100);
 
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
@@ -1047,11 +1047,11 @@ mod tests {
         // When: we try to connect
         let result = FailoverClient::connect(
             nonempty![
-                RpcEndpoint {
+                Endpoint {
                     name: "test1".to_owned(),
                     url: "http://example1.com".parse().unwrap(),
                 },
-                RpcEndpoint {
+                Endpoint {
                     name: "test2".to_owned(),
                     url: "http://example2.com".parse().unwrap(),
                 },
@@ -1084,7 +1084,7 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],
@@ -1131,7 +1131,7 @@ mod tests {
 
         let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
         let client = FailoverClient::connect(
-            nonempty![RpcEndpoint {
+            nonempty![Endpoint {
                 name: "test".to_owned(),
                 url: "http://example.com".parse().unwrap(),
             }],

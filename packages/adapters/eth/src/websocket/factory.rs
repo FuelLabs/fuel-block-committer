@@ -4,9 +4,7 @@ use ::metrics::{RegistersMetrics, prometheus::core::Collector};
 use alloy::primitives::Address;
 
 use super::{WebsocketClient, config::TxConfig};
-use crate::{
-    Error, Result, RpcEndpoint, failover_client::ProviderInit, websocket::metrics::Metrics,
-};
+use crate::{Endpoint, Error, Result, failover_client::ProviderInit, websocket::metrics::Metrics};
 #[derive(Clone)]
 pub struct WebsocketClientFactory {
     contract_address: Address,
@@ -33,7 +31,7 @@ impl WebsocketClientFactory {
 impl ProviderInit for WebsocketClientFactory {
     type Provider = WebsocketClient;
 
-    async fn initialize(&self, config: &RpcEndpoint) -> Result<Arc<Self::Provider>> {
+    async fn initialize(&self, config: &Endpoint) -> Result<Arc<Self::Provider>> {
         let contract_address = self.contract_address;
         let signers = self.signers.clone();
         let tx_config = self.tx_config.clone();
