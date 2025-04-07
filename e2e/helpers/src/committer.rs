@@ -67,10 +67,7 @@ impl Committer {
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
                 get_field!(state_contract_address),
             )
-            .env(
-                "COMMITTER__FUEL__ENDPOINT",
-                get_field!(fuel_rpc).as_str(),
-            )
+            .env("COMMITTER__FUEL__ENDPOINT", get_field!(fuel_rpc).as_str())
             .env("COMMITTER__FUEL__NUM_BUFFERED_REQUESTS", "5")
             .env("COMMITTER__APP__DB__PORT", db_port.to_string())
             .env("COMMITTER__APP__DB__HOST", "localhost")

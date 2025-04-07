@@ -320,24 +320,6 @@ where
         Ok(handle)
     }
 
-    pub async fn make_current_connection_permanently_failed(
-        &self,
-        reason: String,
-    ) -> EthResult<()> {
-        let provider_name = self.shared_state.lock().await.active_provider.name.clone();
-        info!(
-            "Manually marking provider '{}' as permanently failed: {}",
-            provider_name, reason
-        );
-
-        self.shared_state
-            .lock()
-            .await
-            .active_provider
-            .note_permanent_failure(reason);
-        Ok(())
-    }
-
     /// Core abstraction to execute operations with failover logic
     async fn execute_operation<F, Fut, T>(&self, operation_factory: F) -> EthResult<T>
     where
@@ -932,35 +914,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manually_marking_provider_permanently_failed() {
-        // Given: a healthy provider and client
-        let provider = create_mock_provider();
-
-        let initializer = TestProviderInitializer::new([provider]);
-        let client = FailoverClient::connect(
-            nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
-            initializer,
-            3,
-            5,
-            Duration::from_secs(300),
-        )
-        .await
-        .unwrap();
-
-        // When: we manually mark the provider as permanently failed
-        client
-            .make_current_connection_permanently_failed("Manual failure".to_string())
-            .await
-            .unwrap();
-
-        // Then: the connection should be unhealthy
-        assert!(!client.healthy().await);
-    }
-
-    #[tokio::test]
     async fn metrics_are_incremented_properly() {
         // Given: a provider that returns network errors
         let mut provider = create_mock_provider();
@@ -1043,25 +996,34 @@ mod tests {
         assert!(result1.is_err());
         assert!(matches!(
             result1.err().unwrap(),
-            EthError::Network { recoverable: false, .. }
+            EthError::Network {
+                recoverable: false,
+                ..
+            }
         ));
-        
+
         // Second call - fails with permanent error from second provider
         let result2 = client.get_block_number().await;
         assert!(result2.is_err());
         assert!(matches!(
             result2.err().unwrap(),
-            EthError::Network { recoverable: false, .. }
+            EthError::Network {
+                recoverable: false,
+                ..
+            }
         ));
-        
+
         // Third call - fails with permanent error from third provider
         let result3 = client.get_block_number().await;
         assert!(result3.is_err());
         assert!(matches!(
             result3.err().unwrap(),
-            EthError::Network { recoverable: false, .. }
+            EthError::Network {
+                recoverable: false,
+                ..
+            }
         ));
-        
+
         // Fourth call - should fail because there are no more providers available
         let result4 = client.get_block_number().await;
         assert!(result4.is_err());
@@ -1069,74 +1031,9 @@ mod tests {
             result4.err().unwrap(),
             EthError::Other(msg) if msg == "no more providers available"
         ));
-        
+
         // And: the client should be unhealthy
         assert!(!client.healthy().await);
-    }
-
-    #[tokio::test]
-    async fn provider_temporarily_unavailable_during_failover() {
-        // Given: a provider that fails permanently and a second provider that's temporarily unavailable
-        // but becomes available after the first failover attempt
-        let mut first_provider = create_permanent_failure_provider();
-        
-        // Create a second provider that initially fails but then succeeds
-        let mut second_provider = create_mock_provider();
-        second_provider
-            .expect_get_block_number()
-            .times(1)
-            .returning(|| {
-                Box::pin(async {
-                    Err(EthError::Network {
-                        msg: "Temporary unavailability".into(),
-                        recoverable: true,
-                    })
-                })
-            });
-        second_provider
-            .expect_get_block_number()
-            .times(1)
-            .returning(|| Box::pin(async { Ok(42u64) }));
-
-        let initializer = TestProviderInitializer::new([first_provider, second_provider]);
-
-        let client = FailoverClient::connect(
-            nonempty![
-                Endpoint {
-                    name: "test1".to_owned(),
-                    url: "http://example1.com".parse().unwrap(),
-                },
-                Endpoint {
-                    name: "test2".to_owned(),
-                    url: "http://example2.com".parse().unwrap(),
-                },
-            ],
-            initializer,
-            1, // transient_error_threshold
-            5,
-            Duration::from_secs(300),
-        )
-        .await
-        .unwrap();
-
-        // When: we make a call that should fail over to the second provider
-        // The first call will fail with a permanent error
-        let result1 = client.get_block_number().await;
-        assert!(result1.is_err());
-        
-        // The second call will fail with a transient error
-        let result2 = client.get_block_number().await;
-        assert!(result2.is_err());
-        
-        // The third call should succeed as the second provider becomes available
-        let result3 = client.get_block_number().await;
-        
-        // Then: the third call should succeed
-        assert!(result3.is_ok());
-        assert_eq!(result3.unwrap(), 42u64);
-        
-        // And: the client should be healthy
-        assert!(client.healthy().await);
     }
 
     // A simple provider initializer that returns pre-configured mocks
