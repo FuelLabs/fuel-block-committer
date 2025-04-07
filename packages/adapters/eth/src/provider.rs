@@ -48,9 +48,6 @@ pub trait L1Provider: Send + Sync {
     /// Submit a block hash and height
     async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
 
-    /// Note that a transaction has failed due to provider issues
-    async fn note_tx_failure(&self, reason: &str) -> Result<()>;
-
     fn commit_interval(&self) -> NonZeroU32;
 
     fn blob_poster_address(&self) -> Option<Address>;
@@ -87,8 +84,6 @@ impl<T: L1Provider + ?Sized> L1Provider for &T {
                 ) -> Result<(L1Tx, FragmentsSubmitted)>;
 
                 async fn submit(&self, hash: [u8; 32], height: u32) -> Result<BlockSubmissionTx>;
-
-                async fn note_tx_failure(&self, reason: &str) -> Result<()>;
 
                 fn commit_interval(&self) -> NonZeroU32;
 

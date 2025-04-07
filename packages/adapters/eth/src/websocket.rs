@@ -443,10 +443,6 @@ impl L1Provider for WebsocketClient {
     fn contract_caller_address(&self) -> Address {
         self.contract_caller_address
     }
-
-    async fn note_tx_failure(&self, _reason: &str) -> Result<()> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]

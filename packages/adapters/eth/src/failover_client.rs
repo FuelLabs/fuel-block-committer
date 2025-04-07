@@ -119,7 +119,7 @@ struct Health {
     transient_error_count: AtomicUsize,
     permanently_failed: AtomicBool,
     // Track transactions that failed not due to network errors but due to mempool issues
-    tx_failure_window: Mutex<VecDeque<Instant>>,
+    tx_failure_window: tokio::sync::RwLock<VecDeque<Instant>>,
 }
 
 impl<P> ProviderHandle<P> {
@@ -127,7 +127,7 @@ impl<P> ProviderHandle<P> {
         let health = Health {
             transient_error_count: AtomicUsize::new(0),
             permanently_failed: AtomicBool::new(false),
-            tx_failure_window: Mutex::new(VecDeque::new()),
+            tx_failure_window: tokio::sync::RwLock::new(VecDeque::new()),
         };
         Self {
             name,
@@ -197,32 +197,34 @@ impl<P> ProviderHandle<P> {
         tx_failure_time_window: Duration,
     ) -> bool {
         let now = Instant::now();
-        let mut failure_window = self.health.tx_failure_window.lock().await;
+        // Use a read lock since we're only reading
+        let failure_window = self.health.tx_failure_window.read().await;
 
-        // Create a new window containing only entries within the time window
-        let mut valid_entries = VecDeque::new();
-
-        // Process all entries in the current window
-        while let Some(timestamp) = failure_window.pop_front() {
-            if now.duration_since(timestamp) <= tx_failure_time_window {
-                // Keep entries that are within the time window
-                valid_entries.push_back(timestamp);
-            }
-            // Older entries are discarded
-        }
-
-        // Replace the window with only valid entries
-        *failure_window = valid_entries;
+        // Count entries within the time window
+        let valid_entries_count = failure_window
+            .iter()
+            .filter(|&timestamp| now.duration_since(*timestamp) <= tx_failure_time_window)
+            .count();
 
         // Check if we've accumulated too many failures in the time window
-        failure_window.len() >= tx_failure_threshold
+        valid_entries_count >= tx_failure_threshold
     }
 
-    pub async fn note_tx_failure(&self, reason: impl Display) {
+    pub async fn note_tx_failure(&self, reason: impl Display, time_window: Duration) {
         let now = Instant::now();
-        let mut failure_window = self.health.tx_failure_window.lock().await;
+
+        let mut failure_window = self.health.tx_failure_window.write().await;
 
         failure_window.push_back(now);
+
+        // While holding the write lock, also clean up old entries that are outside the time window
+        while let Some(timestamp) = failure_window.front() {
+            if now.duration_since(*timestamp) > time_window {
+                failure_window.pop_front();
+            } else {
+                break;
+            }
+        }
 
         warn!(
             "Transaction failure detected on provider '{}': {}. (Current failure count: {})",
@@ -327,14 +329,15 @@ where
     pub async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
         // Get the current provider without checking health since we want to mark it
         let provider = self.shared_state.lock().await.active_provider.clone();
-        let provider_name = provider.name.clone();
 
         info!(
             "Noting transaction failure on provider '{}': {}",
-            provider_name, reason
+            provider.name, reason
         );
 
-        provider.note_tx_failure(reason).await;
+        provider
+            .note_tx_failure(reason, self.failover_config.tx_failure_time_window)
+            .await;
 
         self.metrics.eth_tx_failures.inc();
 
@@ -466,10 +469,6 @@ where
 
     fn contract_caller_address(&self) -> Address {
         self.permanent_cache.contract_caller_address
-    }
-
-    async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
-        self.note_tx_failure(reason).await
     }
 }
 
@@ -922,9 +921,6 @@ mod tests {
                 })
             })
         });
-        provider
-            .expect_note_tx_failure()
-            .returning(|_| Box::pin(async { Ok(()) }));
 
         let initializer = TestProviderInitializer::new([provider]);
         let failover_config = FailoverConfig {
