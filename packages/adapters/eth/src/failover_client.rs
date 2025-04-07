@@ -541,7 +541,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     use services::types::nonempty;
 
@@ -552,14 +555,7 @@ mod tests {
     async fn recoverable_error_does_not_immediately_make_unhealthy() {
         // Given: a provider that returns a recoverable network error
         // and a failover client with a threshold of 2 (so one error doesn't cross the limit)
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
+        let mut provider = create_mock_provider();
         provider.expect_submit().times(1).returning(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
@@ -569,7 +565,7 @@ mod tests {
             })
         });
 
-        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let initializer = TestProviderInitializer::new(vec![provider]);
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
@@ -594,16 +590,7 @@ mod tests {
     async fn exceeding_recoverable_error_threshold_triggers_failover() {
         // Given: a provider that always returns a recoverable network error
         // and a failover client with a threshold of 1
-        let mut first_provider = MockL1Provider::new();
-        first_provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        first_provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        first_provider
-            .expect_blob_poster_address()
-            .return_const(None);
+        let mut first_provider = create_mock_provider();
         // First provider can handle up to 1 calls before being marked unhealthy
         first_provider.expect_submit().times(1).returning(|_, _| {
             Box::pin(async {
@@ -615,23 +602,13 @@ mod tests {
         });
 
         // Second provider that returns success
-        let mut second_provider = MockL1Provider::new();
-        second_provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        second_provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        second_provider
-            .expect_blob_poster_address()
-            .return_const(None);
+        let mut second_provider = create_mock_provider();
         // Second provider needs to handle all remaining calls
         second_provider
             .expect_submit()
             .return_once(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
 
-        let initializer =
-            TestProviderInitializer::new(vec![Arc::new(first_provider), Arc::new(second_provider)]);
+        let initializer = TestProviderInitializer::new([first_provider, second_provider]);
 
         let client = FailoverClient::connect(
             nonempty![
@@ -663,14 +640,7 @@ mod tests {
     #[tokio::test]
     async fn successful_call_resets_transient_error_count() {
         // Given: A provider that first errors then succeeds
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
+        let mut provider = create_mock_provider();
         provider.expect_submit().times(1).returning(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
@@ -684,7 +654,7 @@ mod tests {
             .times(1)
             .returning(|| Box::pin(async { Ok(10u64) }));
 
-        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let initializer = TestProviderInitializer::new([provider]);
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
@@ -711,14 +681,7 @@ mod tests {
     #[tokio::test]
     async fn permanent_error_makes_connection_unhealthy() {
         // Given: a provider that returns a permanent network error
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
+        let mut provider = create_mock_provider();
         provider.expect_submit().times(1).returning(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
@@ -728,7 +691,7 @@ mod tests {
             })
         });
 
-        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let initializer = TestProviderInitializer::new([provider]);
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
@@ -752,19 +715,12 @@ mod tests {
     #[tokio::test]
     async fn other_error_does_not_affect_health() {
         // Given: a provider that returns a non-network error
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
+        let mut provider = create_mock_provider();
         provider.expect_submit().times(1).returning(|_, _| {
             Box::pin(async { Err(EthError::Other("Some application error".into())) })
         });
 
-        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let initializer = TestProviderInitializer::new([provider]);
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
@@ -835,7 +791,7 @@ mod tests {
     async fn tx_failure_tracking_marks_provider_unhealthy() {
         // Given: a provider and a client with a low tx failure threshold and short window
         let provider = create_mock_provider();
-        let initializer = TestProviderInitializer::new(vec![provider]);
+        let initializer = TestProviderInitializer::new([provider]);
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(500);
@@ -865,7 +821,7 @@ mod tests {
     async fn tx_failures_outside_time_window_dont_affect_health() {
         // Given: a provider and a client with a low tx failure threshold and short window
         let provider = create_mock_provider();
-        let initializer = TestProviderInitializer::new(vec![provider]);
+        let initializer = TestProviderInitializer::new([provider]);
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(100);
@@ -926,16 +882,9 @@ mod tests {
     #[tokio::test]
     async fn manually_marking_provider_permanently_failed() {
         // Given: a healthy provider and client
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
+        let provider = create_mock_provider();
 
-        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let initializer = TestProviderInitializer::new([provider]);
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
@@ -962,14 +911,7 @@ mod tests {
     #[tokio::test]
     async fn metrics_are_incremented_properly() {
         // Given: a provider that returns network errors
-        let mut provider = MockL1Provider::new();
-        provider
-            .expect_commit_interval()
-            .return_const(NonZeroU32::new(10).unwrap());
-        provider
-            .expect_contract_caller_address()
-            .return_const(Address::ZERO);
-        provider.expect_blob_poster_address().return_const(None);
+        let mut provider = create_mock_provider();
         provider.expect_submit().times(1).returning(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
@@ -982,7 +924,7 @@ mod tests {
             .expect_note_tx_failure()
             .returning(|_| Box::pin(async { Ok(()) }));
 
-        let initializer = TestProviderInitializer::new(vec![Arc::new(provider)]);
+        let initializer = TestProviderInitializer::new([provider]);
         let client = FailoverClient::connect(
             nonempty![Endpoint {
                 name: "test".to_owned(),
@@ -1016,7 +958,9 @@ mod tests {
     }
 
     impl TestProviderInitializer {
-        fn new(providers: Vec<Arc<MockL1Provider>>) -> Self {
+        fn new(providers: impl IntoIterator<Item = MockL1Provider>) -> Self {
+            let providers = providers.into_iter().map(Arc::new).collect();
+
             Self {
                 providers,
                 current_index: AtomicUsize::new(0),
@@ -1072,7 +1016,7 @@ mod tests {
     }
 
     // Convenience function to create a mock provider with defaults
-    fn create_mock_provider() -> Arc<MockL1Provider> {
+    fn create_mock_provider() -> MockL1Provider {
         let mut provider = MockL1Provider::new();
 
         // Set up default behavior for frequently called methods
@@ -1086,11 +1030,11 @@ mod tests {
             .expect_blob_poster_address()
             .return_const(Some(Address::ZERO));
 
-        Arc::new(provider)
+        provider
     }
 
     // Helper to create provider that returns a permanent network error
-    fn create_permanent_failure_provider() -> Arc<MockL1Provider> {
+    fn create_permanent_failure_provider() -> MockL1Provider {
         let mut provider = MockL1Provider::new();
         provider
             .expect_commit_interval()
@@ -1107,11 +1051,11 @@ mod tests {
                 })
             })
         });
-        Arc::new(provider)
+        provider
     }
 
     // Helper to create provider that returns a transient network error
-    fn create_transient_failure_provider() -> Arc<MockL1Provider> {
+    fn create_transient_failure_provider() -> MockL1Provider {
         let mut provider = MockL1Provider::new();
         provider
             .expect_commit_interval()
@@ -1128,11 +1072,11 @@ mod tests {
                 })
             })
         });
-        Arc::new(provider)
+        provider
     }
 
     // Helper to create provider that succeeds with a specific block number
-    fn create_successful_provider(block_number: u64) -> Arc<MockL1Provider> {
+    fn create_successful_provider(block_number: u64) -> MockL1Provider {
         let mut provider = MockL1Provider::new();
         provider
             .expect_commit_interval()
@@ -1144,6 +1088,6 @@ mod tests {
         provider
             .expect_get_block_number()
             .returning(move || Box::pin(async move { Ok(block_number) }));
-        Arc::new(provider)
+        provider
     }
 }
