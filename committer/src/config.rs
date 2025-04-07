@@ -396,10 +396,11 @@ pub fn parse() -> crate::errors::Result<Config> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde::de::value::{Error as SerdeError, StringDeserializer};
     use serde_json::json;
     use services::types::nonempty;
+
+    use super::*;
 
     #[test]
     fn test_parse_endpoints() {

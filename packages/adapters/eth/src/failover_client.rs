@@ -112,7 +112,7 @@ struct Health {
     permanently_failed: AtomicBool,
     // Track transactions that failed not due to network errors but due to mempool issues
     tx_failure_window: Mutex<VecDeque<Instant>>,
-    tx_failure_threshold: usize, // Number of failed transactions to trigger unhealthy state
+    tx_failure_threshold: usize, /* Number of failed transactions to trigger unhealthy state */
     tx_failure_time_window: Duration, // Time window to consider for failures
 }
 
@@ -550,12 +550,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use services::types::nonempty;
 
     use super::*;
     use crate::provider::MockL1Provider; // Use the existing mock
-
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     // A simple provider initializer that returns pre-configured providers
     struct TestProviderInitializer {

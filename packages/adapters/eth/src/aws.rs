@@ -1,9 +1,10 @@
-use crate::{Error, Result};
 use alloy::signers::aws::AwsSigner;
 use aws_config::{Region, SdkConfig, default_provider::credentials::DefaultCredentialsChain};
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{Client, config::BehaviorVersion};
+
+use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct AwsConfig {
