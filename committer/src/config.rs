@@ -82,6 +82,26 @@ impl Config {
         };
         Ok(algo_config)
     }
+
+    pub fn eth_failover_config(&self) -> eth::FailoverConfig {
+        eth::FailoverConfig {
+            transient_error_threshold: self.eth.failover.tx_failure_threshold,
+            tx_failure_threshold: self.eth.failover.tx_failure_threshold,
+            tx_failure_time_window: self.eth.failover.tx_failure_time_window,
+        }
+    }
+
+    pub fn eth_tx_config(&self) -> eth::TxConfig {
+        eth::TxConfig {
+            tx_max_fee: u128::from(self.app.tx_fees.max),
+            send_tx_request_timeout: self.app.send_tx_request_timeout,
+            acceptable_priority_fee_percentage: eth::AcceptablePriorityFeePercentages::new(
+                self.app.tx_fees.min_reward_perc,
+                self.app.tx_fees.max_reward_perc,
+            )
+            .expect("already validated via `validate` in main"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

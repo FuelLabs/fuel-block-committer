@@ -55,7 +55,7 @@ enum ErrorClassification {
 
 /// Configuration for health tracking
 #[derive(Debug, Clone, Copy)]
-pub struct HealthConfig {
+pub struct FailoverConfig {
     /// Maximum number of transient errors before considering a provider unhealthy
     pub transient_error_threshold: usize,
     /// Number of failed transactions to trigger unhealthy state
@@ -76,7 +76,7 @@ where
     // Shared mutable state: the provider configs + active provider
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     // Health configuration
-    health_config: HealthConfig,
+    health_config: FailoverConfig,
     /// Exists so that primitive getters don't have to be async and fallable just because they have to
     /// go through the failover logic.
     permanent_cache: PermanentCache,
@@ -115,7 +115,7 @@ impl<P> Clone for ProviderHandle<P> {
 
 /// Holds health/tracking info about the provider
 struct Health {
-    health_config: HealthConfig,
+    health_config: FailoverConfig,
     transient_error_count: AtomicUsize,
     permanently_failed: AtomicBool,
     // Track transactions that failed not due to network errors but due to mempool issues
@@ -123,7 +123,7 @@ struct Health {
 }
 
 impl<P> ProviderHandle<P> {
-    fn new(name: String, provider: Arc<P>, health_config: HealthConfig) -> Self {
+    fn new(name: String, provider: Arc<P>, health_config: FailoverConfig) -> Self {
         let health = Health {
             health_config,
             transient_error_count: AtomicUsize::new(0),
@@ -224,7 +224,7 @@ where
     pub async fn connect(
         provider_configs: NonEmpty<Endpoint>,
         initializer: I,
-        health_config: HealthConfig,
+        health_config: FailoverConfig,
     ) -> EthResult<Self> {
         let mut configs = VecDeque::from_iter(provider_configs);
 
@@ -460,7 +460,7 @@ where
 async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
     configs: &mut VecDeque<Endpoint>,
-    health_config: &HealthConfig,
+    health_config: &FailoverConfig,
 ) -> EthResult<ProviderHandle<I::Provider>> {
     let mut attempts = 0;
     while let Some(config) = configs.pop_front() {
@@ -583,7 +583,7 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new(vec![provider]);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -629,7 +629,7 @@ mod tests {
             .return_once(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
 
         let initializer = TestProviderInitializer::new([first_provider, second_provider]);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -678,7 +678,7 @@ mod tests {
             .returning(|| Box::pin(async { Ok(10u64) }));
 
         let initializer = TestProviderInitializer::new([provider]);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -718,7 +718,7 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new([provider]);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -750,7 +750,7 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new([provider]);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -784,7 +784,7 @@ mod tests {
         ];
 
         let initializer = TestProviderInitializer::new(providers);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -828,7 +828,7 @@ mod tests {
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(500);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 3,
             tx_failure_threshold,
             tx_failure_time_window,
@@ -861,7 +861,7 @@ mod tests {
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(100);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 3,
             tx_failure_threshold,
             tx_failure_time_window,
@@ -891,7 +891,7 @@ mod tests {
     async fn initializer_failures_are_handled_gracefully() {
         // Given: an initializer that fails for all providers
         let initializer = FailingProviderInitializer;
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -938,7 +938,7 @@ mod tests {
             .returning(|_| Box::pin(async { Ok(()) }));
 
         let initializer = TestProviderInitializer::new([provider]);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -977,7 +977,7 @@ mod tests {
         ];
 
         let initializer = TestProviderInitializer::new(providers);
-        let health_config = HealthConfig {
+        let health_config = FailoverConfig {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),

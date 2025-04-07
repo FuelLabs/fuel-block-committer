@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use clock::SystemClock;
 use eth::{
-    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, HealthConfig, L1Provider, Signers,
-    WebsocketClientFactory,
+    AcceptablePriorityFeePercentages, BlobEncoder, FailoverClient, FailoverConfig, L1Provider,
+    Signers, WebsocketClientFactory,
 };
 use fuel_block_committer_encoding::bundle;
 use metrics::{
@@ -226,36 +226,19 @@ pub fn state_pruner(
 
 pub async fn l1_adapter(
     config: &config::Config,
-    internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
     let signers = Signers::for_keys(config.eth.l1_keys.clone()).await?;
-    let tx_config = eth::TxConfig {
-        tx_max_fee: u128::from(config.app.tx_fees.max),
-        send_tx_request_timeout: config.app.send_tx_request_timeout,
-        acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::new(
-            config.app.tx_fees.min_reward_perc,
-            config.app.tx_fees.max_reward_perc,
-        )?,
-    };
+    let tx_config = config.eth_tx_config();
     let factory =
         WebsocketClientFactory::new(config.eth.state_contract_address, signers, tx_config);
     factory.register_metrics(registry);
 
     let provider_configs = config.eth.endpoints.clone();
 
-    let health_config = HealthConfig {
-        transient_error_threshold: internal_config.eth_errors_before_unhealthy,
-        tx_failure_threshold: config.eth.failover.tx_failure_threshold,
-        tx_failure_time_window: config.eth.failover.tx_failure_time_window,
-    };
+    let failover_config = config.eth_failover_config();
 
-    let client = FailoverClient::connect(
-        provider_configs,
-        factory,
-        health_config,
-    )
-    .await?;
+    let client = FailoverClient::connect(provider_configs, factory, failover_config).await?;
 
     let health_check = client.health_checker();
 

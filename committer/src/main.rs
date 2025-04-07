@@ -40,10 +40,9 @@ async fn main() -> Result<()> {
     let (fuel_adapter, fuel_health_check) =
         setup::fuel_adapter(&config, &internal_config, &metrics_registry);
 
-    let (ethereum_rpc, eth_health_check) =
-        setup::l1_adapter(&config, &internal_config, &metrics_registry)
-            .await
-            .with_context(|| "could not setup l1 adapter")?;
+    let (ethereum_rpc, eth_health_check) = setup::l1_adapter(&config, &metrics_registry)
+        .await
+        .with_context(|| "could not setup l1 adapter")?;
 
     let wallet_balance_tracker_handle = setup::wallet_balance_tracker(
         &internal_config,
