@@ -2,7 +2,7 @@ mod aws;
 mod blob_encoder;
 mod error;
 mod estimation;
-mod failover_client;
+mod failover;
 mod fee_api_helpers;
 mod http;
 mod metrics;
@@ -16,7 +16,7 @@ pub use alloy::primitives::Address;
 pub use aws::*;
 pub use blob_encoder::BlobEncoder;
 pub use error::{Error, Result};
-pub use failover_client::{Endpoint, FailoverClient, ProviderHealthThresholds, ProviderInit};
+pub use failover::{Endpoint, FailoverClient, ProviderHealthThresholds, ProviderInit};
 pub use http::Provider as HttpClient;
 pub use provider::L1Provider;
 pub use websocket::{

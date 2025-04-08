@@ -1,19 +1,5 @@
-use std::{
-    collections::VecDeque,
-    fmt::Display,
-    num::NonZeroU32,
-    ops::RangeInclusive,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
-    time::{Duration, Instant},
-};
+use std::{collections::VecDeque, num::NonZeroU32, ops::RangeInclusive, sync::Arc};
 
-use ::metrics::{
-    RegistersMetrics,
-    prometheus::{IntCounter, IntCounterVec, Opts, core::Collector},
-};
 use alloy::{primitives::Address, rpc::types::FeeHistory};
 use metrics::{HealthCheck, HealthChecker};
 use serde::{Deserialize, Serialize};
@@ -24,12 +10,28 @@ use services::{
     },
 };
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
+use super::{
+    error_tracker::ProviderHealthThresholds, metrics::Metrics, provider_handle::ProviderHandle,
+};
 use crate::{
     error::{Error as EthError, Result as EthResult},
+    failover::error_tracker::{self, ErrorClassification},
     provider::L1Provider,
 };
+
+struct SharedState<P> {
+    remaining_endpoints: VecDeque<Endpoint>,
+    active_provider: ProviderHandle<P>,
+}
+
+#[derive(Clone)]
+struct ProviderConstants {
+    commit_interval: NonZeroU32,
+    contract_caller_address: Address,
+    blob_poster_address: Option<Address>,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Endpoint {
@@ -44,28 +46,6 @@ pub trait ProviderInit: Send + Sync {
 
     /// Create a new provider from the given config.
     async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>>;
-}
-
-/// Enum to classify error types for failover decisions
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum ErrorClassification {
-    /// Fatal error that should immediately trigger failover
-    Fatal,
-    /// Transient error that should trigger failover if threshold is exceeded
-    Transient,
-    /// Error in the request itself, not related to connection
-    Other,
-}
-
-/// Configuration for provider health thresholds and error tolerance
-#[derive(Debug, Clone)]
-pub struct ProviderHealthThresholds {
-    /// Maximum number of transient errors before considering a provider unhealthy
-    pub transient_error_threshold: usize,
-    /// Number of failed transactions to trigger unhealthy state
-    pub tx_failure_threshold: usize,
-    /// Time window to consider for transaction failures
-    pub tx_failure_time_window: Duration,
 }
 
 /// A client that manages multiple L1 providers and fails over between them
@@ -83,158 +63,6 @@ where
     /// go through the failover logic.
     provider_constants: ProviderConstants,
     metrics: Metrics,
-}
-
-#[derive(Clone)]
-struct ProviderConstants {
-    commit_interval: NonZeroU32,
-    contract_caller_address: Address,
-    blob_poster_address: Option<Address>,
-}
-
-struct SharedState<P> {
-    remaining_endpoints: VecDeque<Endpoint>,
-    active_provider: ProviderHandle<P>,
-}
-
-/// Holds an actual provider along with error tracking info (transient errors, etc.)
-struct ProviderHandle<P> {
-    name: String,
-    provider: Arc<P>,
-    error_tracker: Arc<ErrorTracker>,
-}
-
-impl<P> Clone for ProviderHandle<P> {
-    fn clone(&self) -> Self {
-        Self {
-            name: self.name.clone(),
-            provider: Arc::clone(&self.provider),
-            error_tracker: Arc::clone(&self.error_tracker),
-        }
-    }
-}
-
-/// Tracks errors and failures for a provider
-struct ErrorTracker {
-    transient_error_count: AtomicUsize,
-    permanently_failed: AtomicBool,
-    // Track transactions that failed not due to network errors but due to mempool issues
-    tx_failure_window: tokio::sync::RwLock<VecDeque<Instant>>,
-}
-
-impl<P> ProviderHandle<P> {
-    fn new(name: String, provider: Arc<P>) -> Self {
-        let error_tracker = ErrorTracker {
-            transient_error_count: AtomicUsize::new(0),
-            permanently_failed: AtomicBool::new(false),
-            tx_failure_window: tokio::sync::RwLock::new(VecDeque::new()),
-        };
-        Self {
-            name,
-            provider,
-            error_tracker: Arc::new(error_tracker),
-        }
-    }
-
-    pub fn reset_transient_error_count(&self) {
-        self.error_tracker
-            .transient_error_count
-            .store(0, Ordering::Relaxed);
-    }
-
-    pub fn note_transient_error(&self, reason: impl Display, transient_error_threshold: usize) {
-        let current_count = self
-            .error_tracker
-            .transient_error_count
-            .fetch_add(1, Ordering::Relaxed)
-            + 1;
-
-        warn!(
-            "Transient connection error detected on provider '{}': {reason} \
-             (Count: {current_count}/{})",
-            self.name, transient_error_threshold
-        );
-    }
-
-    pub fn note_permanent_failure(&self, reason: impl Display) {
-        error!("Provider '{}' permanently failed: {reason}", self.name);
-        self.error_tracker
-            .permanently_failed
-            .store(true, Ordering::Relaxed);
-    }
-
-    pub async fn is_healthy(&self, health_thresholds: &ProviderHealthThresholds) -> bool {
-        if self
-            .error_tracker
-            .permanently_failed
-            .load(Ordering::Relaxed)
-        {
-            return false;
-        }
-
-        let transient_error_count = self
-            .error_tracker
-            .transient_error_count
-            .load(Ordering::Relaxed);
-        if transient_error_count >= health_thresholds.transient_error_threshold {
-            return false;
-        }
-
-        // Check transaction failures within time window
-        let tx_failures_exceed_threshold = self
-            .check_tx_failure_threshold(
-                health_thresholds.tx_failure_threshold,
-                health_thresholds.tx_failure_time_window,
-            )
-            .await;
-
-        if tx_failures_exceed_threshold {
-            return false;
-        }
-
-        true
-    }
-
-    async fn check_tx_failure_threshold(
-        &self,
-        tx_failure_threshold: usize,
-        tx_failure_time_window: Duration,
-    ) -> bool {
-        let now = Instant::now();
-        let failure_window = self.error_tracker.tx_failure_window.read().await;
-
-        // Count entries within the time window
-        let valid_entries_count = failure_window
-            .iter()
-            .filter(|&timestamp| now.duration_since(*timestamp) <= tx_failure_time_window)
-            .count();
-
-        valid_entries_count >= tx_failure_threshold
-    }
-
-    pub async fn note_tx_failure(&self, reason: impl Display, time_window: Duration) {
-        let now = Instant::now();
-
-        let mut failure_window = self.error_tracker.tx_failure_window.write().await;
-
-        failure_window.push_back(now);
-
-        // While holding the write lock, also clean up old entries that are outside the time window
-        while let Some(timestamp) = failure_window.front() {
-            if now.duration_since(*timestamp) > time_window {
-                failure_window.pop_front();
-            } else {
-                break;
-            }
-        }
-
-        warn!(
-            "Transaction failure detected on provider '{}': {}. (Current failure count: {})",
-            self.name,
-            reason,
-            failure_window.len()
-        );
-    }
 }
 
 impl<I> FailoverClient<I>
@@ -279,24 +107,6 @@ where
         Self: Clone + 'static,
     {
         Box::new(self.clone())
-    }
-
-    /// Classifies the error for failover logic
-    fn classify_error(err: &EthError) -> ErrorClassification {
-        match err {
-            // Fatal errors that should immediately trigger failover
-            EthError::Network {
-                recoverable: false, ..
-            } => ErrorClassification::Fatal,
-
-            // Transient errors that should only trigger failover after threshold is exceeded
-            EthError::Network {
-                recoverable: true, ..
-            } => ErrorClassification::Transient,
-
-            // Request-specific errors that shouldn't trigger failover
-            EthError::TxExecution(_) | EthError::Other(_) => ErrorClassification::Other,
-        }
     }
 
     /// Retrieves the currently active provider if it's healthy, or tries to fail over to the next.
@@ -344,7 +154,10 @@ where
             .note_tx_failure(reason, self.health_thresholds.tx_failure_time_window)
             .await;
 
-        self.metrics.eth_tx_failures.with_label_values(&[&provider.name]).inc();
+        self.metrics
+            .eth_tx_failures
+            .with_label_values(&[&provider.name])
+            .inc();
 
         Ok(())
     }
@@ -370,16 +183,19 @@ where
                 Ok(value)
             }
             Err(error) => {
-                let error_clasification = Self::classify_error(&error);
+                let error_classification = error_tracker::classify_error(&error);
 
                 error!(
-                    "Operation failed on provider '{provider_name}' classified as {error_clasification:?} error: {error}",
+                    "Operation failed on provider '{provider_name}' classified as {error_classification:?} error: {error}",
                 );
 
-                match error_clasification {
+                match error_classification {
                     ErrorClassification::Fatal => {
                         provider.note_permanent_failure(&error);
-                        self.metrics.eth_network_errors.with_label_values(&[&provider_name]).inc();
+                        self.metrics
+                            .eth_network_errors
+                            .with_label_values(&[&provider_name])
+                            .inc();
                         Err(error)
                     }
                     ErrorClassification::Transient => {
@@ -388,7 +204,10 @@ where
                             self.health_thresholds.transient_error_threshold,
                         );
 
-                        self.metrics.eth_network_errors.with_label_values(&[&provider_name]).inc();
+                        self.metrics
+                            .eth_network_errors
+                            .with_label_values(&[&provider_name])
+                            .inc();
                         Err(error)
                     }
                     ErrorClassification::Other => Err(error),
@@ -493,7 +312,7 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
                 return Ok(ProviderHandle::new(config.name, provider));
             }
             Err(err) => {
-                warn!(
+                error!(
                     "Could not fail over to remote provider '{}': {err}",
                     config.name
                 );
@@ -508,48 +327,6 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
     Err(EthError::Other("no more providers available".into()))
 }
 
-#[derive(Clone)]
-pub struct Metrics {
-    eth_network_errors: IntCounterVec,
-    eth_tx_failures: IntCounterVec,
-}
-
-impl RegistersMetrics for Metrics {
-    fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![
-            Box::new(self.eth_network_errors.clone()),
-            Box::new(self.eth_tx_failures.clone()),
-        ]
-    }
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        let eth_network_errors = IntCounterVec::new(
-            Opts::new(
-                "eth_network_errors",
-                "Number of network errors encountered while running Ethereum RPCs.",
-            ),
-            &["provider"],
-        )
-        .expect("eth_network_errors metric to be correctly configured");
-
-        let eth_tx_failures = IntCounterVec::new(
-            Opts::new(
-                "eth_tx_failures",
-                "Number of transaction failures potentially caused by provider issues.",
-            ),
-            &["provider"],
-        )
-        .expect("eth_tx_failures metric to be correctly configured");
-
-        Self {
-            eth_network_errors,
-            eth_tx_failures,
-        }
-    }
-}
-
 #[async_trait::async_trait]
 impl<I> HealthCheck for FailoverClient<I>
 where
@@ -560,23 +337,23 @@ where
     }
 }
 
-impl<I> RegistersMetrics for FailoverClient<I>
+impl<I> ::metrics::RegistersMetrics for FailoverClient<I>
 where
     I: ProviderInit,
 {
-    fn metrics(&self) -> Vec<Box<dyn Collector>> {
-        vec![
-            Box::new(self.metrics.eth_network_errors.clone()),
-            Box::new(self.metrics.eth_tx_failures.clone()),
-        ]
+    fn metrics(&self) -> Vec<Box<dyn ::metrics::prometheus::core::Collector>> {
+        self.metrics.metrics()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
     };
 
     use services::types::nonempty;
@@ -954,16 +731,38 @@ mod tests {
             .unwrap();
 
         // Get metrics before
-        let network_errors_before = client.metrics.eth_network_errors.with_label_values(&[&provider_name]).get();
-        let tx_failures_before = client.metrics.eth_tx_failures.with_label_values(&[&provider_name]).get();
+        let network_errors_before = client
+            .metrics
+            .eth_network_errors
+            .with_label_values(std::slice::from_ref(&provider_name))
+            .get();
+        let tx_failures_before = client
+            .metrics
+            .eth_tx_failures
+            .with_label_values(std::slice::from_ref(&provider_name))
+            .get();
 
         // When: we make a call that returns a network error and note a tx failure
         let _ = client.submit([0; 32], 0).await;
         client.note_tx_failure("Test failure").await.unwrap();
 
         // Then: the metrics should be incremented
-        assert!(client.metrics.eth_network_errors.with_label_values(&[&provider_name]).get() > network_errors_before);
-        assert!(client.metrics.eth_tx_failures.with_label_values(&[&provider_name]).get() > tx_failures_before);
+        assert!(
+            client
+                .metrics
+                .eth_network_errors
+                .with_label_values(std::slice::from_ref(&provider_name))
+                .get()
+                > network_errors_before
+        );
+        assert!(
+            client
+                .metrics
+                .eth_tx_failures
+                .with_label_values(std::slice::from_ref(&provider_name))
+                .get()
+                > tx_failures_before
+        );
     }
 
     #[tokio::test]

@@ -8,7 +8,7 @@ use services::{
     },
 };
 
-use crate::{FailoverClient, L1Provider, failover_client::ProviderInit, fee_api_helpers};
+use crate::{FailoverClient, L1Provider, ProviderInit, fee_api_helpers};
 
 impl<I> services::block_committer::port::l1::Contract for FailoverClient<I>
 where
