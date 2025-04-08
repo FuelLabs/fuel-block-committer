@@ -231,10 +231,10 @@ pub async fn l1_adapter(
         WebsocketClientFactory::new(config.eth.state_contract_address, signers, tx_config);
     factory.register_metrics(registry);
 
-    let failover_config = config.eth_failover_config();
+    let health_thresholds = config.eth_provider_health_thresholds();
     let endpoints = config.eth.endpoints.clone();
 
-    let client = FailoverClient::connect(factory, failover_config, endpoints).await?;
+    let client = FailoverClient::connect(factory, health_thresholds, endpoints).await?;
 
     let health_check = client.health_checker();
 

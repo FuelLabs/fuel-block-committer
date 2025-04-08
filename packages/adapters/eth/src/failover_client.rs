@@ -53,9 +53,9 @@ enum ErrorClassification {
     Other,
 }
 
-/// Configuration for health tracking
+/// Configuration for provider health thresholds and error tolerance
 #[derive(Debug, Clone)]
-pub struct FailoverConfig {
+pub struct ProviderHealthThresholds {
     /// Maximum number of transient errors before considering a provider unhealthy
     pub transient_error_threshold: usize,
     /// Number of failed transactions to trigger unhealthy state
@@ -74,15 +74,15 @@ where
     // Some object that can create providers of type I::Provider
     initializer: I,
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
-    failover_config: FailoverConfig,
+    health_thresholds: ProviderHealthThresholds,
     /// Exists so that primitive getters don't have to be async and fallable just because they have to
     /// go through the failover logic.
-    permanent_cache: PermanentCache,
+    provider_constants: ProviderConstants,
     metrics: Metrics,
 }
 
 #[derive(Clone)]
-struct PermanentCache {
+struct ProviderConstants {
     commit_interval: NonZeroU32,
     contract_caller_address: Address,
     blob_poster_address: Option<Address>,
@@ -93,11 +93,11 @@ struct SharedState<P> {
     active_provider: ProviderHandle<P>,
 }
 
-/// Holds an actual provider along with health info (transient errors, etc.)
+/// Holds an actual provider along with error tracking info (transient errors, etc.)
 struct ProviderHandle<P> {
     name: String,
     provider: Arc<P>,
-    health: Arc<Health>,
+    error_tracker: Arc<ErrorTracker>,
 }
 
 impl<P> Clone for ProviderHandle<P> {
@@ -105,13 +105,13 @@ impl<P> Clone for ProviderHandle<P> {
         Self {
             name: self.name.clone(),
             provider: Arc::clone(&self.provider),
-            health: Arc::clone(&self.health),
+            error_tracker: Arc::clone(&self.error_tracker),
         }
     }
 }
 
-/// Holds health/tracking info about the provider
-struct Health {
+/// Tracks errors and failures for a provider
+struct ErrorTracker {
     transient_error_count: AtomicUsize,
     permanently_failed: AtomicBool,
     // Track transactions that failed not due to network errors but due to mempool issues
@@ -120,7 +120,7 @@ struct Health {
 
 impl<P> ProviderHandle<P> {
     fn new(name: String, provider: Arc<P>) -> Self {
-        let health = Health {
+        let error_tracker = ErrorTracker {
             transient_error_count: AtomicUsize::new(0),
             permanently_failed: AtomicBool::new(false),
             tx_failure_window: tokio::sync::RwLock::new(VecDeque::new()),
@@ -128,19 +128,19 @@ impl<P> ProviderHandle<P> {
         Self {
             name,
             provider,
-            health: Arc::new(health),
+            error_tracker: Arc::new(error_tracker),
         }
     }
 
     pub fn reset_transient_error_count(&self) {
-        self.health
+        self.error_tracker
             .transient_error_count
             .store(0, Ordering::Relaxed);
     }
 
     pub fn note_transient_error(&self, reason: impl Display, transient_error_threshold: usize) {
         let current_count = self
-            .health
+            .error_tracker
             .transient_error_count
             .fetch_add(1, Ordering::Relaxed)
             + 1;
@@ -154,28 +154,28 @@ impl<P> ProviderHandle<P> {
 
     pub fn note_permanent_failure(&self, reason: impl Display) {
         error!("Provider '{}' permanently failed: {reason}", self.name);
-        self.health
+        self.error_tracker
             .permanently_failed
             .store(true, Ordering::Relaxed);
     }
 
-    pub async fn is_healthy(&self, failover_config: &FailoverConfig) -> bool {
+    pub async fn is_healthy(&self, health_thresholds: &ProviderHealthThresholds) -> bool {
         // Check if permanently failed
-        if self.health.permanently_failed.load(Ordering::Relaxed) {
+        if self.error_tracker.permanently_failed.load(Ordering::Relaxed) {
             return false;
         }
 
         // Check transient error count
-        let transient_error_count = self.health.transient_error_count.load(Ordering::Relaxed);
-        if transient_error_count >= failover_config.transient_error_threshold {
+        let transient_error_count = self.error_tracker.transient_error_count.load(Ordering::Relaxed);
+        if transient_error_count >= health_thresholds.transient_error_threshold {
             return false;
         }
 
         // Check transaction failures within time window
         let tx_failures_exceed_threshold = self
             .check_tx_failure_threshold(
-                failover_config.tx_failure_threshold,
-                failover_config.tx_failure_time_window,
+                health_thresholds.tx_failure_threshold,
+                health_thresholds.tx_failure_time_window,
             )
             .await;
 
@@ -194,7 +194,7 @@ impl<P> ProviderHandle<P> {
     ) -> bool {
         let now = Instant::now();
         // Use a read lock since we're only reading
-        let failure_window = self.health.tx_failure_window.read().await;
+        let failure_window = self.error_tracker.tx_failure_window.read().await;
 
         // Count entries within the time window
         let valid_entries_count = failure_window
@@ -209,7 +209,7 @@ impl<P> ProviderHandle<P> {
     pub async fn note_tx_failure(&self, reason: impl Display, time_window: Duration) {
         let now = Instant::now();
 
-        let mut failure_window = self.health.tx_failure_window.write().await;
+        let mut failure_window = self.error_tracker.tx_failure_window.write().await;
 
         failure_window.push_back(now);
 
@@ -236,7 +236,7 @@ where
     I: ProviderInit,
 {
     /// This attempts to connect to the first available provider
-    pub async fn connect(initializer: I, failover_config: FailoverConfig, endpoints: NonEmpty<Endpoint>) -> EthResult<Self> {
+    pub async fn connect(initializer: I, health_thresholds: ProviderHealthThresholds, endpoints: NonEmpty<Endpoint>) -> EthResult<Self> {
         let mut remaining_endpoints = VecDeque::from_iter(endpoints);
 
         // Attempt to connect right away
@@ -255,8 +255,8 @@ where
         Ok(Self {
             initializer,
             shared_state: Arc::new(Mutex::new(shared_state)),
-            failover_config,
-            permanent_cache: PermanentCache {
+            health_thresholds,
+            provider_constants: ProviderConstants {
                 commit_interval,
                 contract_caller_address,
                 blob_poster_address,
@@ -296,7 +296,7 @@ where
 
         if state
             .active_provider
-            .is_healthy(&self.failover_config)
+            .is_healthy(&self.health_thresholds)
             .await
         {
             debug!(
@@ -332,7 +332,7 @@ where
         );
 
         provider
-            .note_tx_failure(reason, self.failover_config.tx_failure_time_window)
+            .note_tx_failure(reason, self.health_thresholds.tx_failure_time_window)
             .await;
 
         self.metrics.eth_tx_failures.inc();
@@ -381,7 +381,7 @@ where
                     ErrorClassification::Transient => {
                         provider.note_transient_error(
                             &error,
-                            self.failover_config.transient_error_threshold,
+                            self.health_thresholds.transient_error_threshold,
                         );
 
                         self.metrics.eth_network_errors.inc();
@@ -456,15 +456,15 @@ where
     }
 
     fn commit_interval(&self) -> NonZeroU32 {
-        self.permanent_cache.commit_interval
+        self.provider_constants.commit_interval
     }
 
     fn blob_poster_address(&self) -> Option<Address> {
-        self.permanent_cache.blob_poster_address
+        self.provider_constants.blob_poster_address
     }
 
     fn contract_caller_address(&self) -> Address {
-        self.permanent_cache.contract_caller_address
+        self.provider_constants.contract_caller_address
     }
 }
 
@@ -594,7 +594,7 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new(vec![provider]);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -605,7 +605,7 @@ mod tests {
             url: "http://example.com".parse().unwrap(),
         }];
         
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -639,7 +639,7 @@ mod tests {
             .return_once(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
 
         let initializer = TestProviderInitializer::new([first_provider, second_provider]);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -656,7 +656,7 @@ mod tests {
             },
         ];
 
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -686,7 +686,7 @@ mod tests {
             .returning(|| Box::pin(async { Ok(10u64) }));
 
         let initializer = TestProviderInitializer::new([provider]);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -697,7 +697,7 @@ mod tests {
             url: "http://example.com".parse().unwrap(),
         }];
         
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -725,7 +725,7 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new([provider]);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -736,7 +736,7 @@ mod tests {
             url: "http://example.com".parse().unwrap(),
         }];
         
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -756,7 +756,7 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new([provider]);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -767,7 +767,7 @@ mod tests {
             url: "http://example.com".parse().unwrap(),
         }];
         
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -789,7 +789,7 @@ mod tests {
         ];
 
         let initializer = TestProviderInitializer::new(providers);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -810,7 +810,7 @@ mod tests {
             },
         ];
 
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -831,7 +831,7 @@ mod tests {
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(500);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold,
             tx_failure_time_window,
@@ -842,7 +842,7 @@ mod tests {
             url: "http://example.com".parse().unwrap(),
         }];
         
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -863,7 +863,7 @@ mod tests {
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(100);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold,
             tx_failure_time_window,
@@ -874,7 +874,7 @@ mod tests {
             url: "http://example.com".parse().unwrap(),
         }];
         
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -891,7 +891,7 @@ mod tests {
     async fn initializer_failures_are_handled_gracefully() {
         // Given: an initializer that fails for all providers
         let initializer = FailingProviderInitializer;
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -909,7 +909,7 @@ mod tests {
         ];
 
         // When: we try to connect
-        let result = FailoverClient::connect(initializer, failover_config, endpoints).await;
+        let result = FailoverClient::connect(initializer, health_thresholds, endpoints).await;
 
         // Then: the connection should fail with a meaningful error
         assert!(result.is_err());
@@ -932,7 +932,7 @@ mod tests {
         });
 
         let initializer = TestProviderInitializer::new([provider]);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -943,7 +943,7 @@ mod tests {
             url: "http://example.com".parse().unwrap(),
         }];
         
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 
@@ -970,7 +970,7 @@ mod tests {
         ];
 
         let initializer = TestProviderInitializer::new(providers);
-        let failover_config = FailoverConfig {
+        let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
@@ -991,7 +991,7 @@ mod tests {
             },
         ];
 
-        let client = FailoverClient::connect(initializer, failover_config, endpoints)
+        let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
 

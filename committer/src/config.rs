@@ -83,8 +83,8 @@ impl Config {
         Ok(algo_config)
     }
 
-    pub fn eth_failover_config(&self) -> eth::FailoverConfig {
-        eth::FailoverConfig {
+    pub fn eth_provider_health_thresholds(&self) -> eth::ProviderHealthThresholds {
+        eth::ProviderHealthThresholds {
             transient_error_threshold: self.eth.failover.transient_error_threshold,
             tx_failure_threshold: self.eth.failover.tx_failure_threshold,
             tx_failure_time_window: self.eth.failover.tx_failure_time_window,
