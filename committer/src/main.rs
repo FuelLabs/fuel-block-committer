@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
             cancel_token.clone(),
             &config,
             &metrics_registry,
-        )?;
+        );
 
         let state_committer_handle = setup::state_committer(
             fuel_adapter.clone(),

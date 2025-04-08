@@ -41,7 +41,7 @@ pub struct Endpoint {
 
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
-pub trait ProviderInit: Send + Sync {
+pub trait ProviderInit: Sync {
     type Provider: L1Provider;
 
     /// Create a new provider from the given config.
@@ -97,7 +97,7 @@ where
                 contract_caller_address,
                 blob_poster_address,
             },
-            metrics: Default::default(),
+            metrics: Metrics::default(),
         })
     }
 

@@ -327,17 +327,15 @@ pub fn fee_metrics_tracker(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-) -> Result<tokio::task::JoinHandle<()>> {
+) -> tokio::task::JoinHandle<()> {
     let fee_metrics_tracker = FeeMetricsTracker::new(api);
 
     fee_metrics_tracker.register_metrics(registry);
 
-    let handle = schedule_polling(
+    schedule_polling(
         config.app.l1_fee_check_interval,
         fee_metrics_tracker,
         "Fee Tracker",
         cancel_token,
-    );
-
-    Ok(handle)
+    )
 }

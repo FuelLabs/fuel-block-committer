@@ -23,7 +23,7 @@ impl WebsocketClientFactory {
             contract_address,
             signers,
             tx_config,
-            metrics: Default::default(),
+            metrics: Metrics::default(),
         }
     }
 }
@@ -40,7 +40,7 @@ impl ProviderInit for WebsocketClientFactory {
         let mut client =
             WebsocketClient::connect(url, contract_address, signers.clone(), tx_config)
                 .await
-                .map_err(|e| Error::Other(format!("Failed to connect: {}", e)))?;
+                .map_err(|e| Error::Other(format!("Failed to connect: {e}")))?;
 
         client.set_metrics(self.metrics.clone());
 

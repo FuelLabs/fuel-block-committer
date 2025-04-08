@@ -11,7 +11,7 @@ use services::state_committer::port::l1::Priority;
 
 use crate::{AwsClient, AwsConfig, Error, Result};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum L1Key {
     Kms(String),
     Private(String),

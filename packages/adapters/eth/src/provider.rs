@@ -14,7 +14,7 @@ use crate::error::Result;
 #[allow(async_fn_in_trait)]
 #[trait_variant::make(Send)]
 #[cfg_attr(test, mockall::automock)]
-pub trait L1Provider: Send + Sync {
+pub trait L1Provider: Sync {
     /// Get the current block number from the L1 network
     async fn get_block_number(&self) -> Result<u64>;
 
@@ -55,7 +55,7 @@ pub trait L1Provider: Send + Sync {
     fn contract_caller_address(&self) -> Address;
 }
 
-/// Blanket implementation for references to types that implement L1Provider
+/// Blanket implementation for references to types that implement [`L1Provider`]
 impl<T: L1Provider + ?Sized> L1Provider for &T {
     delegate! {
         to (*self) {
