@@ -265,7 +265,6 @@ async fn reorg_threw_out_tx_from_block_into_pool_and_got_squeezed_out() -> Resul
     let mut mock = services::state_listener::port::l1::MockApi::new();
 
     mock.expect_get_transaction_response()
-        .once()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(Some(TransactionResponse::new(1, true, 100, 10))) }));
     mock.expect_get_block_number()
@@ -284,15 +283,12 @@ async fn reorg_threw_out_tx_from_block_into_pool_and_got_squeezed_out() -> Resul
     l1.expect_get_block_number()
         .returning(|| Box::pin(async { Ok(5.into()) }));
     l1.expect_get_transaction_response()
-        .once()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(None) }));
     l1.expect_is_squeezed_out()
-        .once()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(true) }));
     l1.expect_note_tx_failure()
-        .once()
         .return_once(|_| Box::pin(async { Ok(()) }));
     let mut listener = StateListener::new(
         l1,
@@ -399,16 +395,13 @@ async fn a_pending_tx_got_squeezed_out() -> Result<()> {
 
     l1.expect_get_transaction_response()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(None) }));
 
     l1.expect_is_squeezed_out()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(true) }));
 
     l1.expect_note_tx_failure()
-        .once()
         .return_once(|_| Box::pin(async { Ok(()) }));
 
     let mut sut = StateListener::new(
@@ -500,7 +493,6 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
         .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
-        .once()
         .return_once(move |_| {
             Box::pin(async move {
                 Ok(Some(TransactionResponse::new(
@@ -607,7 +599,6 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
         .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
-        .once()
         .return_once(move |_| {
             Box::pin(async move {
                 Ok(Some(TransactionResponse::new(
@@ -654,19 +645,16 @@ async fn tx_not_found_in_mempool_calls_note_tx_failure() -> Result<()> {
     // Transaction not found in mempool
     l1.expect_get_transaction_response()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(None) }));
 
     // Squeezed out from mempool
     l1.expect_is_squeezed_out()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(true) }));
 
     // Expect note_tx_failure to be called with specific error message
     l1.expect_note_tx_failure()
         .withf(|reason| reason.contains("not found in mempool"))
-        .once()
         .return_once(|_| Box::pin(async { Ok(()) }));
 
     let mut sut = StateListener::new(
@@ -708,7 +696,6 @@ async fn note_tx_failure_not_called_for_execution_failures() -> Result<()> {
     // Transaction is included but failed
     l1.expect_get_transaction_response()
         .with(eq(tx_hash))
-        .once()
         .return_once(move |_| {
             Box::pin(async move {
                 // Included but failed (success = false)
@@ -757,19 +744,16 @@ async fn handles_error_when_note_tx_failure_fails() -> Result<()> {
     // Transaction not found in mempool
     l1.expect_get_transaction_response()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(None) }));
 
     // Squeezed out from mempool
     l1.expect_is_squeezed_out()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(true) }));
 
     // note_tx_failure fails with an error
     l1.expect_note_tx_failure()
         .withf(|reason| reason.contains("not found in mempool"))
-        .once()
         .return_once(|_| {
             Box::pin(async { Err(services::Error::Other("Failed to note tx failure".into())) })
         });
