@@ -323,7 +323,7 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
         "Failed to connect to any provider after {} attempts",
         attempts
     );
-    Err(EthError::Other("no more providers available".into()))
+    Err(EthError::Other("all providers unhealthy".into()))
 }
 
 #[async_trait::async_trait]
@@ -452,7 +452,7 @@ mod tests {
     async fn successful_call_resets_transient_error_count() {
         // Given: A provider that first errors, then succeeds, then errors again
         let mut provider = create_mock_provider();
-        
+
         // First call - error
         provider.expect_submit().return_once(|_, _| {
             Box::pin(async {
@@ -462,12 +462,12 @@ mod tests {
                 })
             })
         });
-        
+
         // Second call - success (should reset error count)
         provider
             .expect_get_block_number()
             .return_once(|| Box::pin(async { Ok(10u64) }));
-            
+
         // Third call - error again
         // If error count wasn't reset, this would be the second error and would trigger failover
         provider.expect_balance().return_once(|_| {
@@ -498,11 +498,11 @@ mod tests {
         // When: a submit call fails, then get_block_number succeeds, then balance fails
         let submit_result = client.submit([0; 32], 0).await; // First error
         assert!(submit_result.is_err());
-        
+
         let block_result = client.get_block_number().await; // Success - should reset error count
         assert!(block_result.is_ok());
         assert_eq!(block_result.unwrap(), 10u64);
-        
+
         let balance_result = client.balance(Address::ZERO).await; // Second error
         assert!(balance_result.is_err());
 
@@ -543,7 +543,7 @@ mod tests {
         // When: a single submit call is made that returns a permanent error
         let _ = client.submit([0; 32], 0).await;
 
-        // Then: the connection should be immediately unhealthy
+        // Then: the client should be immediately unhealthy
         assert!(!client.healthy().await);
     }
 
@@ -557,7 +557,7 @@ mod tests {
 
         let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
-            transient_error_threshold: 3,
+            transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
         };
@@ -574,7 +574,8 @@ mod tests {
         // When: a submit call fails with a non-network error
         let result = client.submit([0; 32], 0).await;
 
-        // Then: the connection health remains good despite the error
+        // Then: the connection health remains good despite the error, since the threshold is 1.
+        // If we had counted this error, we would have become unhealthy.
         assert!(result.is_err());
         assert!(client.healthy().await);
     }
@@ -629,12 +630,10 @@ mod tests {
         let provider = create_mock_provider();
         let initializer = MockProviderFactory::new([provider]);
 
-        let tx_failure_threshold = 2;
-        let tx_failure_time_window = Duration::from_millis(500);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
-            tx_failure_threshold,
-            tx_failure_time_window,
+            tx_failure_threshold: 2,
+            tx_failure_time_window: Duration::from_millis(500),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -650,8 +649,8 @@ mod tests {
         client.note_tx_failure("First tx failure").await.unwrap();
         client.note_tx_failure("Second tx failure").await.unwrap();
 
-        // This will cause client.healthy() to return false since it uses get_healthy_provider
-        // which will attempt to fail over because the current provider is unhealthy
+        // This will cause client.healthy() to return false since we had two failed tx on our one
+        // and only provider
         assert!(!client.healthy().await);
     }
 
@@ -661,12 +660,10 @@ mod tests {
         let provider = create_mock_provider();
         let initializer = MockProviderFactory::new([provider]);
 
-        let tx_failure_threshold = 2;
-        let tx_failure_time_window = Duration::from_millis(100);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
-            tx_failure_threshold,
-            tx_failure_time_window,
+            tx_failure_threshold: 2,
+            tx_failure_time_window: Duration::from_millis(100),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -714,7 +711,7 @@ mod tests {
         // Then: the connection should fail with a meaningful error
         assert!(result.is_err());
         assert!(
-            matches!(result.err().unwrap(), EthError::Other(msg) if msg == "no more providers available")
+            matches!(result.err().unwrap(), EthError::Other(msg) if msg == "all providers unhealthy")
         );
     }
 
@@ -787,9 +784,9 @@ mod tests {
     async fn all_providers_permanently_failed() {
         // Given: multiple providers that all return permanent network errors
         let providers = vec![
-            create_permanent_failure_provider(), // First provider - permanent failure
-            create_permanent_failure_provider(), // Second provider - permanent failure
-            create_permanent_failure_provider(), // Third provider - permanent failure
+            create_permanent_failure_provider(),
+            create_permanent_failure_provider(),
+            create_permanent_failure_provider(),
         ];
 
         let initializer = MockProviderFactory::new(providers);
@@ -857,7 +854,7 @@ mod tests {
         assert!(result4.is_err());
         assert!(matches!(
             result4.err().unwrap(),
-            EthError::Other(msg) if msg == "no more providers available"
+            EthError::Other(msg) if msg == "all providers unhealthy"
         ));
 
         // Then: the client should be unhealthy
