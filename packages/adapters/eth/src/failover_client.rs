@@ -10,6 +10,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ::metrics::{
+    RegistersMetrics,
+    prometheus::{IntCounter, Opts, core::Collector},
+};
 use alloy::{primitives::Address, rpc::types::FeeHistory};
 use metrics::{HealthCheck, HealthChecker};
 use serde::{Deserialize, Serialize};
@@ -160,13 +164,18 @@ impl<P> ProviderHandle<P> {
     }
 
     pub async fn is_healthy(&self, health_thresholds: &ProviderHealthThresholds) -> bool {
-        // Check if permanently failed
-        if self.error_tracker.permanently_failed.load(Ordering::Relaxed) {
+        if self
+            .error_tracker
+            .permanently_failed
+            .load(Ordering::Relaxed)
+        {
             return false;
         }
 
-        // Check transient error count
-        let transient_error_count = self.error_tracker.transient_error_count.load(Ordering::Relaxed);
+        let transient_error_count = self
+            .error_tracker
+            .transient_error_count
+            .load(Ordering::Relaxed);
         if transient_error_count >= health_thresholds.transient_error_threshold {
             return false;
         }
@@ -186,14 +195,12 @@ impl<P> ProviderHandle<P> {
         true
     }
 
-    /// Helper method to check if transaction failures exceed threshold
     async fn check_tx_failure_threshold(
         &self,
         tx_failure_threshold: usize,
         tx_failure_time_window: Duration,
     ) -> bool {
         let now = Instant::now();
-        // Use a read lock since we're only reading
         let failure_window = self.error_tracker.tx_failure_window.read().await;
 
         // Count entries within the time window
@@ -202,7 +209,6 @@ impl<P> ProviderHandle<P> {
             .filter(|&timestamp| now.duration_since(*timestamp) <= tx_failure_time_window)
             .count();
 
-        // Check if we've accumulated too many failures in the time window
         valid_entries_count >= tx_failure_threshold
     }
 
@@ -236,10 +242,13 @@ where
     I: ProviderInit,
 {
     /// This attempts to connect to the first available provider
-    pub async fn connect(initializer: I, health_thresholds: ProviderHealthThresholds, endpoints: NonEmpty<Endpoint>) -> EthResult<Self> {
+    pub async fn connect(
+        initializer: I,
+        health_thresholds: ProviderHealthThresholds,
+        endpoints: NonEmpty<Endpoint>,
+    ) -> EthResult<Self> {
         let mut remaining_endpoints = VecDeque::from_iter(endpoints);
 
-        // Attempt to connect right away
         let provider_handle =
             connect_to_first_available_provider(&initializer, &mut remaining_endpoints).await?;
 
@@ -272,7 +281,7 @@ where
         Box::new(self.clone())
     }
 
-    /// Tries to classify the error for failover logic
+    /// Classifies the error for failover logic
     fn classify_error(err: &EthError) -> ErrorClassification {
         match err {
             // Fatal errors that should immediately trigger failover
@@ -323,12 +332,12 @@ where
 
     /// Note a transaction failure for the current provider
     pub async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
-        // Get the current provider without checking health since we want to mark it
+        // Get the current provider without checking health since we don't want a failover here
         let provider = self.shared_state.lock().await.active_provider.clone();
 
         info!(
-            "Noting transaction failure on provider '{}': {}",
-            provider.name, reason
+            "Noting transaction failure on provider '{}': {reason}",
+            provider.name
         );
 
         provider
@@ -361,18 +370,13 @@ where
                 Ok(value)
             }
             Err(error) => {
-                let error_type = match Self::classify_error(&error) {
-                    ErrorClassification::Fatal => "fatal",
-                    ErrorClassification::Transient => "transient",
-                    ErrorClassification::Other => "other",
-                };
+                let error_clasification = Self::classify_error(&error);
 
                 error!(
-                    "Operation failed on provider '{}' with {} error: {}",
-                    provider_name, error_type, error
+                    "Operation failed on provider '{provider_name}' classified as {error_clasification:?} error: {error}",
                 );
 
-                match Self::classify_error(&error) {
+                match error_clasification {
                     ErrorClassification::Fatal => {
                         provider.note_permanent_failure(&error);
                         self.metrics.eth_network_errors.inc();
@@ -504,11 +508,6 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
     Err(EthError::Other("no more providers available".into()))
 }
 
-use ::metrics::{
-    RegistersMetrics,
-    prometheus::{IntCounter, Opts, core::Collector},
-};
-
 #[derive(Clone)]
 pub struct Metrics {
     eth_network_errors: IntCounter,
@@ -599,12 +598,12 @@ mod tests {
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
         };
-        
+
         let endpoints = nonempty![Endpoint {
             name: "test".to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
-        
+
         let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
@@ -691,12 +690,12 @@ mod tests {
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
         };
-        
+
         let endpoints = nonempty![Endpoint {
             name: "test".to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
-        
+
         let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
@@ -730,12 +729,12 @@ mod tests {
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
         };
-        
+
         let endpoints = nonempty![Endpoint {
             name: "test".to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
-        
+
         let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
@@ -761,12 +760,12 @@ mod tests {
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
         };
-        
+
         let endpoints = nonempty![Endpoint {
             name: "test".to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
-        
+
         let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
@@ -841,7 +840,7 @@ mod tests {
             name: "test".to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
-        
+
         let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
@@ -873,7 +872,7 @@ mod tests {
             name: "test".to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
-        
+
         let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
@@ -937,12 +936,12 @@ mod tests {
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
         };
-        
+
         let endpoints = nonempty![Endpoint {
             name: "test".to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
-        
+
         let client = FailoverClient::connect(initializer, health_thresholds, endpoints)
             .await
             .unwrap();
