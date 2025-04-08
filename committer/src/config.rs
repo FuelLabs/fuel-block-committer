@@ -88,7 +88,6 @@ impl Config {
             transient_error_threshold: self.eth.failover.transient_error_threshold,
             tx_failure_threshold: self.eth.failover.tx_failure_threshold,
             tx_failure_time_window: self.eth.failover.tx_failure_time_window,
-            endpoints: self.eth.endpoints.clone(),
         }
     }
 

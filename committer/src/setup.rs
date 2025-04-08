@@ -232,8 +232,9 @@ pub async fn l1_adapter(
     factory.register_metrics(registry);
 
     let failover_config = config.eth_failover_config();
+    let endpoints = config.eth.endpoints.clone();
 
-    let client = FailoverClient::connect(factory, failover_config).await?;
+    let client = FailoverClient::connect(factory, failover_config, endpoints).await?;
 
     let health_check = client.health_checker();
 

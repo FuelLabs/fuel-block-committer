@@ -62,8 +62,6 @@ pub struct FailoverConfig {
     pub tx_failure_threshold: usize,
     /// Time window to consider for transaction failures
     pub tx_failure_time_window: Duration,
-    /// List of provider endpoints to connect to
-    pub endpoints: NonEmpty<Endpoint>,
 }
 
 /// A client that manages multiple L1 providers and fails over between them
@@ -75,13 +73,11 @@ where
 {
     // Some object that can create providers of type I::Provider
     initializer: I,
-    // Shared mutable state: the provider configs + active provider
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     failover_config: FailoverConfig,
     /// Exists so that primitive getters don't have to be async and fallable just because they have to
     /// go through the failover logic.
     permanent_cache: PermanentCache,
-    // Metrics for monitoring
     metrics: Metrics,
 }
 
@@ -240,8 +236,8 @@ where
     I: ProviderInit,
 {
     /// This attempts to connect to the first available provider
-    pub async fn connect(initializer: I, failover_config: FailoverConfig) -> EthResult<Self> {
-        let mut remaining_endpoints = VecDeque::from_iter(failover_config.endpoints.clone());
+    pub async fn connect(initializer: I, failover_config: FailoverConfig, endpoints: NonEmpty<Endpoint>) -> EthResult<Self> {
+        let mut remaining_endpoints = VecDeque::from_iter(endpoints);
 
         // Attempt to connect right away
         let provider_handle =
@@ -602,12 +598,14 @@ mod tests {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
         };
-        let client = FailoverClient::connect(initializer, failover_config)
+        
+        let endpoints = nonempty![Endpoint {
+            name: "test".to_owned(),
+            url: "http://example.com".parse().unwrap(),
+        }];
+        
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -645,19 +643,20 @@ mod tests {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![
-                Endpoint {
-                    name: "test1".to_owned(),
-                    url: "http://example1.com".parse().unwrap(),
-                },
-                Endpoint {
-                    name: "test2".to_owned(),
-                    url: "http://example2.com".parse().unwrap(),
-                },
-            ],
         };
 
-        let client = FailoverClient::connect(initializer, failover_config)
+        let endpoints = nonempty![
+            Endpoint {
+                name: "test1".to_owned(),
+                url: "http://example1.com".parse().unwrap(),
+            },
+            Endpoint {
+                name: "test2".to_owned(),
+                url: "http://example2.com".parse().unwrap(),
+            },
+        ];
+
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -691,12 +690,14 @@ mod tests {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
         };
-        let client = FailoverClient::connect(initializer, failover_config)
+        
+        let endpoints = nonempty![Endpoint {
+            name: "test".to_owned(),
+            url: "http://example.com".parse().unwrap(),
+        }];
+        
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -728,12 +729,14 @@ mod tests {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
         };
-        let client = FailoverClient::connect(initializer, failover_config)
+        
+        let endpoints = nonempty![Endpoint {
+            name: "test".to_owned(),
+            url: "http://example.com".parse().unwrap(),
+        }];
+        
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -757,12 +760,14 @@ mod tests {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
         };
-        let client = FailoverClient::connect(initializer, failover_config)
+        
+        let endpoints = nonempty![Endpoint {
+            name: "test".to_owned(),
+            url: "http://example.com".parse().unwrap(),
+        }];
+        
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -788,23 +793,24 @@ mod tests {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![
-                Endpoint {
-                    name: "test1".to_owned(),
-                    url: "http://example1.com".parse().unwrap(),
-                },
-                Endpoint {
-                    name: "test2".to_owned(),
-                    url: "http://example2.com".parse().unwrap(),
-                },
-                Endpoint {
-                    name: "test3".to_owned(),
-                    url: "http://example3.com".parse().unwrap(),
-                },
-            ],
         };
 
-        let client = FailoverClient::connect(initializer, failover_config)
+        let endpoints = nonempty![
+            Endpoint {
+                name: "test1".to_owned(),
+                url: "http://example1.com".parse().unwrap(),
+            },
+            Endpoint {
+                name: "test2".to_owned(),
+                url: "http://example2.com".parse().unwrap(),
+            },
+            Endpoint {
+                name: "test3".to_owned(),
+                url: "http://example3.com".parse().unwrap(),
+            },
+        ];
+
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -829,13 +835,14 @@ mod tests {
             transient_error_threshold: 3,
             tx_failure_threshold,
             tx_failure_time_window,
-            endpoints: nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
         };
 
-        let client = FailoverClient::connect(initializer, failover_config)
+        let endpoints = nonempty![Endpoint {
+            name: "test".to_owned(),
+            url: "http://example.com".parse().unwrap(),
+        }];
+        
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -860,13 +867,14 @@ mod tests {
             transient_error_threshold: 3,
             tx_failure_threshold,
             tx_failure_time_window,
-            endpoints: nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
         };
 
-        let client = FailoverClient::connect(initializer, failover_config)
+        let endpoints = nonempty![Endpoint {
+            name: "test".to_owned(),
+            url: "http://example.com".parse().unwrap(),
+        }];
+        
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -887,20 +895,21 @@ mod tests {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![
-                Endpoint {
-                    name: "test1".to_owned(),
-                    url: "http://example1.com".parse().unwrap(),
-                },
-                Endpoint {
-                    name: "test2".to_owned(),
-                    url: "http://example2.com".parse().unwrap(),
-                },
-            ],
         };
 
+        let endpoints = nonempty![
+            Endpoint {
+                name: "test1".to_owned(),
+                url: "http://example1.com".parse().unwrap(),
+            },
+            Endpoint {
+                name: "test2".to_owned(),
+                url: "http://example2.com".parse().unwrap(),
+            },
+        ];
+
         // When: we try to connect
-        let result = FailoverClient::connect(initializer, failover_config).await;
+        let result = FailoverClient::connect(initializer, failover_config, endpoints).await;
 
         // Then: the connection should fail with a meaningful error
         assert!(result.is_err());
@@ -927,12 +936,14 @@ mod tests {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![Endpoint {
-                name: "test".to_owned(),
-                url: "http://example.com".parse().unwrap(),
-            }],
         };
-        let client = FailoverClient::connect(initializer, failover_config)
+        
+        let endpoints = nonempty![Endpoint {
+            name: "test".to_owned(),
+            url: "http://example.com".parse().unwrap(),
+        }];
+        
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
@@ -963,23 +974,24 @@ mod tests {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
-            endpoints: nonempty![
-                Endpoint {
-                    name: "test1".to_owned(),
-                    url: "http://example1.com".parse().unwrap(),
-                },
-                Endpoint {
-                    name: "test2".to_owned(),
-                    url: "http://example2.com".parse().unwrap(),
-                },
-                Endpoint {
-                    name: "test3".to_owned(),
-                    url: "http://example3.com".parse().unwrap(),
-                },
-            ],
         };
 
-        let client = FailoverClient::connect(initializer, failover_config)
+        let endpoints = nonempty![
+            Endpoint {
+                name: "test1".to_owned(),
+                url: "http://example1.com".parse().unwrap(),
+            },
+            Endpoint {
+                name: "test2".to_owned(),
+                url: "http://example2.com".parse().unwrap(),
+            },
+            Endpoint {
+                name: "test3".to_owned(),
+                url: "http://example3.com".parse().unwrap(),
+            },
+        ];
+
+        let client = FailoverClient::connect(initializer, failover_config, endpoints)
             .await
             .unwrap();
 
