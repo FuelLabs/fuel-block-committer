@@ -69,7 +69,6 @@ impl<I> FailoverClient<I>
 where
     I: ProviderInit,
 {
-    /// This attempts to connect to the first available provider
     pub async fn connect(
         initializer: I,
         health_thresholds: ProviderHealthThresholds,
@@ -170,7 +169,7 @@ where
         T: Send,
     {
         let provider = self.get_healthy_provider().await?;
-        let provider_name = provider.name.clone();
+        let provider_name = provider.name.as_str();
 
         debug!("Executing operation on provider '{}'", provider_name);
 
@@ -194,7 +193,7 @@ where
                         provider.note_permanent_failure(&error);
                         self.metrics
                             .eth_network_errors
-                            .with_label_values(&[&provider_name])
+                            .with_label_values(std::slice::from_ref(&provider_name))
                             .inc();
                         Err(error)
                     }
@@ -206,7 +205,7 @@ where
 
                         self.metrics
                             .eth_network_errors
-                            .with_label_values(&[&provider_name])
+                            .with_label_values(std::slice::from_ref(&provider_name))
                             .inc();
                         Err(error)
                     }
@@ -366,7 +365,7 @@ mod tests {
         // Given: a provider that returns a recoverable network error
         // and a failover client with a threshold of 2 (so one error doesn't cross the limit)
         let mut provider = create_mock_provider();
-        provider.expect_submit().times(1).returning(|_, _| {
+        provider.expect_submit().return_once(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
                     msg: "Recoverable error".into(),
@@ -375,7 +374,7 @@ mod tests {
             })
         });
 
-        let initializer = TestProviderInitializer::new(vec![provider]);
+        let initializer = MockProviderFactory::new(vec![provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
@@ -403,8 +402,7 @@ mod tests {
         // Given: a provider that always returns a recoverable network error
         // and a failover client with a threshold of 1
         let mut first_provider = create_mock_provider();
-        // First provider can handle up to 1 calls before being marked unhealthy
-        first_provider.expect_submit().times(1).returning(|_, _| {
+        first_provider.expect_submit().return_once(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
                     msg: "Recoverable error".into(),
@@ -420,7 +418,7 @@ mod tests {
             .expect_submit()
             .return_once(|_, _| Box::pin(async { Ok(BlockSubmissionTx::default()) }));
 
-        let initializer = TestProviderInitializer::new([first_provider, second_provider]);
+        let initializer = MockProviderFactory::new([first_provider, second_provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
@@ -454,7 +452,7 @@ mod tests {
     async fn successful_call_resets_transient_error_count() {
         // Given: A provider that first errors then succeeds
         let mut provider = create_mock_provider();
-        provider.expect_submit().times(1).returning(|_, _| {
+        provider.expect_submit().return_once(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
                     msg: "Recoverable error".into(),
@@ -464,10 +462,9 @@ mod tests {
         });
         provider
             .expect_get_block_number()
-            .times(1)
-            .returning(|| Box::pin(async { Ok(10u64) }));
+            .return_once(|| Box::pin(async { Ok(10u64) }));
 
-        let initializer = TestProviderInitializer::new([provider]);
+        let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 2,
             tx_failure_threshold: 5,
@@ -497,7 +494,7 @@ mod tests {
     async fn permanent_error_makes_connection_unhealthy() {
         // Given: a provider that returns a permanent network error
         let mut provider = create_mock_provider();
-        provider.expect_submit().times(1).returning(|_, _| {
+        provider.expect_submit().return_once(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
                     msg: "Permanent error".into(),
@@ -506,7 +503,7 @@ mod tests {
             })
         });
 
-        let initializer = TestProviderInitializer::new([provider]);
+        let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
@@ -533,11 +530,11 @@ mod tests {
     async fn other_error_does_not_affect_health() {
         // Given: a provider that returns a non-network error
         let mut provider = create_mock_provider();
-        provider.expect_submit().times(1).returning(|_, _| {
+        provider.expect_submit().return_once(|_, _| {
             Box::pin(async { Err(EthError::Other("Some application error".into())) })
         });
 
-        let initializer = TestProviderInitializer::new([provider]);
+        let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
@@ -570,7 +567,7 @@ mod tests {
             create_successful_provider(42u64),   // Third provider - succeeds
         ];
 
-        let initializer = TestProviderInitializer::new(providers);
+        let initializer = MockProviderFactory::new(providers);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
@@ -609,7 +606,7 @@ mod tests {
     async fn tx_failure_tracking_marks_provider_unhealthy() {
         // Given: a provider and a client with a low tx failure threshold and short window
         let provider = create_mock_provider();
-        let initializer = TestProviderInitializer::new([provider]);
+        let initializer = MockProviderFactory::new([provider]);
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(500);
@@ -641,7 +638,7 @@ mod tests {
     async fn tx_failures_outside_time_window_dont_affect_health() {
         // Given: a provider and a client with a low tx failure threshold and short window
         let provider = create_mock_provider();
-        let initializer = TestProviderInitializer::new([provider]);
+        let initializer = MockProviderFactory::new([provider]);
 
         let tx_failure_threshold = 2;
         let tx_failure_time_window = Duration::from_millis(100);
@@ -704,7 +701,7 @@ mod tests {
     async fn metrics_are_incremented_properly() {
         // Given: a provider that returns network errors
         let mut provider = create_mock_provider();
-        provider.expect_submit().times(1).returning(|_, _| {
+        provider.expect_submit().return_once(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
                     msg: "Recoverable error".into(),
@@ -713,7 +710,7 @@ mod tests {
             })
         });
 
-        let initializer = TestProviderInitializer::new([provider]);
+        let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
             tx_failure_threshold: 5,
@@ -774,7 +771,7 @@ mod tests {
             create_permanent_failure_provider(), // Third provider - permanent failure
         ];
 
-        let initializer = TestProviderInitializer::new(providers);
+        let initializer = MockProviderFactory::new(providers);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
             tx_failure_threshold: 5,
@@ -847,12 +844,12 @@ mod tests {
     }
 
     // A simple provider initializer that returns pre-configured mocks
-    struct TestProviderInitializer {
+    struct MockProviderFactory {
         providers: Vec<Arc<MockL1Provider>>,
         current_index: AtomicUsize,
     }
 
-    impl TestProviderInitializer {
+    impl MockProviderFactory {
         fn new(providers: impl IntoIterator<Item = MockL1Provider>) -> Self {
             let providers = providers.into_iter().map(Arc::new).collect();
 
@@ -863,7 +860,7 @@ mod tests {
         }
     }
 
-    impl Clone for TestProviderInitializer {
+    impl Clone for MockProviderFactory {
         fn clone(&self) -> Self {
             Self {
                 providers: self.providers.clone(),
@@ -872,7 +869,7 @@ mod tests {
         }
     }
 
-    impl ProviderInit for TestProviderInitializer {
+    impl ProviderInit for MockProviderFactory {
         type Provider = MockL1Provider;
 
         async fn initialize(&self, config: &Endpoint) -> EthResult<Arc<Self::Provider>> {
