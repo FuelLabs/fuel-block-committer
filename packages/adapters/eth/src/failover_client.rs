@@ -12,7 +12,7 @@ use std::{
 
 use ::metrics::{
     RegistersMetrics,
-    prometheus::{IntCounter, Opts, core::Collector},
+    prometheus::{IntCounter, IntCounterVec, Opts, core::Collector},
 };
 use alloy::{primitives::Address, rpc::types::FeeHistory};
 use metrics::{HealthCheck, HealthChecker};
@@ -344,7 +344,7 @@ where
             .note_tx_failure(reason, self.health_thresholds.tx_failure_time_window)
             .await;
 
-        self.metrics.eth_tx_failures.inc();
+        self.metrics.eth_tx_failures.with_label_values(&[&provider.name]).inc();
 
         Ok(())
     }
@@ -379,7 +379,7 @@ where
                 match error_clasification {
                     ErrorClassification::Fatal => {
                         provider.note_permanent_failure(&error);
-                        self.metrics.eth_network_errors.inc();
+                        self.metrics.eth_network_errors.with_label_values(&[&provider_name]).inc();
                         Err(error)
                     }
                     ErrorClassification::Transient => {
@@ -388,7 +388,7 @@ where
                             self.health_thresholds.transient_error_threshold,
                         );
 
-                        self.metrics.eth_network_errors.inc();
+                        self.metrics.eth_network_errors.with_label_values(&[&provider_name]).inc();
                         Err(error)
                     }
                     ErrorClassification::Other => Err(error),
@@ -510,8 +510,8 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
 
 #[derive(Clone)]
 pub struct Metrics {
-    eth_network_errors: IntCounter,
-    eth_tx_failures: IntCounter,
+    eth_network_errors: IntCounterVec,
+    eth_tx_failures: IntCounterVec,
 }
 
 impl RegistersMetrics for Metrics {
@@ -525,16 +525,22 @@ impl RegistersMetrics for Metrics {
 
 impl Default for Metrics {
     fn default() -> Self {
-        let eth_network_errors = IntCounter::with_opts(Opts::new(
-            "eth_network_errors",
-            "Number of network errors encountered while running Ethereum RPCs.",
-        ))
+        let eth_network_errors = IntCounterVec::new(
+            Opts::new(
+                "eth_network_errors",
+                "Number of network errors encountered while running Ethereum RPCs.",
+            ),
+            &["provider"],
+        )
         .expect("eth_network_errors metric to be correctly configured");
 
-        let eth_tx_failures = IntCounter::with_opts(Opts::new(
-            "eth_tx_failures",
-            "Number of transaction failures potentially caused by provider issues.",
-        ))
+        let eth_tx_failures = IntCounterVec::new(
+            Opts::new(
+                "eth_tx_failures",
+                "Number of transaction failures potentially caused by provider issues.",
+            ),
+            &["provider"],
+        )
         .expect("eth_tx_failures metric to be correctly configured");
 
         Self {
@@ -937,8 +943,9 @@ mod tests {
             tx_failure_time_window: Duration::from_secs(300),
         };
 
+        let provider_name = "test";
         let endpoints = nonempty![Endpoint {
-            name: "test".to_owned(),
+            name: provider_name.to_owned(),
             url: "http://example.com".parse().unwrap(),
         }];
 
@@ -947,16 +954,16 @@ mod tests {
             .unwrap();
 
         // Get metrics before
-        let network_errors_before = client.metrics.eth_network_errors.get();
-        let tx_failures_before = client.metrics.eth_tx_failures.get();
+        let network_errors_before = client.metrics.eth_network_errors.with_label_values(&[&provider_name]).get();
+        let tx_failures_before = client.metrics.eth_tx_failures.with_label_values(&[&provider_name]).get();
 
         // When: we make a call that returns a network error and note a tx failure
         let _ = client.submit([0; 32], 0).await;
         client.note_tx_failure("Test failure").await.unwrap();
 
         // Then: the metrics should be incremented
-        assert!(client.metrics.eth_network_errors.get() > network_errors_before);
-        assert!(client.metrics.eth_tx_failures.get() > tx_failures_before);
+        assert!(client.metrics.eth_network_errors.with_label_values(&[&provider_name]).get() > network_errors_before);
+        assert!(client.metrics.eth_tx_failures.with_label_values(&[&provider_name]).get() > tx_failures_before);
     }
 
     #[tokio::test]
