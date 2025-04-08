@@ -450,23 +450,38 @@ mod tests {
 
     #[tokio::test]
     async fn successful_call_resets_transient_error_count() {
-        // Given: A provider that first errors then succeeds
+        // Given: A provider that first errors, then succeeds, then errors again
         let mut provider = create_mock_provider();
+        
+        // First call - error
         provider.expect_submit().return_once(|_, _| {
             Box::pin(async {
                 Err(EthError::Network {
-                    msg: "Recoverable error".into(),
+                    msg: "Recoverable error 1".into(),
                     recoverable: true,
                 })
             })
         });
+        
+        // Second call - success (should reset error count)
         provider
             .expect_get_block_number()
             .return_once(|| Box::pin(async { Ok(10u64) }));
+            
+        // Third call - error again
+        // If error count wasn't reset, this would be the second error and would trigger failover
+        provider.expect_balance().return_once(|_| {
+            Box::pin(async {
+                Err(EthError::Network {
+                    msg: "Recoverable error 2".into(),
+                    recoverable: true,
+                })
+            })
+        });
 
         let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
-            transient_error_threshold: 2,
+            transient_error_threshold: 2, // Two errors required to trigger failover
             tx_failure_threshold: 5,
             tx_failure_time_window: Duration::from_secs(300),
         };
@@ -480,13 +495,19 @@ mod tests {
             .await
             .unwrap();
 
-        // When: a submit call fails but then get_block_number succeeds
-        let _ = client.submit([0; 32], 0).await; // This fails
-        let result = client.get_block_number().await; // This succeeds
+        // When: a submit call fails, then get_block_number succeeds, then balance fails
+        let submit_result = client.submit([0; 32], 0).await; // First error
+        assert!(submit_result.is_err());
+        
+        let block_result = client.get_block_number().await; // Success - should reset error count
+        assert!(block_result.is_ok());
+        assert_eq!(block_result.unwrap(), 10u64);
+        
+        let balance_result = client.balance(Address::ZERO).await; // Second error
+        assert!(balance_result.is_err());
 
-        // Then: the call should succeed and reset the error count
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 10u64);
+        // Then: the connection should still be healthy because the successful call reset the error count
+        // If the counter wasn't reset, we'd have 2 errors and the provider would be unhealthy
         assert!(client.healthy().await);
     }
 
