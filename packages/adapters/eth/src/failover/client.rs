@@ -717,6 +717,8 @@ mod tests {
 
     #[tokio::test]
     async fn metrics_are_incremented_properly() {
+        use metrics::{RegistersMetrics, prometheus::Registry};
+
         // Given: a provider that returns network errors
         let mut provider = create_mock_provider();
         provider.expect_submit().return_once(|_, _| {
@@ -745,38 +747,39 @@ mod tests {
             .await
             .unwrap();
 
-        // Get metrics before
-        let network_errors_before = client
-            .metrics
-            .eth_network_errors
-            .with_label_values(std::slice::from_ref(&provider_name))
-            .get();
-        let tx_failures_before = client
-            .metrics
-            .eth_tx_failures
-            .with_label_values(std::slice::from_ref(&provider_name))
-            .get();
+        let registry = Registry::new();
+        client.register_metrics(&registry);
 
         // When: we make a call that returns a network error and note a tx failure
         let _ = client.submit([0; 32], 0).await;
         client.note_tx_failure("Test failure").await.unwrap();
 
-        // Then: the metrics should be incremented
-        assert!(
-            client
-                .metrics
-                .eth_network_errors
-                .with_label_values(std::slice::from_ref(&provider_name))
-                .get()
-                > network_errors_before
+        // Then: gather metrics from the registry and verify they've been incremented
+        let metric_families = registry.gather();
+
+        // Find network errors metric
+        let network_errors = metric_families
+            .iter()
+            .find(|m| m.get_name() == "eth_network_errors")
+            .expect("eth_network_errors metric should be registered");
+
+        // Find tx failures metric
+        let tx_failures = metric_families
+            .iter()
+            .find(|m| m.get_name() == "eth_tx_failures")
+            .expect("eth_tx_failures metric should be registered");
+
+        // Check that they have values > 0
+        let network_errors_value = network_errors.get_metric()[0].get_counter().get_value();
+        assert_eq!(
+            network_errors_value, 1.0,
+            "Network errors metric should be incremented"
         );
-        assert!(
-            client
-                .metrics
-                .eth_tx_failures
-                .with_label_values(std::slice::from_ref(&provider_name))
-                .get()
-                > tx_failures_before
+
+        let tx_failures_value = tx_failures.get_metric()[0].get_counter().get_value();
+        assert_eq!(
+            tx_failures_value, 1.0,
+            "TX failures metric should be incremented"
         );
     }
 
