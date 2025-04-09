@@ -1,8 +1,8 @@
 BEGIN;
 
 -- 1. Add the column without enforcing NOT NULL initially
-ALTER TABLE fuel_blocks 
-  ADD COLUMN IF NOT EXISTS is_bundled BOOLEAN;
+ALTER TABLE fuel_blocks
+  ADD COLUMN IF NOT EXISTS is_bundled BOOLEAN DEFAULT FALSE;
 
 -- 2. Set is_bundled to true for blocks that fall within any bundle's range.
 UPDATE fuel_blocks fb
@@ -17,8 +17,7 @@ WHERE is_bundled IS NULL;
 
 -- 4. Make the column NOT NULL and set the default for future inserts.
 ALTER TABLE fuel_blocks 
-  ALTER COLUMN is_bundled SET NOT NULL,
-  ALTER COLUMN is_bundled SET DEFAULT false;
+  ALTER COLUMN is_bundled SET NOT NULL;
 
 -- Create the composite index.
 CREATE INDEX IF NOT EXISTS idx_fuel_blocks_is_bundled_height 
