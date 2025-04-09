@@ -374,6 +374,9 @@ pub mod port {
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Sync {
+        /// Candidates are chosen so that:
+        /// * the first block's height is the lowest available
+        /// * all blocks are consecutive in height
         async fn next_candidates_for_bundling(
             &self,
             starting_height: u32,
