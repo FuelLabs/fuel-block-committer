@@ -479,7 +479,7 @@ impl Postgres {
         Ok(response)
     }
 
-    pub(crate) async fn _lowest_unbundled_blocks(
+    pub(crate) async fn _next_candidates_for_bundling(
         &self,
         starting_height: u32,
         target_cumulative_bytes: u32,
@@ -1564,7 +1564,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_lowest_unbundled_blocks_performance_4m_blocks() {
+        async fn test_next_candidates_for_bundling_performance_4m_blocks() {
             // Set total number of blocks to insert (around 4 million)
             let total_blocks = 7 * 24 * 3600 + 3600;
             // We'll leave the last 2500 blocks unbundled.
@@ -1619,7 +1619,7 @@ mod tests {
             let start_height = total_blocks - (7 * 24 * 3600);
             let start_time = Instant::now();
             let result = db
-                ._lowest_unbundled_blocks(start_height, u32::MAX, u32::MAX)
+                ._next_candidates_for_bundling(start_height, u32::MAX, u32::MAX)
                 .await
                 .expect("Query should execute correctly");
             let duration = start_time.elapsed();

@@ -232,14 +232,14 @@ impl block_importer::port::Storage for DbWithProcess {
 }
 
 impl block_bundler::port::Storage for DbWithProcess {
-    async fn lowest_sequence_of_unbundled_blocks(
+    async fn next_candidates_for_bundling(
         &self,
         starting_height: u32,
         max_cumulative_bytes: u32,
         block_buildup_threshold: u32,
     ) -> services::Result<Option<UnbundledBlocks>> {
         self.db
-            ._lowest_unbundled_blocks(
+            ._next_candidates_for_bundling(
                 starting_height,
                 max_cumulative_bytes,
                 block_buildup_threshold,

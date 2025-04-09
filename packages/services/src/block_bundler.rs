@@ -161,7 +161,7 @@ pub mod service {
 
             while let Some(unbundled_blocks) = self
                 .storage
-                .lowest_sequence_of_unbundled_blocks(
+                .next_candidates_for_bundling(
                     starting_height,
                     self.config.bytes_to_accumulate.get() as u32,
                     self.config.blocks_to_accumulate.get() as u32,
@@ -374,7 +374,7 @@ pub mod port {
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Sync {
-        async fn lowest_sequence_of_unbundled_blocks(
+        async fn next_candidates_for_bundling(
             &self,
             starting_height: u32,
             target_cumulative_bytes: u32,

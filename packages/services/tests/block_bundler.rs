@@ -292,7 +292,7 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
     assert!(
         setup
             .db()
-            .lowest_sequence_of_unbundled_blocks(blocks.last().height, 1, u32::MAX)
+            .next_candidates_for_bundling(blocks.last().height, 1, u32::MAX)
             .await?
             .is_none()
     );
@@ -660,7 +660,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // Ensure that blocks outside the lookback window are still unbundled
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, u32::MAX, u32::MAX)
+        .next_candidates_for_bundling(0, u32::MAX, u32::MAX)
         .await?
         .unwrap();
 
