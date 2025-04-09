@@ -991,21 +991,23 @@ impl Postgres {
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
     ) -> Result<()> {
-        let mut tx = self.connection_pool.begin().await?;
-
-        let start = *block_range.start();
-        let end = *block_range.end();
-
-        // Insert a new bundle and retrieve its ID
-        let bundle_id = sqlx::query!(
+        let start_height = *block_range.start();
+        let end_height = *block_range.end();
+        let update_bundled_status = sqlx::query!(
+            "UPDATE fuel_blocks SET is_bundled = true WHERE height BETWEEN $1 AND $2",
+            i64::from(start_height),
+            i64::from(end_height)
+        );
+        let insert_bundles_query = sqlx::query!(
             "INSERT INTO bundles(id, start_height, end_height) VALUES ($1, $2, $3) RETURNING id",
             bundle_id.get(),
-            i64::from(start),
-            i64::from(end)
-        )
-        .fetch_one(&mut *tx)
-        .await?
-        .id;
+            i64::from(start_height),
+            i64::from(end_height)
+        );
+
+        let mut tx = self.connection_pool.begin().await?;
+
+        let bundle_id = insert_bundles_query.fetch_one(&mut *tx).await?.id;
 
         let bundle_id: NonNegative<i32> = bundle_id.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!("invalid bundle id received from db: {}", e))
@@ -1034,7 +1036,7 @@ impl Postgres {
             .collect::<Result<Vec<_>>>()?;
 
         // Batch insert fragments
-        let queries = fragment_rows
+        let fragment_insertion_queries = fragment_rows
             .into_iter()
             .chunks(MAX_FRAGMENTS_PER_QUERY)
             .into_iter()
@@ -1055,20 +1057,12 @@ impl Postgres {
             })
             .collect::<Vec<_>>();
 
-        sqlx::query!(
-            "UPDATE fuel_blocks SET is_bundled = true WHERE height BETWEEN $1 AND $2",
-            i64::from(start),
-            i64::from(end)
-        )
-        .execute(&mut *tx)
-        .await?;
+        update_bundled_status.execute(&mut *tx).await?;
 
-        // Execute all fragment insertion queries
-        for mut query in queries {
+        for mut query in fragment_insertion_queries {
             query.build().execute(&mut *tx).await?;
         }
 
-        // Commit the transaction
         tx.commit().await?;
 
         Ok(())
