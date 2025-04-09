@@ -487,7 +487,7 @@ impl Postgres {
     ) -> Result<Option<UnbundledBlocks>> {
         let stream = self.stream_unbundled_blocks(starting_height);
         let (blocks, buildup_detected) =
-            take_limited_amount_of_blocks(stream, target_cumulative_bytes, block_buildup_threshold)
+            take_consecutive_blocks(stream, target_cumulative_bytes, block_buildup_threshold)
                 .await?;
 
         let sequential_blocks = {
@@ -1233,12 +1233,12 @@ async fn count_remaining_blocks(
     Ok(count)
 }
 
-async fn take_limited_amount_of_blocks(
+async fn take_consecutive_blocks(
     mut stream: BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
     target_cumulative_bytes: u32,
     block_buildup_threshold: u32,
 ) -> Result<(Vec<CompressedFuelBlock>, Option<bool>)> {
-    let mut contiguous_blocks = Vec::new();
+    let mut consecutive_blocks = Vec::new();
     let mut cumulative_bytes = 0;
     let mut total_blocks_count = 0;
     let mut last_height: Option<u32> = None;
@@ -1253,7 +1253,7 @@ async fn take_limited_amount_of_blocks(
         let block = CompressedFuelBlock::try_from(db_block)?;
         let height = block.height;
 
-        // Check if the block is contiguous.
+        // Check if the block is consecutive
         if let Some(prev_height) = last_height {
             if height != prev_height.saturating_add(1) {
                 // A gap is detected. Break out without adding this block.
@@ -1261,17 +1261,17 @@ async fn take_limited_amount_of_blocks(
             }
         }
         last_height = Some(height);
-        contiguous_blocks.push(block);
+        consecutive_blocks.push(block);
         cumulative_bytes += data_len;
     }
 
     if cumulative_bytes < target_cumulative_bytes {
         total_blocks_count += count_remaining_blocks(&mut stream, block_buildup_threshold).await?;
         let buildup_detected = total_blocks_count >= block_buildup_threshold;
-        Ok((contiguous_blocks, Some(buildup_detected)))
+        Ok((consecutive_blocks, Some(buildup_detected)))
     } else {
         // If target bytes are reached without encountering a gap, no buildup detection is needed.
-        Ok((contiguous_blocks, None))
+        Ok((consecutive_blocks, None))
     }
 }
 
