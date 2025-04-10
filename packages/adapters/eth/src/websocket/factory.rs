@@ -3,8 +3,10 @@ use std::sync::Arc;
 use ::metrics::{RegistersMetrics, prometheus::core::Collector};
 use alloy::primitives::Address;
 
-use super::{WebsocketClient, config::TxConfig};
-use crate::{Endpoint, Error, ProviderInit, Result, websocket::metrics::Metrics};
+use crate::{
+    Endpoint, Error, ProviderInit, Result,
+    websocket::{WebsocketClient, config::TxConfig, metrics::Metrics},
+};
 #[derive(Clone)]
 pub struct WebsocketClientFactory {
     contract_address: Address,

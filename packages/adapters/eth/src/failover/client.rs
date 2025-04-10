@@ -12,12 +12,13 @@ use services::{
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
-use super::{
-    error_tracker::ProviderHealthThresholds, metrics::Metrics, provider_handle::ProviderHandle,
-};
 use crate::{
     error::{Error as EthError, Result as EthResult},
-    failover::error_tracker::{self, ErrorClassification},
+    failover::{
+        error_tracker::{self, ErrorClassification, ProviderHealthThresholds},
+        metrics::Metrics,
+        provider_handle::ProviderHandle,
+    },
     provider::L1Provider,
 };
 
