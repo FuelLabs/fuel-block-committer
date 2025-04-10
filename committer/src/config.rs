@@ -86,8 +86,8 @@ impl Config {
     pub fn eth_provider_health_thresholds(&self) -> eth::ProviderHealthThresholds {
         eth::ProviderHealthThresholds {
             transient_error_threshold: self.eth.failover.transient_error_threshold,
-            tx_failure_threshold: self.eth.failover.tx_failure_threshold,
-            tx_failure_time_window: self.eth.failover.tx_failure_time_window,
+            mempool_drop_threshold: self.eth.failover.mempool_drop_threshold,
+            mempool_drop_window: self.eth.failover.mempool_drop_window,
         }
     }
 
@@ -132,12 +132,12 @@ pub struct Eth {
 pub struct FailoverConfig {
     /// Maximum number of transient errors before considering a provider unhealthy
     pub transient_error_threshold: usize,
-    /// Maximum number of transaction failures within the specified time window before marking a provider as unhealthy.
-    pub tx_failure_threshold: usize,
-    /// Time window to track transaction failures in.
+    /// Maximum number of mempool drops within the specified time window before marking a provider as unhealthy.
+    pub mempool_drop_threshold: usize,
+    /// Time window to track mempool drops in.
     /// Format: Human-readable duration (e.g., `5m`, `30m`)
     #[serde(deserialize_with = "human_readable_duration")]
-    pub tx_failure_time_window: Duration,
+    pub mempool_drop_window: Duration,
 }
 
 fn parse_endpoints<'de, D>(deserializer: D) -> Result<NonEmpty<Endpoint>, D::Error>

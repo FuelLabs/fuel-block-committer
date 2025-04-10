@@ -115,7 +115,7 @@ where
         Ok(height)
     }
 
-    async fn note_tx_failure(&self, reason: &str) -> services::Result<()> {
-        Ok(self.note_tx_failure(reason).await?)
+    async fn note_mempool_drop(&self, reason: &str) -> services::Result<()> {
+        Ok(self.note_mempool_drop(reason).await?)
     }
 }

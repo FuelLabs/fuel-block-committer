@@ -139,22 +139,22 @@ where
         Ok(handle)
     }
 
-    /// Note a transaction failure for the current provider
-    pub async fn note_tx_failure(&self, reason: &str) -> EthResult<()> {
+    /// Note a mempool drop for the current provider
+    pub async fn note_mempool_drop(&self, reason: &str) -> EthResult<()> {
         // Get the current provider without checking health since we don't want a failover here
         let provider = self.shared_state.lock().await.active_provider.clone();
 
         info!(
-            "Noting transaction failure on provider '{}': {reason}",
+            "Noting mempool drop on provider '{}': {reason}",
             provider.name
         );
 
         provider
-            .note_tx_failure(reason, self.health_thresholds.tx_failure_time_window)
+            .note_mempool_drop(reason, self.health_thresholds.mempool_drop_window)
             .await;
 
         self.metrics
-            .eth_tx_failures
+            .eth_mempool_drops
             .with_label_values(&[&provider.name])
             .inc();
 
@@ -377,8 +377,8 @@ mod tests {
         let initializer = MockProviderFactory::new(vec![provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 2,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -421,8 +421,8 @@ mod tests {
         let initializer = MockProviderFactory::new([first_provider, second_provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![
@@ -482,8 +482,8 @@ mod tests {
         let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 2, // Two errors required to trigger failover
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -527,8 +527,8 @@ mod tests {
         let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -558,8 +558,8 @@ mod tests {
         let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -592,8 +592,8 @@ mod tests {
         let initializer = MockProviderFactory::new(providers);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![
@@ -625,15 +625,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tx_failure_tracking_marks_provider_unhealthy() {
-        // Given: a provider and a client with a low tx failure threshold and short window
+    async fn mempool_drop_tracking_marks_provider_unhealthy() {
+        // Given: a provider and a client with a low mempool drop threshold and short window
         let provider = create_mock_provider();
         let initializer = MockProviderFactory::new([provider]);
 
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
-            tx_failure_threshold: 2,
-            tx_failure_time_window: Duration::from_millis(500),
+            mempool_drop_threshold: 2,
+            mempool_drop_window: Duration::from_millis(500),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -645,25 +645,25 @@ mod tests {
             .await
             .unwrap();
 
-        // When: we note multiple transaction failures within the time window
-        client.note_tx_failure("First tx failure").await.unwrap();
-        client.note_tx_failure("Second tx failure").await.unwrap();
+        // When: we note multiple mempool drops within the time window
+        client.note_mempool_drop("First drop").await.unwrap();
+        client.note_mempool_drop("Second drop").await.unwrap();
 
-        // This will cause client.healthy() to return false since we had two failed tx on our one
+        // This will cause client.healthy() to return false since we had two drops on our one
         // and only provider
         assert!(!client.healthy().await);
     }
 
     #[tokio::test]
-    async fn tx_failures_outside_time_window_dont_affect_health() {
-        // Given: a provider and a client with a low tx failure threshold and short window
+    async fn mempool_drops_outside_time_window_dont_affect_health() {
+        // Given: a provider and a client with a low mempool drop threshold and short window
         let provider = create_mock_provider();
         let initializer = MockProviderFactory::new([provider]);
 
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
-            tx_failure_threshold: 2,
-            tx_failure_time_window: Duration::from_millis(100),
+            mempool_drop_threshold: 2,
+            mempool_drop_window: Duration::from_millis(100),
         };
 
         let endpoints = nonempty![Endpoint {
@@ -675,12 +675,18 @@ mod tests {
             .await
             .unwrap();
 
-        // When: we note a tx failure, wait longer than the time window, then note another
-        client.note_tx_failure("First tx failure").await.unwrap();
+        // When: we note a mempool drop, wait longer than the time window, then note another
+        client
+            .note_mempool_drop("First mempool drop")
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(150)).await; // Wait longer than the time window
-        client.note_tx_failure("Second tx failure").await.unwrap();
+        client
+            .note_mempool_drop("Second mempool drop")
+            .await
+            .unwrap();
 
-        // Then: the provider should still be healthy because the failures are outside the time window
+        // Then: the provider should still be healthy because the drops are outside the time window
         assert!(client.healthy().await);
     }
 
@@ -690,8 +696,8 @@ mod tests {
         let initializer = FailingProviderInitializer;
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![
@@ -733,8 +739,8 @@ mod tests {
         let initializer = MockProviderFactory::new([provider]);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 3,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let provider_name = "test";
@@ -750,9 +756,9 @@ mod tests {
         let registry = Registry::new();
         client.register_metrics(&registry);
 
-        // When: we make a call that returns a network error and note a tx failure
+        // When: we make a call that returns a network error and note a mempool drop
         let _ = client.submit([0; 32], 0).await;
-        client.note_tx_failure("Test failure").await.unwrap();
+        client.note_mempool_drop("Test drop").await.unwrap();
 
         // Then: gather metrics from the registry and verify they've been incremented
         let metric_families = registry.gather();
@@ -763,11 +769,11 @@ mod tests {
             .find(|m| m.get_name() == "eth_network_errors")
             .expect("eth_network_errors metric should be registered");
 
-        // Find tx failures metric
-        let tx_failures = metric_families
+        // Find mempool drops metric
+        let mempool_drops = metric_families
             .iter()
-            .find(|m| m.get_name() == "eth_tx_failures")
-            .expect("eth_tx_failures metric should be registered");
+            .find(|m| m.get_name() == "eth_mempool_drops")
+            .expect("eth_mempool_drops metric should be registered");
 
         // Check that they have values > 0
         let network_errors_value = network_errors.get_metric()[0].get_counter().get_value();
@@ -776,10 +782,10 @@ mod tests {
             "Network errors metric should be incremented"
         );
 
-        let tx_failures_value = tx_failures.get_metric()[0].get_counter().get_value();
+        let mempool_drops_value = mempool_drops.get_metric()[0].get_counter().get_value();
         assert_eq!(
-            tx_failures_value, 1.0,
-            "TX failures metric should be incremented"
+            mempool_drops_value, 1.0,
+            "Mempool drops metric should be incremented"
         );
     }
 
@@ -795,8 +801,8 @@ mod tests {
         let initializer = MockProviderFactory::new(providers);
         let health_thresholds = ProviderHealthThresholds {
             transient_error_threshold: 1,
-            tx_failure_threshold: 5,
-            tx_failure_time_window: Duration::from_secs(300),
+            mempool_drop_threshold: 5,
+            mempool_drop_window: Duration::from_secs(300),
         };
 
         let endpoints = nonempty![

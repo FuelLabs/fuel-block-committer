@@ -6,14 +6,14 @@ use ::metrics::{
 #[derive(Clone)]
 pub struct Metrics {
     pub eth_network_errors: IntCounterVec,
-    pub eth_tx_failures: IntCounterVec,
+    pub eth_mempool_drops: IntCounterVec,
 }
 
 impl RegistersMetrics for Metrics {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![
             Box::new(self.eth_network_errors.clone()),
-            Box::new(self.eth_tx_failures.clone()),
+            Box::new(self.eth_mempool_drops.clone()),
         ]
     }
 }
@@ -29,18 +29,18 @@ impl Default for Metrics {
         )
         .expect("eth_network_errors metric to be correctly configured");
 
-        let eth_tx_failures = IntCounterVec::new(
+        let eth_mempool_drops = IntCounterVec::new(
             Opts::new(
-                "eth_tx_failures",
-                "Number of transaction failures potentially caused by provider issues.",
+                "eth_mempool_drops",
+                "Number of transactions dropped from mempool potentially caused by provider issues.",
             ),
             &["provider"],
         )
-        .expect("eth_tx_failures metric to be correctly configured");
+        .expect("eth_mempool_drops metric to be correctly configured");
 
         Self {
             eth_network_errors,
-            eth_tx_failures,
+            eth_mempool_drops,
         }
     }
 }

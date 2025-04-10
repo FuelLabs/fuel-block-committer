@@ -25,10 +25,10 @@ pub enum ErrorClassification {
 pub struct ProviderHealthThresholds {
     /// Maximum number of transient errors before considering a provider unhealthy
     pub transient_error_threshold: usize,
-    /// Number of failed transactions to trigger unhealthy state
-    pub tx_failure_threshold: usize,
-    /// Time window to consider for transaction failures
-    pub tx_failure_time_window: Duration,
+    /// Number of mempool drops to trigger unhealthy state
+    pub mempool_drop_threshold: usize,
+    /// Time window to consider for mempool drops
+    pub mempool_drop_window: Duration,
 }
 
 pub fn classify_error(err: &EthError) -> ErrorClassification {
@@ -53,7 +53,7 @@ pub struct ErrorTracker {
     pub transient_error_count: AtomicUsize,
     pub permanently_failed: AtomicBool,
     // Track transactions that failed not due to network errors but due to mempool issues
-    pub tx_failure_window: tokio::sync::RwLock<VecDeque<Instant>>,
+    pub mempool_drop_window: tokio::sync::RwLock<VecDeque<Instant>>,
 }
 
 impl ErrorTracker {
@@ -61,7 +61,7 @@ impl ErrorTracker {
         Self {
             transient_error_count: AtomicUsize::new(0),
             permanently_failed: AtomicBool::new(false),
-            tx_failure_window: tokio::sync::RwLock::new(VecDeque::new()),
+            mempool_drop_window: tokio::sync::RwLock::new(VecDeque::new()),
         }
     }
 
@@ -89,24 +89,24 @@ impl ErrorTracker {
         self.permanently_failed.store(true, Ordering::Relaxed);
     }
 
-    pub async fn check_tx_failure_threshold(
+    pub async fn check_mempool_drop_threshold(
         &self,
-        tx_failure_threshold: usize,
-        tx_failure_time_window: Duration,
+        mempool_drop_threshold: usize,
+        mempool_drop_window: Duration,
     ) -> bool {
         let now = Instant::now();
-        let failure_window = self.tx_failure_window.read().await;
+        let failure_window = self.mempool_drop_window.read().await;
 
         // Count entries within the time window
         let valid_entries_count = failure_window
             .iter()
-            .filter(|&timestamp| now.duration_since(*timestamp) <= tx_failure_time_window)
+            .filter(|&timestamp| now.duration_since(*timestamp) <= mempool_drop_window)
             .count();
 
-        valid_entries_count >= tx_failure_threshold
+        valid_entries_count >= mempool_drop_threshold
     }
 
-    pub async fn note_tx_failure(
+    pub async fn note_mempool_drop(
         &self,
         reason: impl Display,
         provider_name: &str,
@@ -114,7 +114,7 @@ impl ErrorTracker {
     ) {
         let now = Instant::now();
 
-        let mut failure_window = self.tx_failure_window.write().await;
+        let mut failure_window = self.mempool_drop_window.write().await;
 
         failure_window.push_back(now);
 
@@ -128,7 +128,7 @@ impl ErrorTracker {
         }
 
         warn!(
-            "Transaction failure detected on provider '{}': {}. (Current failure count: {})",
+            "Transaction mempool drop detected on provider '{}': {}. (Current drop count: {})",
             provider_name,
             reason,
             failure_window.len()

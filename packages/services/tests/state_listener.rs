@@ -288,7 +288,7 @@ async fn reorg_threw_out_tx_from_block_into_pool_and_got_squeezed_out() -> Resul
     l1.expect_is_squeezed_out()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(true) }));
-    l1.expect_note_tx_failure()
+    l1.expect_note_mempool_drop()
         .return_once(|_| Box::pin(async { Ok(()) }));
     let mut listener = StateListener::new(
         l1,
@@ -401,7 +401,7 @@ async fn a_pending_tx_got_squeezed_out() -> Result<()> {
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(true) }));
 
-    l1.expect_note_tx_failure()
+    l1.expect_note_mempool_drop()
         .return_once(|_| Box::pin(async { Ok(()) }));
 
     let mut sut = StateListener::new(
@@ -489,7 +489,7 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
     l1.expect_is_squeezed_out()
         .with(eq(orig_tx_hash))
         .returning(|_| Box::pin(async { Ok(true) }));
-    l1.expect_note_tx_failure()
+    l1.expect_note_mempool_drop()
         .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
@@ -595,7 +595,7 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
     l1.expect_is_squeezed_out()
         .with(eq(orig_tx_hash))
         .returning(|_| Box::pin(async { Ok(true) }));
-    l1.expect_note_tx_failure()
+    l1.expect_note_mempool_drop()
         .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
@@ -642,18 +642,15 @@ async fn tx_not_found_in_mempool_calls_note_tx_failure() -> Result<()> {
     l1.expect_get_block_number()
         .returning(|| Box::pin(async { Ok(5.into()) }));
 
-    // Transaction not found in mempool
     l1.expect_get_transaction_response()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(None) }));
 
-    // Squeezed out from mempool
     l1.expect_is_squeezed_out()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(true) }));
 
-    // Expect note_tx_failure to be called with specific error message
-    l1.expect_note_tx_failure()
+    l1.expect_note_mempool_drop()
         .withf(|reason| reason.contains("not found in mempool"))
         .return_once(|_| Box::pin(async { Ok(()) }));
 
@@ -751,11 +748,11 @@ async fn handles_error_when_note_tx_failure_fails() -> Result<()> {
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(true) }));
 
-    // note_tx_failure fails with an error
-    l1.expect_note_tx_failure()
+    // note_mempool_drop fails with an error
+    l1.expect_note_mempool_drop()
         .withf(|reason| reason.contains("not found in mempool"))
         .return_once(|_| {
-            Box::pin(async { Err(services::Error::Other("Failed to note tx failure".into())) })
+            Box::pin(async { Err(services::Error::Other("Failed to note tx drop".into())) })
         });
 
     let mut sut = StateListener::new(

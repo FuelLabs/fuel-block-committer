@@ -56,16 +56,16 @@ impl<P> ProviderHandle<P> {
             return false;
         }
 
-        // Check transaction failures within time window
-        let tx_failures_exceed_threshold = self
+        // Check mempool drops within time window
+        let mempool_drops_exceed_threshold = self
             .error_tracker
-            .check_tx_failure_threshold(
-                health_thresholds.tx_failure_threshold,
-                health_thresholds.tx_failure_time_window,
+            .check_mempool_drop_threshold(
+                health_thresholds.mempool_drop_threshold,
+                health_thresholds.mempool_drop_window,
             )
             .await;
 
-        if tx_failures_exceed_threshold {
+        if mempool_drops_exceed_threshold {
             return false;
         }
 
@@ -73,9 +73,9 @@ impl<P> ProviderHandle<P> {
         true
     }
 
-    pub async fn note_tx_failure(&self, reason: impl Display, time_window: Duration) {
+    pub async fn note_mempool_drop(&self, reason: impl Display, time_window: Duration) {
         self.error_tracker
-            .note_tx_failure(reason, &self.name, time_window)
+            .note_mempool_drop(reason, &self.name, time_window)
             .await;
     }
 }

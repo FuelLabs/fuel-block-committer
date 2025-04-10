@@ -70,16 +70,16 @@ pub mod service {
                             // not in the mempool anymore set it to failed
                             selective_change.push((tx.hash, tx.nonce, TransactionState::Failed));
 
-                            // Note the transaction failure for provider tracking
+                            // Note the mempool drop for provider tracking
                             if let Err(e) = self
                                 .l1_adapter
-                                .note_tx_failure(&format!(
+                                .note_mempool_drop(&format!(
                                     "Transaction {} not found in mempool",
                                     hex::encode(tx.hash)
                                 ))
                                 .await
                             {
-                                warn!("Failed to note transaction failure: {}", e);
+                                warn!("Failed to mempool drop: {}", e);
                             }
 
                             info!(
@@ -264,7 +264,7 @@ pub mod port {
                 tx_hash: [u8; 32],
             ) -> Result<Option<TransactionResponse>>;
             async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
-            async fn note_tx_failure(&self, reason: &str) -> Result<()>;
+            async fn note_mempool_drop(&self, reason: &str) -> Result<()>;
         }
     }
 

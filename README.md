@@ -89,14 +89,14 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Description:** Ethereum address of the Fuel chain state contract.
   - **Example:** `0xYourStateContractAddress`
 
-- **`COMMITTER__ETH__FAILOVER__TX_FAILURE_THRESHOLD`**
+- **`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_THRESHOLD`**
 
-  - **Description:** Maximum number of transaction failures within the specified time window before marking a provider as unhealthy.
+  - **Description:** Maximum number of mempool drops within the specified time window before marking a provider as unhealthy.
   - **Type:** Positive integer
   - **Example:** `10`
 
-- **`COMMITTER__ETH__FAILOVER__TX_FAILURE_TIME_WINDOW`**
-  - **Description:** Time window to track transaction failures in.
+- **`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_WINDOW`**
+  - **Description:** Time window to track mempool drops in.
   - **Format:** Human-readable duration
   - **Example:** `30m`
 
@@ -369,11 +369,11 @@ cargo run --release --bin fee_algo_simulation
 
 The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. The failover mechanism is controlled by the following configuration parameters:
 
-1. **Transient Error Threshold** (`COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD`): Maximum number of transient errors (such as temporary network issues or rate limiting) before a provider is considered unhealthy. Unlike fatal errors that immediately trigger failover, transient errors accumulate until this threshold is reached.
+1. **Transient Error Threshold** (`COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD`): Maximum number of transient errors (such as temporary network issues or rate limiting) before a provider is considered unhealthy. Unlike fatal errors that immediately trigger failover, transient errors accumulate until this threshold is reached. Importantly, the transient error count is reset to zero after any successful network request to the provider.
 
-2. **Transaction Failure Threshold** (`COMMITTER__ETH__FAILOVER__TX_FAILURE_THRESHOLD`): Maximum number of transaction failures within a configurable time window that will mark a provider as unhealthy. Transaction failures are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
+2. **Mempool Drop Threshold** (`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_THRESHOLD`): Maximum number of mempool drops within a configurable time window that will mark a provider as unhealthy. Mempool drops are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
 
-3. **Transaction Failure Time Window** (`COMMITTER__ETH__FAILOVER__TX_FAILURE_TIME_WINDOW`): Time window in which transaction failures are counted. If the number of transaction failures within this window exceeds the transaction failure threshold, the provider is marked as unhealthy.
+3. **Mempool Drop Window** (`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_WINDOW`): Time window in which mempool drops are counted. If the number of mempool drops within this window exceeds the mempool drop threshold, the provider is marked as unhealthy. Unlike transient errors, mempool drops are not reset by successful requests - they remain in consideration until they naturally expire from the time window.
 
 When a provider is marked as unhealthy, the system automatically switches to the next available provider in the list. However, once all providers in the list become unhealthy, the system will remain in an unhealthy state and requires a restart to recover. There is no automatic periodic checking of previously unhealthy providers.
 
