@@ -87,7 +87,7 @@ tempfile = { version = "3.10", default-features = false }
 test-case = { version = "3.3", default-features = false }
 testcontainers = { version = "0.20", default-features = false }
 # to be removed once alloy fixes the issue with blob encoding
-c-kzg = { version = "1.0.3", default-features = false }
+c-kzg = { version = "1.0.2", default-features = false }
 thiserror = { version = "1.0", default-features = false }
 tokio = { version = "1.37", default-features = false }
 tokio-util = { version = "0.7", default-features = false }
