@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
-use serde_json::{self, json};
+use serde_json::json;
 use services::types::{Address, BundleCost};
 use url::Url;
 
