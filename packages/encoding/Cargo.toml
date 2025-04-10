@@ -16,7 +16,7 @@ publish = true
 alloy = { workspace = true, features = ["consensus", "eips"], optional = true }
 anyhow = { workspace = true, features = ["default"] }
 bitvec = { workspace = true, features = ["default"] }
-c-kzg = { workspace = true, optional = true }
+c-kzg = { workspace = true, optional = true, features = ["risc0-ffi"] }
 flate2 = { workspace = true, features = ["default"] }
 hex = { workspace = true, features = ["alloc"] }
 itertools = { workspace = true, features = ["use_std"] }
