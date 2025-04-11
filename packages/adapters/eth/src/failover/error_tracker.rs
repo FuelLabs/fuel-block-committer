@@ -112,20 +112,11 @@ impl ErrorTracker {
         provider_name: &str,
         time_window: Duration,
     ) {
-        let now = Instant::now();
-
         let mut failure_window = self.mempool_drop_window.write().await;
-
+        let now = Instant::now();
+        let cutoff = now - time_window;
+        failure_window.retain(|&timestamp| timestamp >= cutoff);
         failure_window.push_back(now);
-
-        // While holding the write lock, also clean up old entries that are outside the time window
-        while let Some(timestamp) = failure_window.front() {
-            if now.duration_since(*timestamp) > time_window {
-                failure_window.pop_front();
-            } else {
-                break;
-            }
-        }
 
         warn!(
             "Transaction mempool drop detected on provider '{}': {}. (Current drop count: {})",
