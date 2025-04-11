@@ -147,7 +147,7 @@ pub mod native_kzg_verify {
 
     #[cfg(feature = "kzg")]
     pub fn commitment_to_versioned_hash(commitment: &kzg_rs::Bytes48) -> [u8; 32] {
-        let mut hasher = sha2::Sha256::new();
+        let mut hasher = Sha256::new();
         hasher.update(commitment.as_slice());
         let hashed_commitment = hasher.finalize();
 
@@ -182,6 +182,8 @@ pub mod native_kzg_verify {
                 .map_err(|e| anyhow::anyhow!("cant compute challenge: {e:?}"))?;
             let y = evaluate_polynomial_in_evaluation_form(polynomial, z, &kzg_settings)
                 .map_err(|e| anyhow::anyhow!("cant evaluate polynomial: {e:?}"))?;
+            // recompute y,z, polynomial inside the zkvm, verify against PrecompileInput
+            // lets ignore commitment for now
 
             precompile_inputs.push(PrecompileInput {
                 commitment,
