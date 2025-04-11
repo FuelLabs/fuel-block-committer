@@ -23,6 +23,8 @@ itertools = { workspace = true, features = ["use_std"] }
 postcard = { workspace = true, features = ["use-std"] }
 serde = { workspace = true }
 static_assertions = { workspace = true }
+kzg-rs = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["consensus", "eips", "kzg"] }
@@ -36,5 +38,6 @@ rand = { workspace = true, features = ["std", "std_rng", "small_rng"] }
 test-case = { workspace = true }
 
 [features]
-default = []
+default = ["native-kzg-verify"]
 kzg = ["alloy/kzg", "dep:c-kzg"]
+native-kzg-verify = ["dep:kzg-rs", "dep:sha2"]
