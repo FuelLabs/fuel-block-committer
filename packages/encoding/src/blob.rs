@@ -63,7 +63,7 @@ pub mod native_kzg_verify {
     #[cfg(feature = "kzg")]
     use kzg_rs::kzg_proof::{compute_challenge, evaluate_polynomial_in_evaluation_form};
     #[cfg(feature = "kzg")]
-    use sha2::Digest;
+    use kzg_rs::kzg_proof::{Digest, Sha256};
 
 
     #[cfg(feature = "kzg")]

@@ -3195,7 +3195,6 @@ dependencies = [
  "proptest",
  "rand",
  "serde",
- "sha2",
  "static_assertions",
  "test-case",
 ]
