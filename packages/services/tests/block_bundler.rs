@@ -8,7 +8,7 @@ use metrics::RegistersMetrics;
 use services::{
     BlockBundler, BlockBundlerConfig, Bundle, BundleProposal, Bundler, BundlerFactory,
     ControllableBundlerFactory, Metadata, Result, Runner,
-    block_bundler::port::l1::FragmentEncoder,
+    block_bundler::port::{BytesLimit, l1::FragmentEncoder},
     types::{
         CollectNonEmpty, CompressedFuelBlock, Fragment, NonEmpty, nonempty,
         storage::SequentialFuelBlocks,
@@ -199,7 +199,7 @@ async fn does_nothing_if_not_enough_blocks() -> Result<()> {
         })
         .await;
 
-    // The chain’s latest height is 0
+    // The chain's latest height is 0
     let mock_fuel_api = test_helpers::mocks::fuel::block_bundler_latest_height_is(0);
 
     // We require 2 * block_size in bytes AND we also require 2 blocks
@@ -292,7 +292,7 @@ async fn stops_accumulating_blocks_if_time_runs_out_measured_from_component_crea
     assert!(
         setup
             .db()
-            .lowest_sequence_of_unbundled_blocks(blocks.last().height, 1)
+            .next_candidates_for_bundling(blocks.last().height, BytesLimit(1), u32::MAX)
             .await?
             .is_none()
     );
@@ -660,7 +660,7 @@ async fn skips_blocks_outside_lookback_window() -> Result<()> {
     // Ensure that blocks outside the lookback window are still unbundled
     let unbundled_blocks = setup
         .db()
-        .lowest_sequence_of_unbundled_blocks(0, u32::MAX)
+        .next_candidates_for_bundling(0, BytesLimit::UNLIMITED, u32::MAX)
         .await?
         .unwrap();
 

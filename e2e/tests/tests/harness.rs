@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use e2e_helpers::whole_stack::{FuelNodeType, WholeStack};
+use services::block_bundler::port::BytesLimit;
 use tokio::{sync::Mutex, time::sleep_until};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -142,7 +143,7 @@ async fn state_submitting_finished(
     };
 
     let finished = db
-        .lowest_sequence_of_unbundled_blocks(0, 1)
+        .next_candidates_for_bundling(0, BytesLimit(1), u32::MAX)
         .await?
         .is_none()
         && db.oldest_nonfinalized_fragments(0, 1).await?.is_empty()

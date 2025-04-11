@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT fb.height, fb.data\n            FROM fuel_blocks fb \n            WHERE fb.is_bundled = false\n                AND fb.height >= $1\n            ORDER BY fb.height",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "height",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "data",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6115bcc0ad482ff3ef1c3014a2a6c69f5b7acb65ee9d9f1c025191be09b8f1f4"
+}

@@ -16,7 +16,7 @@ pub mod service {
     };
     use crate::{
         Error, Result, Runner,
-        types::{DateTime, Utc, storage::SequentialFuelBlocks},
+        types::{DateTime, Utc},
     };
 
     #[derive(Debug, Clone, Copy)]
@@ -40,7 +40,7 @@ pub mod service {
                 max_fragments_per_bundle: NonZeroUsize::MAX,
                 lookback_window: 1000,
                 max_bundles_per_optimization_run: 1.try_into().unwrap(),
-                blocks_to_accumulate: NonZeroUsize::new(10).unwrap(),
+                blocks_to_accumulate: 10.try_into().unwrap(),
             }
         }
     }
@@ -159,23 +159,24 @@ pub mod service {
         async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
             let starting_height = self.get_starting_height().await?;
 
-            while let Some(UnbundledBlocks {
-                oldest,
-                total_unbundled,
-            }) = self
+            while let Some(unbundled_blocks) = self
                 .storage
-                .lowest_sequence_of_unbundled_blocks(
+                .next_candidates_for_bundling(
                     starting_height,
-                    self.config.bytes_to_accumulate.get() as u32,
+                    super::port::BytesLimit::from(self.config.bytes_to_accumulate.get() as u32),
+                    self.config.blocks_to_accumulate.get() as u32,
                 )
                 .await?
             {
-                if self.should_wait(&oldest, total_unbundled)? {
+                if self.should_wait(&unbundled_blocks)? {
                     return Ok(());
                 }
 
                 let next_id = self.storage.next_bundle_id().await?;
-                let bundler = self.bundler_factory.build(oldest, next_id).await;
+                let bundler = self
+                    .bundler_factory
+                    .build(unbundled_blocks.oldest, next_id)
+                    .await;
 
                 let optimization_start = self.clock.now();
                 let BundleProposal {
@@ -205,34 +206,36 @@ pub mod service {
 
         fn should_wait(
             &self,
-            blocks: &SequentialFuelBlocks,
-            total_available: NonZeroUsize,
+            UnbundledBlocks {
+                oldest,
+                buildup_detected,
+            }: &UnbundledBlocks,
         ) -> Result<bool> {
-            let cum_size = blocks.cumulative_size();
-            let has_more = total_available > blocks.len();
+            let cum_size = oldest.cumulative_size();
 
             let still_time_to_accumulate_more = self.still_time_to_accumulate_more()?;
-            // We use `total_available` because we previously encountered a scenario with:
-            // - A few very large blocks,
+            // We use `buildup_detected` because we previously encountered a scenario with:
+            // - A few unbundled blocks,
             // - Followed by a long sequence of bundled blocks,
             // - And then additional unbundled blocks.
-            // Since bundling required a fixed number of sequential blocks, the process skipped over
+            // Since bundling required a fixed number of block bytes to be available, the process skipped over
             // the blocks before the gap until a timeout occurred. Even after timing out, only one bundle
             // was created, and then the system waited for another timeout. To avoid this, we ignore the
             // total count of unbundled blocks when deciding whether to wait. The trade-off is that if there
             // is a gap of unimported blocks followed by many unbundled blocks, processing of the newer
             // blocks is deferred until the older ones are bundled. This can lead to the creation of small
             // bundles if the import process cannot supply blocks quickly enough.
+            let buildup_detected = buildup_detected.unwrap_or(false);
 
-            let should_wait = cum_size < self.config.bytes_to_accumulate
-                && total_available < self.config.blocks_to_accumulate
-                && !has_more
-                && still_time_to_accumulate_more;
+            let enough_bytes = cum_size >= self.config.bytes_to_accumulate;
+
+            let should_wait = !enough_bytes && !buildup_detected && still_time_to_accumulate_more;
 
             let available_data = human_readable_size(cum_size);
 
             if should_wait {
                 let needed_data = human_readable_size(self.config.bytes_to_accumulate);
+                let num_blocks = oldest.len();
 
                 let until_timeout = humantime::format_duration(
                     self.config
@@ -242,13 +245,13 @@ pub mod service {
                 );
 
                 tracing::info!(
-                    "Not bundling yet (accumulated {available_data} of required {needed_data}, {total_available}/{} blocks accumulated, timeout in {until_timeout}); waiting for more.",
+                    "Not bundling yet (accumulated {available_data}/{needed_data}, {num_blocks}/{} blocks, timeout in {until_timeout}); waiting for more.",
                     self.config.blocks_to_accumulate
                 );
             } else {
                 tracing::info!(
                     "Proceeding to bundle with {} blocks (accumulated {available_data}).",
-                    blocks.len()
+                    oldest.len()
                 );
             }
 
@@ -323,7 +326,7 @@ pub mod service {
 }
 
 pub mod port {
-    use std::{num::NonZeroUsize, ops::RangeInclusive};
+    use std::ops::RangeInclusive;
 
     use nonempty::NonEmpty;
 
@@ -331,6 +334,25 @@ pub mod port {
         Result,
         types::{DateTime, Fragment, NonNegative, Utc, storage::SequentialFuelBlocks},
     };
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct BytesLimit(pub u32);
+
+    impl BytesLimit {
+        pub const UNLIMITED: Self = Self(u32::MAX);
+    }
+
+    impl From<u32> for BytesLimit {
+        fn from(value: u32) -> Self {
+            Self(value)
+        }
+    }
+
+    impl From<BytesLimit> for u32 {
+        fn from(limit: BytesLimit) -> Self {
+            limit.0
+        }
+    }
 
     pub mod fuel {
         #[allow(async_fn_in_trait)]
@@ -365,16 +387,20 @@ pub mod port {
     #[derive(Debug, Clone)]
     pub struct UnbundledBlocks {
         pub oldest: SequentialFuelBlocks,
-        pub total_unbundled: NonZeroUsize,
+        pub buildup_detected: Option<bool>,
     }
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]
     pub trait Storage: Sync {
-        async fn lowest_sequence_of_unbundled_blocks(
+        /// Candidates are chosen so that:
+        /// * the first block's height is the lowest available
+        /// * all blocks are consecutive in height
+        async fn next_candidates_for_bundling(
             &self,
             starting_height: u32,
-            max_cumulative_bytes: u32,
+            target_cumulative_bytes: BytesLimit,
+            block_buildup_detection_threshold: u32,
         ) -> Result<Option<UnbundledBlocks>>;
         async fn insert_bundle_and_fragments(
             &self,

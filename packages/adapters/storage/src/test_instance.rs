@@ -6,7 +6,10 @@ use std::{
 
 use delegate::delegate;
 use services::{
-    block_bundler::{self, port::UnbundledBlocks},
+    block_bundler::{
+        self,
+        port::{BytesLimit, UnbundledBlocks},
+    },
     block_committer, block_importer,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
@@ -232,13 +235,18 @@ impl block_importer::port::Storage for DbWithProcess {
 }
 
 impl block_bundler::port::Storage for DbWithProcess {
-    async fn lowest_sequence_of_unbundled_blocks(
+    async fn next_candidates_for_bundling(
         &self,
         starting_height: u32,
-        max_cumulative_bytes: u32,
+        max_cumulative_bytes: BytesLimit,
+        block_buildup_threshold: u32,
     ) -> services::Result<Option<UnbundledBlocks>> {
         self.db
-            ._lowest_unbundled_blocks(starting_height, max_cumulative_bytes)
+            ._next_candidates_for_bundling(
+                starting_height,
+                max_cumulative_bytes,
+                block_buildup_threshold,
+            )
             .await
             .map_err(Into::into)
     }

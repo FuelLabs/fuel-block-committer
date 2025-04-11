@@ -4,7 +4,7 @@ use futures::{TryStreamExt, stream::BoxStream};
 use itertools::Itertools;
 use metrics::{RegistersMetrics, prometheus::IntGauge};
 use services::{
-    block_bundler::port::UnbundledBlocks,
+    block_bundler::port::{BytesLimit, UnbundledBlocks},
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
         NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
@@ -479,47 +479,16 @@ impl Postgres {
         Ok(response)
     }
 
-    pub(crate) async fn total_unbundled_blocks(&self, starting_height: u32) -> Result<u64> {
-        let count = sqlx::query!(
-            r#"SELECT COUNT(*)
-                FROM fuel_blocks fb 
-                WHERE fb.height >= $1
-                AND NOT EXISTS (
-                    SELECT 1 FROM bundles b 
-                    WHERE fb.height BETWEEN b.start_height AND b.end_height
-                    AND b.end_height >= $1
-                )"#,
-            i64::from(starting_height)
-        )
-        .fetch_one(&self.connection_pool)
-        .await?
-        .count
-        .unwrap_or_default();
-
-        let count = u64::try_from(count)
-            .map_err(|_| crate::error::Error::Conversion("invalid block count".to_string()))?;
-
-        Ok(count)
-    }
-
-    pub(crate) async fn _lowest_unbundled_blocks(
+    pub(crate) async fn _next_candidates_for_bundling(
         &self,
         starting_height: u32,
-        max_cumulative_bytes: u32,
+        max_cumulative_bytes: BytesLimit,
+        block_buildup_threshold: u32,
     ) -> Result<Option<UnbundledBlocks>> {
-        // We're not using snapshot isolation here, so the count may change by the time
-        // we retrieve the blocks. If the pruner is configured aggressively to track the
-        // lookback window closely, the worst-case scenario is a temporary over- or
-        // underestimation of the block count. This discrepancy should resolve quickly,
-        // making the overhead of a snapshot-isolated transaction unnecessary.
-        let total_unbundled_blocks = self.total_unbundled_blocks(starting_height).await?;
-
-        if total_unbundled_blocks == 0 {
-            return Ok(None);
-        }
-
         let stream = self.stream_unbundled_blocks(starting_height);
-        let blocks = take_blocks_until_limit(stream, max_cumulative_bytes).await?;
+        let (blocks, buildup_detected) =
+            take_consecutive_blocks(stream, max_cumulative_bytes.0, block_buildup_threshold)
+                .await?;
 
         let sequential_blocks = {
             let Some(nonempty_blocks) = NonEmpty::from_vec(blocks) else {
@@ -535,9 +504,7 @@ impl Postgres {
 
         Ok(Some(UnbundledBlocks {
             oldest: sequential_blocks,
-            total_unbundled: (total_unbundled_blocks as usize)
-                .try_into()
-                .expect("checked already"),
+            buildup_detected,
         }))
     }
 
@@ -548,15 +515,11 @@ impl Postgres {
         sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
-            SELECT fb.* 
-        FROM fuel_blocks fb 
-        WHERE fb.height >= $1
-        AND NOT EXISTS (
-            SELECT 1 FROM bundles b 
-            WHERE fb.height BETWEEN b.start_height AND b.end_height
-            AND b.end_height >= $1
-        ) 
-        ORDER BY fb.height"#,
+            SELECT fb.height, fb.data
+            FROM fuel_blocks fb 
+            WHERE fb.is_bundled = false
+                AND fb.height >= $1
+            ORDER BY fb.height"#,
             i64::from(starting_height),
         )
         .fetch(&self.connection_pool)
@@ -1028,21 +991,23 @@ impl Postgres {
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
     ) -> Result<()> {
-        let mut tx = self.connection_pool.begin().await?;
-
-        let start = *block_range.start();
-        let end = *block_range.end();
-
-        // Insert a new bundle and retrieve its ID
-        let bundle_id = sqlx::query!(
+        let start_height = *block_range.start();
+        let end_height = *block_range.end();
+        let update_bundled_status = sqlx::query!(
+            "UPDATE fuel_blocks SET is_bundled = true WHERE height BETWEEN $1 AND $2",
+            i64::from(start_height),
+            i64::from(end_height)
+        );
+        let insert_bundles_query = sqlx::query!(
             "INSERT INTO bundles(id, start_height, end_height) VALUES ($1, $2, $3) RETURNING id",
             bundle_id.get(),
-            i64::from(start),
-            i64::from(end)
-        )
-        .fetch_one(&mut *tx)
-        .await?
-        .id;
+            i64::from(start_height),
+            i64::from(end_height)
+        );
+
+        let mut tx = self.connection_pool.begin().await?;
+
+        let bundle_id = insert_bundles_query.fetch_one(&mut *tx).await?.id;
 
         let bundle_id: NonNegative<i32> = bundle_id.try_into().map_err(|e| {
             crate::error::Error::Conversion(format!("invalid bundle id received from db: {}", e))
@@ -1071,7 +1036,7 @@ impl Postgres {
             .collect::<Result<Vec<_>>>()?;
 
         // Batch insert fragments
-        let queries = fragment_rows
+        let fragment_insertion_queries = fragment_rows
             .into_iter()
             .chunks(MAX_FRAGMENTS_PER_QUERY)
             .into_iter()
@@ -1092,12 +1057,12 @@ impl Postgres {
             })
             .collect::<Vec<_>>();
 
-        // Execute all fragment insertion queries
-        for mut query in queries {
+        update_bundled_status.execute(&mut *tx).await?;
+
+        for mut query in fragment_insertion_queries {
             query.build().execute(&mut *tx).await?;
         }
 
-        // Commit the transaction
         tx.commit().await?;
 
         Ok(())
@@ -1252,37 +1217,62 @@ impl Postgres {
     }
 }
 
-async fn take_blocks_until_limit(
-    mut stream: BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
-    max_cumulative_bytes: u32,
-) -> Result<Vec<CompressedFuelBlock>> {
-    let mut blocks = vec![];
-
-    let mut total_bytes = 0;
-    let mut last_height: Option<u32> = None;
-    while let Some(val) = stream.try_next().await? {
-        let data_len = val.data.len();
-        if total_bytes + data_len > max_cumulative_bytes as usize {
+// Helper function to count additional blocks until the buildup threshold is reached or the stream is exhausted.
+async fn count_remaining_blocks(
+    stream: &mut BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
+    buildup_detection_threshold: u32,
+) -> Result<u32> {
+    let mut count = 0u32;
+    while count < buildup_detection_threshold {
+        if stream.try_next().await?.is_some() {
+            count += 1;
+        } else {
             break;
         }
+    }
+    Ok(count)
+}
 
-        let block = CompressedFuelBlock::try_from(val)?;
+async fn take_consecutive_blocks(
+    mut stream: BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>>,
+    target_cumulative_bytes: u32,
+    block_buildup_threshold: u32,
+) -> Result<(Vec<CompressedFuelBlock>, Option<bool>)> {
+    let mut consecutive_blocks = Vec::new();
+    let mut cumulative_bytes = 0;
+    let mut total_blocks_count = 0;
+    let mut last_height: Option<u32> = None;
+
+    while cumulative_bytes < target_cumulative_bytes {
+        let Some(db_block) = stream.try_next().await? else {
+            break;
+        };
+
+        total_blocks_count += 1;
+        let data_len = db_block.data.len() as u32;
+        let block = CompressedFuelBlock::try_from(db_block)?;
         let height = block.height;
-        total_bytes += data_len;
 
-        blocks.push(block);
-
-        match &mut last_height {
-            Some(last_height) if height != last_height.saturating_add(1) => {
+        // Check if the block is consecutive
+        if let Some(prev_height) = last_height {
+            if height != prev_height.saturating_add(1) {
+                // A gap is detected. Break out without adding this block.
                 break;
             }
-            _ => {
-                last_height = Some(height);
-            }
         }
+        last_height = Some(height);
+        consecutive_blocks.push(block);
+        cumulative_bytes += data_len;
     }
 
-    Ok(blocks)
+    if cumulative_bytes < target_cumulative_bytes {
+        total_blocks_count += count_remaining_blocks(&mut stream, block_buildup_threshold).await?;
+        let buildup_detected = total_blocks_count >= block_buildup_threshold;
+        Ok((consecutive_blocks, Some(buildup_detected)))
+    } else {
+        // If target bytes are reached without encountering a gap, no buildup detection is needed.
+        Ok((consecutive_blocks, None))
+    }
 }
 
 fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
@@ -1312,368 +1302,343 @@ fn create_ranges(heights: Vec<u32>) -> Vec<RangeInclusive<u32>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, path::Path};
+    mod migrations {
+        use sqlx::Executor;
 
-    use rand::Rng;
-    use services::types::{CollectNonEmpty, Fragment, L1Tx, TransactionState};
-    use sqlx::{Executor, PgPool, Row};
-    use tokio::time::Instant;
+        use crate::Result;
+        use std::path::PathBuf;
 
-    use super::*;
-    use crate::test_instance;
+        use crate::DbWithProcess;
 
-    #[tokio::test]
-    async fn test_second_migration_applies_successfully() {
-        let db = test_instance::PostgresProcess::shared()
-            .await
-            .expect("Failed to initialize PostgresProcess")
-            .create_noschema_random_db()
-            .await
-            .expect("Failed to create random test database");
+        #[tokio::test]
+        async fn test_migration_8_populates_is_bundled_correctly() {
+            let process = get_test_pool().await.unwrap();
+            let db = process.db.pool();
 
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let migrations_path = Path::new(manifest_dir).join("migrations");
+            // --- Apply migrations 1 through 7 ---
+            // These migrations create the necessary tables.
+            let mig_files = [
+                "0001_initial.up.sql",
+                "0002_better_fragmentation.up.sql",
+                "0003_block_submission_tx_id.up.sql",
+                "0004_blob_gas_bumping.sql",
+                "0005_tx_state_added.up.sql",
+                "0006_fuel_block_drop_hash_and_set_height_as_pkey.up.sql",
+                "0007_cost_tracking.sql",
+            ];
 
-        async fn apply_migration(pool: &sqlx::Pool<sqlx::Postgres>, path: &Path) {
-            let sql = fs::read_to_string(path)
-                .map_err(|e| format!("Failed to read migration file {:?}: {}", path, e))
+            for file in &mig_files {
+                let sql = load_migration_file(file);
+
+                db.execute(sqlx::raw_sql(&sql)).await.unwrap();
+            }
+
+            // At this point, the fuel_blocks table (created in migration 0002 and then altered in 0006)
+            // now has only "height" and "data" columns.
+            // Insert some sample fuel blocks with various heights.
+            let blocks = vec![
+                // Block not bundled (height 50)
+                (50i64, b"block50".as_ref()),
+                // Blocks that should be bundled via first bundle (range 100-150)
+                (100i64, b"block100".as_ref()),
+                (125i64, b"block125".as_ref()),
+                (150i64, b"block150".as_ref()),
+                // Blocks not bundled (height 175, 200)
+                (175i64, b"block175".as_ref()),
+                (200i64, b"block200".as_ref()),
+                // Block bundled via second bundle (range 300-350)
+                (320i64, b"block320".as_ref()),
+            ];
+            for (height, data) in blocks {
+                db.execute(sqlx::query!(
+                    "INSERT INTO fuel_blocks (height, data) VALUES ($1, $2)",
+                    height,
+                    data
+                ))
+                .await
                 .unwrap();
-            pool.execute(sqlx::raw_sql(&sql)).await.unwrap();
-        }
+            }
 
-        // -----------------------
-        // Apply Initial Migration
-        // -----------------------
-        let initial_migration_path = migrations_path.join("0001_initial.up.sql");
-        apply_migration(&db.db.pool(), &initial_migration_path).await;
-
-        // Insert sample data into initial tables
-
-        let fuel_block_hash = vec![0u8; 32];
-        let insert_l1_submissions = r#"
-        INSERT INTO l1_submissions (fuel_block_hash, fuel_block_height)
-        VALUES ($1, $2)
-        RETURNING id
-    "#;
-        let row = sqlx::query(insert_l1_submissions)
-            .bind(&fuel_block_hash)
-            .bind(1000i64)
-            .fetch_one(&db.db.pool())
+            // Insert sample bundles.
+            // First bundle covers heights 100 to 150.
+            db.execute(sqlx::query!(
+                "INSERT INTO bundles (start_height, end_height) VALUES ($1, $2)",
+                100i64,
+                150i64
+            ))
             .await
             .unwrap();
-        let submission_id: i32 = row.try_get("id").unwrap();
-
-        let insert_l1_fuel_block_submission = r#"
-        INSERT INTO l1_fuel_block_submission (fuel_block_hash, fuel_block_height, completed, submittal_height)
-        VALUES ($1, $2, $3, $4)
-    "#;
-        sqlx::query(insert_l1_fuel_block_submission)
-            .bind(&fuel_block_hash)
-            .bind(1000i64)
-            .bind(true)
-            .bind(950i64)
-            .execute(&db.db.pool())
+            // Second bundle covers heights 300 to 350.
+            db.execute(sqlx::query!(
+                "INSERT INTO bundles (start_height, end_height) VALUES ($1, $2)",
+                300i64,
+                350i64
+            ))
             .await
             .unwrap();
 
-        // Insert into l1_transactions
-        let tx_hash = vec![1u8; 32];
-        let insert_l1_transactions = r#"
-        INSERT INTO l1_transactions (hash, state)
-        VALUES ($1, $2)
-        RETURNING id
-    "#;
-        let row = sqlx::query(insert_l1_transactions)
-            .bind(&tx_hash)
-            .bind(0i16)
-            .fetch_one(&db.db.pool())
-            .await
-            .unwrap();
-        let transaction_id: i32 = row.try_get("id").unwrap();
+            // --- Apply Migration 8 ---
+            // Load migration 8 from its file.
+            let mig8_sql = load_migration_file("0008_add_is_bundled_column.up.sql");
+            db.execute(sqlx::raw_sql(&mig8_sql)).await.unwrap();
 
-        // Insert into l1_fragments
-        let fragment_data = vec![2u8; 10];
-        let insert_l1_fragments = r#"
-        INSERT INTO l1_fragments (fragment_idx, submission_id, data)
-        VALUES ($1, $2, $3)
-        RETURNING id
-    "#;
-        let row = sqlx::query(insert_l1_fragments)
-            .bind(0i64)
-            .bind(submission_id)
-            .bind(&fragment_data)
-            .fetch_one(&db.db.pool())
-            .await
-            .unwrap();
-        let fragment_id: i32 = row.try_get("id").unwrap();
+            // --- Verification ---
+            // Expected logic:
+            //   Blocks with heights 100, 125, 150 (first bundle) and 320 (second bundle) should be marked as bundled.
+            //   Blocks with heights 50, 175, and 200 should remain not bundled.
+            let rows = sqlx::query!("SELECT height, is_bundled FROM fuel_blocks ORDER BY height")
+                .fetch_all(&db)
+                .await
+                .unwrap();
+            for row in rows {
+                match row.height {
+                    50 => assert!(!row.is_bundled, "Block at height 50 should not be bundled"),
+                    100 => assert!(row.is_bundled, "Block at height 100 should be bundled"),
+                    125 => assert!(row.is_bundled, "Block at height 125 should be bundled"),
+                    150 => assert!(row.is_bundled, "Block at height 150 should be bundled"),
+                    175 => assert!(!row.is_bundled, "Block at height 175 should not be bundled"),
+                    200 => assert!(!row.is_bundled, "Block at height 200 should not be bundled"),
+                    320 => assert!(row.is_bundled, "Block at height 320 should be bundled"),
+                    other => panic!("Unexpected block height: {}", other),
+                }
+            }
 
-        // Insert into l1_transaction_fragments
-        let insert_l1_transaction_fragments = r#"
-        INSERT INTO l1_transaction_fragments (transaction_id, fragment_id)
-        VALUES ($1, $2)
-    "#;
-        sqlx::query(insert_l1_transaction_fragments)
-            .bind(transaction_id)
-            .bind(fragment_id)
-            .execute(&db.db.pool())
-            .await
-            .unwrap();
-
-        // ------------------------
-        // Apply Second Migration
-        // ------------------------
-        let second_migration_path = migrations_path.join("0002_better_fragmentation.up.sql");
-        apply_migration(&db.db.pool(), &second_migration_path).await;
-
-        // ------------------------
-        // Verification Steps
-        // ------------------------
-
-        // Function to check table existence
-        async fn table_exists(pool: &PgPool, table_name: &str) -> bool {
-            let query = r#"
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables
-                WHERE table_schema = 'public'
-                AND table_name = $1
+            // Verify that the composite index exists.
+            let index = sqlx::query!(
+                "SELECT indexname FROM pg_indexes 
+             WHERE tablename = 'fuel_blocks' 
+             AND indexname = 'idx_fuel_blocks_is_bundled_height'"
             )
-        "#;
-            let row = sqlx::query(query)
-                .bind(table_name)
-                .fetch_one(pool)
-                .await
-                .expect("Failed to execute table_exists query");
-            row.try_get::<bool, _>(0).unwrap_or(false)
-        }
-
-        // Function to check column existence and type
-        async fn column_info(pool: &PgPool, table_name: &str, column_name: &str) -> Option<String> {
-            let query = r#"
-            SELECT data_type
-            FROM information_schema.columns
-            WHERE table_name = $1 AND column_name = $2
-        "#;
-            let row = sqlx::query(query)
-                .bind(table_name)
-                .bind(column_name)
-                .fetch_optional(pool)
-                .await
-                .expect("Failed to execute column_info query");
-            row.map(|row| row.try_get("data_type").unwrap_or_default())
-        }
-
-        let fuel_blocks_exists = table_exists(&db.db.pool(), "fuel_blocks").await;
-        assert!(fuel_blocks_exists, "fuel_blocks table does not exist");
-
-        let bundles_exists = table_exists(&db.db.pool(), "bundles").await;
-        assert!(bundles_exists, "bundles table does not exist");
-
-        async fn check_columns(pool: &PgPool, table: &str, column: &str, expected_type: &str) {
-            let info = column_info(pool, table, column).await;
+            .fetch_optional(&db)
+            .await
+            .unwrap();
             assert!(
-                info.is_some(),
-                "Column '{}' does not exist in table '{}'",
-                column,
-                table
-            );
-            let data_type = info.unwrap();
-            assert_eq!(
-                data_type, expected_type,
-                "Column '{}' in table '{}' has type '{}', expected '{}'",
-                column, table, data_type, expected_type
+                index.is_some(),
+                "Index 'idx_fuel_blocks_is_bundled_height' should exist"
             );
         }
 
-        // Check that 'l1_fragments' has new columns
-        check_columns(&db.db.pool(), "l1_fragments", "idx", "integer").await;
-        check_columns(&db.db.pool(), "l1_fragments", "total_bytes", "bigint").await;
-        check_columns(&db.db.pool(), "l1_fragments", "unused_bytes", "bigint").await;
-        check_columns(&db.db.pool(), "l1_fragments", "bundle_id", "integer").await;
+        fn load_migration_file(file: &str) -> String {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("migrations");
+            path.push(file);
+            std::fs::read_to_string(path)
+                .unwrap_or_else(|_| panic!("failed to read migration file {file}"))
+        }
 
-        // Verify 'l1_transactions' has 'finalized_at' column
-        check_columns(
-            &db.db.pool(),
-            "l1_transactions",
-            "finalized_at",
-            "timestamp with time zone",
-        )
-        .await;
-
-        // Verify that l1_fragments and l1_transaction_fragments are empty after migration
-        let count_l1_fragments = sqlx::query_scalar::<_, i64>(
-            r#"
-        SELECT COUNT(*) FROM l1_fragments
-        "#,
-        )
-        .fetch_one(&db.db.pool())
-        .await
-        .unwrap();
-        assert_eq!(
-            count_l1_fragments, 0,
-            "l1_fragments table is not empty after migration"
-        );
-
-        let count_l1_transaction_fragments = sqlx::query_scalar::<_, i64>(
-            r#"
-        SELECT COUNT(*) FROM l1_transaction_fragments
-        "#,
-        )
-        .fetch_one(&db.db.pool())
-        .await
-        .unwrap();
-        assert_eq!(
-            count_l1_transaction_fragments, 0,
-            "l1_transaction_fragments table is not empty after migration"
-        );
-
-        // Insert a default bundle to satisfy the foreign key constraint for future inserts
-        let insert_default_bundle = r#"
-        INSERT INTO bundles (start_height, end_height)
-        VALUES ($1, $2)
-        RETURNING id
-    "#;
-        let row = sqlx::query(insert_default_bundle)
-            .bind(0i64)
-            .bind(0i64)
-            .fetch_one(&db.db.pool())
-            .await
-            .unwrap();
-        let bundle_id: i32 = row.try_get("id").unwrap();
-        assert_eq!(bundle_id, 1, "Default bundle ID is not 1");
-
-        // Attempt to insert a fragment with empty data
-        let insert_invalid_fragment = r#"
-        INSERT INTO l1_fragments (idx, data, total_bytes, unused_bytes, bundle_id)
-        VALUES ($1, $2, $3, $4, $5)
-    "#;
-        let result = sqlx::query(insert_invalid_fragment)
-            .bind(1i32)
-            .bind::<&[u8]>(&[]) // Empty data should fail due to check constraint
-            .bind(10i64)
-            .bind(5i64)
-            .bind(1i32) // Valid bundle_id
-            .execute(&db.db.pool())
-            .await;
-
-        assert!(
-            result.is_err(),
-            "Inserting empty data should fail due to check constraint"
-        );
-
-        // Insert a valid fragment
-        let fragment_data_valid = vec![3u8; 15];
-        let insert_valid_fragment = r#"
-        INSERT INTO l1_fragments (idx, data, total_bytes, unused_bytes, bundle_id)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id
-    "#;
-        let row = sqlx::query(insert_valid_fragment)
-            .bind(1i32)
-            .bind(&fragment_data_valid)
-            .bind(15i64)
-            .bind(0i64)
-            .bind(1i32)
-            .fetch_one(&db.db.pool())
-            .await
-            .unwrap();
-
-        let new_fragment_id: i32 = row.try_get("id").unwrap();
-        assert!(new_fragment_id > 0, "Failed to insert a valid fragment");
+        async fn get_test_pool() -> Result<DbWithProcess> {
+            crate::test_instance::PostgresProcess::shared()
+                .await?
+                .create_noschema_random_db()
+                .await
+        }
     }
 
-    #[tokio::test]
-    async fn stress_test_update_costs() -> Result<()> {
-        use services::{
-            block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
-            state_listener::port::Storage as ListenerStorage,
+    mod performance {
+        use crate::postgres::Postgres;
+        use crate::test_instance::{self, PostgresProcess};
+        use itertools::Itertools;
+        use rand::Rng;
+        use services::block_bundler::port::BytesLimit;
+        use services::types::{
+            CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty, TransactionCostUpdate,
+            TransactionState, Utc,
         };
+        use std::cmp;
+        use std::time::{Duration, Instant};
 
-        let mut rng = rand::thread_rng();
+        #[tokio::test]
+        async fn stress_test_update_costs() -> crate::Result<()> {
+            use services::{
+                block_bundler::port::Storage, state_committer::port::Storage as CommitterStorage,
+                state_listener::port::Storage as ListenerStorage,
+            };
 
-        let storage = test_instance::PostgresProcess::shared()
-            .await
-            .expect("Failed to initialize PostgresProcess")
-            .create_random_db()
-            .await
-            .expect("Failed to create random test database");
+            let mut rng = rand::thread_rng();
 
-        let fragments_per_bundle = 1_000_000;
-        let txs_per_fragment = 100;
+            let storage = test_instance::PostgresProcess::shared()
+                .await
+                .expect("Failed to initialize PostgresProcess")
+                .create_random_db()
+                .await
+                .expect("Failed to create random test database");
 
-        // insert the bundle and fragments
-        let bundle_id = storage.next_bundle_id().await.unwrap();
-        let end_height = rng.gen_range(1..5000);
-        let range = 0..=end_height;
+            let fragments_per_bundle = 1_000_000;
+            let txs_per_fragment = 100;
 
-        // create fragments for the bundle
-        let fragments = (0..fragments_per_bundle)
-            .map(|_| Fragment {
-                data: NonEmpty::from_vec(vec![rng.r#gen()]).unwrap(),
-                unused_bytes: rng.gen_range(0..1000),
-                total_bytes: rng.gen_range(1000..5000).try_into().unwrap(),
-            })
-            .collect::<Vec<_>>();
-        let fragments = NonEmpty::from_vec(fragments).unwrap();
+            // insert the bundle and fragments
+            let bundle_id = storage.next_bundle_id().await.unwrap();
+            let end_height = rng.gen_range(1..5000);
+            let range = 0..=end_height;
 
-        storage
-            .insert_bundle_and_fragments(bundle_id, range, fragments.clone())
-            .await
-            .unwrap();
+            // create fragments for the bundle
+            let fragments = (0..fragments_per_bundle)
+                .map(|_| Fragment {
+                    data: NonEmpty::from_vec(vec![rng.r#gen()]).unwrap(),
+                    unused_bytes: rng.gen_range(0..1000),
+                    total_bytes: rng.gen_range(1000..5000).try_into().unwrap(),
+                })
+                .collect::<Vec<_>>();
+            let fragments = NonEmpty::from_vec(fragments).unwrap();
 
-        let fragment_ids = storage
-            .oldest_nonfinalized_fragments(0, 2)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|f| f.id)
-            .collect_nonempty()
-            .unwrap();
+            storage
+                .insert_bundle_and_fragments(bundle_id, range, fragments.clone())
+                .await
+                .unwrap();
 
-        let mut tx_changes = vec![];
-        let mut cost_updates = vec![];
+            let fragment_ids = storage
+                .oldest_nonfinalized_fragments(0, 2)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|f| f.id)
+                .collect_nonempty()
+                .unwrap();
 
-        // for each fragment, create multiple transactions
-        for _id in fragment_ids.iter() {
-            for _ in 0..txs_per_fragment {
-                let tx_hash = rng.r#gen::<[u8; 32]>();
-                let tx = L1Tx {
-                    hash: tx_hash,
-                    nonce: rng.r#gen(),
-                    ..Default::default()
-                };
+            let mut tx_changes = vec![];
+            let mut cost_updates = vec![];
 
-                storage
-                    .record_pending_tx(tx.clone(), fragment_ids.clone(), Utc::now())
+            // for each fragment, create multiple transactions
+            for _id in fragment_ids.iter() {
+                for _ in 0..txs_per_fragment {
+                    let tx_hash = rng.r#gen::<[u8; 32]>();
+                    let tx = L1Tx {
+                        hash: tx_hash,
+                        nonce: rng.r#gen(),
+                        ..Default::default()
+                    };
+
+                    storage
+                        .record_pending_tx(tx.clone(), fragment_ids.clone(), Utc::now())
+                        .await
+                        .unwrap();
+
+                    // update transaction state to simulate finalized transactions
+                    let finalization_time = Utc::now();
+                    tx_changes.push((tx.hash, TransactionState::Finalized(finalization_time)));
+
+                    // cost updates
+                    let total_fee = rng.gen_range(1_000_000u128..10_000_000u128);
+                    let da_block_height = rng.gen_range(1_000_000u64..10_000_000u64);
+                    cost_updates.push(TransactionCostUpdate {
+                        tx_hash,
+                        total_fee,
+                        da_block_height,
+                    });
+                }
+            }
+
+            // update transaction states and costs
+            let start_time = Instant::now();
+
+            storage
+                .update_tx_states_and_costs(tx_changes, vec![], cost_updates)
+                .await
+                .unwrap();
+
+            let duration = start_time.elapsed();
+
+            assert!(duration.as_secs() < 60);
+
+            Ok(())
+        }
+
+        // Helper function to insert fuel blocks in batches.
+        // Each block's data is 344 bytes (mimicking production).
+        async fn insert_fuel_blocks(db: &Postgres, start: u32, end: u32, batch_size: usize) {
+            // Create a payload of 344 bytes (using a constant value).
+            let payload = vec![1u8; 344];
+            for chunk in (start..=end).chunks(batch_size).into_iter() {
+                let blocks: Vec<CompressedFuelBlock> = chunk
+                    .into_iter()
+                    .map(|height| CompressedFuelBlock {
+                        height,
+                        data: NonEmpty::from_vec(payload.clone()).expect("NonEmpty data"),
+                    })
+                    .collect();
+                let nonempty_blocks =
+                    NonEmpty::from_vec(blocks).expect("Batch should be non-empty");
+                db._insert_blocks(nonempty_blocks)
                     .await
-                    .unwrap();
-
-                // update transaction state to simulate finalized transactions
-                let finalization_time = Utc::now();
-                tx_changes.push((tx.hash, TransactionState::Finalized(finalization_time)));
-
-                // cost updates
-                let total_fee = rng.gen_range(1_000_000u128..10_000_000u128);
-                let da_block_height = rng.gen_range(1_000_000u64..10_000_000u64);
-                cost_updates.push(TransactionCostUpdate {
-                    tx_hash,
-                    total_fee,
-                    da_block_height,
-                });
+                    .expect("Insertion should succeed");
             }
         }
 
-        // update transaction states and costs
-        let start_time = Instant::now();
+        #[tokio::test]
+        async fn test_next_candidates_for_bundling_performance_4m_blocks() {
+            // Set total number of blocks to insert (around 4 million)
+            let total_blocks = 7 * 24 * 3600 + 3600;
+            // We'll leave the last 2500 blocks unbundled.
+            let bundled_end = total_blocks - 2500;
 
-        storage
-            .update_tx_states_and_costs(tx_changes, vec![], cost_updates)
-            .await
-            .unwrap();
+            // Set up the test database.
+            let process = PostgresProcess::shared()
+                .await
+                .expect("Failed to start test PostgresProcess");
+            let db_with_process = process
+                .create_random_db()
+                .await
+                .expect("Failed to create random test database");
+            let db = &db_with_process.db;
 
-        let duration = start_time.elapsed();
+            // Insert fuel blocks from 1 to total_blocks with 344-byte payloads.
+            // Using a batch size of 1000.
+            insert_fuel_blocks(db, 1, total_blocks, 62000).await;
 
-        assert!(duration.as_secs() < 60);
+            // Bundle blocks from 1 to bundled_end in small bundles of at most 3600 blocks.
+            let bundle_max_size = 3600;
+            // Create a dummy fragment with a 344-byte payload.
+            let fragment_payload = vec![1u8; 344];
+            let dummy_fragment = Fragment {
+                data: NonEmpty::from_vec(fragment_payload).expect("NonEmpty data"),
+                unused_bytes: 0,
+                total_bytes: 344u32.try_into().unwrap(),
+            };
 
-        Ok(())
+            let mut current_start = 1u32;
+            while current_start <= bundled_end {
+                let current_end = cmp::min(current_start + bundle_max_size - 1, bundled_end);
+                let range = current_start..=current_end;
+                let next_bundle_id = db
+                    ._next_bundle_id()
+                    .await
+                    .expect("Should be able to get a bundle id");
+                db._insert_bundle_and_fragments(
+                    next_bundle_id,
+                    range,
+                    NonEmpty::from_vec(vec![dummy_fragment.clone()])
+                        .expect("Non-empty fragment list"),
+                )
+                .await
+                .expect("Bundle insertion failed");
+                current_start = current_end + 1;
+            }
+
+            // Now run the unbundled blocks query.
+            // Since blocks 1 to bundled_end (3,997,500) are bundled, only blocks 3,997,501 to 4,000,000 (2500 blocks)
+            // remain unbundled.
+            let start_height = total_blocks - (7 * 24 * 3600);
+            let start_time = Instant::now();
+            let result = db
+                ._next_candidates_for_bundling(start_height, BytesLimit::UNLIMITED, u32::MAX)
+                .await
+                .expect("Query should execute correctly");
+            let duration = start_time.elapsed();
+
+            // Determine the count of unbundled blocks returned.
+            let unbundled_count = result
+                .as_ref()
+                .map(|seq| {
+                    let range = seq.oldest.height_range();
+                    range.end() - range.start() + 1
+                })
+                .unwrap_or(0);
+
+            assert_eq!(
+                unbundled_count, 2500,
+                "Expected exactly 2500 unbundled blocks"
+            );
+            assert!(duration < Duration::from_secs(1));
+        }
     }
 }
