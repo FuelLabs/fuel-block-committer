@@ -6,7 +6,10 @@ use std::{
 
 use delegate::delegate;
 use services::{
-    block_bundler::{self, port::UnbundledBlocks},
+    block_bundler::{
+        self,
+        port::{BytesLimit, UnbundledBlocks},
+    },
     block_committer, block_importer,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
@@ -235,7 +238,7 @@ impl block_bundler::port::Storage for DbWithProcess {
     async fn next_candidates_for_bundling(
         &self,
         starting_height: u32,
-        max_cumulative_bytes: u32,
+        max_cumulative_bytes: BytesLimit,
         block_buildup_threshold: u32,
     ) -> services::Result<Option<UnbundledBlocks>> {
         self.db

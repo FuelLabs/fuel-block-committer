@@ -4,7 +4,7 @@ use futures::{TryStreamExt, stream::BoxStream};
 use itertools::Itertools;
 use metrics::{RegistersMetrics, prometheus::IntGauge};
 use services::{
-    block_bundler::port::UnbundledBlocks,
+    block_bundler::port::{BytesLimit, UnbundledBlocks},
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
         NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
@@ -482,12 +482,12 @@ impl Postgres {
     pub(crate) async fn _next_candidates_for_bundling(
         &self,
         starting_height: u32,
-        target_cumulative_bytes: u32,
+        max_cumulative_bytes: BytesLimit,
         block_buildup_threshold: u32,
     ) -> Result<Option<UnbundledBlocks>> {
         let stream = self.stream_unbundled_blocks(starting_height);
         let (blocks, buildup_detected) =
-            take_consecutive_blocks(stream, target_cumulative_bytes, block_buildup_threshold)
+            take_consecutive_blocks(stream, max_cumulative_bytes.0, block_buildup_threshold)
                 .await?;
 
         let sequential_blocks = {
@@ -1439,6 +1439,7 @@ mod tests {
         use crate::test_instance::{self, PostgresProcess};
         use itertools::Itertools;
         use rand::Rng;
+        use services::block_bundler::port::BytesLimit;
         use services::types::{
             CollectNonEmpty, CompressedFuelBlock, Fragment, L1Tx, NonEmpty, TransactionCostUpdate,
             TransactionState, Utc,
@@ -1619,7 +1620,7 @@ mod tests {
             let start_height = total_blocks - (7 * 24 * 3600);
             let start_time = Instant::now();
             let result = db
-                ._next_candidates_for_bundling(start_height, u32::MAX, u32::MAX)
+                ._next_candidates_for_bundling(start_height, BytesLimit::UNLIMITED, u32::MAX)
                 .await
                 .expect("Query should execute correctly");
             let duration = start_time.elapsed();

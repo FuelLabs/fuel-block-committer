@@ -163,7 +163,7 @@ pub mod service {
                 .storage
                 .next_candidates_for_bundling(
                     starting_height,
-                    self.config.bytes_to_accumulate.get() as u32,
+                    super::port::BytesLimit::from(self.config.bytes_to_accumulate.get() as u32),
                     self.config.blocks_to_accumulate.get() as u32,
                 )
                 .await?
@@ -335,6 +335,25 @@ pub mod port {
         types::{DateTime, Fragment, NonNegative, Utc, storage::SequentialFuelBlocks},
     };
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct BytesLimit(pub u32);
+
+    impl BytesLimit {
+        pub const UNLIMITED: Self = Self(u32::MAX);
+    }
+
+    impl From<u32> for BytesLimit {
+        fn from(value: u32) -> Self {
+            Self(value)
+        }
+    }
+
+    impl From<BytesLimit> for u32 {
+        fn from(limit: BytesLimit) -> Self {
+            limit.0
+        }
+    }
+
     pub mod fuel {
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
@@ -380,7 +399,7 @@ pub mod port {
         async fn next_candidates_for_bundling(
             &self,
             starting_height: u32,
-            target_cumulative_bytes: u32,
+            target_cumulative_bytes: BytesLimit,
             block_buildup_detection_threshold: u32,
         ) -> Result<Option<UnbundledBlocks>>;
         async fn insert_bundle_and_fragments(

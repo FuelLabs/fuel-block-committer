@@ -12,7 +12,7 @@ mod postgres;
 pub use postgres::{DbConfig, Postgres};
 use services::{
     Result,
-    block_bundler::port::UnbundledBlocks,
+    block_bundler::port::{BytesLimit, UnbundledBlocks},
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
         L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
@@ -89,7 +89,7 @@ impl services::block_bundler::port::Storage for Postgres {
     async fn next_candidates_for_bundling(
         &self,
         starting_height: u32,
-        max_cumulative_bytes: u32,
+        max_cumulative_bytes: BytesLimit,
         block_buildup_threshold: u32,
     ) -> Result<Option<UnbundledBlocks>> {
         self._next_candidates_for_bundling(
@@ -572,7 +572,7 @@ mod tests {
     async fn next_candidates_for_bundling(
         storage: impl services::block_bundler::port::Storage,
         starting_height: u32,
-        max_cumulative_bytes: u32,
+        max_cumulative_bytes: BytesLimit,
         buildup_detection_threshold: u32,
     ) -> RangeInclusive<u32> {
         storage
@@ -598,7 +598,7 @@ mod tests {
 
         // when: use a very high buildup threshold so that buildup detection is not triggered.
         let height_range =
-            next_candidates_for_bundling(storage.clone(), 0, u32::MAX, u32::MAX).await;
+            next_candidates_for_bundling(storage.clone(), 0, BytesLimit::UNLIMITED, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 1..=10);
@@ -614,7 +614,7 @@ mod tests {
 
         // when: use a high buildup threshold so that buildup detection is not triggered.
         let height_range =
-            next_candidates_for_bundling(storage.clone(), 0, u32::MAX, u32::MAX).await;
+            next_candidates_for_bundling(storage.clone(), 0, BytesLimit::UNLIMITED, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 0..=2);
@@ -629,7 +629,7 @@ mod tests {
 
         // when: pass starting height = 2.
         let height_range =
-            next_candidates_for_bundling(storage.clone(), 2, u32::MAX, u32::MAX).await;
+            next_candidates_for_bundling(storage.clone(), 2, BytesLimit::UNLIMITED, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 2..=10);
@@ -643,7 +643,8 @@ mod tests {
         insert_sequence_of_unbundled_blocks(storage.clone(), 0..=10).await;
 
         // when: use cumulative limit 2 and a high buildup threshold.
-        let height_range = next_candidates_for_bundling(storage.clone(), 0, 2, u32::MAX).await;
+        let height_range =
+            next_candidates_for_bundling(storage.clone(), 0, BytesLimit(2), u32::MAX).await;
 
         // then: expect only blocks 0 and 1 (2 blocks total).
         assert_eq!(height_range, 0..=1);
@@ -668,7 +669,7 @@ mod tests {
 
         // when
         let height_range =
-            next_candidates_for_bundling(storage.clone(), 0, u32::MAX, u32::MAX).await;
+            next_candidates_for_bundling(storage.clone(), 0, BytesLimit::UNLIMITED, u32::MAX).await;
 
         // then
         assert_eq!(height_range, 3..=4);
@@ -686,7 +687,7 @@ mod tests {
 
         // when
         let height_range =
-            next_candidates_for_bundling(storage.clone(), 0, u32::MAX, u32::MAX).await;
+            next_candidates_for_bundling(storage.clone(), 0, BytesLimit::UNLIMITED, u32::MAX).await;
 
         // then: the first unbundled sequence (0..=2) is returned.
         assert_eq!(height_range, 0..=2);
@@ -713,7 +714,7 @@ mod tests {
         let height_range = next_candidates_for_bundling(
             storage.clone(),
             start_height,
-            max_cumulative_bytes,
+            BytesLimit(max_cumulative_bytes),
             u32::MAX,
         )
         .await;
@@ -1386,7 +1387,11 @@ mod tests {
             let storage = storage.clone();
             async move {
                 storage
-                    .next_candidates_for_bundling(starting_height, max_cumulative_bytes, u32::MAX)
+                    .next_candidates_for_bundling(
+                        starting_height,
+                        BytesLimit(max_cumulative_bytes),
+                        u32::MAX,
+                    )
                     .await
                     .unwrap()
                     .map(|seq| seq.oldest.height_range())
@@ -1463,7 +1468,7 @@ mod tests {
         // Use a cumulative byte limit of 5 bytes.
         // When the target cumulative bytes is reached without a gap, buildup detection should return None.
         let unbundled = storage
-            .next_candidates_for_bundling(1, 5, u32::MAX)
+            .next_candidates_for_bundling(1, BytesLimit(5), u32::MAX)
             .await
             .unwrap()
             .expect("Expected some unbundled blocks");
@@ -1496,7 +1501,7 @@ mod tests {
 
         // Query starting from height 1 with a generous cumulative limit.
         let unbundled = storage
-            .next_candidates_for_bundling(1, 100, 5)
+            .next_candidates_for_bundling(1, BytesLimit(100), 5)
             .await
             .unwrap()
             .expect("Expected some unbundled blocks");
@@ -1512,7 +1517,7 @@ mod tests {
         );
     }
 
-    /// Test that when all available blocks form a complete sequence and the cumulative limit isn’t exceeded,
+    /// Test that when all available blocks form a complete sequence and the cumulative limit isn't exceeded,
     /// the function returns all blocks and the buildup (buildup_detected) indicator is false since
     /// the buildup threshold is high
     #[tokio::test]
@@ -1530,7 +1535,7 @@ mod tests {
         storage.insert_blocks(blocks).await.unwrap();
 
         let unbundled = storage
-            .next_candidates_for_bundling(10, 100, u32::MAX)
+            .next_candidates_for_bundling(10, BytesLimit(100), u32::MAX)
             .await
             .unwrap()
             .expect("Expected unbundled blocks");
