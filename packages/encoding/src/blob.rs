@@ -53,10 +53,7 @@ pub fn generate_sidecar(
 #[cfg(feature = "native-kzg-verify")]
 pub mod native_kzg_verify {
     use kzg_rs::{
-        kzg_proof::{
-            safe_g1_affine_from_bytes,
-            G1Projective, G2Projective, Scalar,
-        },
+        kzg_proof::{safe_g1_affine_from_bytes, G1Affine, G1Projective, G2Projective, Scalar},
         pairings_verify, KzgSettings,
     };
 
@@ -65,6 +62,7 @@ pub mod native_kzg_verify {
     #[cfg(feature = "kzg")]
     use kzg_rs::kzg_proof::{Digest, Sha256};
 
+    use crate::constants::FIELD_ELEMENTS_PER_BLOB;
 
     #[cfg(feature = "kzg")]
     pub fn verify_kzg_sidecar(
@@ -145,6 +143,90 @@ pub mod native_kzg_verify {
         pub versioned_hash: [u8; 32],
     }
 
+    // TODO: this needs to be optimized. its 14x slower than the c-kzg implementation
+    fn g1_lincomb_slow(
+        points: &[G1Affine],
+        scalars: &[Scalar],
+        n: usize,
+    ) -> anyhow::Result<G1Affine> {
+        let mut work_scalars = Vec::with_capacity(n);
+        let mut work_points = Vec::with_capacity(n);
+
+        // maybe simd to process these in parallel
+        for i in 0..n {
+            if !scalars[i].eq(&Scalar::zero()) {
+                work_scalars.push(scalars[i]);
+                work_points.push(G1Projective::from(points[i]));
+            }
+        }
+
+        let result = G1Projective::msm_variable_base(&work_points, &work_scalars);
+
+        // Convert back to affine for result
+        Ok(G1Affine::from(result))
+    }
+
+    pub fn blob_to_kzg_commitment(
+        kzg_settings: &KzgSettings,
+        blob: &kzg_rs::Blob,
+    ) -> anyhow::Result<kzg_rs::Bytes48> {
+        let blob_polynomial = blob
+            .as_polynomial()
+            .map_err(|e| anyhow::anyhow!("couldnt convert blob to polynomial: {e:?}"))?;
+
+        let commitment = g1_lincomb_slow(
+            kzg_settings.g1_points,
+            &blob_polynomial,
+            FIELD_ELEMENTS_PER_BLOB,
+        )?;
+
+        let commitment = kzg_rs::Bytes48::from_slice(&commitment.to_compressed())
+            .map_err(|e| anyhow::anyhow!("failed to cast commitment to byte slice: {e:?}"))?;
+
+        Ok(commitment)
+    }
+
+    impl PrecompileInput {
+        pub fn verify_against_blob(
+            &self,
+            kzg_settings: &KzgSettings,
+            blob: &kzg_rs::Blob,
+        ) -> anyhow::Result<()> {
+            let commitment = blob_to_kzg_commitment(kzg_settings, &blob)?;
+
+            let commitment_on_curve = safe_g1_affine_from_bytes(&commitment)
+                .map_err(|e| anyhow::anyhow!("cant cast to g1 affine: {e:?}"))?;
+
+            let versioned_hash = commitment_to_versioned_hash(&commitment);
+
+            let polynomial = blob
+                .as_polynomial()
+                .map_err(|e| anyhow::anyhow!("cant convert blob to polynomial: {e:?}"))?;
+            let z = compute_challenge(&blob, &commitment_on_curve)
+                .map_err(|e| anyhow::anyhow!("cant compute challenge: {e:?}"))?;
+            let y = evaluate_polynomial_in_evaluation_form(polynomial, z, &kzg_settings)
+                .map_err(|e| anyhow::anyhow!("cant evaluate polynomial: {e:?}"))?;
+
+            if self.z != z {
+                anyhow::bail!("z mismatch")
+            }
+
+            if self.y != y {
+                anyhow::bail!("y mismatch");
+            }
+
+            if self.commitment.as_slice() != commitment.as_slice() {
+                anyhow::bail!("commitment mismatch");
+            }
+
+            if self.versioned_hash != versioned_hash {
+                anyhow::bail!("versioned hash mismatch");
+            }
+
+            Ok(())
+        }
+    }
+
     #[cfg(feature = "kzg")]
     pub fn commitment_to_versioned_hash(commitment: &kzg_rs::Bytes48) -> [u8; 32] {
         let mut hasher = Sha256::new();
@@ -182,8 +264,6 @@ pub mod native_kzg_verify {
                 .map_err(|e| anyhow::anyhow!("cant compute challenge: {e:?}"))?;
             let y = evaluate_polynomial_in_evaluation_form(polynomial, z, &kzg_settings)
                 .map_err(|e| anyhow::anyhow!("cant evaluate polynomial: {e:?}"))?;
-            // recompute y,z, polynomial inside the zkvm, verify against PrecompileInput
-            // lets ignore commitment for now
 
             precompile_inputs.push(PrecompileInput {
                 commitment,
@@ -197,7 +277,7 @@ pub mod native_kzg_verify {
         Ok(precompile_inputs)
     }
 
-    pub fn verify_precompile_inputs(
+    pub fn kzg_verify_precompile_inputs(
         kzg_settings: &KzgSettings,
         precompile_inputs: Vec<PrecompileInput>,
     ) -> anyhow::Result<bool> {
@@ -205,7 +285,7 @@ pub mod native_kzg_verify {
             let commitment_on_curve = safe_g1_affine_from_bytes(&precompile_input.commitment)
                 .map_err(|e| anyhow::anyhow!("cant cast to g1 affine: {e:?}"))?;
 
-            // investigate if we need to do the subtractio
+            // investigate if we need to do this transformation
             // no idea if precompile uses multi-miller loop pairing or not
             let x = G2Projective::generator() * precompile_input.z;
             let x_minus_z = kzg_settings.g2_points[1] - x;
@@ -234,8 +314,12 @@ pub mod native_kzg_verify {
     mod tests {
         use crate::blob::{generate_sidecar, native_kzg_verify::PrecompileInput};
 
-        use super::{generate_precompile_inputs, verify_kzg_sidecar, verify_precompile_inputs};
+        use super::{
+            generate_precompile_inputs, kzg_verify_precompile_inputs, transmute_sidecar,
+            verify_kzg_sidecar,
+        };
 
+        #[cfg(feature = "kzg")]
         #[test]
         fn sidecar_generated_by_c_kzg_is_verified_by_kzg_rs() {
             let kzg_settings = kzg_rs::KzgSettings::load_trusted_setup_file().unwrap();
@@ -254,6 +338,7 @@ pub mod native_kzg_verify {
             assert!(sidecar_verified);
         }
 
+        #[cfg(feature = "kzg")]
         #[test]
         fn sidecar_generated_by_c_kzg_can_produce_verifiable_precompile_input() {
             let kzg_settings = kzg_rs::KzgSettings::load_trusted_setup_file().unwrap();
@@ -269,7 +354,7 @@ pub mod native_kzg_verify {
 
             let precompile_inputs = generate_precompile_inputs(&kzg_settings, sidecar).unwrap();
 
-            let res = verify_precompile_inputs(&kzg_settings, precompile_inputs).unwrap();
+            let res = kzg_verify_precompile_inputs(&kzg_settings, precompile_inputs).unwrap();
 
             assert!(res);
         }
@@ -277,6 +362,50 @@ pub mod native_kzg_verify {
         #[test]
         fn size_of_precompile_input_matches_ethereum_precompile_input_size() {
             assert_eq!(core::mem::size_of::<PrecompileInput>(), 192);
+        }
+
+        #[cfg(feature = "kzg")]
+        #[test]
+        fn c_kzg_commitment_matches_with_hand_rolled() {
+            use super::blob_to_kzg_commitment;
+
+            let kzg_settings = kzg_rs::KzgSettings::load_trusted_setup_file().unwrap();
+
+            let blob = Box::new([1u8; 131072]);
+
+            let sidecar = generate_sidecar(vec![blob]).unwrap();
+
+            let sidecar = transmute_sidecar(sidecar);
+
+            let handrolled_commitment =
+                blob_to_kzg_commitment(&kzg_settings, sidecar.blobs.first().unwrap()).unwrap();
+
+            assert_eq!(
+                handrolled_commitment.as_slice(),
+                sidecar.commitments.first().unwrap().as_slice()
+            );
+        }
+
+        #[cfg(feature = "kzg")]
+        #[test]
+        fn precompile_input_can_be_verified_against_blob() {
+            let kzg_settings = kzg_rs::KzgSettings::load_trusted_setup_file().unwrap();
+
+            let blob = Box::new([1u8; 131072]);
+
+            let sidecar = generate_sidecar(vec![blob]).unwrap();
+
+            let precompile_inputs =
+                generate_precompile_inputs(&kzg_settings, sidecar.clone()).unwrap();
+            let precompile_input = precompile_inputs.first().unwrap();
+
+            let sidecar = transmute_sidecar(sidecar);
+
+            // this will be run inside the zkvm, to ensure the connection
+            // between the provided blob and the inputs for the proof verification
+            precompile_input
+                .verify_against_blob(&kzg_settings, sidecar.blobs.first().unwrap())
+                .unwrap();
         }
     }
 }
