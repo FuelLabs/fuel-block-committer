@@ -94,16 +94,17 @@ impl ErrorTracker {
         mempool_drop_threshold: usize,
         mempool_drop_window: Duration,
     ) -> bool {
-        let now = Instant::now();
         let failure_window = self.mempool_drop_window.read().await;
+        let cutoff = Instant::now() - mempool_drop_window;
 
-        // Count entries within the time window
-        let valid_entries_count = failure_window
+        // Since entries are ordered by timestamp, we can iterate from the back
+        // and stop as soon as we find an entry outside the time window
+        failure_window
             .iter()
-            .filter(|&timestamp| now.duration_since(*timestamp) <= mempool_drop_window)
-            .count();
-
-        valid_entries_count >= mempool_drop_threshold
+            .rev()
+            .take_while(|&&timestamp| timestamp >= cutoff)
+            .count()
+            >= mempool_drop_threshold
     }
 
     pub async fn note_mempool_drop(
