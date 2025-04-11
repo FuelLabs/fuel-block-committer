@@ -1895,7 +1895,7 @@ dependencies = [
 [[package]]
 name = "c-kzg"
 version = "1.0.3"
-source = "git+https://github.com/rymnc/c-kzg-4844?rev=1bdd90407ea8da30fe6b42d60ffb37b39345d5d5#1bdd90407ea8da30fe6b42d60ffb37b39345d5d5"
+source = "git+https://github.com/rymnc/c-kzg-4844?rev=e0ab0d0#e0ab0d0dcc3521830bebbd593cb5f921ee6ec750"
 dependencies = [
  "blst",
  "cc",
