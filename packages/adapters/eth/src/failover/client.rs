@@ -60,7 +60,7 @@ where
     initializer: I,
     shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     health_thresholds: ProviderHealthThresholds,
-    /// Exists so that primitive getters don't have to be async and fallable just because they have to
+    /// Exists so that primitive getters don't have to be async and fallible just because they have to
     /// go through the failover logic.
     provider_constants: ProviderConstants,
     metrics: Metrics,
