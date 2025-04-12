@@ -1,13 +1,13 @@
 use std::{num::NonZeroU32, ops::RangeInclusive, sync::Arc};
 
 use alloy::{primitives::Address, rpc::types::FeeHistory};
+use itertools::Itertools;
 use metrics::{HealthCheck, HealthChecker};
 use serde::{Deserialize, Serialize};
 use services::{
     state_committer::port::l1::Priority,
     types::{
-        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, NonEmptyIntoIter,
-        TransactionResponse, U256,
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
     },
 };
 use tokio::sync::Mutex;
@@ -23,7 +23,7 @@ use crate::{
     provider::L1Provider,
 };
 
-type Endpoints = NonEmptyIntoIter<Endpoint>;
+type Endpoints = Vec<Endpoint>;
 
 struct SharedState<P> {
     remaining_endpoints: Endpoints,
@@ -61,12 +61,18 @@ where
 {
     // Some object that can create providers of type I::Provider
     initializer: I,
-    shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     health_thresholds: ProviderHealthThresholds,
+    shared_state: Arc<Mutex<SharedState<I::Provider>>>,
     /// Exists so that primitive getters don't have to be async and fallible just because they have to
     /// go through the failover logic.
     provider_constants: ProviderConstants,
     metrics: Metrics,
+}
+
+/// A lightweight struct that implements HealthCheck for the FailoverClient
+pub struct HealthReporter<P: L1Provider> {
+    health_thresholds: ProviderHealthThresholds,
+    shared_state: Arc<Mutex<SharedState<P>>>,
 }
 
 impl<I> FailoverClient<I>
@@ -78,7 +84,7 @@ where
         health_thresholds: ProviderHealthThresholds,
         endpoints: NonEmpty<Endpoint>,
     ) -> EthResult<Self> {
-        let mut remaining_endpoints = endpoints.into_iter();
+        let mut remaining_endpoints = endpoints.into_iter().rev().collect_vec();
 
         let provider_handle =
             connect_to_first_available_provider(&initializer, &mut remaining_endpoints).await?;
@@ -94,8 +100,8 @@ where
 
         Ok(Self {
             initializer,
-            shared_state: Arc::new(Mutex::new(shared_state)),
             health_thresholds,
+            shared_state: Arc::new(Mutex::new(shared_state)),
             provider_constants: ProviderConstants {
                 commit_interval,
                 contract_caller_address,
@@ -107,9 +113,12 @@ where
 
     pub fn health_checker(&self) -> HealthChecker
     where
-        Self: Clone + 'static,
+        I::Provider: 'static,
     {
-        Box::new(self.clone())
+        Box::new(HealthReporter {
+            shared_state: Arc::clone(&self.shared_state),
+            health_thresholds: self.health_thresholds,
+        })
     }
 
     /// Retrieves the currently active provider if it's healthy, or tries to fail over to the next.
@@ -147,7 +156,6 @@ where
     pub async fn note_mempool_drop(&self, reason: &str) -> EthResult<()> {
         // Get the current provider without checking health since we don't want a failover here
         let provider = self.shared_state.lock().await.active_provider.clone();
-
         info!(
             "Noting mempool drop on provider '{}': {reason}",
             provider.name
@@ -202,10 +210,7 @@ where
                         Err(error)
                     }
                     ErrorClassification::Transient => {
-                        provider.note_transient_error(
-                            &error,
-                            self.health_thresholds.transient_error_threshold,
-                        );
+                        provider.note_transient_error(&error);
 
                         self.metrics
                             .eth_network_errors
@@ -300,7 +305,9 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
     endpoints: &mut Endpoints,
 ) -> EthResult<ProviderHandle<I::Provider>> {
-    for (attempt, config) in endpoints.enumerate() {
+    let mut attempt = 0;
+
+    while let Some(config) = endpoints.pop() {
         info!(
             "Attempting to connect to provider '{}' (attempt {})",
             config.name, attempt
@@ -319,18 +326,24 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
                 );
             }
         }
+        attempt += 1;
     }
 
     Err(EthError::Other("all providers unhealthy".into()))
 }
 
 #[async_trait::async_trait]
-impl<I> HealthCheck for FailoverClient<I>
+impl<P> HealthCheck for HealthReporter<P>
 where
-    I: ProviderInit,
+    P: L1Provider + Send + Sync + 'static,
 {
     async fn healthy(&self) -> bool {
-        self.get_healthy_provider().await.is_ok()
+        let state = self.shared_state.lock().await;
+
+        let current_provider = state.active_provider.clone();
+        let has_endpoints = !state.remaining_endpoints.is_empty();
+
+        current_provider.is_healthy(&self.health_thresholds).await || has_endpoints
     }
 }
 
@@ -392,7 +405,7 @@ mod tests {
         let _ = client.submit([0; 32], 0).await;
 
         // Then: the client should still be healthy
-        assert!(client.healthy().await);
+        assert!(client.health_checker().healthy().await);
     }
 
     #[tokio::test]
@@ -506,7 +519,7 @@ mod tests {
 
         // Then: the connection should still be healthy because the successful call reset the error count
         // If the counter wasn't reset, we'd have 2 errors and the provider would be unhealthy
-        assert!(client.healthy().await);
+        assert!(client.health_checker().healthy().await);
     }
 
     #[tokio::test]
@@ -542,7 +555,7 @@ mod tests {
         let _ = client.submit([0; 32], 0).await;
 
         // Then: the client should be immediately unhealthy
-        assert!(!client.healthy().await);
+        assert!(!client.health_checker().healthy().await);
     }
 
     #[tokio::test]
@@ -575,7 +588,7 @@ mod tests {
         // Then: the connection health remains good despite the error, since the threshold is 1.
         // If we had counted this error, we would have become unhealthy.
         assert!(result.is_err());
-        assert!(client.healthy().await);
+        assert!(client.health_checker().healthy().await);
     }
 
     #[tokio::test]
@@ -647,9 +660,9 @@ mod tests {
         client.note_mempool_drop("First drop").await.unwrap();
         client.note_mempool_drop("Second drop").await.unwrap();
 
-        // This will cause client.healthy() to return false since we had two drops on our one
+        // This will cause client.health_checker().healthy() to return false since we had two drops on our one
         // and only provider
-        assert!(!client.healthy().await);
+        assert!(!client.health_checker().healthy().await);
     }
 
     #[tokio::test]
@@ -685,7 +698,7 @@ mod tests {
             .unwrap();
 
         // Then: the provider should still be healthy because the drops are outside the time window
-        assert!(client.healthy().await);
+        assert!(client.health_checker().healthy().await);
     }
 
     #[tokio::test]
@@ -865,7 +878,7 @@ mod tests {
         ));
 
         // Then: the client should be unhealthy
-        assert!(!client.healthy().await);
+        assert!(!client.health_checker().healthy().await);
     }
 
     // A simple provider initializer that returns pre-configured mocks

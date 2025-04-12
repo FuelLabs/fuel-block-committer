@@ -21,7 +21,7 @@ pub enum ErrorClassification {
 }
 
 /// Configuration for provider health thresholds and error tolerance
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ProviderHealthThresholds {
     /// Maximum number of transient errors before considering a provider unhealthy
     pub transient_error_threshold: usize,
@@ -69,18 +69,12 @@ impl ErrorTracker {
         self.transient_error_count.store(0, Ordering::Relaxed);
     }
 
-    pub fn note_transient_error(
-        &self,
-        reason: impl Display,
-        provider_name: &str,
-        transient_error_threshold: usize,
-    ) {
+    pub fn note_transient_error(&self, reason: impl Display, provider_name: &str) {
         let current_count = self.transient_error_count.fetch_add(1, Ordering::Relaxed) + 1;
 
         warn!(
-            "Transient connection error detected on provider '{}': {reason} \
-             (Count: {current_count}/{})",
-            provider_name, transient_error_threshold
+            "Transient connection error detected on provider '{provider_name}': {reason} \
+             (Count: {current_count})",
         );
     }
 

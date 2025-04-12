@@ -36,9 +36,8 @@ impl<P> ProviderHandle<P> {
         self.error_tracker.reset_transient_error_count();
     }
 
-    pub fn note_transient_error(&self, reason: impl Display, transient_error_threshold: usize) {
-        self.error_tracker
-            .note_transient_error(reason, &self.name, transient_error_threshold);
+    pub fn note_transient_error(&self, reason: impl Display) {
+        self.error_tracker.note_transient_error(reason, &self.name);
     }
 
     pub fn note_permanent_failure(&self, reason: impl Display) {
