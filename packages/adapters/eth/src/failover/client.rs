@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, num::NonZeroU32, ops::RangeInclusive, sync::Arc};
+use std::{num::NonZeroU32, ops::RangeInclusive, sync::Arc};
 
 use alloy::{primitives::Address, rpc::types::FeeHistory};
 use metrics::{HealthCheck, HealthChecker};
@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use services::{
     state_committer::port::l1::Priority,
     types::{
-        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, TransactionResponse, U256,
+        BlockSubmissionTx, Fragment, FragmentsSubmitted, L1Tx, NonEmpty, NonEmptyIntoIter,
+        TransactionResponse, U256,
     },
 };
 use tokio::sync::Mutex;
@@ -22,8 +23,10 @@ use crate::{
     provider::L1Provider,
 };
 
+type Endpoints = NonEmptyIntoIter<Endpoint>;
+
 struct SharedState<P> {
-    remaining_endpoints: VecDeque<Endpoint>,
+    remaining_endpoints: Endpoints,
     active_provider: ProviderHandle<P>,
 }
 
@@ -75,7 +78,7 @@ where
         health_thresholds: ProviderHealthThresholds,
         endpoints: NonEmpty<Endpoint>,
     ) -> EthResult<Self> {
-        let mut remaining_endpoints = VecDeque::from_iter(endpoints);
+        let mut remaining_endpoints = endpoints.into_iter();
 
         let provider_handle =
             connect_to_first_available_provider(&initializer, &mut remaining_endpoints).await?;
@@ -295,14 +298,12 @@ where
 /// the front of the deque if it fails.
 async fn connect_to_first_available_provider<I: ProviderInit>(
     initializer: &I,
-    endpoints: &mut VecDeque<Endpoint>,
+    endpoints: &mut Endpoints,
 ) -> EthResult<ProviderHandle<I::Provider>> {
-    let mut attempts = 0;
-    while let Some(config) = endpoints.pop_front() {
-        attempts += 1;
+    for (attempt, config) in endpoints.enumerate() {
         info!(
             "Attempting to connect to provider '{}' (attempt {})",
-            config.name, attempts
+            config.name, attempt
         );
 
         match initializer.initialize(&config).await {
@@ -320,10 +321,6 @@ async fn connect_to_first_available_provider<I: ProviderInit>(
         }
     }
 
-    error!(
-        "Failed to connect to any provider after {} attempts",
-        attempts
-    );
     Err(EthError::Other("all providers unhealthy".into()))
 }
 

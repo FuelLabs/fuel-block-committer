@@ -1,5 +1,5 @@
-pub use nonempty::{NonEmpty, nonempty};
-
+pub use nonempty::{Iter, NonEmpty, nonempty};
+pub type NonEmptyIntoIter<T> = std::iter::Chain<std::iter::Once<T>, std::vec::IntoIter<T>>;
 pub trait CollectNonEmpty: Iterator {
     fn collect_nonempty(self) -> Option<NonEmpty<Self::Item>>
     where
