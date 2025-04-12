@@ -3,7 +3,8 @@ use aws_config::{Region, SdkConfig, default_provider::credentials::DefaultCreden
 #[cfg(feature = "test-helpers")]
 use aws_sdk_kms::config::Credentials;
 use aws_sdk_kms::{Client, config::BehaviorVersion};
-use services::{Error, Result};
+
+use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct AwsConfig {

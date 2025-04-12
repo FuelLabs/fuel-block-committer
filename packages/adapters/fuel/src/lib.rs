@@ -144,15 +144,15 @@ mod tests {
         let fuel_adapter = client::HttpClient::new(&url, 3, 1.try_into().unwrap());
         let health_check = fuel_adapter.connection_health_checker();
 
-        assert!(health_check.healthy());
+        assert!(health_check.healthy().await);
 
         let _ = fuel_adapter.latest_block().await;
-        assert!(health_check.healthy());
+        assert!(health_check.healthy().await);
 
         let _ = fuel_adapter.latest_block().await;
-        assert!(health_check.healthy());
+        assert!(health_check.healthy().await);
 
         let _ = fuel_adapter.latest_block().await;
-        assert!(!health_check.healthy());
+        assert!(!health_check.healthy().await);
     }
 }

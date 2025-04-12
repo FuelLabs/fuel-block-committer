@@ -265,7 +265,6 @@ async fn reorg_threw_out_tx_from_block_into_pool_and_got_squeezed_out() -> Resul
     let mut mock = services::state_listener::port::l1::MockApi::new();
 
     mock.expect_get_transaction_response()
-        .once()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(Some(TransactionResponse::new(1, true, 100, 10))) }));
     mock.expect_get_block_number()
@@ -284,13 +283,13 @@ async fn reorg_threw_out_tx_from_block_into_pool_and_got_squeezed_out() -> Resul
     l1.expect_get_block_number()
         .returning(|| Box::pin(async { Ok(5.into()) }));
     l1.expect_get_transaction_response()
-        .once()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(None) }));
     l1.expect_is_squeezed_out()
-        .once()
         .with(eq(tx_hash))
         .return_once(|_| Box::pin(async { Ok(true) }));
+    l1.expect_note_mempool_drop()
+        .return_once(|_| Box::pin(async { Ok(()) }));
     let mut listener = StateListener::new(
         l1,
         setup.db(),
@@ -396,13 +395,14 @@ async fn a_pending_tx_got_squeezed_out() -> Result<()> {
 
     l1.expect_get_transaction_response()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(None) }));
 
     l1.expect_is_squeezed_out()
         .with(eq(tx_hash))
-        .once()
         .return_once(|_| Box::pin(async { Ok(true) }));
+
+    l1.expect_note_mempool_drop()
+        .return_once(|_| Box::pin(async { Ok(()) }));
 
     let mut sut = StateListener::new(
         l1,
@@ -489,9 +489,10 @@ async fn block_inclusion_of_replacement_leaves_no_pending_txs() -> Result<()> {
     l1.expect_is_squeezed_out()
         .with(eq(orig_tx_hash))
         .returning(|_| Box::pin(async { Ok(true) }));
+    l1.expect_note_mempool_drop()
+        .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
-        .once()
         .return_once(move |_| {
             Box::pin(async move {
                 Ok(Some(TransactionResponse::new(
@@ -594,9 +595,10 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
     l1.expect_is_squeezed_out()
         .with(eq(orig_tx_hash))
         .returning(|_| Box::pin(async { Ok(true) }));
+    l1.expect_note_mempool_drop()
+        .returning(|_| Box::pin(async { Ok(()) }));
     l1.expect_get_transaction_response()
         .with(eq(replacement_tx_hash))
-        .once()
         .return_once(move |_| {
             Box::pin(async move {
                 Ok(Some(TransactionResponse::new(
@@ -623,6 +625,149 @@ async fn finalized_replacement_tx_will_leave_no_pending_tx(
     let db = setup.db();
     assert!(!db.has_pending_txs().await?);
     assert!(!db.has_nonfinalized_txs().await?);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tx_not_found_in_mempool_calls_note_tx_failure() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let _ = setup.insert_fragments(0, 1).await;
+
+    let tx_hash = [0; 32];
+    setup.send_fragments(tx_hash, 0).await;
+
+    let mut l1 = services::state_listener::port::l1::MockApi::new();
+    l1.expect_get_block_number()
+        .returning(|| Box::pin(async { Ok(5.into()) }));
+
+    l1.expect_get_transaction_response()
+        .with(eq(tx_hash))
+        .return_once(|_| Box::pin(async { Ok(None) }));
+
+    l1.expect_is_squeezed_out()
+        .with(eq(tx_hash))
+        .return_once(|_| Box::pin(async { Ok(true) }));
+
+    l1.expect_note_mempool_drop()
+        .withf(|reason| reason.contains("not found in mempool"))
+        .return_once(|_| Box::pin(async { Ok(()) }));
+
+    let mut sut = StateListener::new(
+        l1,
+        setup.db(),
+        5,
+        setup.test_clock(),
+        IntGauge::new("test", "test").unwrap(),
+    );
+
+    // when
+    sut.run().await?;
+
+    // then
+    assert!(!setup.db().has_pending_txs().await?);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn note_tx_failure_not_called_for_execution_failures() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let _ = setup.insert_fragments(0, 1).await;
+
+    let tx_hash = [0; 32];
+    setup.send_fragments(tx_hash, 0).await;
+
+    let num_blocks_to_finalize = 5u64;
+    let current_height = 5;
+    let tx_height = current_height - 2;
+
+    let mut l1 = services::state_listener::port::l1::MockApi::new();
+
+    // Set up the mock for block height
+    l1.expect_get_block_number()
+        .returning(move || Box::pin(async move { Ok(current_height.into()) }));
+
+    // Transaction is included but failed
+    l1.expect_get_transaction_response()
+        .with(eq(tx_hash))
+        .return_once(move |_| {
+            Box::pin(async move {
+                // Included but failed (success = false)
+                Ok(Some(TransactionResponse::new(
+                    tx_height.into(),
+                    false,
+                    100,
+                    10,
+                )))
+            })
+        });
+
+    // note_tx_failure should NOT be called for execution failures
+    // We deliberately don't expect this method to be called
+
+    let mut listener = StateListener::new(
+        l1,
+        setup.db(),
+        num_blocks_to_finalize,
+        setup.test_clock(),
+        IntGauge::new("test", "test").unwrap(),
+    );
+
+    // when
+    listener.run().await.unwrap();
+
+    // then
+    assert!(!setup.db().has_pending_txs().await?);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handles_error_when_note_tx_failure_fails() -> Result<()> {
+    // given
+    let setup = test_helpers::Setup::init().await;
+    let _ = setup.insert_fragments(0, 1).await;
+
+    let tx_hash = [0; 32];
+    setup.send_fragments(tx_hash, 0).await;
+
+    let mut l1 = services::state_listener::port::l1::MockApi::new();
+    l1.expect_get_block_number()
+        .returning(|| Box::pin(async { Ok(5.into()) }));
+
+    // Transaction not found in mempool
+    l1.expect_get_transaction_response()
+        .with(eq(tx_hash))
+        .return_once(|_| Box::pin(async { Ok(None) }));
+
+    // Squeezed out from mempool
+    l1.expect_is_squeezed_out()
+        .with(eq(tx_hash))
+        .return_once(|_| Box::pin(async { Ok(true) }));
+
+    // note_mempool_drop fails with an error
+    l1.expect_note_mempool_drop()
+        .withf(|reason| reason.contains("not found in mempool"))
+        .return_once(|_| {
+            Box::pin(async { Err(services::Error::Other("Failed to note tx drop".into())) })
+        });
+
+    let mut sut = StateListener::new(
+        l1,
+        setup.db(),
+        5,
+        setup.test_clock(),
+        IntGauge::new("test", "test").unwrap(),
+    );
+
+    // when - this should not fail despite the error in note_tx_failure
+    sut.run().await?;
+
+    // then - transaction should still be marked as failed
+    assert!(!setup.db().has_pending_txs().await?);
 
     Ok(())
 }

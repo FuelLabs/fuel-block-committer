@@ -98,6 +98,7 @@ pub mod mocks {
                         tx_hash: [u8; 32],
                     ) -> services::Result<Option<TransactionResponse>>;
                     async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> services::Result<bool>;
+                    async fn note_mempool_drop(&self, reason: &str) -> services::Result<()>;
                 }
             }
         }

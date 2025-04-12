@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
 
-pub type L1 = eth::WebsocketClient;
+pub type L1 = eth::FailoverClient<eth::WebsocketClientFactory>;
 pub type AwsClient = eth::AwsClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
@@ -40,10 +40,9 @@ async fn main() -> Result<()> {
     let (fuel_adapter, fuel_health_check) =
         setup::fuel_adapter(&config, &internal_config, &metrics_registry);
 
-    let (ethereum_rpc, eth_health_check) =
-        setup::l1_adapter(&config, &internal_config, &metrics_registry)
-            .await
-            .with_context(|| "could not setup l1 adapter")?;
+    let (ethereum_rpc, eth_health_check) = setup::l1_adapter(&config, &metrics_registry)
+        .await
+        .with_context(|| "could not setup l1 adapter")?;
 
     let wallet_balance_tracker_handle = setup::wallet_balance_tracker(
         &internal_config,
@@ -83,7 +82,7 @@ async fn main() -> Result<()> {
             cancel_token.clone(),
             &config,
             &metrics_registry,
-        )?;
+        );
 
         let state_committer_handle = setup::state_committer(
             fuel_adapter.clone(),

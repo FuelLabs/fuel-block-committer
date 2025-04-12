@@ -1,21 +1,17 @@
 use std::time::Duration;
 
 use clock::SystemClock;
-use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
+use eth::{BlobEncoder, FailoverClient, L1Provider, Signers, WebsocketClientFactory};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,
     prometheus::{IntGauge, Registry},
 };
 use services::{
-    BlockBundler, BlockBundlerConfig, Runner,
-    block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_metrics_tracker::service::FeeMetricsTracker,
-    fees::cache::CachingApi,
-    state_committer::port::Storage,
-    state_listener::service::StateListener,
-    state_pruner::service::StatePruner,
-    wallet_balance_tracker::service::WalletBalanceTracker,
+    BlockBundler, BlockBundlerConfig, Runner, block_committer::service::BlockCommitter,
+    fee_metrics_tracker::service::FeeMetricsTracker, fees::cache::CachingApi,
+    state_committer::port::Storage, state_listener::service::StateListener,
+    state_pruner::service::StatePruner, wallet_balance_tracker::service::WalletBalanceTracker,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -227,30 +223,22 @@ pub fn state_pruner(
 
 pub async fn l1_adapter(
     config: &config::Config,
-    internal_config: &config::Internal,
     registry: &Registry,
 ) -> Result<(L1, HealthChecker)> {
-    let l1 = L1::connect(
-        config.eth.rpc.clone(),
-        config.eth.state_contract_address,
-        Signers::for_keys(config.eth.l1_keys.clone()).await?,
-        internal_config.eth_errors_before_unhealthy,
-        eth::TxConfig {
-            tx_max_fee: u128::from(config.app.tx_fees.max),
-            send_tx_request_timeout: config.app.send_tx_request_timeout,
-            acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::new(
-                config.app.tx_fees.min_reward_perc,
-                config.app.tx_fees.max_reward_perc,
-            )?,
-        },
-    )
-    .await?;
+    let signers = Signers::for_keys(config.eth.l1_keys.clone()).await?;
+    let tx_config = config.eth_tx_config();
+    let factory =
+        WebsocketClientFactory::new(config.eth.state_contract_address, signers, tx_config);
+    factory.register_metrics(registry);
 
-    l1.register_metrics(registry);
+    let health_thresholds = config.eth_provider_health_thresholds();
+    let endpoints = config.eth.endpoints.clone();
 
-    let health_check = l1.connection_health_checker();
+    let client = FailoverClient::connect(factory, health_thresholds, endpoints).await?;
 
-    Ok((l1, health_check))
+    let health_check = client.health_checker();
+
+    Ok((client, health_check))
 }
 
 fn schedule_polling(
@@ -282,7 +270,7 @@ pub fn fuel_adapter(
     registry: &Registry,
 ) -> (FuelApi, HealthChecker) {
     let fuel_adapter = FuelApi::new(
-        &config.fuel.graphql_endpoint,
+        &config.fuel.endpoint,
         internal_config.fuel_errors_before_unhealthy,
         config.fuel.num_buffered_requests,
     );
@@ -339,17 +327,15 @@ pub fn fee_metrics_tracker(
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
-) -> Result<tokio::task::JoinHandle<()>> {
+) -> tokio::task::JoinHandle<()> {
     let fee_metrics_tracker = FeeMetricsTracker::new(api);
 
     fee_metrics_tracker.register_metrics(registry);
 
-    let handle = schedule_polling(
+    schedule_polling(
         config.app.l1_fee_check_interval,
         fee_metrics_tracker,
         "Fee Tracker",
         cancel_token,
-    );
-
-    Ok(handle)
+    )
 }

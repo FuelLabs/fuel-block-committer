@@ -17,6 +17,7 @@ The Fuel Block Committer is a standalone service dedicated to uploading Fuel Blo
     - [Bundle Configuration](#bundle-configuration)
   - [Configuration Validation](#configuration-validation)
 - [Running the Fee Algo Simulator](#running-the-fee-algo-simulator)
+- [RPC Failover](#rpc-failover)
 
 ## Building
 
@@ -77,20 +78,38 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Format:** `Kms(<KEY_ARN>)` or `Private(<PRIVATE_KEY>)`
   - **Example:** `Kms(arn:aws:kms:us-east-1:123456789012:key/efgh-5678)`
 
-- **`COMMITTER__ETH__RPC`**
+- **`COMMITTER__ETH__ENDPOINTS`**
 
-  - **Description:** URL to the Ethereum RPC endpoint.
-  - **Example:** `https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID`
+  - **Description:** Multiple Ethereum WebSocket RPC endpoints specified as a JSON array.
+  - **Format:** JSON array of objects with `name` and `url` fields
+  - **Example:** `'[{"name":"main","url":"wss://eth.example.com/ws"},{"name":"backup","url":"wss://backup.example.com/ws"}]'`
 
 - **`COMMITTER__ETH__STATE_CONTRACT_ADDRESS`**
+
   - **Description:** Ethereum address of the Fuel chain state contract.
   - **Example:** `0xYourStateContractAddress`
 
+- **`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_THRESHOLD`**
+
+  - **Description:** Maximum number of mempool drops within the specified time window before marking a provider as unhealthy.
+  - **Type:** Positive integer
+  - **Example:** `10`
+
+- **`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_WINDOW`**
+  - **Description:** Time window to track mempool drops in.
+  - **Format:** Human-readable duration
+  - **Example:** `30m`
+
+- **`COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD`**
+  - **Description:** Maximum number of transient errors before a provider is considered unhealthy.
+  - **Type:** Positive integer
+  - **Example:** `3`
+
 #### Fuel Configuration
 
-- **`COMMITTER__FUEL__GRAPHQL_ENDPOINT`**
+- **`COMMITTER__FUEL__ENDPOINT`**
 
-  - **Description:** URL to a Fuel Core GraphQL endpoint.
+  - **Description:** URL to a Fuel Core endpoint.
   - **Example:** `http://localhost:4000/graphql`
 
 - **`COMMITTER__FUEL__NUM_BUFFERED_REQUESTS`**
@@ -345,3 +364,19 @@ To run the Fee Algo Simulator, execute the following command:
 ```shell
 cargo run --release --bin fee_algo_simulation
 ```
+
+## RPC Failover
+
+The fuel-block-committer supports automatic failover between multiple Ethereum WebSocket RPC endpoints. The failover mechanism is controlled by the following configuration parameters:
+
+1. **Transient Error Threshold** (`COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD`): Maximum number of transient errors (such as temporary network issues or rate limiting) before a provider is considered unhealthy. Unlike fatal errors that immediately trigger failover, transient errors accumulate until this threshold is reached. Importantly, the transient error count is reset to zero after any successful network request to the provider.
+
+2. **Mempool Drop Threshold** (`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_THRESHOLD`): Maximum number of mempool drops within a configurable time window that will mark a provider as unhealthy. Mempool drops are specifically tracked when transactions disappear from the mempool without being mined (i.e., they are "squeezed out"), not when transactions are mined but fail execution.
+
+3. **Mempool Drop Window** (`COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_WINDOW`): Time window in which mempool drops are counted. If the number of mempool drops within this window exceeds the mempool drop threshold, the provider is marked as unhealthy. Unlike transient errors, mempool drops are not reset by successful requests - they remain in consideration until they naturally expire from the time window.
+
+When a provider is marked as unhealthy, the system automatically switches to the next available provider in the list. However, once all providers in the list become unhealthy, the system will remain in an unhealthy state and requires a restart to recover. There is no automatic periodic checking of previously unhealthy providers.
+
+The service will signal its unhealthy state to external monitoring systems (via health checks), which can then trigger an automatic restart of the service.
+
+To configure RPC failover, specify multiple WebSocket RPC endpoints using the `COMMITTER__ETH__ENDPOINTS` environment variable (using `wss://` URLs) and set the appropriate failover configuration parameters.

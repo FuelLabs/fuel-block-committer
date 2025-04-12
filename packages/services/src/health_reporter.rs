@@ -27,10 +27,10 @@ pub mod service {
             }
         }
 
-        pub fn report(&self) -> HealthReport {
+        pub async fn report(&self) -> HealthReport {
             HealthReport {
-                fuel_connection_up: self.fuel_connection.healthy(),
-                eth_connection_healthy: self.eth_connection.healthy(),
+                fuel_connection_up: self.fuel_connection.healthy().await,
+                eth_connection_healthy: self.eth_connection.healthy().await,
             }
         }
     }

@@ -54,7 +54,7 @@ pub async fn launch_api_server(
 
 #[get("/health")]
 async fn health(data: web::Data<Arc<HealthReporter>>) -> impl Responder {
-    let report = data.report();
+    let report = data.report().await;
 
     let mut response = if report.healthy() {
         HttpResponse::Ok()

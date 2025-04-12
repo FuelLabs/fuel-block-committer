@@ -2886,6 +2886,7 @@ dependencies = [
  "eth",
  "fuel-block-committer-encoding",
  "futures",
+ "humantime",
  "itertools 0.13.0",
  "metrics",
  "mockall",
@@ -2900,6 +2901,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "trait-variant",
  "url",
 ]
 
@@ -4581,6 +4583,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 name = "metrics"
 version = "0.10.10"
 dependencies = [
+ "async-trait",
  "prometheus",
 ]
 

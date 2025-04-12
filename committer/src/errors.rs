@@ -48,6 +48,20 @@ impl From<services::Error> for Error {
     }
 }
 
+impl From<eth::Error> for Error {
+    fn from(value: eth::Error) -> Self {
+        match value {
+            eth::Error::Network { msg, recoverable } => {
+                Self::Network(format!("{msg}: recoverable={recoverable}"))
+            }
+            eth::Error::TxExecution(msg) => {
+                Self::Other(format!("Transaction execution error: {msg}"))
+            }
+            eth::Error::Other(msg) => Self::Other(msg),
+        }
+    }
+}
+
 impl From<config::ConfigError> for Error {
     fn from(error: config::ConfigError) -> Self {
         Self::Other(error.to_string())

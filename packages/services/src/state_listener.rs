@@ -5,7 +5,7 @@ pub mod service {
         RegistersMetrics,
         prometheus::{IntGauge, Opts, core::Collector},
     };
-    use tracing::info;
+    use tracing::{info, warn};
 
     use crate::{
         Runner,
@@ -70,6 +70,18 @@ pub mod service {
                             // not in the mempool anymore set it to failed
                             selective_change.push((tx.hash, tx.nonce, TransactionState::Failed));
 
+                            // Note the mempool drop for provider tracking
+                            if let Err(e) = self
+                                .l1_adapter
+                                .note_mempool_drop(&format!(
+                                    "Transaction {} not found in mempool",
+                                    hex::encode(tx.hash)
+                                ))
+                                .await
+                            {
+                                warn!("Failed to mempool drop: {}", e);
+                            }
+
                             info!(
                                 "blob tx {} not found in mempool. Setting to failed",
                                 hex::encode(tx.hash)
@@ -96,6 +108,9 @@ pub mod service {
                 if !tx_response.succeeded() {
                     // set tx to failed all txs with the same nonce to failed
                     noncewide_changes.push((tx.hash, tx.nonce, TransactionState::Failed));
+
+                    // Note: We don't count actual execution failures as provider issues
+                    // The transaction was properly included but failed for other reasons
 
                     info!("failed blob tx {}", hex::encode(tx.hash));
                     continue;
@@ -249,6 +264,7 @@ pub mod port {
                 tx_hash: [u8; 32],
             ) -> Result<Option<TransactionResponse>>;
             async fn is_squeezed_out(&self, tx_hash: [u8; 32]) -> Result<bool>;
+            async fn note_mempool_drop(&self, reason: &str) -> Result<()>;
         }
     }
 

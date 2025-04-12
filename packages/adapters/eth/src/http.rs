@@ -47,9 +47,12 @@ impl Provider {
     }
 }
 impl services::fees::Api for Provider {
-    async fn fees(&self, height_range: RangeInclusive<u64>) -> crate::Result<SequentialBlockFees> {
+    async fn fees(
+        &self,
+        height_range: RangeInclusive<u64>,
+    ) -> services::Result<SequentialBlockFees> {
         info!("Fetching fees for range: {:?}", height_range);
-        batch_requests(height_range, |sub_range, percentiles| async move {
+        let fees = batch_requests(height_range, |sub_range, percentiles| async move {
             let last_block = *sub_range.end();
             let block_count = sub_range.count() as u64;
             let fees = self
@@ -60,13 +63,19 @@ impl services::fees::Api for Provider {
                     percentiles,
                 )
                 .await
-                .map_err(|e| services::Error::Network(format!("failed to get fee history: {e}")))?;
+                .map_err(|e| crate::Error::Network {
+                    msg: format!("failed to get fee history: {e}"),
+                    recoverable: true,
+                })?;
 
             Ok(fees)
         })
-        .await
+        .await?;
+
+        Ok(fees)
     }
-    async fn current_height(&self) -> crate::Result<u64> {
+
+    async fn current_height(&self) -> services::Result<u64> {
         self.provider
             .get_block_number()
             .await

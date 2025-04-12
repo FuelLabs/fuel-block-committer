@@ -3,7 +3,7 @@ use alloy::{
     transports::{RpcError, TransportErrorKind},
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
     #[error("network error: {msg}, recoverable: {recoverable}")]
     Network { msg: String, recoverable: bool },
@@ -67,8 +67,10 @@ impl From<Error> for services::Error {
 
 #[cfg(test)]
 mod tests {
-    use alloy::rpc::json_rpc::ErrorPayload;
-    use alloy::transports::{RpcError, TransportErrorKind};
+    use alloy::{
+        rpc::json_rpc::ErrorPayload,
+        transports::{RpcError, TransportErrorKind},
+    };
 
     use super::*;
 

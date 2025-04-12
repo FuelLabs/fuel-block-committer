@@ -1,6 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use anyhow::Context;
+use serde_json::json;
 use services::types::{Address, BundleCost};
 use url::Url;
 
@@ -10,7 +11,7 @@ pub struct Committer {
     main_key_arn: Option<String>,
     blob_key_arn: Option<String>,
     state_contract_address: Option<String>,
-    eth_rpc: Option<Url>,
+    eth_endpoint: Option<Url>,
     fuel_rpc: Option<Url>,
     db_port: Option<u16>,
     db_name: Option<String>,
@@ -47,20 +48,26 @@ impl Committer {
 
         let main_key = format!("Kms({})", get_field!(main_key_arn));
         let blob_key = self.blob_key_arn.map(|k| format!("Kms({k})"));
+
+        let endpoints = {
+            let endpoint = get_field!(eth_endpoint);
+            serde_json::to_string(&vec![
+                json!({"name": "primary", "url": endpoint.to_string(),}),
+            ])
+            .expect("to be valid json")
+        };
+
         cmd.env("E2E_TEST_AWS_ENDPOINT", kms_url)
             .env("AWS_REGION", "us-east-1")
             .env("AWS_ACCESS_KEY_ID", "test")
             .env("AWS_SECRET_ACCESS_KEY", "test")
             .env("COMMITTER__ETH__L1_KEYS__MAIN", main_key)
-            .env("COMMITTER__ETH__RPC", get_field!(eth_rpc).as_str())
+            .env("COMMITTER__ETH__ENDPOINTS", endpoints)
             .env(
                 "COMMITTER__ETH__STATE_CONTRACT_ADDRESS",
                 get_field!(state_contract_address),
             )
-            .env(
-                "COMMITTER__FUEL__GRAPHQL_ENDPOINT",
-                get_field!(fuel_rpc).as_str(),
-            )
+            .env("COMMITTER__FUEL__ENDPOINT", get_field!(fuel_rpc).as_str())
             .env("COMMITTER__FUEL__NUM_BUFFERED_REQUESTS", "5")
             .env("COMMITTER__APP__DB__PORT", db_port.to_string())
             .env("COMMITTER__APP__DB__HOST", "localhost")
@@ -136,6 +143,9 @@ impl Committer {
             .env("COMMITTER__APP__TX_FEES__MAX", "4000000000000000")
             .env("COMMITTER__APP__TX_FEES__MIN_REWARD_PERC", "20")
             .env("COMMITTER__APP__TX_FEES__MAX_REWARD_PERC", "30")
+            .env("COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_THRESHOLD", "5")
+            .env("COMMITTER__ETH__FAILOVER__MEMPOOL_DROP_WINDOW", "30m")
+            .env("COMMITTER__ETH__FAILOVER__TRANSIENT_ERROR_THRESHOLD", "10")
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
             .kill_on_drop(true);
 
@@ -233,11 +243,6 @@ impl Committer {
         self
     }
 
-    pub fn with_eth_rpc(mut self, eth_rpc: Url) -> Self {
-        self.eth_rpc = Some(eth_rpc);
-        self
-    }
-
     pub fn with_fuel_rpc(mut self, fuel_rpc: Url) -> Self {
         self.fuel_rpc = Some(fuel_rpc);
         self
@@ -255,6 +260,11 @@ impl Committer {
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
         self.show_logs = show_logs;
+        self
+    }
+
+    pub fn with_eth_endpoint(mut self, url: Url) -> Self {
+        self.eth_endpoint = Some(url);
         self
     }
 }

@@ -7,10 +7,13 @@ use std::{
 
 use byte_unit::Byte;
 use clap::{Parser, command};
-use eth::{Address, L1Keys};
+use eth::{Address, Endpoint, L1Keys};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
-use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
+use services::{
+    state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods},
+    types::NonEmpty,
+};
 use storage::DbConfig;
 use url::Url;
 
@@ -79,13 +82,33 @@ impl Config {
         };
         Ok(algo_config)
     }
+
+    pub fn eth_provider_health_thresholds(&self) -> eth::ProviderHealthThresholds {
+        eth::ProviderHealthThresholds {
+            transient_error_threshold: self.eth.failover.transient_error_threshold,
+            mempool_drop_threshold: self.eth.failover.mempool_drop_threshold,
+            mempool_drop_window: self.eth.failover.mempool_drop_window,
+        }
+    }
+
+    pub fn eth_tx_config(&self) -> eth::TxConfig {
+        eth::TxConfig {
+            tx_max_fee: u128::from(self.app.tx_fees.max),
+            send_tx_request_timeout: self.app.send_tx_request_timeout,
+            acceptable_priority_fee_percentage: eth::AcceptablePriorityFeePercentages::new(
+                self.app.tx_fees.min_reward_perc,
+                self.app.tx_fees.max_reward_perc,
+            )
+            .expect("already validated via `validate` in main"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Fuel {
-    /// Fuel-core GraphQL endpoint URL.
+    /// Fuel-core endpoint URL.
     #[serde(deserialize_with = "parse_url")]
-    pub graphql_endpoint: Url,
+    pub endpoint: Url,
     /// Number of concurrent requests.
     pub num_buffered_requests: NonZeroU32,
 }
@@ -94,11 +117,51 @@ pub struct Fuel {
 pub struct Eth {
     /// L1 keys for state contract calls and postings.
     pub l1_keys: L1Keys,
-    /// Ethereum RPC endpoint URL.
-    #[serde(deserialize_with = "parse_url")]
-    pub rpc: Url,
+    /// Multiple Ethereum RPC endpoints as a JSON array.
+    /// Format: '[{"name":"main","url":"wss://ethereum.example.com"}, {"name":"backup","url":"wss://backup.example.com"}]'
+    #[serde(deserialize_with = "parse_endpoints")]
+    pub endpoints: NonEmpty<Endpoint>,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+    /// Configuration for RPC failover behavior
+    pub failover: FailoverConfig,
+}
+
+/// Configuration for managing RPC failover behavior
+#[derive(Debug, Clone, Deserialize)]
+pub struct FailoverConfig {
+    /// Maximum number of transient errors before considering a provider unhealthy
+    pub transient_error_threshold: usize,
+    /// Maximum number of mempool drops within the specified time window before marking a provider as unhealthy.
+    pub mempool_drop_threshold: usize,
+    /// Time window to track mempool drops in.
+    /// Format: Human-readable duration (e.g., `5m`, `30m`)
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub mempool_drop_window: Duration,
+}
+
+fn parse_endpoints<'de, D>(deserializer: D) -> Result<NonEmpty<Endpoint>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: String = Deserialize::deserialize(deserializer)?;
+    if value.is_empty() {
+        return Err(serde::de::Error::custom(
+            "Ethereum endpoints cannot be empty",
+        ));
+    }
+
+    let configs: Vec<Endpoint> = serde_json::from_str(&value).map_err(|err| {
+        serde::de::Error::custom(format!("Invalid JSON format for Ethereum endpoints: {err}",))
+    })?;
+
+    let Some(configs) = NonEmpty::from_vec(configs) else {
+        return Err(serde::de::Error::custom(
+            "At least one Ethereum endpoint must be configured",
+        ));
+    };
+
+    Ok(configs)
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
@@ -187,7 +250,7 @@ pub struct BundleConfig {
     /// Time to wait for additional blocks before starting bundling.
     ///
     /// This timeout starts from the last time a bundle was created or from app startup.
-    /// Bundling will occur when this timeout expires, even if byte or block thresholds aren’t met.
+    /// Bundling will occur when this timeout expires, even if byte or block thresholds aren't met.
     #[serde(deserialize_with = "human_readable_duration")]
     pub accumulation_timeout: Duration,
 
@@ -289,7 +352,6 @@ where
 #[derive(Debug, Clone)]
 pub struct Internal {
     pub fuel_errors_before_unhealthy: usize,
-    pub eth_errors_before_unhealthy: usize,
     pub balance_update_interval: Duration,
     pub cost_request_limit: usize,
     pub l1_blocks_cached_for_fee_metrics_tracker: usize,
@@ -319,7 +381,6 @@ impl Default for Internal {
         const ETH_BLOCKS_PER_DAY: usize = 24 * 3600 / ETH_BLOCK_TIME;
         Self {
             fuel_errors_before_unhealthy: 3,
-            eth_errors_before_unhealthy: 3,
             balance_update_interval: Duration::from_secs(10),
             cost_request_limit: 1000,
             l1_blocks_cached_for_fee_metrics_tracker: ETH_BLOCKS_PER_DAY,
@@ -351,4 +412,95 @@ pub fn parse() -> crate::errors::Result<Config> {
         .build()?;
 
     Ok(config.try_deserialize()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::de::value::{Error as SerdeError, StringDeserializer};
+    use serde_json::json;
+    use services::types::nonempty;
+
+    use super::*;
+
+    #[test]
+    fn test_parse_endpoints() {
+        // given
+        let valid_configs = json!([
+            {"name": "main", "url": "https://ethereum.example.com"},
+            {"name": "backup", "url": "https://backup.example.com"}
+        ])
+        .to_string();
+
+        let expected_configs = nonempty![
+            Endpoint {
+                name: "main".to_string(),
+                url: Url::parse("https://ethereum.example.com").unwrap(),
+            },
+            Endpoint {
+                name: "backup".to_string(),
+                url: Url::parse("https://backup.example.com").unwrap(),
+            },
+        ];
+
+        let deserializer = StringDeserializer::<SerdeError>::new(valid_configs);
+
+        // when
+        let result = parse_endpoints(deserializer);
+
+        // then
+        let configs = result.unwrap();
+        assert_eq!(configs, expected_configs);
+    }
+
+    #[test]
+    fn test_parse_endpoints_invalid_json() {
+        // given
+        let invalid_json = "not a valid json";
+
+        let deserializer = StringDeserializer::<SerdeError>::new(invalid_json.to_string());
+
+        // when
+        let result = parse_endpoints(deserializer);
+
+        // then
+        let err_msg = result
+            .expect_err("should have failed since the json is invalid")
+            .to_string();
+        assert!(err_msg.contains("Invalid JSON format"));
+    }
+
+    #[test]
+    fn test_parse_endpoints_empty_array() {
+        // given
+        let empty_array = json!([]).to_string();
+
+        let deserializer = StringDeserializer::<SerdeError>::new(empty_array);
+
+        // when
+        let result = parse_endpoints(deserializer);
+
+        // then
+        let err_msg = result
+            .expect_err("should have failed since the array is empty")
+            .to_string();
+        assert!(err_msg.contains("At least one Ethereum endpoint must be configured"));
+    }
+
+    #[test]
+    fn test_parse_endpoints_invalid_url() {
+        // given
+        let invalid_url = json!([
+            {"name": "main", "url": "not a valid url"}
+        ])
+        .to_string();
+
+        let deserializer = StringDeserializer::<SerdeError>::new(invalid_url);
+
+        // when
+        let result = parse_endpoints(deserializer);
+
+        // then
+        let err_msg = result.expect_err("because url was not valid").to_string();
+        assert!(err_msg.contains("Invalid JSON format"));
+    }
 }
