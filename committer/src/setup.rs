@@ -218,9 +218,11 @@ pub fn eigen_block_bundler(
     config: &config::Config,
     registry: &Registry,
 ) -> tokio::task::JoinHandle<()> {
+    // blob_size: 1.5MB because 2+MB is not supported by the lib, 4+MB errors out on the server
+    // side when checking for inclusion
     let bundler_factory = services::EigenBundlerFactory::new(
         bundle::Encoder::new(config.app.bundle.compression_level),
-        NonZeroU32::new(15_000_000).unwrap(), // TODO pass this via config
+        NonZeroU32::new(1_500_000).unwrap(), // TODO pass this via config
         config.app.bundle.max_fragments_per_bundle,
     );
 
@@ -483,21 +485,23 @@ pub async fn l1_adapter(
 
 pub async fn eigen_adapter(
     config: &EigenDA,
-    _internal_config: &config::Internal,
+    internal_config: &config::Internal,
 ) -> Result<EigenDAClient> {
-    // TODO add health tracking
-
+    // Configure with appropriate throughput values
+    // because testing showed that the time window in which thottling is calculated allows for
+    // around 500MB to be sent before throttling comes into effect
+    let burst = 200_000_000.try_into().unwrap();
     let eigen_da = EigenDAClient::new(
         config.key.clone(),
         config.rpc.clone(),
         Throughput {
-            bytes_per_sec: 1_000_000.try_into().unwrap(),
-            max_burst: 16_000_000.try_into().unwrap(),
+            bytes_per_sec: 500_000.try_into().unwrap(),
+            max_burst: burst,
             calls_per_sec: 1.try_into().unwrap(),
         },
     )
     .await
-    .expect("TODO add err conversion");
+    .map_err(|e| Error::Other(format!("Failed to initialize EigenDA client: {}", e)))?;
 
     Ok(eigen_da)
 }

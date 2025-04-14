@@ -6,6 +6,8 @@ pub enum Error {
     Rpc(#[from] tonic::Status),
     #[error("authentication failed")]
     AuthenticationFailed,
+    #[error("EigenDA client error: {0}")]
+    EigenDAClient(#[from] rust_eigenda_client::errors::EigenClientError),
     #[error("other error: {0}")]
     Other(String),
 }
@@ -16,6 +18,7 @@ impl From<Error> for services::Error {
     fn from(err: Error) -> Self {
         match err {
             Error::Transport(_) | Error::Rpc(_) => services::Error::Network(err.to_string()),
+            Error::EigenDAClient(_) => services::Error::Network(err.to_string()),
             _ => services::Error::Other(err.to_string()),
         }
     }
