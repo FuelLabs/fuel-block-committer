@@ -127,7 +127,7 @@ pub mod native_kzg_verify {
                     .map_err(|e| anyhow::anyhow!("cant convert blob to polynomial: {e:?}"))?;
                 let z = compute_challenge(&self.blobs[i], &commitment_on_curve)
                     .map_err(|e| anyhow::anyhow!("cant compute challenge: {e:?}"))?;
-                let y = evaluate_polynomial_in_evaluation_form(polynomial, z, &kzg_settings)
+                let y = evaluate_polynomial_in_evaluation_form(polynomial, z, kzg_settings)
                     .map_err(|e| anyhow::anyhow!("cant evaluate polynomial: {e:?}"))?;
 
                 precompile_inputs.push(PrecompileInput {
@@ -246,7 +246,7 @@ pub mod native_kzg_verify {
             kzg_settings: &KzgSettings,
             blob: &kzg_rs::Blob,
         ) -> anyhow::Result<()> {
-            let commitment = blob_to_kzg_commitment(kzg_settings, &blob)?;
+            let commitment = blob_to_kzg_commitment(kzg_settings, blob)?;
 
             let commitment_on_curve = safe_g1_affine_from_bytes(&commitment)
                 .map_err(|e| anyhow::anyhow!("cant cast to g1 affine: {e:?}"))?;
@@ -256,9 +256,9 @@ pub mod native_kzg_verify {
             let polynomial = blob
                 .as_polynomial()
                 .map_err(|e| anyhow::anyhow!("cant convert blob to polynomial: {e:?}"))?;
-            let z = compute_challenge(&blob, &commitment_on_curve)
+            let z = compute_challenge(blob, &commitment_on_curve)
                 .map_err(|e| anyhow::anyhow!("cant compute challenge: {e:?}"))?;
-            let y = evaluate_polynomial_in_evaluation_form(polynomial, z, &kzg_settings)
+            let y = evaluate_polynomial_in_evaluation_form(polynomial, z, kzg_settings)
                 .map_err(|e| anyhow::anyhow!("cant evaluate polynomial: {e:?}"))?;
 
             if self.z != z {
