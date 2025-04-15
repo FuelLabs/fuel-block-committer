@@ -109,6 +109,10 @@ pub mod native_kzg_verify {
     }
 
     impl VerifierSidecar {
+        pub fn blobs(&self) -> impl Iterator<Item = &kzg_rs::Blob> {
+            self.blobs.iter()
+        }
+
         pub fn generate_precompile_inputs(
             &self,
             kzg_settings: &KzgSettings,
