@@ -1960,6 +1960,7 @@ dependencies = [
 name = "benchmarks"
 version = "0.10.10"
 dependencies = [
+ "clock",
  "criterion",
  "fuel-block-committer-encoding",
  "futures",
