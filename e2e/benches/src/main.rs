@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
         &deployed_contract,
         &main_key,
         eigen_key,
-        "7 MB",
+        "28 MB",
     )
     .await?;
 
