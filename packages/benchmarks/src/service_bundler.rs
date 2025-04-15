@@ -282,7 +282,7 @@ async fn main() {
     let fragment_size_bytes = 3_500_000; // 3.5MB
     let fragment_size = NonZeroU32::new(fragment_size_bytes).unwrap();
     let max_fragments = NonZeroUsize::new(MAX_FRAGMENTS).unwrap();
-    let compression_level = CompressionLevel::Level6;
+    let compression_level = CompressionLevel::Level5;
 
     let bundler_factory = Factory::new(
         bundle::Encoder::new(compression_level),

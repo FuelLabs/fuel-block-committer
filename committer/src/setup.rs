@@ -92,8 +92,8 @@ pub fn ethereum_da_services(
         fuel.clone(),
         storage.clone(),
         cancel_token.clone(),
-        &config,
-        &registry,
+        config,
+        registry,
     );
 
     let fee_api = CachingApi::new(
@@ -102,15 +102,15 @@ pub fn ethereum_da_services(
     );
 
     let fee_metrics_updater_handle =
-        fee_metrics_tracker(fee_api.clone(), cancel_token.clone(), &config, &registry)?;
+        fee_metrics_tracker(fee_api.clone(), cancel_token.clone(), config, registry)?;
 
     let committer = state_committer(
         fuel.clone(),
         ethereum_rpc.clone(),
         storage.clone(),
         cancel_token.clone(),
-        &config,
-        &registry,
+        config,
+        registry,
         fee_api,
     )?;
 
@@ -118,8 +118,8 @@ pub fn ethereum_da_services(
         ethereum_rpc,
         storage.clone(),
         cancel_token.clone(),
-        &registry,
-        &config,
+        registry,
+        config,
         last_finalization_metric(), // TODO: will this match on the metric name?
     );
 
@@ -127,13 +127,12 @@ pub fn ethereum_da_services(
         fuel,
         storage.clone(),
         cancel_token.clone(),
-        &config,
-        &internal_config,
+        config,
+        internal_config,
     );
 
     // TODO: state pruner currently only works with the Ethereum DA
-    let state_pruner_handle =
-        state_pruner(storage.clone(), cancel_token.clone(), &registry, &config);
+    let state_pruner_handle = state_pruner(storage.clone(), cancel_token.clone(), registry, config);
 
     let handles = vec![
         committer,
