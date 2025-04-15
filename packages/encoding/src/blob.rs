@@ -63,6 +63,9 @@ pub mod native_kzg_verify {
     use crate::constants::FIELD_ELEMENTS_PER_BLOB;
 
     #[cfg(feature = "kzg")]
+    use crate::constants::BYTES_PER_BLOB;
+
+    #[cfg(feature = "kzg")]
     pub fn verify_alloy_kzg_sidecar(
         kzg_settings: &KzgSettings,
         sidecar: alloy::consensus::BlobTransactionSidecar,
@@ -153,10 +156,11 @@ pub mod native_kzg_verify {
             for blob in sidecar.blobs {
                 // SAFETY: same size, 131072 bytes
                 unsafe {
+                    let kzg_rs_blob = Box::new(blob.0);
                     blobs.push(core::mem::transmute::<
-                        alloy::eips::eip4844::Blob,
+                        Box<[u8; BYTES_PER_BLOB]>,
                         kzg_rs::Blob,
-                    >(blob));
+                    >(kzg_rs_blob));
                 }
             }
 

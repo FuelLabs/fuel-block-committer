@@ -4416,7 +4416,7 @@ dependencies = [
 [[package]]
 name = "kzg-rs"
 version = "0.2.3"
-source = "git+https://github.com/rymnc/kzg-rs?rev=005eebe#005eebe6142d6f99e463d3512d731f01e7c6c3ad"
+source = "git+https://github.com/rymnc/kzg-rs?rev=6c0ee7d#6c0ee7deed35526911f8b0b5c33b6bf481ea1f95"
 dependencies = [
  "ff",
  "hex",
