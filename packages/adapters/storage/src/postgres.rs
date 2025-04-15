@@ -465,9 +465,7 @@ impl Postgres {
             .chunks(MAX_BLOCKS_PER_QUERY)
             .into_iter()
             .map(|chunk| {
-                let mut query_builder = QueryBuilder::new(
-                    "INSERT INTO fuel_blocks (height, data) ON CONFLICT(height) DO NOTHING",
-                ); // Add ON CONFLICT
+                let mut query_builder = QueryBuilder::new("INSERT INTO fuel_blocks (height, data)");
 
                 query_builder.push_values(chunk, |mut b, block| {
                     // update the constants above if you add/remove bindings
