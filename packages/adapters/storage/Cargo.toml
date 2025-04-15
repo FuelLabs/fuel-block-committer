@@ -10,6 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+tracing = { workspace = true }
 futures = { workspace = true }
 delegate = { workspace = true, optional = true }
 hex = { workspace = true }
@@ -29,7 +30,7 @@ sqlx = { workspace = true, features = [
   "tls-rustls",
   "time",
   "chrono",
-  "json"
+  "json",
 ] }
 testcontainers = { workspace = true, optional = true, features = [
   "signal-hook",

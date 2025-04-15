@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::RangeInclusive};
+use std::{collections::HashMap, ops::RangeInclusive, time::Duration};
 
 use futures::{TryStreamExt, stream::BoxStream};
 use itertools::Itertools;
@@ -6,9 +6,9 @@ use metrics::{RegistersMetrics, prometheus::IntGauge};
 use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
-        storage::SequentialFuelBlocks, BlockSubmission, BlockSubmissionTx, BundleCost,
-        CompressedFuelBlock, DateTime, DispersalStatus, EigenDASubmission, Fragment, NonEmpty,
-        NonNegative, TransactionCostUpdate, TransactionState, Utc,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        DispersalStatus, EigenDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
+        TransactionState, Utc, storage::SequentialFuelBlocks,
     },
 };
 use sqlx::{
@@ -444,15 +444,30 @@ impl Postgres {
         /// u16::MAX. Sqlx panics if this limit is exceeded.
         const MAX_BLOCKS_PER_QUERY: usize = (u16::MAX / FIELDS_PER_BLOCK) as usize;
 
+        let total_start = std::time::Instant::now();
+        let mut total_query_build_time = Duration::from_secs(0);
+        let mut total_execute_time = Duration::from_secs(0);
+        let mut total_commit_time = Duration::from_secs(0);
+
+        tracing::info!(
+            target: "insert_blocks_perf",
+            blocks_count = blocks.len(),
+            max_blocks_per_query = MAX_BLOCKS_PER_QUERY,
+            "Starting _insert_blocks"
+        );
+
         let mut tx = self.connection_pool.begin().await?;
 
+        let query_build_start = std::time::Instant::now();
         let queries = blocks
             .into_iter()
             .map(tables::DBCompressedFuelBlock::from)
             .chunks(MAX_BLOCKS_PER_QUERY)
             .into_iter()
             .map(|chunk| {
-                let mut query_builder = QueryBuilder::new("INSERT INTO fuel_blocks (height, data)");
+                let mut query_builder = QueryBuilder::new(
+                    "INSERT INTO fuel_blocks (height, data) ON CONFLICT(height) DO NOTHING",
+                ); // Add ON CONFLICT
 
                 query_builder.push_values(chunk, |mut b, block| {
                     // update the constants above if you add/remove bindings
@@ -462,12 +477,39 @@ impl Postgres {
                 query_builder
             })
             .collect_vec();
+        total_query_build_time = query_build_start.elapsed();
 
+        let mut chunk_index = 0;
         for mut query in queries {
-            query.build().execute(&mut *tx).await?;
+            let execute_start = std::time::Instant::now();
+            let result = query.build().execute(&mut *tx).await;
+            let execute_duration = execute_start.elapsed();
+            total_execute_time += execute_duration;
+
+            tracing::info!(
+                target: "insert_blocks_perf",
+                chunk_index,
+                duration_ms = execute_duration.as_millis(),
+                "Executed insert chunk"
+            );
+
+            result?; // Propagate errors after logging duration
+            chunk_index += 1;
         }
 
+        let commit_start = std::time::Instant::now();
         tx.commit().await?;
+        total_commit_time = commit_start.elapsed();
+
+        let total_duration = total_start.elapsed();
+        tracing::info!(
+            target: "insert_blocks_perf",
+            total_duration_ms = total_duration.as_millis(),
+            query_build_duration_ms = total_query_build_time.as_millis(),
+            execute_duration_ms = total_execute_time.as_millis(),
+            commit_duration_ms = total_commit_time.as_millis(),
+            "Finished _insert_blocks"
+        );
 
         Ok(())
     }
@@ -1380,20 +1422,19 @@ impl Postgres {
     }
 
     pub(crate) async fn _get_latest_block_height(&self) -> Result<u32> {
-        let result = sqlx::query!(
-            r#"SELECT MAX(height) as max_height FROM fuel_blocks"#
-        )
-        .fetch_one(&self.connection_pool)
-        .await?;
-        
+        let result = sqlx::query!(r#"SELECT MAX(height) as max_height FROM fuel_blocks"#)
+            .fetch_one(&self.connection_pool)
+            .await?;
+
         match result.max_height {
             Some(height) => {
                 // Convert from i64 to u32
-                let height_u32 = u32::try_from(height)
-                    .map_err(|_| crate::error::Error::Conversion("invalid block height".to_string()))?;
+                let height_u32 = u32::try_from(height).map_err(|_| {
+                    crate::error::Error::Conversion("invalid block height".to_string())
+                })?;
                 Ok(height_u32)
-            },
-            None => Ok(0) // No blocks in the database yet
+            }
+            None => Ok(0), // No blocks in the database yet
         }
     }
 }
