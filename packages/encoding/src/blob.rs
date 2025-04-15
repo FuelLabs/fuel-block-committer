@@ -84,7 +84,7 @@ pub mod native_kzg_verify {
 
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
     pub struct VerifierSidecar {
-        blobs: Vec<kzg_rs::Blob>,
+        pub blobs: Vec<kzg_rs::Blob>,
         proofs: Vec<kzg_rs::Bytes48>,
         commitments: Vec<kzg_rs::Bytes48>,
     }
@@ -109,10 +109,6 @@ pub mod native_kzg_verify {
     }
 
     impl VerifierSidecar {
-        pub fn blobs(&self) -> impl Iterator<Item = &kzg_rs::Blob> {
-            self.blobs.iter()
-        }
-
         pub fn generate_precompile_inputs(
             &self,
             kzg_settings: &KzgSettings,

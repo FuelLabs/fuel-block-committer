@@ -4416,11 +4416,12 @@ dependencies = [
 [[package]]
 name = "kzg-rs"
 version = "0.2.3"
-source = "git+https://github.com/rymnc/kzg-rs?rev=6eabc64#6eabc648ec330d75d1d2313968437c6fc866e764"
+source = "git+https://github.com/rymnc/kzg-rs?rev=f790317#f7903174d5b89cef23351e684ed3a4136ff47f74"
 dependencies = [
  "ff",
  "hex",
  "serde",
+ "serde_bytes",
  "sha2",
  "sp1_bls12_381",
  "spin",
@@ -6144,6 +6145,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6513c1ad0b11a9376da888e3e0baa0077f1aed55c17f50e7b2397136129fb88f"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde_bytes"
+version = "0.11.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8437fd221bde2d4ca316d61b90e337e9e702b3820b87d63caa9ba6c02bd06d96"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
