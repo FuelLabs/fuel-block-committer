@@ -88,8 +88,8 @@ pub mod native_kzg_verify {
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
     pub struct VerifierSidecar {
         pub blobs: Vec<kzg_rs::Blob>,
-        proofs: Vec<kzg_rs::Bytes48>,
-        commitments: Vec<kzg_rs::Bytes48>,
+        pub proofs: Vec<kzg_rs::Bytes48>,
+        pub commitments: Vec<kzg_rs::Bytes48>,
     }
 
     trait AsVersionedHash {
