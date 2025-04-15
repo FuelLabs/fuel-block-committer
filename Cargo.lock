@@ -1969,6 +1969,8 @@ dependencies = [
  "services",
  "test-helpers",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

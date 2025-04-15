@@ -19,6 +19,12 @@ rand = { workspace = true, features = ["small_rng"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 num-bigint = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tracing-subscriber = { workspace = true, features = [
+  "fmt",
+  "json",
+  "env-filter",
+] }
+tracing = { workspace = true }
 
 [[bench]]
 name = "eigenbundler"
