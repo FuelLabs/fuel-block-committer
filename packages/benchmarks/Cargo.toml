@@ -6,7 +6,7 @@ homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 version = { workspace = true }
-publish = { workspace = true }
+publish = false
 rust-version = { workspace = true }
 
 [dependencies]
@@ -28,18 +28,6 @@ tracing-subscriber = { workspace = true, features = [
 ] }
 clock = { workspace = true }
 
-[[bench]]
-name = "eigenbundler"
-harness = false
-
-[[bench]]
-name = "service_bundler"
-harness = false
-
-[[bin]]
-name = "eigenbundler"
-path = "benches/eigenbundler.rs"
-
 [[bin]]
 name = "service_bundler"
-path = "benches/service_bundler.rs"
+path = "src/service_bundler.rs"
