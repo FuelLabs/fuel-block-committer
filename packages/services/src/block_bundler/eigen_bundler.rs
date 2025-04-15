@@ -86,27 +86,106 @@ impl EigenBundler {
 
     fn trim_blocks_to_fit(&self) -> NonEmpty<CompressedFuelBlock> {
         let mut current_blocks = self.blocks.clone();
-        while let Ok(bundle) = encode_blocks(self.bundle_encoder.clone(), current_blocks.clone()) {
-            if let Ok(fragments) = self.create_fragments(bundle.data.clone()) {
+        let original_count = current_blocks.len();
+        let mut iterations = 0;
+        
+        tracing::info!(
+            "EigenBundler: trim_blocks_to_fit starting with {} blocks", 
+            original_count
+        );
+        
+        while let Ok(bundle) = {
+            let encode_start = std::time::Instant::now();
+            let result = encode_blocks(self.bundle_encoder.clone(), current_blocks.clone());
+            
+            if let Ok(ref bundle) = result {
+                let encode_duration = encode_start.elapsed();
+                iterations += 1;
+                
+                tracing::info!(
+                    "EigenBundler: trim_blocks_to_fit iteration {}: encode_blocks took {:?} for {} blocks, produced {} bytes",
+                    iterations,
+                    encode_duration,
+                    current_blocks.len(),
+                    bundle.data.len()
+                );
+            }
+            
+            result
+        } {
+            if let Ok(fragments) = {
+                let fragments_start = std::time::Instant::now();
+                let result = self.create_fragments(bundle.data.clone());
+                
+                if let Ok(ref fragments) = result {
+                    let fragments_duration = fragments_start.elapsed();
+                    
+                    tracing::info!(
+                        "EigenBundler: trim_blocks_to_fit iteration {}: create_fragments took {:?}, created {} fragments",
+                        iterations,
+                        fragments_duration,
+                        fragments.len()
+                    );
+                }
+                
+                result
+            } {
                 if fragments.len() <= self.max_fragments.get() {
+                    tracing::info!(
+                        "EigenBundler: trim_blocks_to_fit completed after {} iterations, using {} blocks (of original {})",
+                        iterations,
+                        current_blocks.len(),
+                        original_count
+                    );
                     return current_blocks;
                 }
             }
+            
             current_blocks.pop();
+            tracing::info!(
+                "EigenBundler: trim_blocks_to_fit reduced blocks to {} (fragments > max_fragments: {})",
+                current_blocks.len(),
+                self.max_fragments.get()
+            );
         }
+        
+        tracing::error!(
+            "EigenBundler: Could not find a valid block bundle within fragment limit after {} iterations", 
+            iterations
+        );
         panic!("Could not find a valid block bundle within fragment limit");
     }
 }
 
 impl Bundle for EigenBundler {
     async fn advance(&mut self, _num_concurrent: NonZeroUsize) -> Result<bool> {
+        let start = std::time::Instant::now();
+        
         // adjust blocks to fit within max_fragments constraint
+        tracing::info!("EigenBundler: Starting trim_blocks_to_fit");
+        let trim_start = std::time::Instant::now();
         self.blocks = self.trim_blocks_to_fit();
+        let trim_duration = trim_start.elapsed();
+        tracing::info!("EigenBundler: trim_blocks_to_fit took {:?}", trim_duration);
+        
+        let total_duration = start.elapsed();
+        tracing::info!("EigenBundler: advance() completed in {:?}", total_duration);
         Ok(true)
     }
 
     async fn finish(self) -> Result<BundleProposal> {
+        let start = std::time::Instant::now();
+        
+        tracing::info!("EigenBundler: Starting encode_blocks");
+        let encode_start = std::time::Instant::now();
         let bundle = encode_blocks(self.bundle_encoder.clone(), self.blocks.clone())?;
+        let encode_duration = encode_start.elapsed();
+        tracing::info!(
+            "EigenBundler: encode_blocks completed in {:?} for {} blocks, {:?} bytes", 
+            encode_duration,
+            self.blocks.len(),
+            bundle.data.len()
+        );
 
         let uncompressed_data_size = NonZeroUsize::new(bundle.uncompressed_size)
             .expect("at least one block should be present");
@@ -114,8 +193,19 @@ impl Bundle for EigenBundler {
         let compressed_data_size = NonZeroUsize::new(bundle.data.len())
             .ok_or_else(|| crate::Error::Other("compressed data is empty".to_string()))?;
 
+        tracing::info!("EigenBundler: Starting create_fragments");
+        let fragments_start = std::time::Instant::now();
         let fragments = self.create_fragments(bundle.data)?;
+        let fragments_duration = fragments_start.elapsed();
+        tracing::info!(
+            "EigenBundler: create_fragments completed in {:?}, created {} fragments", 
+            fragments_duration,
+            fragments.len()
+        );
 
+        let total_duration = start.elapsed();
+        tracing::info!("EigenBundler: finish() completed in {:?}", total_duration);
+        
         Ok(BundleProposal {
             metadata: Metadata {
                 block_heights: bundle.block_heights,
@@ -137,17 +227,40 @@ fn encode_blocks(
     bundle_encoder: bundle::Encoder,
     bundle_blocks: NonEmpty<CompressedFuelBlock>,
 ) -> Result<CompressedBundle> {
+    let start = std::time::Instant::now();
+    
     let uncompressed_size = bundle_blocks.iter().map(|block| block.data.len()).sum();
     let block_heights = bundle_blocks.first().height..=bundle_blocks.last().height;
 
+    let blocks_time = std::time::Instant::now();
     let blocks: Vec<Vec<u8>> = bundle_blocks
         .into_iter()
         .map(|block| Vec::from(block.data))
         .collect();
+    let blocks_conversion_time = blocks_time.elapsed();
+    
+    tracing::info!(
+        "encode_blocks: Converted {} blocks to Vec<u8> in {:?}", 
+        blocks.len(),
+        blocks_conversion_time
+    );
 
+    let encode_time = std::time::Instant::now();
     let data = bundle_encoder
         .encode(bundle::Bundle::V1(bundle::BundleV1 { blocks }))
         .map_err(|e| crate::Error::Other(e.to_string()))?;
+    let encode_duration = encode_time.elapsed();
+    
+    tracing::info!(
+        "encode_blocks: Encoded data from {} bytes to {} bytes in {:?} (ratio: {:.2}x)",
+        uncompressed_size,
+        data.len(),
+        encode_duration,
+        uncompressed_size as f64 / data.len() as f64
+    );
+    
+    let total_duration = start.elapsed();
+    tracing::info!("encode_blocks: Total time: {:?}", total_duration);
 
     Ok(CompressedBundle {
         uncompressed_size,
