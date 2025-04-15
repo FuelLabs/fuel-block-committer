@@ -33,7 +33,7 @@ url = { workspace = true }
 governor = { workspace = true, features = ["default"] }
 humantime = { workspace = true }
 byte-unit = { workspace = true, features = ["byte", "u128"] }
-rust-eigenda-client = "0.1.0"
+rust-eigenda-client = "0.1.4"
 ethereum-types = "0.14.1"
 async-trait = { workspace = true }
 secp256k1 = { version = "0.28.0" }
