@@ -54,13 +54,11 @@ pub fn generate_sidecar(
 pub mod native_kzg_verify {
     use kzg_rs::{
         kzg_proof::{
-            safe_g1_affine_from_bytes, Digest, G1Affine, G1Projective, G2Projective, Scalar, Sha256,
+            compute_challenge, evaluate_polynomial_in_evaluation_form, safe_g1_affine_from_bytes,
+            Digest, G1Affine, G1Projective, G2Projective, Scalar, Sha256,
         },
         pairings_verify, KzgSettings,
     };
-
-    #[cfg(feature = "kzg")]
-    use kzg_rs::kzg_proof::{compute_challenge, evaluate_polynomial_in_evaluation_form};
 
     use crate::constants::FIELD_ELEMENTS_PER_BLOB;
 
