@@ -12,7 +12,7 @@ members = [
   "packages/adapters/eigenda",
   "packages/adapters/eth",
   "packages/adapters/fuel",
-  "packages/adapters/storage",
+  "packages/adapters/storage", "packages/benchmarks",
   "packages/encoding",
   "packages/metrics",
   "packages/services",
