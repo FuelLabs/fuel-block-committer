@@ -4416,10 +4416,11 @@ dependencies = [
 [[package]]
 name = "kzg-rs"
 version = "0.2.3"
-source = "git+https://github.com/rymnc/kzg-rs?rev=a3af3fd#a3af3fdd07dffccc6adb8044dc478b5ed061353a"
+source = "git+https://github.com/rymnc/kzg-rs?rev=6eabc64#6eabc648ec330d75d1d2313968437c6fc866e764"
 dependencies = [
  "ff",
  "hex",
+ "serde",
  "sha2",
  "sp1_bls12_381",
  "spin",

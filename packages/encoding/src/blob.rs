@@ -82,7 +82,7 @@ pub mod native_kzg_verify {
         Ok(is_verified)
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize)]
     pub struct VerifierSidecar {
         blobs: Vec<kzg_rs::Blob>,
         proofs: Vec<kzg_rs::Bytes48>,
