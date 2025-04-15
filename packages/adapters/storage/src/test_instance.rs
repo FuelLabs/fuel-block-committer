@@ -241,6 +241,10 @@ impl block_importer::port::Storage for DbWithProcess {
     async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::Result<()> {
         self.db._insert_blocks(blocks).await.map_err(Into::into)
     }
+    
+    async fn get_latest_block_height(&self) -> services::Result<u32> {
+        self.db._get_latest_block_height().await.map_err(Into::into)
+    }
 }
 
 impl block_bundler::port::Storage for DbWithProcess {

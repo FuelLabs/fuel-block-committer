@@ -222,22 +222,69 @@ impl port::Storage for InMemoryStorage {
         block_range: RangeInclusive<u32>,
         fragments: NonEmpty<Fragment>,
     ) -> services::Result<()> {
-        // Mark blocks as bundled by removing them
-        let mut blocks = self.blocks.lock().await;
-        blocks.retain(|b| !block_range.contains(&b.height));
-
-        // Store fragments
-        let mut stored_fragments = self.fragments.lock().await;
-        stored_fragments.push((bundle_id, block_range, fragments));
-
+        let mut fragments_vec = self.fragments.lock().await;
+        fragments_vec.push((bundle_id, block_range, fragments));
         Ok(())
     }
 
     async fn next_bundle_id(&self) -> services::Result<NonNegative<i32>> {
-        let mut id = self.next_id.lock().await;
-        let current = *id;
-        *id += 1;
-        Ok(current.try_into().unwrap())
+        let mut next_id = self.next_id.lock().await;
+        let id = *next_id;
+        *next_id += 1;
+        Ok(id.try_into().unwrap())
+    }
+}
+
+impl services::block_importer::port::Storage for InMemoryStorage {
+    async fn missing_blocks(
+        &self,
+        starting_height: u32,
+        current_height: u32,
+    ) -> services::Result<Vec<RangeInclusive<u32>>> {
+        let mut blocks = self.blocks.lock().await;
+        blocks.sort_by_key(|block| block.height);
+
+        let all_heights: Vec<u32> = blocks.iter().map(|block| block.height).collect();
+        let mut missing_ranges = Vec::new();
+        let mut start_of_range = None;
+
+        for height in starting_height..=current_height {
+            let is_missing = !all_heights.contains(&height);
+
+            match (is_missing, start_of_range) {
+                (true, None) => start_of_range = Some(height),
+                (false, Some(start)) => {
+                    missing_ranges.push(start..=height - 1);
+                    start_of_range = None;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(start) = start_of_range {
+            missing_ranges.push(start..=current_height);
+        }
+
+        Ok(missing_ranges)
+    }
+
+    async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::Result<()> {
+        let mut current_blocks = self.blocks.lock().await;
+
+        for block in blocks.iter() {
+            // Only insert if not already present
+            if !current_blocks.iter().any(|b| b.height == block.height) {
+                current_blocks.push(block.clone());
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn get_latest_block_height(&self) -> services::Result<u32> {
+        let blocks = self.blocks.lock().await;
+        let max_height = blocks.iter().map(|block| block.height).max().unwrap_or(0);
+        Ok(max_height)
     }
 }
 

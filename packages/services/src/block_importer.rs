@@ -1,7 +1,11 @@
 mod chunking;
 pub mod service {
 
-    use futures::{StreamExt, TryStreamExt};
+    use futures::{StreamExt, TryFutureExt, TryStreamExt};
+    use metrics::{
+        RegistersMetrics,
+        prometheus::{Histogram, IntGauge, histogram_opts, linear_buckets},
+    };
     use tracing::info;
 
     use super::chunking::TryChunkBlocksExt;
@@ -21,6 +25,64 @@ pub mod service {
         max_blocks: usize,
         /// Maximum total size (in bytes) to accumulate before importing.
         max_size: usize,
+        metrics: Metrics,
+        last_import_timestamp: std::time::Instant,
+    }
+
+    #[derive(Debug, Clone)]
+    struct Metrics {
+        latest_imported_height: IntGauge,
+        blocks_import_rate: Histogram,
+        import_lag: IntGauge,
+        import_latency: Histogram,
+    }
+
+    impl Default for Metrics {
+        fn default() -> Self {
+            let latest_imported_height = IntGauge::new(
+                "latest_imported_height",
+                "The height of the latest imported block",
+            )
+            .expect("latest_imported_height gauge to be correctly configured");
+
+            let blocks_import_rate = Histogram::with_opts(histogram_opts!(
+                "blocks_import_rate",
+                "Number of blocks imported per second",
+                linear_buckets(1.0, 5.0, 10).expect("to be correctly configured")
+            ))
+            .expect("to be correctly configured");
+
+            let import_lag = IntGauge::new(
+                "import_lag",
+                "The difference between latest chain height and latest imported height",
+            )
+            .expect("import_lag gauge to be correctly configured");
+
+            let import_latency = Histogram::with_opts(histogram_opts!(
+                "import_latency",
+                "Time it takes to import blocks in milliseconds",
+                linear_buckets(10.0, 100.0, 10).expect("to be correctly configured")
+            ))
+            .expect("to be correctly configured");
+
+            Self {
+                latest_imported_height,
+                blocks_import_rate,
+                import_lag,
+                import_latency,
+            }
+        }
+    }
+
+    impl<Db, FuelApi> RegistersMetrics for BlockImporter<Db, FuelApi> {
+        fn metrics(&self) -> Vec<Box<dyn metrics::prometheus::core::Collector>> {
+            vec![
+                Box::new(self.metrics.latest_imported_height.clone()),
+                Box::new(self.metrics.blocks_import_rate.clone()),
+                Box::new(self.metrics.import_lag.clone()),
+                Box::new(self.metrics.import_latency.clone()),
+            ]
+        }
     }
 
     impl<Db, FuelApi> BlockImporter<Db, FuelApi> {
@@ -37,6 +99,8 @@ pub mod service {
                 lookback_window,
                 max_blocks,
                 max_size,
+                metrics: Metrics::default(),
+                last_import_timestamp: std::time::Instant::now(),
             }
         }
     }
@@ -49,8 +113,26 @@ pub mod service {
         async fn import_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
             let starting_height = blocks.first().height;
             let ending_height = blocks.last().height;
+            let import_start = std::time::Instant::now();
 
             self.storage.insert_blocks(blocks).await?;
+
+            // Update metrics after successful import
+            let import_duration = import_start.elapsed();
+            self.metrics
+                .import_latency
+                .observe(import_duration.as_millis() as f64);
+            self.metrics
+                .latest_imported_height
+                .set(ending_height as i64);
+
+            // Calculate import rate (blocks per second)
+            let elapsed_since_last = self.last_import_timestamp.elapsed();
+            if elapsed_since_last.as_secs() > 0 {
+                let blocks_count = (ending_height - starting_height + 1) as f64;
+                let rate = blocks_count / elapsed_since_last.as_secs_f64();
+                self.metrics.blocks_import_rate.observe(rate);
+            }
 
             info!("Imported blocks: {starting_height}..={ending_height}");
 
@@ -67,6 +149,11 @@ pub mod service {
             let chain_height = self.fuel_api.latest_height().await?;
             let starting_height = chain_height.saturating_sub(self.lookback_window);
 
+            // Update the import lag metric
+            let latest_height = self.storage.get_latest_block_height().await?;
+            let import_lag = chain_height.saturating_sub(latest_height);
+            self.metrics.import_lag.set(import_lag as i64);
+
             for range in self
                 .storage
                 .missing_blocks(starting_height, chain_height)
@@ -81,6 +168,8 @@ pub mod service {
                         Ok(blocks) => (Some(blocks), None),
                         Err(err) => (err.blocks, Some(err.error)),
                     });
+
+                self.last_import_timestamp = std::time::Instant::now();
 
                 while let Some((blocks_until_potential_error, maybe_err)) =
                     block_stream.next().await
@@ -107,33 +196,36 @@ pub mod port {
 
     use crate::{Result, types::CompressedFuelBlock};
 
-    #[allow(async_fn_in_trait)]
-    #[trait_variant::make(Send)]
-    pub trait Storage: Sync {
-        async fn insert_blocks(&self, block: NonEmpty<CompressedFuelBlock>) -> Result<()>;
-        async fn missing_blocks(
-            &self,
-            starting_height: u32,
-            current_height: u32,
-        ) -> Result<Vec<RangeInclusive<u32>>>;
-    }
-
     pub mod fuel {
         use std::ops::RangeInclusive;
-
-        use futures::stream::BoxStream;
-
-        use crate::{Result, types::CompressedFuelBlock};
 
         #[allow(async_fn_in_trait)]
         #[trait_variant::make(Send)]
         #[cfg_attr(feature = "test-helpers", mockall::automock)]
         pub trait Api: Sync {
+            async fn latest_height(&self) -> crate::Result<u32>;
             fn compressed_blocks_in_height_range(
                 &self,
-                range: RangeInclusive<u32>,
-            ) -> BoxStream<'_, Result<CompressedFuelBlock>>;
-            async fn latest_height(&self) -> Result<u32>;
+                height_range: RangeInclusive<u32>,
+            ) -> futures::stream::BoxStream<
+                '_,
+                Result<crate::types::CompressedFuelBlock, crate::Error>,
+            >;
         }
+    }
+
+    #[allow(async_fn_in_trait)]
+    #[trait_variant::make(Send)]
+    pub trait Storage: Sync {
+        async fn missing_blocks(
+            &self,
+            starting_height: u32,
+            current_height: u32,
+        ) -> Result<Vec<RangeInclusive<u32>>>;
+
+        async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()>;
+
+        /// Returns the height of the latest block that has been imported
+        async fn get_latest_block_height(&self) -> Result<u32>;
     }
 }

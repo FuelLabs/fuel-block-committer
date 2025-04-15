@@ -129,6 +129,7 @@ pub fn ethereum_da_services(
         cancel_token.clone(),
         config,
         internal_config,
+        registry,
     );
 
     // TODO: state pruner currently only works with the Ethereum DA
@@ -194,8 +195,9 @@ pub async fn eigen_da_services(
         fuel,
         storage.clone(),
         cancel_token.clone(),
-        &config,
-        &internal_config,
+        config,
+        internal_config,
+        registry,
     );
 
     // TODO: no pruner or fee metric handle
@@ -384,6 +386,7 @@ pub fn block_importer(
     cancel_token: CancellationToken,
     config: &config::Config,
     internal_config: &config::Internal,
+    registry: &Registry,
 ) -> tokio::task::JoinHandle<()> {
     let block_importer = services::block_importer::service::BlockImporter::new(
         storage,
@@ -392,6 +395,9 @@ pub fn block_importer(
         internal_config.import_batches.max_blocks,
         internal_config.import_batches.max_cumulative_size,
     );
+    
+    // Register metrics for the block importer
+    block_importer.register_metrics(registry);
 
     schedule_polling(
         config.app.block_check_interval,

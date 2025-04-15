@@ -1378,6 +1378,24 @@ impl Postgres {
 
         Ok(())
     }
+
+    pub(crate) async fn _get_latest_block_height(&self) -> Result<u32> {
+        let result = sqlx::query!(
+            r#"SELECT MAX(height) as max_height FROM fuel_blocks"#
+        )
+        .fetch_one(&self.connection_pool)
+        .await?;
+        
+        match result.max_height {
+            Some(height) => {
+                // Convert from i64 to u32
+                let height_u32 = u32::try_from(height)
+                    .map_err(|_| crate::error::Error::Conversion("invalid block height".to_string()))?;
+                Ok(height_u32)
+            },
+            None => Ok(0) // No blocks in the database yet
+        }
+    }
 }
 
 async fn take_blocks_until_limit(

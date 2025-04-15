@@ -99,6 +99,10 @@ impl services::block_importer::port::Storage for Postgres {
     async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
         Ok(self._insert_blocks(blocks).await?)
     }
+
+    async fn get_latest_block_height(&self) -> Result<u32> {
+        self._get_latest_block_height().await.map_err(Into::into)
+    }
 }
 
 impl services::block_bundler::port::Storage for Postgres {
