@@ -1,19 +1,13 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 
-use criterion::{
-    BenchmarkGroup, BenchmarkId, Criterion, SamplingMode, Throughput, criterion_group,
-    criterion_main, measurement::WallTime,
-};
-use fuel_block_committer_encoding::bundle::{self, BundleV1, CompressionLevel};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
 use itertools::Itertools;
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use services::{
     Bundle,
-    block_bundler::{
-        common::BundlerFactory,
-        eigen_bundler::{self, EigenBundler, Factory},
-    },
-    types::{CompressedFuelBlock, NonEmpty, nonempty, storage::SequentialFuelBlocks},
+    block_bundler::{common::BundlerFactory, eigen_bundler::Factory},
+    types::{CompressedFuelBlock, NonEmpty, storage::SequentialFuelBlocks},
 };
 use tokio::time::Instant;
 
@@ -30,31 +24,50 @@ const NUM_BLOCKS: usize = TOTAL_DATA_SIZE_MB.div_ceil(BLOCK_SIZE_MB); // Round u
 fn generate_compressible_data(size_bytes: usize) -> Vec<u8> {
     let mut rng = SmallRng::seed_from_u64(42); // Fixed seed for reproducibility
 
-    // Create a base pattern that can be repeated
+    // Create data with a mix of patterns and randomness to target ~2.2x compression
+    let mut data = vec![0u8; size_bytes];
+
+    // First create a few distinct patterns we'll reuse
+    let num_patterns = 5;
     let pattern_size = 64;
-    let mut base_pattern = vec![0u8; pattern_size];
-    rng.fill(&mut base_pattern[..]);
+    let mut patterns = Vec::with_capacity(num_patterns);
 
-    // For a compression ratio of about 2.2x, we can use a pattern but
-    // introduce some controlled randomness
-    let mut data = Vec::with_capacity(size_bytes);
+    for _ in 0..num_patterns {
+        let mut pattern = vec![0u8; pattern_size];
+        rng.fill(&mut pattern[..]);
+        patterns.push(pattern);
+    }
 
-    let mut counter = 0;
-    while data.len() < size_bytes {
-        // Add the base pattern
-        data.extend_from_slice(&base_pattern);
+    // Apply the patterns to about 65% of the data
+    // For 2.2x compression, we want a good mix of patterns and randomness
+    for chunk in data.chunks_mut(128) {
+        // First 64 bytes get a repeating pattern
+        let pattern_idx = rng.r#gen_range(0..num_patterns);
+        let pattern_bytes = chunk.len().min(pattern_size);
 
-        // Every few iterations, add some semi-random data to reduce compressibility
-        // This helps achieve closer to 2.2x rather than higher ratios
-        counter += 1;
-        if counter % 5 == 0 {
-            for _ in 0..16 {
-                data.push(rng.r#gen::<u8>());
-            }
+        if pattern_bytes > 0 {
+            chunk[0..pattern_bytes].copy_from_slice(&patterns[pattern_idx][0..pattern_bytes]);
+        }
+
+        // Remaining bytes (if any) get random data
+        if chunk.len() > pattern_bytes {
+            rng.fill(&mut chunk[pattern_bytes..]);
         }
     }
 
-    data.truncate(size_bytes);
+    // Additional step: create some long-range patterns for better compression
+    // Every 2KB, repeat a longer pattern
+    let long_pattern_size = 256;
+    let mut long_pattern = vec![0u8; long_pattern_size];
+    rng.fill(&mut long_pattern[..]);
+
+    for i in (0..size_bytes).step_by(2048) {
+        let copy_size = (size_bytes - i).min(long_pattern_size);
+        if copy_size > 0 {
+            data[i..i + copy_size].copy_from_slice(&long_pattern[0..copy_size]);
+        }
+    }
+
     data
 }
 
