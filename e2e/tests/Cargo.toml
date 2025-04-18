@@ -15,3 +15,21 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 storage = { workspace = true }
 services = { workspace = true }
+rust-eigenda-signers = { workspace = true }
+rust-eigenda-client = { workspace = true }
+async-trait = { workspace = true }
+aws-config = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = [
+  "env-filter",
+  "fmt",
+  "json",
+] }
+url = { workspace = true }
+hex = { workspace = true }
+signers = { workspace = true }
+k256 = { workspace = true, features = ["ecdsa"] }
+rand = { workspace = true }
+secp256k1 = { workspace = true, features = ["default", "recovery", "rand-std"] }
+sha2 = { workspace = true }
+ethereum-types = { workspace = true }

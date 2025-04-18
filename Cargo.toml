@@ -12,7 +12,8 @@ members = [
   "packages/adapters/eigenda",
   "packages/adapters/eth",
   "packages/adapters/fuel",
-  "packages/adapters/storage", "packages/benchmarks",
+  "packages/adapters/storage",
+  "packages/benchmarks",
   "packages/encoding",
   "packages/metrics",
   "packages/services",
@@ -89,7 +90,7 @@ prost = { version = "0.13.4", default-features = false }
 rand = { version = "0.8", default-features = false }
 byte-unit = { version = "5.1", default-features = false }
 reqwest = { version = "0.12", default-features = false }
-secp256k1 = { version = "0.29", default-features = false }
+secp256k1 = { version = "0.27", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 sha3 = { version = "0.10.8" }
@@ -113,5 +114,7 @@ walkdir = { version = "2.5", default-features = false }
 zip = { version = "2.1", default-features = false }
 cynic = { version = "3.1", default-features = false }
 cynic-codegen = { version = "3.10", default-features = false }
-rust-eigenda-client = "0.1.0"
+rust-eigenda-client = { path = "/home/segfault_magnet/fuel/eigen/our_eigen_fork/crates/rust-eigenda-client" }
+rust-eigenda-signers = { path = "/home/segfault_magnet/fuel/eigen/our_eigen_fork/crates/rust-eigenda-signers" }
+sha2 = { version = "0.10", default-features = false }
 ethereum-types = "0.14.1"

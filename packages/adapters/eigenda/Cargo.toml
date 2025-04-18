@@ -36,7 +36,7 @@ byte-unit = { workspace = true, features = ["byte", "u128"] }
 rust-eigenda-client = "0.1.4"
 ethereum-types = "0.14.1"
 async-trait = { workspace = true }
-secp256k1 = { version = "0.28.0" }
+secp256k1 = { workspace = true }
 anyhow = { workspace = true }
 
 [dev-dependencies]

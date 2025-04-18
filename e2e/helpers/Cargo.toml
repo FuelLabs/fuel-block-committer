@@ -66,6 +66,7 @@ url = { workspace = true }
 async-graphql = { workspace = true, optional = true }
 async-graphql-actix-web = { workspace = true, optional = true }
 actix-web = { workspace = true, optional = true }
+base64 = { workspace = true }
 
 [dev-dependencies]
 e2e-helpers = { workspace = true, features = ["fuel-core-simulated"] }

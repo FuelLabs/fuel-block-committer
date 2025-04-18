@@ -3029,6 +3029,7 @@ dependencies = [
  "async-graphql-actix-web",
  "aws-config",
  "aws-sdk-kms",
+ "base64 0.22.1",
  "e2e-helpers",
  "eth",
  "fs_extra",
@@ -3041,7 +3042,7 @@ dependencies = [
  "portpicker",
  "rand 0.8.5",
  "reqwest",
- "secp256k1 0.29.1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "services",
@@ -3060,10 +3061,24 @@ name = "e2e-tests"
 version = "0.10.10"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "aws-config",
  "e2e-helpers",
+ "ethereum-types",
+ "hex",
+ "k256",
+ "rand 0.8.5",
+ "rust-eigenda-client 0.1.4",
+ "rust-eigenda-signers",
+ "secp256k1 0.27.0",
  "services",
+ "sha2",
+ "signers",
  "storage",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -3128,8 +3143,8 @@ dependencies = [
  "k256",
  "metrics",
  "prost 0.13.4",
- "rust-eigenda-client",
- "secp256k1 0.28.2",
+ "rust-eigenda-client 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "secp256k1 0.27.0",
  "services",
  "sha3",
  "signers",
@@ -6556,6 +6571,38 @@ checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 [[package]]
 name = "rust-eigenda-client"
 version = "0.1.4"
+dependencies = [
+ "ark-bn254",
+ "async-trait",
+ "backon",
+ "byteorder",
+ "bytes",
+ "ethabi",
+ "ethereum-types",
+ "hex",
+ "hex-literal 0.3.4",
+ "num-bigint",
+ "prost 0.12.6",
+ "rand 0.8.5",
+ "reqwest",
+ "rust-eigenda-signers",
+ "rust-kzg-bn254",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha3",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tiny-keccak",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.11.0",
+ "url",
+]
+
+[[package]]
+name = "rust-eigenda-client"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ef77a51d47c3c1090a03196078ff0663c6087e530cc74266dee321274ba63ec"
 dependencies = [
@@ -6585,6 +6632,17 @@ dependencies = [
  "tokio-stream",
  "tonic 0.11.0",
  "url",
+]
+
+[[package]]
+name = "rust-eigenda-signers"
+version = "0.1.4"
+dependencies = [
+ "async-trait",
+ "rand 0.8.5",
+ "secp256k1 0.27.0",
+ "thiserror 1.0.69",
+ "tiny-keccak",
 ]
 
 [[package]]
@@ -6908,16 +6966,8 @@ version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
 dependencies = [
+ "rand 0.8.5",
  "secp256k1-sys 0.8.1",
-]
-
-[[package]]
-name = "secp256k1"
-version = "0.28.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d24b59d129cdadea20aea4fb2352fa053712e5d713eee47d700cd4b2bc002f10"
-dependencies = [
- "secp256k1-sys 0.9.2",
 ]
 
 [[package]]
@@ -6935,15 +6985,6 @@ name = "secp256k1-sys"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70a129b9e9efbfb223753b9163c4ab3b13cff7fd9c7f010fbac25ab4099fa07e"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5d1746aae42c19d583c3c1a8c646bfad910498e2051c551a7f2e3c0c9fbb7eb"
 dependencies = [
  "cc",
 ]
@@ -7250,6 +7291,7 @@ dependencies = [
  "base64 0.22.1",
  "hex",
  "k256",
+ "rust-eigenda-signers",
  "serde",
  "serde_json",
 ]

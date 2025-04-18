@@ -1,4 +1,5 @@
 pub mod aws;
+pub mod eigen_aws_kms;
 
 pub use aws::{AwsConfig, AwsKmsClient};
 
