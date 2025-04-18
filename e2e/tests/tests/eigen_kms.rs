@@ -6,12 +6,12 @@ use ethereum_types::H160;
 use k256::ecdsa::SigningKey as K256SigningKey;
 use rand::RngCore;
 use rand::rngs::OsRng;
-use rust_eigenda_signers::Message;
 use rust_eigenda_signers::PrivateKeySigner;
-use rust_eigenda_signers::PublicKey;
-use rust_eigenda_signers::SecretKey;
 use rust_eigenda_signers::Signer;
-use rust_eigenda_signers::ecdsa::RecoverableSignature;
+use rust_eigenda_signers::secp256k1::Message;
+use rust_eigenda_signers::secp256k1::PublicKey;
+use rust_eigenda_signers::secp256k1::SecretKey;
+use rust_eigenda_signers::secp256k1::ecdsa::RecoverableSignature;
 use secp256k1::Secp256k1;
 use sha2::{Digest, Sha256};
 use signers::eigen_aws_kms::AwsKmsSigner;
@@ -95,7 +95,7 @@ async fn test_kms_signer_sign_and_verify() -> Result<()> {
 
     let expected_pubkey = local_signer.public_key();
 
-    verify_signature_recovery(&rec_sig, &message, &expected_pubkey)
+    verify_signature_recovery(&rec_sig.0, &message, &expected_pubkey)
         .context("Signature verification failed")?;
 
     Ok(())

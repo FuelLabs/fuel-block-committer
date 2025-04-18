@@ -1,13 +1,13 @@
 use anyhow::Context;
 use aws_sdk_kms::{primitives::Blob, Client};
 use k256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
-use rust_eigenda_signers::{ecdsa::RecoverableSignature, Message, SignerError};
+use rust_eigenda_signers::{secp256k1::Message, RecoverableSignature, SignerError};
 
 #[derive(Clone)]
 pub struct AwsKmsSigner {
     key_id: String,
     client: Client,
-    public_key: rust_eigenda_signers::PublicKey,
+    public_key: rust_eigenda_signers::secp256k1::PublicKey,
     k256_verifying_key: VerifyingKey, // Store k256 key for internal use
 }
 
@@ -28,7 +28,7 @@ impl AwsKmsSigner {
             .context("Failed to parse public key DER from KMS")?;
 
         // Convert k256 public key to secp256k1 public key
-        let secp_pub_key = rust_eigenda_signers::PublicKey::from_slice(
+        let secp_pub_key = rust_eigenda_signers::secp256k1::PublicKey::from_slice(
             k256_pub_key.to_encoded_point(false).as_bytes(),
         )
         .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
@@ -91,25 +91,27 @@ impl rust_eigenda_signers::Signer for AwsKmsSigner {
         )
         .map_err(|e| SignerError::SignerSpecific(e.into()))?;
 
-        let secp_sig =
-            rust_eigenda_signers::ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
-                .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
+        let secp_sig = rust_eigenda_signers::secp256k1::ecdsa::Signature::from_compact(
+            &k256_sig_normalized.to_bytes(),
+        )
+        .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
-        let secp_recid =
-            rust_eigenda_signers::ecdsa::RecoveryId::from_i32(k256_recid.to_byte() as i32)
-                .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
+        let secp_recid = rust_eigenda_signers::secp256k1::ecdsa::RecoveryId::from_i32(
+            k256_recid.to_byte() as i32,
+        )
+        .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         let standard_recoverable_sig =
-            rust_eigenda_signers::ecdsa::RecoverableSignature::from_compact(
+            rust_eigenda_signers::secp256k1::ecdsa::RecoverableSignature::from_compact(
                 secp_sig.serialize_compact().as_slice(),
                 secp_recid,
             )
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
-        Ok(standard_recoverable_sig)
+        Ok(standard_recoverable_sig.into())
     }
 
-    fn public_key(&self) -> rust_eigenda_signers::PublicKey {
+    fn public_key(&self) -> rust_eigenda_signers::secp256k1::PublicKey {
         self.public_key
     }
 }
