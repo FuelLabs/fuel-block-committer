@@ -11,10 +11,10 @@ async-trait = { workspace = true }
 k256 = { workspace = true, features = ["pkcs8"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
 hex = { workspace = true }
 base64 = { workspace = true }
 rust-eigenda-signers = { workspace = true }
+thiserror = { workspace = true }
 
 [features]
 test-helpers = []

@@ -6639,6 +6639,7 @@ name = "rust-eigenda-signers"
 version = "0.1.4"
 dependencies = [
  "async-trait",
+ "ethereum-types",
  "rand 0.8.5",
  "secp256k1 0.27.0",
  "thiserror 1.0.69",
@@ -7294,6 +7295,7 @@ dependencies = [
  "rust-eigenda-signers",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

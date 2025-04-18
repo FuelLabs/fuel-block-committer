@@ -1,7 +1,8 @@
 use anyhow::Context;
 use aws_sdk_kms::{primitives::Blob, Client};
 use k256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
-use rust_eigenda_signers::{secp256k1::Message, RecoverableSignature, SignerError};
+use rust_eigenda_signers::{secp256k1::Message, RecoverableSignature};
+use thiserror::Error;
 
 #[derive(Clone)]
 pub struct AwsKmsSigner {
@@ -54,9 +55,14 @@ impl std::fmt::Debug for AwsKmsSigner {
     }
 }
 
+#[derive(Error, Debug)]
+#[error(transparent)]
+pub struct Error(#[from] anyhow::Error);
+
 #[async_trait::async_trait]
-impl rust_eigenda_signers::Signer for AwsKmsSigner {
-    async fn sign_digest(&self, message: &Message) -> Result<RecoverableSignature, SignerError> {
+impl rust_eigenda_signers::Sign for AwsKmsSigner {
+    type Error = Error;
+    async fn sign_digest(&self, message: &Message) -> Result<RecoverableSignature, Self::Error> {
         let digest_bytes: &[u8; 32] = message.as_ref();
 
         let sign_response = self
@@ -67,20 +73,16 @@ impl rust_eigenda_signers::Signer for AwsKmsSigner {
             .message_type(aws_sdk_kms::types::MessageType::Digest)
             .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
             .send()
-            .await // Ensure .await is before map_err
-            .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
+            .await
+            .context("while requesting KMS to sign the digest")?;
 
         let signature_der = sign_response
             .signature
-            .ok_or_else(|| {
-                SignerError::SignerSpecific(
-                    anyhow::anyhow!("Signature missing from KMS response").into(),
-                )
-            })?
+            .ok_or_else(|| anyhow::anyhow!("Signature missing from KMS response"))?
             .into_inner();
 
         let k256_sig = k256::ecdsa::Signature::from_der(&signature_der)
-            .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
+            .context("Failed to parse DER signature")?;
 
         let k256_sig_normalized = k256_sig.normalize_s().unwrap_or(k256_sig);
 
@@ -88,31 +90,30 @@ impl rust_eigenda_signers::Signer for AwsKmsSigner {
             &k256_sig_normalized,
             digest_bytes,
             &self.k256_verifying_key, // Use stored k256 key for internal use
-        )
-        .map_err(|e| SignerError::SignerSpecific(e.into()))?;
+        )?;
 
         let secp_sig = rust_eigenda_signers::secp256k1::ecdsa::Signature::from_compact(
             &k256_sig_normalized.to_bytes(),
         )
-        .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
+        .context("Failed to convert k256 signature to secp256k1 signature")?;
 
         let secp_recid = rust_eigenda_signers::secp256k1::ecdsa::RecoveryId::from_i32(
             k256_recid.to_byte() as i32,
         )
-        .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
+        .context("Failed to convert k256 recovery ID to secp256k1 recovery ID")?;
 
         let standard_recoverable_sig =
             rust_eigenda_signers::secp256k1::ecdsa::RecoverableSignature::from_compact(
                 secp_sig.serialize_compact().as_slice(),
                 secp_recid,
             )
-            .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
+            .context("Failed to create recoverable signature")?;
 
         Ok(standard_recoverable_sig.into())
     }
 
-    fn public_key(&self) -> rust_eigenda_signers::secp256k1::PublicKey {
-        self.public_key
+    fn public_key(&self) -> rust_eigenda_signers::PublicKey {
+        self.public_key.into()
     }
 }
 

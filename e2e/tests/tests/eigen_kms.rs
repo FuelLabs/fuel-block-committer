@@ -6,12 +6,12 @@ use ethereum_types::H160;
 use k256::ecdsa::SigningKey as K256SigningKey;
 use rand::RngCore;
 use rand::rngs::OsRng;
-use rust_eigenda_signers::PrivateKeySigner;
-use rust_eigenda_signers::Signer;
+use rust_eigenda_client::Sign;
 use rust_eigenda_signers::secp256k1::Message;
 use rust_eigenda_signers::secp256k1::PublicKey;
 use rust_eigenda_signers::secp256k1::SecretKey;
 use rust_eigenda_signers::secp256k1::ecdsa::RecoverableSignature;
+use rust_eigenda_signers::signers::private_key::Signer as PrivateKeySigner;
 use secp256k1::Secp256k1;
 use sha2::{Digest, Sha256};
 use signers::eigen_aws_kms::AwsKmsSigner;
@@ -70,8 +70,8 @@ async fn test_kms_signer_public_key_and_address() -> Result<()> {
         "Public key from AwsKmsSigner does not match the expected key from LocalSigner"
     );
 
-    let expected_address = local_signer.address();
-    let actual_address = aws_signer.address();
+    let expected_address = local_signer.public_key().address();
+    let actual_address = aws_signer.public_key().address();
     assert_eq!(
         actual_address, expected_address,
         "Address from AwsKmsSigner does not match the expected address from LocalSigner"
