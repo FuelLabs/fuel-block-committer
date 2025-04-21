@@ -1,21 +1,31 @@
 pub mod aws;
 pub mod eigen_aws_kms;
 
+use std::fmt::Display;
+
 pub use aws::{AwsConfig, AwsKmsClient};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum KeySource {
     Kms(String),
     Private(String),
 }
 
-impl ToString for KeySource {
-    fn to_string(&self) -> String {
-        let k = match self {
-            KeySource::Kms(k) => k,
-            KeySource::Private(k) => k,
-        };
-        k.to_owned()
+impl std::fmt::Debug for KeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeySource::Kms(_) => write!(f, "KeySource::Kms"),
+            KeySource::Private(_) => write!(f, "KeySource::Private"),
+        }
+    }
+}
+
+impl Display for KeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeySource::Kms(_) => write!(f, "Kms(...)"),
+            KeySource::Private(_) => write!(f, "Private(...)"),
+        }
     }
 }
 
