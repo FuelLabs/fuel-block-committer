@@ -2,7 +2,7 @@ use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
 use eigenda::{EigenDAClient, Throughput};
-use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
+use eth::{AcceptablePriorityFeePercentages, BlobEncoder};
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,
@@ -23,8 +23,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::{
-    Database, FuelApi, L1,
-    config::{self, DALayer, EigenDA},
+    Database, EigenDA, FuelApi, L1,
+    config::{self, DALayer, EigenDaConfig},
     errors::{Error, Result},
 };
 
@@ -332,7 +332,7 @@ pub fn state_committer(
 
 pub fn eigen_state_committer(
     fuel: FuelApi,
-    eigen_da: EigenDAClient,
+    eigen_da: EigenDA,
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
@@ -361,7 +361,7 @@ pub fn eigen_state_committer(
 }
 
 pub fn eigen_state_listener(
-    eigen_da: EigenDAClient,
+    eigen_da: EigenDA,
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
@@ -395,7 +395,7 @@ pub fn block_importer(
         internal_config.import_batches.max_blocks,
         internal_config.import_batches.max_cumulative_size,
     );
-    
+
     // Register metrics for the block importer
     block_importer.register_metrics(registry);
 
@@ -467,7 +467,7 @@ pub async fn l1_adapter(
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        Signers::for_keys(config.eth.l1_keys.clone()).await?,
+        config.eth.signers().await?,
         internal_config.eth_errors_before_unhealthy,
         eth::TxConfig {
             tx_max_fee: u128::from(config.app.tx_fees.max),
@@ -488,15 +488,15 @@ pub async fn l1_adapter(
 }
 
 pub async fn eigen_adapter(
-    config: &EigenDA,
+    config: &EigenDaConfig,
     internal_config: &config::Internal,
-) -> Result<EigenDAClient> {
+) -> Result<EigenDA> {
     // Configure with appropriate throughput values
     // because testing showed that the time window in which thottling is calculated allows for
     // around 500MB to be sent before throttling comes into effect
     let burst = 16_000_000.try_into().unwrap();
     let eigen_da = EigenDAClient::new(
-        config.key.clone(),
+        config.signer().await?,
         config.rpc.clone(),
         Throughput {
             bytes_per_sec: 2_000_000.try_into().unwrap(),

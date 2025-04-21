@@ -14,18 +14,18 @@ use rust_eigenda_signers::secp256k1::ecdsa::RecoverableSignature;
 use rust_eigenda_signers::signers::private_key::Signer as PrivateKeySigner;
 use secp256k1::Secp256k1;
 use sha2::{Digest, Sha256};
-use signers::eigen_aws_kms::AwsKmsSigner;
 
 use rust_eigenda_client::{
     client::{BlobProvider, EigenClient},
     config::{EigenConfig, SecretUrl, SrsPointsSource},
 };
+use signers::eigen::kms::Signer;
 use std::{env, error::Error, str::FromStr, sync::Arc, time::Duration};
 use tracing::{error, info, instrument};
 use tracing_subscriber::EnvFilter;
 use url::Url;
 
-async fn setup_kms_and_signer() -> Result<(KmsProcess, PrivateKeySigner, AwsKmsSigner)> {
+async fn setup_kms_and_signer() -> Result<(KmsProcess, PrivateKeySigner, Signer)> {
     let kms_proc = Kms::default().with_show_logs(false).start().await?;
 
     let k256_secret_key = k256::SecretKey::random(&mut OsRng);
@@ -37,7 +37,7 @@ async fn setup_kms_and_signer() -> Result<(KmsProcess, PrivateKeySigner, AwsKmsS
 
     let kms_key_id = kms_proc.inject_secp256k1_key(&k256_signing_key).await?;
 
-    let aws_signer = AwsKmsSigner::new(kms_proc.client().inner().clone(), kms_key_id).await?;
+    let aws_signer = Signer::new(kms_proc.client().clone(), kms_key_id).await?;
 
     Ok((kms_proc, local_signer, aws_signer))
 }

@@ -151,16 +151,3 @@ async fn state_submitting_finished(
 
     Ok(finished)
 }
-
-#[ignore = "meant for running manually and tweaking configuration parameters"]
-#[tokio::test(flavor = "multi_thread")]
-async fn connecting_to_testnet() -> Result<()> {
-    // given
-    let show_logs = false;
-    let blob_support = true;
-    let _stack = WholeStack::connect_to_testnet(show_logs, blob_support).await?;
-
-    tokio::time::sleep(Duration::from_secs(10000)).await;
-
-    Ok(())
-}

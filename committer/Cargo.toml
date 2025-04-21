@@ -22,8 +22,9 @@ fuel-block-committer-encoding = { workspace = true }
 humantime = { workspace = true }
 metrics = { workspace = true }
 num_cpus = { workspace = true }
-signers = { workspace = true }
 serde = { workspace = true }
+signers = { workspace = true }
+hex = { workspace = true }
 serde_json = { workspace = true }
 services = { workspace = true }
 storage = { workspace = true }

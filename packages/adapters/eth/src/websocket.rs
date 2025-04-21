@@ -6,7 +6,7 @@ use alloy::{
     network::TxSigner,
     primitives::{Address, B256, ChainId},
     rpc::types::FeeHistory,
-    signers::{aws::AwsSigner, local::PrivateKeySigner, Signature},
+    signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
 };
 use delegate::delegate;
 use serde::Deserialize;
@@ -18,14 +18,13 @@ use services::{
         TransactionResponse, U256,
     },
 };
-use signers::{AwsKmsClient, KeySource};
 use url::Url;
 
 use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{error::Error, fee_api_helpers::batch_requests};
+use crate::fee_api_helpers::batch_requests;
 
 mod connection;
 mod health_tracking_middleware;
@@ -119,17 +118,11 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct L1Keys {
-    /// The eth key authorized by the L1 bridging contracts to post block commitments.
-    pub main: KeySource,
-    /// The eth key for posting L2 state to L1.
-    pub blob: Option<KeySource>,
-}
-
-impl L1Keys {
-    pub fn uses_aws(&self) -> bool {
-        matches!(self.main, KeySource::Kms(_)) || matches!(self.blob, Some(KeySource::Kms(_)))
-    }
+pub struct L1Signers<S1, S2> {
+    /// The eth signer authorized by the L1 bridging contracts to post block commitments.
+    pub main: S1,
+    /// The eth signer for posting L2 state to L1.
+    pub blob: Option<S2>,
 }
 
 #[derive(Debug, Clone)]
@@ -192,124 +185,21 @@ impl AcceptablePriorityFeePercentages {
 
 // This trait is needed because you cannot write `dyn TraitA + TraitB` except when TraitB is an
 // auto-trait.
-trait CompositeSigner: alloy::signers::Signer + TxSigner<Signature> {}
-impl<T: alloy::signers::Signer + TxSigner<Signature>> CompositeSigner for T {}
-
-pub struct Signer {
-    signer: Box<dyn CompositeSigner + 'static + Send + Sync>,
-}
-
-#[async_trait::async_trait]
-impl TxSigner<Signature> for Signer {
-    fn address(&self) -> Address {
-        TxSigner::<Signature>::address(&self.signer)
-    }
-
-    async fn sign_transaction(
-        &self,
-        tx: &mut dyn SignableTransaction<Signature>,
-    ) -> alloy::signers::Result<Signature> {
-        TxSigner::<Signature>::sign_transaction(&self.signer, tx).await
-    }
-}
-
-#[async_trait::async_trait]
-impl alloy::signers::Signer<Signature> for Signer {
-    async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
-        self.signer.sign_hash(hash).await
-    }
-
-    fn address(&self) -> Address {
-        alloy::signers::Signer::<Signature>::address(&self.signer)
-    }
-
-    fn chain_id(&self) -> Option<ChainId> {
-        self.signer.chain_id()
-    }
-
-    fn set_chain_id(&mut self, chain_id: Option<ChainId>) {
-        self.signer.set_chain_id(chain_id)
-    }
-}
-
-impl Signer {
-    pub async fn for_key(key: KeySource) -> Result<Self> {
-        match key {
-            KeySource::Kms(key) => {
-                let client = AwsKmsClient::new().await;
-                let signer = Signer::make_aws_signer(&client, key).await?;
-                Ok(signer)
-            }
-            KeySource::Private(key) => {
-                let signer = Signer::make_private_key_signer(&key)?;
-                Ok(signer)
-            }
-        }
-    }
-
-    pub async fn make_aws_signer(client: &AwsKmsClient, key: String) -> Result<Self> {
-        let signer = AwsSigner::new(client.inner().clone(), key, None)
-            .await
-            .map_err(|err| Error::Other(format!("Error making aws signer: {err:?}")))?;
-
-        Ok(Signer {
-            signer: Box::new(signer),
-        })
-    }
-
-    pub fn make_private_key_signer(key: &str) -> Result<Self> {
-        let signer = PrivateKeySigner::from_str(key)
-            .map_err(|_| services::Error::Other("Invalid private key".to_string()))?;
-
-        Ok(Signer {
-            signer: Box::new(signer),
-        })
-    }
-}
-
-pub struct Signers {
-    pub main: Signer,
-    pub blob: Option<Signer>,
-}
-impl Signers {
-    pub async fn for_keys(keys: L1Keys) -> Result<Self> {
-        let aws_client = if keys.uses_aws() {
-            let client = AwsKmsClient::new().await;
-            Some(client)
-        } else {
-            None
-        };
-
-        let blob_signer = match keys.blob {
-            Some(KeySource::Kms(key)) => {
-                Some(Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?)
-            }
-            Some(KeySource::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
-            None => None,
-        };
-
-        let main_signer = match keys.main {
-            KeySource::Kms(key) => {
-                Signer::make_aws_signer(&aws_client.expect("is set"), key).await?
-            }
-            KeySource::Private(key) => Signer::make_private_key_signer(&key)?,
-        };
-
-        Ok(Self {
-            main: main_signer,
-            blob: blob_signer,
-        })
-    }
-}
+pub trait Sign: alloy::signers::Signer + TxSigner<Signature> {}
+impl<T: alloy::signers::Signer + TxSigner<Signature>> Sign for T {}
 
 impl WebsocketClient {
-    pub async fn connect(
+    pub async fn connect<S1, S2>(
         url: Url,
         contract_address: Address,
-        signers: Signers,
+        signers: L1Signers<S1, S2>,
         unhealthy_after_n_errors: usize,
         tx_config: TxConfig,
-    ) -> services::Result<Self> {
+    ) -> services::Result<Self>
+    where
+        S1: Sign + Send + Sync + 'static,
+        S2: Sign + Send + Sync + 'static,
+    {
         let blob_poster_address = signers
             .blob
             .as_ref()

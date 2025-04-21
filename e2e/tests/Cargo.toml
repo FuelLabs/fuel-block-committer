@@ -27,13 +27,13 @@ tracing-subscriber = { workspace = true, features = [
 ] }
 url = { workspace = true }
 hex = { workspace = true }
-signers = { workspace = true }
 k256 = { workspace = true, features = ["ecdsa"] }
 rand = { workspace = true }
 secp256k1 = { workspace = true, features = ["default", "recovery", "rand-std"] }
 sha2 = { workspace = true }
 ethereum-types = { workspace = true }
 reqwest = { version = "0.11.24", features = ["json"] }
+signers = { workspace = true, features = ["test-helpers"] }
 
 [features]
 default = ["fuel-core-simulated"]

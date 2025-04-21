@@ -17,14 +17,13 @@ use governor::{
 };
 use rust_eigenda_client::{
     client::{BlobProvider, EigenClient},
-    config::{EigenConfig, EigenSecrets, PrivateKey, SecretUrl, SrsPointsSource},
+    config::{EigenConfig, SecretUrl, SrsPointsSource},
 };
 use secp256k1::SecretKey;
 use services::{
     Error as ServiceError, Result as ServiceResult,
     types::{DispersalStatus, EigenDASubmission, Fragment},
 };
-use signers::KeySource;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 use url::Url;
@@ -34,7 +33,7 @@ use crate::{
     error::{Error, Result},
 };
 
-impl services::state_committer::port::eigen_da::Api for EigenDAClient {
+impl<S: Sign> services::state_committer::port::eigen_da::Api for EigenDAClient<S> {
     async fn submit_state_fragment(&self, fragment: Fragment) -> ServiceResult<EigenDASubmission> {
         let data = fragment.data;
         let start = Instant::now();
@@ -83,18 +82,16 @@ impl services::state_committer::port::eigen_da::Api for EigenDAClient {
     }
 }
 
-impl services::state_listener::port::eigen_da::Api for EigenDAClient {
-    fn get_blob_status(
-        &self,
-        id: Vec<u8>,
-    ) -> impl ::core::future::Future<Output = ServiceResult<DispersalStatus>> + Send {
-        async move {
-            let blob_id = String::from_utf8(id.clone())
-                .map_err(|e| ServiceError::Other(format!("Invalid blob ID format: {e}")))?;
+impl<S> services::state_listener::port::eigen_da::Api for EigenDAClient<S>
+where
+    S: Send + Sync,
+{
+    async fn get_blob_status(&self, id: Vec<u8>) -> ServiceResult<DispersalStatus> {
+        let blob_id = String::from_utf8(id.clone())
+            .map_err(|e| ServiceError::Other(format!("Invalid blob ID format: {e}")))?;
 
-            let status = self.check_blob_status(&blob_id).await?;
-            Ok(status)
-        }
+        let status = self.check_blob_status(&blob_id).await?;
+        Ok(status)
     }
 }
 
@@ -114,8 +111,8 @@ impl BlobProvider for DummyBlobProvider {
 }
 
 #[derive(Debug, Clone)]
-pub struct EigenDAClient {
-    eigen_client: Arc<RwLock<EigenClient>>,
+pub struct EigenDAClient<S> {
+    eigen_client: EigenClient<S>,
     // Limits the number of bytes that can be posted per second.
     throughput_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
     // Limits the posting frequency to one request per second.
@@ -129,26 +126,10 @@ pub struct Throughput {
     pub calls_per_sec: NonZeroU32,
 }
 
-impl EigenDAClient {
-    pub async fn new(key: KeySource, rpc: Url, throughput: Throughput) -> Result<Self> {
-        // Extract key value from KeySource
-        let key_str = match key {
-            KeySource::Private(hex) => hex,
-            KeySource::Kms(_) => {
-                return Err(Error::Other(
-                    "AWS KMS keys are not supported for EigenDA".to_string(),
-                ));
-            }
-        };
+pub use rust_eigenda_client::Sign;
 
-        // Ensure the key is valid
-        if SecretKey::from_str(&key_str).is_err() {
-            return Err(Error::Other("Invalid private key format".to_string()));
-        }
-
-        let private_key = PrivateKey::from_str(&key_str)
-            .map_err(|e| Error::Other(format!("Failed to parse private key: {e}")))?;
-
+impl<S> EigenDAClient<S> {
+    pub async fn new(signer: S, rpc: Url, throughput: Throughput) -> Result<Self> {
         // Set up Ethereum RPC URL
         // For now, we're using the same URL for disperser and eth - this may need to be revised
         let disperser_rpc_url = rpc.to_string();
@@ -183,11 +164,9 @@ impl EigenDAClient {
         )
         .map_err(|e| Error::Other(format!("Failed to create EigenConfig: {e}")))?;
 
-        let secrets = EigenSecrets { private_key };
-
         // Create EigenClient instance
         let blob_provider = Arc::new(DummyBlobProvider);
-        let eigen_client = EigenClient::new(config, secrets, blob_provider)
+        let eigen_client = EigenClient::new(config, signer, blob_provider)
             .await
             .map_err(|e| Error::Other(format!("Failed to initialize EigenClient: {e}")))?;
 
@@ -196,20 +175,22 @@ impl EigenDAClient {
         let post_quota = Quota::per_second(throughput.calls_per_sec);
 
         Ok(Self {
-            eigen_client: Arc::new(RwLock::new(eigen_client)),
+            eigen_client,
             throughput_limiter: Arc::new(RateLimiter::direct(throughput_quota)),
             post_frequency_limiter: Arc::new(RateLimiter::direct(post_quota)),
         })
     }
 
-    async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String> {
-        let client = self.eigen_client.read().await;
-
+    async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String>
+    where
+        S: Sign,
+    {
         // Use the padding function to ensure proper data format for EigenDA
         let padded_data = convert_by_padding_empty_byte(&data);
 
         // Use the client to dispatch the blob
-        let blob_id = client
+        let blob_id = self
+            .eigen_client
             .dispatch_blob(padded_data)
             .await
             .map_err(|e| Error::Other(format!("Failed to dispatch blob: {e}")))?;
@@ -218,10 +199,8 @@ impl EigenDAClient {
     }
 
     async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
-        let client = self.eigen_client.read().await;
-
         // Check if the blob has inclusion data (is confirmed/finalized)
-        match client.get_inclusion_data(blob_id).await {
+        match self.eigen_client.get_inclusion_data(blob_id).await {
             Ok(Some(_)) => {
                 // If we have inclusion data, the blob is finalized
                 Ok(DispersalStatus::Finalized)

@@ -1,4 +1,3 @@
-#![deny(unused_crate_dependencies)]
 mod api;
 mod config;
 mod errors;
@@ -16,7 +15,7 @@ use crate::setup::shut_down;
 pub type L1 = eth::WebsocketClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
-pub type EigenDA = EigenDAClient;
+pub type EigenDA = EigenDAClient<signers::eigen::Signer>;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -12,12 +12,12 @@ members = [
   "packages/adapters/eigenda",
   "packages/adapters/eth",
   "packages/adapters/fuel",
+  "packages/adapters/signers",
   "packages/adapters/storage",
   "packages/benchmarks",
   "packages/encoding",
   "packages/metrics",
   "packages/services",
-  "packages/signers",
   "packages/test-helpers",
 ]
 
@@ -42,7 +42,7 @@ fuel = { path = "./packages/adapters/fuel", default-features = false }
 fuel-block-committer-encoding = { path = "./packages/encoding", default-features = false }
 metrics = { path = "./packages/metrics", default-features = false }
 services = { path = "./packages/services", default-features = false }
-signers = { path = "./packages/signers", default-features = false }
+signers = { path = "./packages/adapters/signers", default-features = false }
 storage = { path = "./packages/adapters/storage", default-features = false }
 test-helpers = { path = "./packages/test-helpers/", default-features = false }
 e2e-helpers = { path = "./e2e/helpers", default-features = false }

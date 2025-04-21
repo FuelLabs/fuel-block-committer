@@ -10,7 +10,6 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-signers = { workspace = true }
 services = { workspace = true }
 sha3 = { workspace = true }
 hex = { workspace = true }
@@ -33,7 +32,7 @@ url = { workspace = true }
 governor = { workspace = true, features = ["default"] }
 humantime = { workspace = true }
 byte-unit = { workspace = true, features = ["byte", "u128"] }
-rust-eigenda-client = "0.1.4"
+rust-eigenda-client = { workspace = true }
 ethereum-types = "0.14.1"
 async-trait = { workspace = true }
 secp256k1 = { workspace = true }

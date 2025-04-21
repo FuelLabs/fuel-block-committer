@@ -1,8 +1,14 @@
-use alloy::signers::k256::{self, SecretKey, ecdsa::SigningKey};
+use alloy::signers::{
+    Signer,
+    k256::{self, SecretKey, ecdsa::SigningKey},
+};
 use anyhow::Context;
-use aws_sdk_kms::types::{KeySpec, KeyUsageType, Tag};
+use aws_sdk_kms::{
+    Client,
+    types::{KeySpec, KeyUsageType, Tag},
+};
 use base64::Engine;
-use signers::{AwsKmsClient, eigen_aws_kms::AwsKmsSigner};
+use signers::{eth::kms::TestEthKmsSigner, kms_utils};
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -51,12 +57,13 @@ impl Kms {
         dbg!(port);
         let url = format!("http://localhost:{}", port);
 
-        let client = AwsKmsClient::for_testing(url.clone()).await;
+        let config = kms_utils::config_for_testing(url.clone()).await;
+        let client = Client::new(&config);
 
         Ok(KmsProcess {
             _container: container,
-            client,
             url,
+            client,
         })
     }
 }
@@ -102,23 +109,54 @@ fn spawn_log_printer(container: &testcontainers::ContainerAsync<KmsImage>) {
 
 pub struct KmsProcess {
     _container: testcontainers::ContainerAsync<KmsImage>,
-    client: AwsKmsClient,
     url: String,
+    client: aws_sdk_kms::Client,
 }
 
 impl KmsProcess {
+    pub async fn eigen_signer(
+        &self,
+        key_id: String,
+    ) -> anyhow::Result<signers::eigen::kms::Signer> {
+        let kms_signer = signers::eigen::kms::Signer::new(self.client.clone(), key_id)
+            .await
+            .context("Failed to create KMS signer")?;
+
+        Ok(kms_signer)
+    }
+
+    pub async fn eth_signer(&self, key_id: String) -> anyhow::Result<TestEthKmsSigner> {
+        let kms_signer = signers::eth::kms::Signer::new(self.client.clone(), key_id.clone(), None)
+            .await
+            .context("Failed to create KMS signer")?;
+
+        Ok(TestEthKmsSigner {
+            key_id,
+            url: self.url.clone(),
+            signer: kms_signer,
+        })
+    }
+
     pub async fn create_key(&self) -> anyhow::Result<KmsKey> {
-        let id = self.client.create_key().await?;
+        let response = self
+            .client
+            .create_key()
+            .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
+            .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
+            .send()
+            .await?;
+
+        // use arn as id to closer imitate prod behavior
+        let id = response
+            .key_metadata
+            .and_then(|metadata| metadata.arn)
+            .ok_or_else(|| anyhow::anyhow!("key arn missing from response"))?;
 
         Ok(KmsKey {
             id: id.to_string(),
             url: self.url.clone(),
             client: self.client.clone(),
         })
-    }
-
-    pub async fn eigen_signer(&self, key_id: String) -> anyhow::Result<AwsKmsSigner> {
-        AwsKmsSigner::new(self.client.inner().clone(), key_id).await
     }
 
     /// Injects a secp256k1 private key into LocalStack KMS
@@ -143,7 +181,6 @@ impl KmsProcess {
         // Create KMS key with the custom key material tag
         let create_key_resp = self
             .client
-            .inner()
             .create_key()
             .key_usage(KeyUsageType::SignVerify)
             .key_spec(KeySpec::EccSecgP256K1)
@@ -166,7 +203,7 @@ impl KmsProcess {
         Ok(key_id)
     }
 
-    pub fn client(&self) -> &AwsKmsClient {
+    pub fn client(&self) -> &Client {
         &self.client
     }
 
@@ -179,5 +216,5 @@ impl KmsProcess {
 pub struct KmsKey {
     pub id: String,
     pub url: String,
-    pub client: AwsKmsClient,
+    pub client: Client,
 }

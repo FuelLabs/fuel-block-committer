@@ -7,11 +7,11 @@ use std::{
 
 use byte_unit::Byte;
 use clap::{Parser, command};
-use eth::{Address, L1Keys};
+use eth::{Address, L1Signers};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
-use signers::KeySource;
+use signers::{aws_sdk_kms::Client, kms_utils::load_config_from_env};
 use storage::DbConfig;
 use url::Url;
 
@@ -96,11 +96,11 @@ pub struct Fuel {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DALayer {
     #[serde(rename = "EigenDA")]
-    EigenDA(EigenDA),
+    EigenDA(EigenDaConfig),
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct EigenDA {
+pub struct EigenDaConfig {
     /// Key for posting authenticated requests to the EigenDA disperser.
     pub key: KeySource,
     /// URL to an EigenDA RPC endpoint.
@@ -108,6 +108,32 @@ pub struct EigenDA {
     pub rpc: Url,
     // Allocated throughput in MiB for the address corresponding to the key
     // pub throughput: f32,
+}
+
+impl EigenDaConfig {
+    pub async fn signer(&self) -> crate::errors::Result<signers::eigen::Signer> {
+        let signer = match &self.key {
+            KeySource::Private(key) => {
+                let key = key.parse().map_err(|_| {
+                    crate::errors::Error::Other("Failed to parse eigen private key".to_owned())
+                })?;
+                signers::eigen::Signer::Private(signers::eigen::private_key::Signer::new(key))
+            }
+            KeySource::Kms(key) => {
+                let config = load_config_from_env().await;
+                let client = Client::new(&config);
+                let signer = signers::eigen::kms::Signer::new(client, key.clone())
+                    .await
+                    .map_err(|e| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to create eigen kms signer: {e}"
+                        ))
+                    })?;
+                signers::eigen::Signer::Kms(signer)
+            }
+        };
+        Ok(signer)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -119,6 +145,103 @@ pub struct Eth {
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+}
+
+impl Eth {
+    pub async fn signers(
+        &self,
+    ) -> crate::errors::Result<L1Signers<signers::eth::Signer, signers::eth::Signer>> {
+        // A little helper to turn a KeySource into a Signer, tagging errors appropriately.
+        let make_signer = |ks: KeySource, label: &'static str| async move {
+            match ks.clone() {
+                KeySource::Kms(key) => {
+                    // TODO: segfault, centralize client creation
+                    let config = load_config_from_env().await;
+                    let client = Client::new(&config);
+                    let kms = signers::eth::kms::Signer::new(client, key.to_owned(), None)
+                        .await
+                        .map_err(|e| {
+                            crate::errors::Error::Other(format!(
+                                "Failed to create {} kms signer: {e}",
+                                label
+                            ))
+                        })?;
+
+                    crate::Result::<_>::Ok(signers::eth::Signer::Kms(kms))
+                }
+                KeySource::Private(key) => {
+                    let pk = signers::eth::private_key::Signer::from_str(&key).map_err(|_| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to create {} private key signer",
+                            label
+                        ))
+                    })?;
+                    Ok(signers::eth::Signer::Private(pk))
+                }
+            }
+        };
+
+        // Build the `main` signer
+        let main = make_signer(self.l1_keys.main.clone(), "main").await?;
+
+        // Build the optional `blob` signer
+        let blob = if let Some(ref ks) = self.l1_keys.blob {
+            Some(make_signer(ks.clone(), "blob").await?)
+        } else {
+            None
+        };
+
+        Ok(L1Signers { main, blob })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct L1Keys {
+    pub main: KeySource,
+    pub blob: Option<KeySource>,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum KeySource {
+    Kms(String),
+    Private(String),
+}
+
+impl std::fmt::Debug for KeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeySource::Kms(_) => write!(f, "KeySource::Kms"),
+            KeySource::Private(_) => write!(f, "KeySource::Private"),
+        }
+    }
+}
+
+impl std::fmt::Display for KeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeySource::Kms(_) => write!(f, "Kms(...)"),
+            KeySource::Private(_) => write!(f, "Private(...)"),
+        }
+    }
+}
+
+impl<'a> serde::Deserialize<'a> for KeySource {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
+            Ok(KeySource::Kms(k.to_string()))
+        } else if let Some(k) = value
+            .strip_prefix("Private(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            Ok(KeySource::Private(k.to_string()))
+        } else {
+            Err(serde::de::Error::custom("invalid KeySource format"))
+        }
+    }
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
@@ -371,4 +494,33 @@ pub fn parse() -> crate::errors::Result<Config> {
         .build()?;
 
     Ok(config.try_deserialize()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KeySource;
+
+    #[test]
+    fn can_deserialize_private_key() {
+        // given
+        let val = r#""Private(0x1234)""#;
+
+        // when
+        let key: KeySource = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, KeySource::Private("0x1234".to_owned()));
+    }
+
+    #[test]
+    fn can_deserialize_kms_key() {
+        // given
+        let val = r#""Kms(0x1234)""#;
+
+        // when
+        let key: KeySource = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, KeySource::Kms("0x1234".to_owned()));
+    }
 }
