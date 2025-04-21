@@ -3068,7 +3068,7 @@ dependencies = [
  "hex",
  "k256",
  "rand 0.8.5",
- "rust-eigenda-client 0.1.4",
+ "rust-eigenda-client 0.1.4 (git+https://github.com/segfault-magnet/eigenda-client-rs?branch=feat/generic_signer)",
  "rust-eigenda-signers",
  "secp256k1 0.27.0",
  "services",
@@ -6571,38 +6571,6 @@ checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 [[package]]
 name = "rust-eigenda-client"
 version = "0.1.4"
-dependencies = [
- "ark-bn254",
- "async-trait",
- "backon",
- "byteorder",
- "bytes",
- "ethabi",
- "ethereum-types",
- "hex",
- "hex-literal 0.3.4",
- "num-bigint",
- "prost 0.12.6",
- "rand 0.8.5",
- "reqwest",
- "rust-eigenda-signers",
- "rust-kzg-bn254",
- "secrecy",
- "serde",
- "serde_json",
- "sha3",
- "tempfile",
- "thiserror 1.0.69",
- "tiny-keccak",
- "tokio",
- "tokio-stream",
- "tonic 0.11.0",
- "url",
-]
-
-[[package]]
-name = "rust-eigenda-client"
-version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ef77a51d47c3c1090a03196078ff0663c6087e530cc74266dee321274ba63ec"
 dependencies = [
@@ -6635,8 +6603,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-eigenda-client"
+version = "0.1.4"
+source = "git+https://github.com/segfault-magnet/eigenda-client-rs?branch=feat/generic_signer#3c585f28098cd4459b6e149413339c82f63f0892"
+dependencies = [
+ "ark-bn254",
+ "async-trait",
+ "backon",
+ "byteorder",
+ "bytes",
+ "ethabi",
+ "ethereum-types",
+ "hex",
+ "hex-literal 0.3.4",
+ "num-bigint",
+ "prost 0.12.6",
+ "rand 0.8.5",
+ "reqwest",
+ "rust-eigenda-signers",
+ "rust-kzg-bn254",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha3",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tiny-keccak",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.11.0",
+ "url",
+]
+
+[[package]]
 name = "rust-eigenda-signers"
 version = "0.1.4"
+source = "git+https://github.com/segfault-magnet/eigenda-client-rs?branch=feat/generic_signer#3c585f28098cd4459b6e149413339c82f63f0892"
 dependencies = [
  "async-trait",
  "ethereum-types",
