@@ -6642,7 +6642,6 @@ dependencies = [
  "ethereum-types",
  "rand 0.8.5",
  "secp256k1 0.27.0",
- "thiserror 1.0.69",
  "tiny-keccak",
 ]
 
