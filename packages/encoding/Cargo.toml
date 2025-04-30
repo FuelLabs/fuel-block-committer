@@ -23,7 +23,6 @@ itertools = { workspace = true, features = ["use_std"] }
 postcard = { workspace = true, features = ["use-std"] }
 serde = { workspace = true }
 static_assertions = { workspace = true }
-kzg-rs = { workspace = true, optional = true, features = ["serde"] }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["consensus", "eips", "kzg"] }
