@@ -37,6 +37,5 @@ rand = { workspace = true, features = ["std", "std_rng", "small_rng"] }
 test-case = { workspace = true }
 
 [features]
-default = ["native-kzg-verify"]
+default = []
 kzg = ["alloy/kzg", "dep:c-kzg"]
-native-kzg-verify = ["dep:kzg-rs"]
