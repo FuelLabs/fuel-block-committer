@@ -114,7 +114,8 @@ walkdir = { version = "2.5", default-features = false }
 zip = { version = "2.1", default-features = false }
 cynic = { version = "3.1", default-features = false }
 cynic-codegen = { version = "3.10", default-features = false }
-rust-eigenda-client = { git = "https://github.com/segfault-magnet/eigenda-client-rs", branch = "feat/generic_signer" }
-rust-eigenda-signers = { git = "https://github.com/segfault-magnet/eigenda-client-rs", branch = "feat/generic_signer" }
+rust-eigenda-v2-client = { version = "*" }
+rust-eigenda-v2-common = { version = "*" }
+rust-eigenda-signers = { version = "*" }
 sha2 = { version = "0.10", default-features = false }
 ethereum-types = "0.14.1"

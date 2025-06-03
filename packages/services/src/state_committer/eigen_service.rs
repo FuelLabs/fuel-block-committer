@@ -1,10 +1,10 @@
 use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
+    prometheus::{IntGauge, Opts, core::Collector},
 };
 use tracing::info;
 
-use crate::{types::storage::BundleFragment, Result, Runner};
+use crate::{Result, Runner, types::storage::BundleFragment};
 
 use super::commit_helpers::update_current_height_to_commit_metric;
 

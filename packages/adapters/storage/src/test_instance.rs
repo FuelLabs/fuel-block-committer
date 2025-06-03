@@ -10,10 +10,10 @@ use services::{
     block_bundler::{self, port::UnbundledBlocks},
     block_committer, block_importer,
     types::{
-        storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
         DispersalStatus, EigenDASubmission, Fragment, L1Tx, NonEmpty, NonNegative,
         TransactionCostUpdate, TransactionState, Utc,
+        storage::{BundleFragment, SequentialFuelBlocks},
     },
 };
 use sqlx::Executor;
@@ -241,7 +241,7 @@ impl block_importer::port::Storage for DbWithProcess {
     async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::Result<()> {
         self.db._insert_blocks(blocks).await.map_err(Into::into)
     }
-    
+
     async fn get_latest_block_height(&self) -> services::Result<u32> {
         self.db._get_latest_block_height().await.map_err(Into::into)
     }

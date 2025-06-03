@@ -1,12 +1,12 @@
 use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
+    prometheus::{IntGauge, Opts, core::Collector},
 };
 use tracing::info;
 
 use crate::{
-    types::{DispersalStatus, EigenDASubmission},
     Runner,
+    types::{DispersalStatus, EigenDASubmission},
 };
 
 pub struct StateListener<EigenDA, Db> {

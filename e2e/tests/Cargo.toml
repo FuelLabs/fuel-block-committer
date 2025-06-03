@@ -16,7 +16,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 storage = { workspace = true }
 services = { workspace = true }
 rust-eigenda-signers = { workspace = true }
-rust-eigenda-client = { workspace = true }
+rust-eigenda-v2-client = { workspace = true }
 async-trait = { workspace = true }
 aws-config = { workspace = true }
 tracing = { workspace = true }
