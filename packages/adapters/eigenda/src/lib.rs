@@ -17,7 +17,6 @@ impl From<BlobStatus> for DispersalStatus {
             BlobStatus::GatheringSignatures => DispersalStatus::Confirmed,
             BlobStatus::Complete => DispersalStatus::Finalized,
             BlobStatus::Failed => DispersalStatus::Failed,
-            _ => DispersalStatus::Other(status.as_str_name().to_string()),
         }
     }
 }

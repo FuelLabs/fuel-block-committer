@@ -5,30 +5,25 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::anyhow;
-use async_trait::async_trait;
 use byte_unit::Byte;
 use ethereum_types::H160;
-use futures::{StreamExt, TryFutureExt};
 use governor::{
     Quota, RateLimiter,
     clock::DefaultClock,
     state::{InMemoryState, NotKeyed},
 };
+pub use rust_eigenda_v2_client::rust_eigenda_signers::Sign;
 use rust_eigenda_v2_client::{
     core::BlobKey,
     disperser_client::{DisperserClient, DisperserClientConfig},
     payload_disperser::{PayloadDisperser, PayloadDisperserConfig},
-    rust_eigenda_signers::Sign,
     utils::SecretUrl,
 };
 use rust_eigenda_v2_common::{Payload, PayloadForm};
-use secp256k1::SecretKey;
 use services::{
     Error as ServiceError, Result as ServiceResult,
     types::{DispersalStatus, EigenDASubmission, Fragment},
 };
-use tokio::sync::RwLock;
 use tracing::{info, warn};
 use url::Url;
 
@@ -40,11 +35,16 @@ use crate::{
 
 #[derive(Debug, Clone)]
 struct EigenClient<S> {
+    /// The payload disperser instance that handles the actual payload dispatching.
     payload_disperser: PayloadDisperser<S>,
+    /// The disperser client that is able to get the status of the blobs.
     disperser_client: DisperserClient<S>,
 }
 
-impl<S: Clone + Sign> EigenClient<S> {
+impl<S> EigenClient<S>
+where
+    S: Sign + Clone,
+{
     async fn new(payload_disperser_cfg: PayloadDisperserConfig, signer: S) -> anyhow::Result<Self> {
         let disperser_client = DisperserClient::new(DisperserClientConfig {
             disperser_rpc: payload_disperser_cfg.disperser_rpc.clone(),
@@ -61,7 +61,10 @@ impl<S: Clone + Sign> EigenClient<S> {
     }
 }
 
-impl<S: Sign + Clone> services::state_committer::port::eigen_da::Api for EigenDAClient<S> {
+impl<S> services::state_committer::port::eigen_da::Api for EigenDAClient<S>
+where
+    S: Sign + Clone,
+{
     async fn submit_state_fragment(&self, fragment: Fragment) -> ServiceResult<EigenDASubmission> {
         let data = fragment.data;
         let start = Instant::now();
@@ -139,7 +142,10 @@ pub struct Throughput {
     pub calls_per_sec: NonZeroU32,
 }
 
-impl<S: Sign + Clone> EigenDAClient<S> {
+impl<S> EigenDAClient<S>
+where
+    S: Sign + Clone,
+{
     pub async fn new(signer: S, rpc: Url, throughput: Throughput) -> Result<Self> {
         // Set up Ethereum RPC URL
         // For now, we're using the same URL for disperser and eth - this may need to be revised

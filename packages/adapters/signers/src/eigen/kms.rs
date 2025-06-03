@@ -10,14 +10,14 @@ use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
     pkcs8::DecodePublicKey,
 };
-use rust_eigenda_signers::{RecoverableSignature, secp256k1::Message};
+use rust_eigenda_signers::{Message, RecoverableSignature};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
 pub struct Signer {
     key_id: String,
     client: InnerClient,
-    public_key: rust_eigenda_signers::secp256k1::PublicKey,
+    public_key: rust_eigenda_signers::PublicKey,
     k256_verifying_key: VerifyingKey,
 }
 
@@ -38,10 +38,10 @@ impl Signer {
             .context("Failed to parse public key DER from KMS")?;
 
         // Convert k256 public key to secp256k1 public key
-        let secp_pub_key = rust_eigenda_signers::secp256k1::PublicKey::from_slice(
-            k256_pub_key.to_encoded_point(false).as_bytes(),
-        )
-        .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
+        let mut pub_key: [u8; 65] = [0; 65];
+        pub_key.copy_from_slice(k256_pub_key.to_encoded_point(false).as_bytes());
+        let secp_pub_key = rust_eigenda_signers::PublicKey::new(pub_key)
+            .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
 
         Ok(Self {
             key_id,
@@ -136,7 +136,7 @@ impl eigenda::Sign for crate::eigen::kms::Signer {
     type Error = Error;
 
     async fn sign_digest(&self, message: &Message) -> Result<RecoverableSignature, Self::Error> {
-        let digest_bytes: &[u8; 32] = message.as_ref();
+        let digest_bytes: &[u8; 32] = message;
 
         let sign_response = self
             .client
@@ -159,27 +159,10 @@ impl eigenda::Sign for crate::eigen::kms::Signer {
 
         let k256_sig_normalized = k256_sig.normalize_s().unwrap_or(k256_sig);
 
-        let k256_recid = determine_k256_recovery_id(
-            &k256_sig_normalized,
-            digest_bytes,
-            &self.k256_verifying_key, // Use stored k256 key for internal use
-        )?;
+        let mut sig: [u8; 65] = [0; 65];
+        sig.copy_from_slice(k256_sig_normalized.to_bytes().as_ref());
 
-        let secp_sig = rust_eigenda_signers::secp256k1::ecdsa::Signature::from_compact(
-            &k256_sig_normalized.to_bytes(),
-        )
-        .context("Failed to convert k256 signature to secp256k1 signature")?;
-
-        let secp_recid = rust_eigenda_signers::secp256k1::ecdsa::RecoveryId::from_i32(
-            k256_recid.to_byte() as i32,
-        )
-        .context("Failed to convert k256 recovery ID to secp256k1 recovery ID")?;
-
-        let standard_recoverable_sig =
-            rust_eigenda_signers::secp256k1::ecdsa::RecoverableSignature::from_compact(
-                secp_sig.serialize_compact().as_slice(),
-                secp_recid,
-            )
+        let standard_recoverable_sig = rust_eigenda_signers::RecoverableSignature::from_bytes(&sig)
             .context("Failed to create recoverable signature")?;
 
         Ok(standard_recoverable_sig.into())

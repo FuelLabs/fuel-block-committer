@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use rust_eigenda_signers::{PublicKey, RecoverableSignature, secp256k1::Message};
+use rust_eigenda_signers::{Message, PublicKey, RecoverableSignature};
 
 pub mod private_key {
     pub use rust_eigenda_signers::signers::private_key::Signer;
@@ -21,7 +21,11 @@ impl eigenda::Sign for Signer {
         match self {
             Signer::Private(signer) => {
                 // private_key.sign_digest cannot fail
-                let Ok(sig) = signer.sign_digest(message).await;
+                let Ok(sig) = signer.sign_digest(message).await else {
+                    return Err(
+                        anyhow::anyhow!("Failed to sign digest with private key signer").into(),
+                    );
+                };
                 Ok(sig)
             }
             Signer::Kms(signer) => signer.sign_digest(message).await,
