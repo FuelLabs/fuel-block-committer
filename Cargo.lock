@@ -3178,6 +3178,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "e2e-helpers",
+ "eigenda",
  "ethereum-types",
  "hex",
  "k256",

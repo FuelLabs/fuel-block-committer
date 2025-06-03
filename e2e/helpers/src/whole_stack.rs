@@ -1,12 +1,9 @@
 use std::time::Duration;
 
 use alloy::network::TxSigner;
-use eth::{Address, L1Signers};
+use eth::L1Signers;
 use fuel::HttpClient;
-use signers::{
-    eth::{Signer, kms::TestEthKmsSigner},
-    kms_utils::config_for_testing,
-};
+use signers::eth::kms::TestEthKmsSigner;
 use storage::DbWithProcess;
 use url::Url;
 
@@ -14,7 +11,7 @@ use crate::{
     committer::{Committer, CommitterProcess},
     eth_node::{ContractArgs, DeployedContract, EthNode, EthNodeProcess},
     fuel_node::{FuelNode, FuelNodeProcess},
-    kms::{Kms, KmsKey, KmsProcess},
+    kms::{Kms, KmsProcess},
 };
 
 pub enum FuelNodeType {

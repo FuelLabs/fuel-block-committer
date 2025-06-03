@@ -187,7 +187,7 @@ where
         })
     }
 
-    async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String>
+    pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String>
     where
         S: Sign,
     {
@@ -205,7 +205,7 @@ where
         Ok(blob_id.to_hex())
     }
 
-    async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
+    pub async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
         let blob_key = BlobKey::from_hex(blob_id)
             .map_err(|_| Error::Other("conversion of blob_key failed".to_string()))?;
 

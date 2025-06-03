@@ -2,24 +2,26 @@ use anyhow::Context;
 use anyhow::Result;
 use e2e_helpers::kms::Kms;
 use e2e_helpers::kms::KmsProcess;
+use eigenda::EigenDAClient;
+use eigenda::Throughput;
 use ethereum_types::H160;
 use k256::ecdsa::SigningKey as K256SigningKey;
 use rand::RngCore;
 use rand::rngs::OsRng;
-use rust_eigenda_client::Sign;
-use rust_eigenda_signers::secp256k1::Message;
-use rust_eigenda_signers::secp256k1::PublicKey;
-use rust_eigenda_signers::secp256k1::SecretKey;
-use rust_eigenda_signers::secp256k1::ecdsa::RecoverableSignature;
+use rust_eigenda_signers::Message;
+use rust_eigenda_signers::PublicKey;
+use rust_eigenda_signers::RecoverableSignature;
+use rust_eigenda_signers::SecretKey;
 use rust_eigenda_signers::signers::private_key::Signer as PrivateKeySigner;
+use rust_eigenda_v2_client::rust_eigenda_signers::Sign;
+use rust_eigenda_v2_client::utils::SecretUrl;
 use secp256k1::Secp256k1;
+use services::types::DispersalStatus;
 use sha2::{Digest, Sha256};
 
-use rust_eigenda_client::{
-    client::{BlobProvider, EigenClient},
-    config::{EigenConfig, SecretUrl, SrsPointsSource},
-};
 use signers::eigen::kms::Signer;
+use std::num::NonZero;
+use std::num::NonZeroU32;
 use std::{env, error::Error, str::FromStr, sync::Arc, time::Duration};
 use tracing::{error, info, instrument};
 use tracing_subscriber::EnvFilter;
@@ -31,9 +33,9 @@ async fn setup_kms_and_signer() -> Result<(KmsProcess, PrivateKeySigner, Signer)
     let k256_secret_key = k256::SecretKey::random(&mut OsRng);
     let k256_signing_key = K256SigningKey::from(&k256_secret_key);
 
-    let secp_secret_key = SecretKey::from_slice(&k256_secret_key.to_bytes())
+    let secp_secret_key = secp256k1::SecretKey::from_slice(k256_secret_key.to_bytes().as_slice())
         .expect("Failed to create secp256k1 secret key from k256 bytes");
-    let local_signer = PrivateKeySigner::new(secp_secret_key);
+    let local_signer = PrivateKeySigner::new(secp_secret_key.into());
 
     let kms_key_id = kms_proc.inject_secp256k1_key(&k256_signing_key).await?;
 
@@ -49,10 +51,17 @@ fn verify_signature_recovery(
 ) -> Result<()> {
     let secp = Secp256k1::new();
     let recovered_pk = secp
-        .recover_ecdsa(message, rec_sig)
+        .recover_ecdsa(
+            &secp256k1::Message::from_slice(message.as_bytes())?,
+            &secp256k1::ecdsa::RecoverableSignature::from_compact(
+                rec_sig.to_bytes().as_slice(),
+                secp256k1::ecdsa::RecoveryId::from_i32(rec_sig.v.to_byte() as i32).unwrap(),
+            )
+            .unwrap(),
+        )
         .context("Failed to recover public key")?;
 
-    if &recovered_pk == expected_pubkey {
+    if &PublicKey::from(recovered_pk) == expected_pubkey {
         Ok(())
     } else {
         anyhow::bail!("Recovered public key does not match expected public key")
@@ -85,8 +94,7 @@ async fn test_kms_signer_sign_and_verify() -> Result<()> {
     let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
     let test_message_bytes = b"Test message for KMS signer trait implementation";
     let message_hash_array: [u8; 32] = Sha256::digest(test_message_bytes).into();
-    let message =
-        Message::from_slice(&message_hash_array).expect("Failed to create Message from digest");
+    let message = Message::from(message_hash_array);
 
     let rec_sig = aws_signer
         .sign_digest(&message)
@@ -95,25 +103,10 @@ async fn test_kms_signer_sign_and_verify() -> Result<()> {
 
     let expected_pubkey = local_signer.public_key();
 
-    verify_signature_recovery(&rec_sig.0, &message, &expected_pubkey)
+    verify_signature_recovery(&rec_sig, &message, &expected_pubkey)
         .context("Signature verification failed")?;
 
     Ok(())
-}
-
-// Dummy Blob Provider implementation (same as example)
-#[derive(Debug)]
-struct DummyBlobProvider;
-
-#[async_trait::async_trait]
-impl BlobProvider for DummyBlobProvider {
-    async fn get_blob(
-        &self,
-        _blob_id: &str,
-    ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>> {
-        // This provider doesn't store or retrieve blobs in this example
-        Ok(None)
-    }
 }
 
 async fn initialize_tracing() {
@@ -151,40 +144,24 @@ async fn test_dispatch_3mb_blob_aws_signer() -> Result<()> {
     info!("AwsSigner initialized successfully.");
 
     // 3. Define RPC URLs and Configuration (using Holesky testnet)
-    let disperser_rpc_url = "https://disperser-holesky.eigenda.xyz".to_string();
-    let eth_rpc_str = "https://ethereum-holesky-rpc.publicnode.com";
-    let eth_rpc_url = SecretUrl::new(
-        Url::from_str(eth_rpc_str)
-            .with_context(|| format!("Invalid Ethereum RPC URL: {}", eth_rpc_str))?,
-    );
+    let disperser_rpc_url = Url::from_str("https://disperser-holesky.eigenda.xyz")
+        .with_context(|| "Invalid disperser RPC URL")?;
 
     // Holesky Service Manager Address
-    let svc_manager_address = H160::from_str("d4a7e1bd8015057293f0d0a557088c286942e84b")
-        .context("Failed to parse service manager address")?;
-
-    // Using remote SRS points for simplicity in e2e test
-    let srs_g1_url = "https://github.com/Layr-Labs/eigenda-proxy/raw/2fd70b99ef5bf137d7bbca3461cf9e1f2c899451/resources/g1.point".to_string();
-    let srs_g2_url = "https://github.com/Layr-Labs/eigenda-proxy/raw/2fd70b99ef5bf137d7bbca3461cf9e1f2c899451/resources/g2.point.powerOf2".to_string();
-
-    let config = EigenConfig::new(
-        disperser_rpc_url,
-        eth_rpc_url,
-        8, // Confirmation depth
-        svc_manager_address,
-        false, // Don't wait for finalization
-        true,  // Use authenticated disperser endpoints
-        SrsPointsSource::Url((srs_g1_url, srs_g2_url)),
-        vec![], // Default quorums
-    )
-    .context("Failed to create EigenConfig")?;
-
     info!("Configuration prepared. Initializing EigenClient...");
 
     // 4. Create EigenClient instance
-    let blob_provider = Arc::new(DummyBlobProvider);
-    let client = EigenClient::new(config, aws_signer, blob_provider)
-        .await
-        .context("Failed to initialize EigenClient")?;
+    let client = EigenDAClient::new(
+        aws_signer,
+        disperser_rpc_url,
+        Throughput {
+            bytes_per_sec: NonZeroU32::new(10_000_000).unwrap(), // 10 MB/s
+            calls_per_sec: NonZeroU32::new(100).unwrap(),        // 100 calls per second
+            max_burst: NonZeroU32::new(1_000_000).unwrap(),      // 1 MB burst
+        },
+    )
+    .await
+    .context("Failed to initialize EigenClient")?;
 
     info!("EigenClient initialized successfully.");
 
@@ -236,20 +213,21 @@ async fn test_dispatch_3mb_blob_aws_signer() -> Result<()> {
             ));
         }
 
-        match client.get_inclusion_data(&blob_id).await {
-            Ok(Some(data)) => {
+        match client.check_blob_status(&blob_id).await {
+            Ok(blob_status) => {
                 info!("---------------------------------------------------");
                 info!("Inclusion data retrieved successfully!");
                 info!(blob_id = %blob_id);
-                info!(inclusion_data = ?data, "Inclusion data details.");
+                info!(blob_status = ?blob_status, "Inclusion data details.");
                 info!("---------------------------------------------------");
-                // Test passes if inclusion data is found
-                assert!(true, "Inclusion data successfully retrieved.");
-                break;
-            }
-            Ok(None) => {
-                info!(blob_id = %blob_id, "Blob inclusion data not found yet. Retrying in {:?}...", polling_interval);
-                tokio::time::sleep(polling_interval).await;
+                // Test passes if blob is successfully finalized
+                if matches!(blob_status, DispersalStatus::Finalized) {
+                    info!("Blob is finalized.");
+                    assert!(true, "Inclusion data successfully retrieved.");
+                    break;
+                } else {
+                    info!("Blob is not finalized yet, continuing to poll...");
+                }
             }
             Err(e) => {
                 error!(blob_id = %blob_id, error = ?e, "Error polling for inclusion data");

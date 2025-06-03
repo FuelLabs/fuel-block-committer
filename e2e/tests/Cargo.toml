@@ -17,6 +17,7 @@ storage = { workspace = true }
 services = { workspace = true }
 rust-eigenda-signers = { workspace = true }
 rust-eigenda-v2-client = { workspace = true }
+eigenda = { workspace = true }
 async-trait = { workspace = true }
 aws-config = { workspace = true }
 tracing = { workspace = true }

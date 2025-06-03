@@ -1,7 +1,4 @@
-use alloy::signers::{
-    Signer,
-    k256::{self, SecretKey, ecdsa::SigningKey},
-};
+use alloy::signers::k256::{self, SecretKey, ecdsa::SigningKey};
 use anyhow::Context;
 use aws_sdk_kms::{
     Client,

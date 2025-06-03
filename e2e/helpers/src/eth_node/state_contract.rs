@@ -15,8 +15,6 @@ use signers::eth::{Signer, kms::TestEthKmsSigner};
 use tokio::process::Command;
 use url::Url;
 
-use crate::kms::KmsKey;
-
 pub struct DeployedContract {
     address: Address,
     chain_state_contract: WebsocketClient,
