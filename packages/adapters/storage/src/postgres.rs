@@ -475,8 +475,7 @@ impl Postgres {
             .collect_vec();
         let total_query_build_time = query_build_start.elapsed();
 
-        let mut chunk_index = 0;
-        for mut query in queries {
+        for (chunk_index, mut query) in queries.into_iter().enumerate() {
             let execute_start = std::time::Instant::now();
             let result = query.build().execute(&mut *tx).await;
             let execute_duration = execute_start.elapsed();
@@ -490,7 +489,6 @@ impl Postgres {
             );
 
             result?; // Propagate errors after logging duration
-            chunk_index += 1;
         }
 
         let commit_start = std::time::Instant::now();

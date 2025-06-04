@@ -4,7 +4,7 @@ pub fn convert_by_padding_empty_byte(data: &[u8]) -> Vec<u8> {
     const PARSE_SIZE: usize = BYTES_PER_SYMBOL - 1; // 31
 
     let data_size = data.len();
-    let data_len = (data_size + PARSE_SIZE - 1) / PARSE_SIZE;
+    let data_len = data_size.div_ceil(PARSE_SIZE);
 
     let mut valid_data = vec![0u8; data_len * BYTES_PER_SYMBOL];
     let mut valid_end = data_len * BYTES_PER_SYMBOL;
@@ -38,7 +38,7 @@ mod tests {
         const PUT_SIZE: usize = BYTES_PER_SYMBOL - 1; // 31
 
         let data_size = data.len();
-        let data_len = (data_size + BYTES_PER_SYMBOL - 1) / BYTES_PER_SYMBOL;
+        let data_len = data_size.div_ceil(BYTES_PER_SYMBOL);
 
         let mut valid_data = vec![0u8; data_len * PUT_SIZE];
         let mut valid_len = data_len * PUT_SIZE;

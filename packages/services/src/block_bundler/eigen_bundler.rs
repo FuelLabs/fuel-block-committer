@@ -79,8 +79,7 @@ impl EigenBundler {
     ) -> Result<NonEmpty<Fragment>> {
         let fragments: Vec<Fragment> = compressed_data
             .chunks(fragment_size.get() as usize)
-            .enumerate()
-            .map(|(_, chunk)| Fragment {
+            .map(|chunk| Fragment {
                 data: NonEmpty::from_vec(chunk.to_vec()).expect("chunk should not be empty"),
                 unused_bytes: 0,
                 total_bytes: fragment_size,

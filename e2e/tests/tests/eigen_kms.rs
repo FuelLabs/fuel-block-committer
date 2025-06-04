@@ -219,7 +219,6 @@ async fn test_dispatch_3mb_blob_aws_signer() -> Result<()> {
                 // Test passes if blob is successfully finalized
                 if matches!(blob_status, DispersalStatus::Finalized) {
                     info!("Blob is finalized.");
-                    assert!(true, "Inclusion data successfully retrieved.");
                     break;
                 } else {
                     info!("Blob is not finalized yet, continuing to poll...");

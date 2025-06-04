@@ -176,11 +176,11 @@ impl eigenda::Sign for crate::eigen::kms::Signer {
         let standard_recoverable_sig = rust_eigenda_signers::RecoverableSignature::from_bytes(&sig)
             .context("Failed to create recoverable signature")?;
 
-        Ok(standard_recoverable_sig.into())
+        Ok(standard_recoverable_sig)
     }
 
     fn public_key(&self) -> rust_eigenda_signers::PublicKey {
-        self.public_key.into()
+        self.public_key
     }
 }
 
