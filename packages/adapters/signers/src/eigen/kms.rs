@@ -170,7 +170,7 @@ impl eigenda::Sign for crate::eigen::kms::Signer {
             .context("Failed to determine recovery ID")?;
 
         let mut sig: [u8; 65] = [0; 65];
-        sig[0] = k256_recid;
+        sig[64] = k256_recid;
         sig[..64].copy_from_slice(k256_sig_normalized.to_bytes().as_ref());
 
         let standard_recoverable_sig = rust_eigenda_signers::RecoverableSignature::from_bytes(&sig)

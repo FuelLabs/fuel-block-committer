@@ -46,15 +46,17 @@ fn verify_signature_recovery(
     expected_pubkey: &PublicKey,
 ) -> Result<()> {
     let secp = Secp256k1::new();
+    let recovery_id = secp256k1::ecdsa::RecoveryId::from_i32(rec_sig.v.to_byte() as i32)
+        .context("Invalid recovery ID")?;
+    let message = secp256k1::Message::from_slice(message.as_bytes())?;
+    let sig: [u8; 64] = rec_sig.to_bytes().as_slice()[..64]
+        .try_into()
+        .context("Failed to convert signature to 64-byte array")?;
+    let recoverable_sig =
+        secp256k1::ecdsa::RecoverableSignature::from_compact(sig.as_slice(), recovery_id)
+            .context("Failed to create recoverable signature")?;
     let recovered_pk = secp
-        .recover_ecdsa(
-            &secp256k1::Message::from_slice(message.as_bytes())?,
-            &secp256k1::ecdsa::RecoverableSignature::from_compact(
-                rec_sig.to_bytes().as_slice(),
-                secp256k1::ecdsa::RecoveryId::from_i32(rec_sig.v.to_byte() as i32).unwrap(),
-            )
-            .unwrap(),
-        )
+        .recover_ecdsa(&message, &recoverable_sig)
         .context("Failed to recover public key")?;
 
     if &PublicKey::from(recovered_pk) == expected_pubkey {
@@ -113,6 +115,7 @@ async fn initialize_tracing() {
         .try_init();
 }
 
+#[ignore = "longer test, needs kms access"]
 #[tokio::test]
 async fn test_dispatch_3mb_blob_aws_signer() -> Result<()> {
     initialize_tracing().await;
