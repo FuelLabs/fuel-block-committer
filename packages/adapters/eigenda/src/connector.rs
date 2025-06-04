@@ -161,11 +161,13 @@ where
                 .expect("TODO: segfault"),
         );
 
+        // TODO: make configurable
+        const CERT_VERIFIER_ADDRESS: &str = "d4a7e1bd8015057293f0d0a557088c286942e84b";
+
         let config = PayloadDisperserConfig {
             polynomial_form: PayloadForm::Coeff,
             blob_version: 0,
-            cert_verifier_address: H160::from_str("d4a7e1bd8015057293f0d0a557088c286942e84b")
-                .map_err(|e| Error::Other(format!("Invalid cert verifier address: {e}")))?,
+            cert_verifier_address: H160::from_str(CERT_VERIFIER_ADDRESS).expect("qed"),
             eth_rpc_url: eth_rpc_url.clone(),
             disperser_rpc: disperser_rpc_url,
             use_secure_grpc_flag: true,
