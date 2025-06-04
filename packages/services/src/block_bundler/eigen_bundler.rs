@@ -79,8 +79,7 @@ impl EigenBundler {
     ) -> Result<NonEmpty<Fragment>> {
         let fragments: Vec<Fragment> = compressed_data
             .chunks(fragment_size.get() as usize)
-            .enumerate()
-            .map(|(_, chunk)| Fragment {
+            .map(|chunk| Fragment {
                 data: NonEmpty::from_vec(chunk.to_vec()).expect("chunk should not be empty"),
                 unused_bytes: 0,
                 total_bytes: fragment_size,
@@ -101,8 +100,6 @@ impl EigenBundler {
         let mut current_blocks = self.blocks.clone();
         let original_count = current_blocks.len();
         let mut iterations = 0;
-        let mut cached_bundle = None;
-        let mut cached_fragments = None;
 
         tracing::info!(
             "EigenBundler: trim_blocks_to_fit starting with {} blocks",
@@ -152,9 +149,7 @@ impl EigenBundler {
                         current_blocks.len(),
                         original_count
                     );
-                    cached_bundle = Some(bundle);
-                    cached_fragments = Some(fragments);
-                    return (current_blocks, cached_bundle, cached_fragments);
+                    return (current_blocks, Some(bundle), Some(fragments));
                 }
             }
 

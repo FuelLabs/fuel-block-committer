@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*)\n                FROM fuel_blocks fb\n                WHERE fb.height >= $1\n                AND NOT EXISTS (\n                    SELECT 1 FROM bundles b\n                    WHERE fb.height BETWEEN b.start_height AND b.end_height\n                    AND b.end_height >= $1\n                )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c38ac634ddb7743a7c37a84a8537b0fed4cf0607a0c04fd2bee4efae8b6ac6b8"
+}

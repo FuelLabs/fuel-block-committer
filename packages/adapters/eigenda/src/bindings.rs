@@ -12,20 +12,36 @@ pub mod disperser {
     #[repr(i32)]
     pub enum BlobStatus {
         Unknown = 0,
-        Processing = 1,
-        Confirmed = 2,
-        Finalized = 3,
-        Failed = 4,
+        Queued = 1,
+        Encoded = 2,
+        GatheringSignatures = 3,
+        Complete = 4,
+        Failed = 5,
     }
-    
+
     impl BlobStatus {
         pub fn as_str_name(&self) -> &'static str {
             match self {
-                Self::Unknown => "Unknown",
-                Self::Processing => "Processing",
-                Self::Confirmed => "Confirmed",
-                Self::Finalized => "Finalized",
-                Self::Failed => "Failed",
+                BlobStatus::Unknown => "UNKNOWN",
+                BlobStatus::Queued => "QUEUED",
+                BlobStatus::Encoded => "ENCODED",
+                BlobStatus::GatheringSignatures => "GATHERING_SIGNATURES",
+                BlobStatus::Complete => "COMPLETE",
+                BlobStatus::Failed => "FAILED",
+            }
+        }
+    }
+
+    impl From<i32> for BlobStatus {
+        fn from(value: i32) -> Self {
+            match value {
+                0 => BlobStatus::Unknown,
+                1 => BlobStatus::Queued,
+                2 => BlobStatus::Encoded,
+                3 => BlobStatus::GatheringSignatures,
+                4 => BlobStatus::Complete,
+                5 => BlobStatus::Failed,
+                _ => BlobStatus::Unknown, // Default case
             }
         }
     }

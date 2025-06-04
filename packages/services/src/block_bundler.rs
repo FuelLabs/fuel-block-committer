@@ -161,11 +161,14 @@ pub mod service {
         async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
             let start_total = self.clock.now();
             tracing::info!("Starting bundling process");
-            
+
             let start_get_height = self.clock.now();
             let starting_height = self.get_starting_height().await?;
             let get_height_duration = self.clock.now().signed_duration_since(start_get_height);
-            tracing::info!("Got starting height {starting_height} in {:?}", get_height_duration);
+            tracing::info!(
+                "Got starting height {starting_height} in {:?}",
+                get_height_duration
+            );
 
             while let Some(UnbundledBlocks {
                 oldest,
@@ -207,7 +210,10 @@ pub mod service {
                 let optimization_duration =
                     self.clock.now().signed_duration_since(optimization_start);
 
-                tracing::info!("Bundler proposed: {metadata} (optimization took {:?})", optimization_duration);
+                tracing::info!(
+                    "Bundler proposed: {metadata} (optimization took {:?})",
+                    optimization_duration
+                );
 
                 let start_insert = self.clock.now();
                 self.storage
@@ -300,16 +306,21 @@ pub mod service {
                 let advance_result = bundler
                     .advance(self.config.max_bundles_per_optimization_run)
                     .await?;
-                let advance_duration = self.clock.now().signed_duration_since(advance_start).to_std().unwrap_or_default();
+                let advance_duration = self
+                    .clock
+                    .now()
+                    .signed_duration_since(advance_start)
+                    .to_std()
+                    .unwrap_or_default();
                 total_advance_time += advance_duration;
                 advance_iterations += 1;
-                
+
                 tracing::info!(
-                    "Bundler advance iteration {}: took {:?}", 
-                    advance_iterations, 
+                    "Bundler advance iteration {}: took {:?}",
+                    advance_iterations,
                     advance_duration
                 );
-                
+
                 advance_result
             } {
                 if self.should_stop_optimizing(optimization_start)? {
@@ -331,10 +342,15 @@ pub mod service {
 
             let finish_start = self.clock.now();
             let result = bundler.finish().await;
-            let finish_duration = self.clock.now().signed_duration_since(finish_start).to_std().unwrap_or_default();
-            
+            let finish_duration = self
+                .clock
+                .now()
+                .signed_duration_since(finish_start)
+                .to_std()
+                .unwrap_or_default();
+
             tracing::info!("Bundler finish operation took {:?}", finish_duration);
-            
+
             result
         }
 
@@ -459,7 +475,7 @@ pub mod test_helpers {
     };
 
     use super::common::{Bundle, BundleProposal, BundlerFactory};
-    use crate::types::{storage::SequentialFuelBlocks, NonNegative};
+    use crate::types::{NonNegative, storage::SequentialFuelBlocks};
 
     pub struct ControllableBundler {
         can_advance: UnboundedReceiver<()>,

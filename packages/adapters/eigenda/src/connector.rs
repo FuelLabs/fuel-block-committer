@@ -5,35 +5,66 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::anyhow;
-use async_trait::async_trait;
 use byte_unit::Byte;
 use ethereum_types::H160;
-use futures::{StreamExt, TryFutureExt};
 use governor::{
     Quota, RateLimiter,
     clock::DefaultClock,
     state::{InMemoryState, NotKeyed},
 };
-use rust_eigenda_client::{
-    client::{BlobProvider, EigenClient},
-    config::{EigenConfig, SecretUrl, SrsPointsSource},
+pub use rust_eigenda_v2_client::rust_eigenda_signers::Sign;
+use rust_eigenda_v2_client::{
+    core::BlobKey,
+    disperser_client::{DisperserClient, DisperserClientConfig},
+    payload_disperser::{PayloadDisperser, PayloadDisperserConfig},
+    utils::SecretUrl,
 };
-use secp256k1::SecretKey;
+use rust_eigenda_v2_common::{Payload, PayloadForm};
 use services::{
     Error as ServiceError, Result as ServiceResult,
     types::{DispersalStatus, EigenDASubmission, Fragment},
 };
-use tokio::sync::RwLock;
 use tracing::{info, warn};
 use url::Url;
 
 use crate::{
+    bindings::BlobStatus,
     codec::convert_by_padding_empty_byte,
     error::{Error, Result},
 };
 
-impl<S: Sign> services::state_committer::port::eigen_da::Api for EigenDAClient<S> {
+#[derive(Debug, Clone)]
+struct EigenClient<S> {
+    /// The payload disperser instance that handles the actual payload dispatching.
+    payload_disperser: PayloadDisperser<S>,
+    /// The disperser client that is able to get the status of the blobs.
+    disperser_client: DisperserClient<S>,
+}
+
+impl<S> EigenClient<S>
+where
+    S: Sign + Clone,
+{
+    async fn new(payload_disperser_cfg: PayloadDisperserConfig, signer: S) -> anyhow::Result<Self> {
+        let disperser_client = DisperserClient::new(DisperserClientConfig {
+            disperser_rpc: payload_disperser_cfg.disperser_rpc.clone(),
+            signer: signer.clone(),
+            use_secure_grpc_flag: payload_disperser_cfg.use_secure_grpc_flag,
+        })
+        .await?;
+        let payload_disperser = PayloadDisperser::new(payload_disperser_cfg, signer).await?;
+
+        Ok(Self {
+            payload_disperser,
+            disperser_client,
+        })
+    }
+}
+
+impl<S> services::state_committer::port::eigen_da::Api for EigenDAClient<S>
+where
+    S: Sign + Clone,
+{
     async fn submit_state_fragment(&self, fragment: Fragment) -> ServiceResult<EigenDASubmission> {
         let data = fragment.data;
         let start = Instant::now();
@@ -84,7 +115,7 @@ impl<S: Sign> services::state_committer::port::eigen_da::Api for EigenDAClient<S
 
 impl<S> services::state_listener::port::eigen_da::Api for EigenDAClient<S>
 where
-    S: Send + Sync,
+    S: Clone + Sign + Send + Sync,
 {
     async fn get_blob_status(&self, id: Vec<u8>) -> ServiceResult<DispersalStatus> {
         let blob_id = String::from_utf8(id.clone())
@@ -92,21 +123,6 @@ where
 
         let status = self.check_blob_status(&blob_id).await?;
         Ok(status)
-    }
-}
-
-// Define a DummyBlobProvider as we're not retrieving blobs in the committer
-#[derive(Debug, Clone)]
-struct DummyBlobProvider;
-
-#[async_trait]
-impl BlobProvider for DummyBlobProvider {
-    async fn get_blob(
-        &self,
-        _blob_id: &str,
-    ) -> std::result::Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
-        // This provider doesn't store or retrieve blobs in this example
-        Ok(None)
     }
 }
 
@@ -126,9 +142,10 @@ pub struct Throughput {
     pub calls_per_sec: NonZeroU32,
 }
 
-pub use rust_eigenda_client::Sign;
-
-impl<S> EigenDAClient<S> {
+impl<S> EigenDAClient<S>
+where
+    S: Sign + Clone,
+{
     pub async fn new(signer: S, rpc: Url, throughput: Throughput) -> Result<Self> {
         // Set up Ethereum RPC URL
         // For now, we're using the same URL for disperser and eth - this may need to be revised
@@ -144,29 +161,20 @@ impl<S> EigenDAClient<S> {
                 .expect("TODO: segfault"),
         );
 
-        // Placeholder Service Manager Address - this should be configured properly for production
-        let svc_manager_address = H160::from_str("d4a7e1bd8015057293f0d0a557088c286942e84b")
-            .map_err(|e| Error::Other(format!("Invalid service manager address: {e}")))?;
+        // TODO: make configurable
+        const CERT_VERIFIER_ADDRESS: &str = "d4a7e1bd8015057293f0d0a557088c286942e84b";
 
-        // Default SRS points URLs from Eigen-DA repos
-        let srs_g1_url = "https://github.com/Layr-Labs/eigenda-proxy/raw/2fd70b99ef5bf137d7bbca3461cf9e1f2c899451/resources/g1.point".to_string();
-        let srs_g2_url = "https://github.com/Layr-Labs/eigenda-proxy/raw/2fd70b99ef5bf137d7bbca3461cf9e1f2c899451/resources/g2.point.powerOf2".to_string();
+        let config = PayloadDisperserConfig {
+            polynomial_form: PayloadForm::Coeff,
+            blob_version: 0,
+            cert_verifier_address: H160::from_str(CERT_VERIFIER_ADDRESS).expect("qed"),
+            eth_rpc_url: eth_rpc_url.clone(),
+            disperser_rpc: disperser_rpc_url,
+            use_secure_grpc_flag: true,
+        };
 
-        let config = EigenConfig::new(
-            disperser_rpc_url,
-            eth_rpc_url,
-            8, // Set confirmation depth as needed
-            svc_manager_address,
-            false, // Set true to wait for Ethereum finalization
-            true,  // Set true if using authenticated disperser endpoints
-            SrsPointsSource::Url((srs_g1_url, srs_g2_url)),
-            vec![], // Specify quorum IDs if using custom quorums
-        )
-        .map_err(|e| Error::Other(format!("Failed to create EigenConfig: {e}")))?;
-
-        // Create EigenClient instance
-        let blob_provider = Arc::new(DummyBlobProvider);
-        let eigen_client = EigenClient::new(config, signer, blob_provider)
+        // Create PayloadDisperser instance
+        let eigen_client = EigenClient::new(config, signer)
             .await
             .map_err(|e| Error::Other(format!("Failed to initialize EigenClient: {e}")))?;
 
@@ -181,7 +189,7 @@ impl<S> EigenDAClient<S> {
         })
     }
 
-    async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String>
+    pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String>
     where
         S: Sign,
     {
@@ -191,29 +199,39 @@ impl<S> EigenDAClient<S> {
         // Use the client to dispatch the blob
         let blob_id = self
             .eigen_client
-            .dispatch_blob(padded_data)
+            .payload_disperser
+            .send_payload(Payload::new(padded_data))
             .await
             .map_err(|e| Error::Other(format!("Failed to dispatch blob: {e}")))?;
 
-        Ok(blob_id)
+        Ok(blob_id.to_hex())
     }
 
-    async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
-        // Check if the blob has inclusion data (is confirmed/finalized)
-        match self.eigen_client.get_inclusion_data(blob_id).await {
-            Ok(Some(_)) => {
-                // If we have inclusion data, the blob is finalized
-                Ok(DispersalStatus::Finalized)
-            }
-            Ok(None) => {
-                // If we don't have inclusion data yet, the blob is being processed
-                Ok(DispersalStatus::Processing)
-            }
+    pub async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
+        let blob_key = BlobKey::from_hex(blob_id)
+            .map_err(|e| Error::Other(format!("conversion of blob_key failed: {e}")))?;
+
+        let response = match self
+            .eigen_client
+            .disperser_client
+            .blob_status(&blob_key)
+            .await
+        {
+            Ok(response) => response,
             Err(e) => {
-                // If there's an error, consider the blob processing state as failed
                 warn!("Error checking blob status for {}: {}", blob_id, e);
-                Ok(DispersalStatus::Failed)
+                return Ok(DispersalStatus::Failed);
             }
-        }
+        };
+
+        let dispersal_status = match BlobStatus::from(response.status) {
+            BlobStatus::Failed => {
+                warn!("Blob {} failed to disperse", blob_id);
+                DispersalStatus::Failed
+            }
+            other_status => other_status.into(),
+        };
+
+        Ok(dispersal_status)
     }
 }

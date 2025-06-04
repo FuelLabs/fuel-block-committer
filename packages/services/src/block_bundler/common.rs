@@ -1,8 +1,8 @@
 use std::{fmt::Display, num::NonZeroUsize, ops::RangeInclusive};
 
 use crate::{
-    types::{storage::SequentialFuelBlocks, Fragment, NonEmpty, NonNegative},
     Result,
+    types::{Fragment, NonEmpty, NonNegative, storage::SequentialFuelBlocks},
 };
 use bytesize::ByteSize;
 

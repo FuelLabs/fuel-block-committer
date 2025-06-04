@@ -1,10 +1,13 @@
 use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
+    prometheus::{IntGauge, Opts, core::Collector},
 };
 use tracing::info;
 
-use crate::{types::storage::BundleFragment, Result, Runner};
+use crate::{
+    Result, Runner,
+    types::{AsB64, storage::BundleFragment},
+};
 
 use super::commit_helpers::update_current_height_to_commit_metric;
 
@@ -100,14 +103,14 @@ where
         let fragment_id = fragment.id;
         match self.da_layer.submit_state_fragment(fragment.fragment).await {
             Ok(submitted_tx) => {
-                let request_id = submitted_tx.request_id.clone();
+                let b64_request_id = submitted_tx.as_base64();
                 self.storage
                     .record_eigenda_submission(submitted_tx, fragment.id.as_i32(), self.clock.now())
                     .await?;
 
                 tracing::info!(
                     "Submitted fragment {fragment_id} with request id {}",
-                    base64::encode(request_id),
+                    b64_request_id,
                 );
                 Ok(())
             }

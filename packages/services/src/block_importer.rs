@@ -1,7 +1,7 @@
 mod chunking;
 pub mod service {
 
-    use futures::{StreamExt, TryFutureExt, TryStreamExt};
+    use futures::{StreamExt, TryStreamExt};
     use metrics::{
         RegistersMetrics,
         prometheus::{Histogram, IntGauge, histogram_opts, linear_buckets},

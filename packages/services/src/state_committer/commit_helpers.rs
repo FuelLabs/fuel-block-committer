@@ -1,6 +1,5 @@
-use crate::state_committer::port::{fuel::Api as FuelApi, Storage};
-use crate::types::{storage::BundleFragment, NonEmpty};
 use crate::Result;
+use crate::state_committer::port::{Storage, fuel::Api as FuelApi};
 use metrics::prometheus::IntGauge;
 
 pub async fn update_current_height_to_commit_metric<F, S>(

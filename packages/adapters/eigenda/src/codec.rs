@@ -4,7 +4,7 @@ pub fn convert_by_padding_empty_byte(data: &[u8]) -> Vec<u8> {
     const PARSE_SIZE: usize = BYTES_PER_SYMBOL - 1; // 31
 
     let data_size = data.len();
-    let data_len = (data_size + PARSE_SIZE - 1) / PARSE_SIZE;
+    let data_len = data_size.div_ceil(PARSE_SIZE);
 
     let mut valid_data = vec![0u8; data_len * BYTES_PER_SYMBOL];
     let mut valid_end = data_len * BYTES_PER_SYMBOL;
@@ -30,38 +30,38 @@ pub fn convert_by_padding_empty_byte(data: &[u8]) -> Vec<u8> {
     valid_data
 }
 
-pub fn remove_empty_byte_from_padded_bytes(data: &[u8]) -> Vec<u8> {
-    const PUT_SIZE: usize = BYTES_PER_SYMBOL - 1; // 31
-
-    let data_size = data.len();
-    let data_len = (data_size + BYTES_PER_SYMBOL - 1) / BYTES_PER_SYMBOL;
-
-    let mut valid_data = vec![0u8; data_len * PUT_SIZE];
-    let mut valid_len = data_len * PUT_SIZE;
-
-    for i in 0..data_len {
-        let start = i * BYTES_PER_SYMBOL + 1;
-        let end = (i + 1) * BYTES_PER_SYMBOL;
-        let end = end.min(data_size);
-
-        let output_start = i * PUT_SIZE;
-        let data_slice = &data[start..end];
-        let output_slice = &mut valid_data[output_start..output_start + data_slice.len()];
-        output_slice.copy_from_slice(data_slice);
-
-        if end == data_size {
-            valid_len = output_start + data_slice.len();
-            break;
-        }
-    }
-
-    valid_data.truncate(valid_len);
-    valid_data
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn remove_empty_byte_from_padded_bytes(data: &[u8]) -> Vec<u8> {
+        const PUT_SIZE: usize = BYTES_PER_SYMBOL - 1; // 31
+
+        let data_size = data.len();
+        let data_len = data_size.div_ceil(BYTES_PER_SYMBOL);
+
+        let mut valid_data = vec![0u8; data_len * PUT_SIZE];
+        let mut valid_len = data_len * PUT_SIZE;
+
+        for i in 0..data_len {
+            let start = i * BYTES_PER_SYMBOL + 1;
+            let end = (i + 1) * BYTES_PER_SYMBOL;
+            let end = end.min(data_size);
+
+            let output_start = i * PUT_SIZE;
+            let data_slice = &data[start..end];
+            let output_slice = &mut valid_data[output_start..output_start + data_slice.len()];
+            output_slice.copy_from_slice(data_slice);
+
+            if end == data_size {
+                valid_len = output_start + data_slice.len();
+                break;
+            }
+        }
+
+        valid_data.truncate(valid_len);
+        valid_data
+    }
 
     #[test]
     fn test_round_trip() {

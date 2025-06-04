@@ -7,7 +7,7 @@ pub enum Error {
     #[error("authentication failed")]
     AuthenticationFailed,
     #[error("EigenDA client error: {0}")]
-    EigenDAClient(#[from] rust_eigenda_client::errors::EigenClientError),
+    EigenDAClient(#[from] rust_eigenda_v2_client::errors::EigenClientError),
     #[error("other error: {0}")]
     Other(String),
 }

@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 
 use metrics::{
-    prometheus::{core::Collector, IntGauge, Opts},
     RegistersMetrics,
+    prometheus::{IntGauge, Opts, core::Collector},
 };
 use tracing::info;
 
 use crate::{
-    types::{L1Tx, TransactionCostUpdate, TransactionState},
     Runner,
+    types::{L1Tx, TransactionCostUpdate, TransactionState},
 };
 
 pub struct StateListener<L1, Db, Clock> {

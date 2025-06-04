@@ -9,12 +9,10 @@ use alloy::{
 };
 use eth::{Address, L1Signers};
 use services::types::U256;
-use signers::eth::{Signer, kms::TestEthKmsSigner};
+use signers::eth::kms::TestEthKmsSigner;
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
 use url::Url;
-
-use crate::kms::KmsKey;
 
 #[derive(Default, Debug)]
 pub struct EthNode {

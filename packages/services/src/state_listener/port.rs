@@ -1,15 +1,15 @@
 use crate::{
+    Result,
     types::{
         DateTime, DispersalStatus, EigenDASubmission, L1Tx, TransactionCostUpdate,
         TransactionState, Utc,
     },
-    Result,
 };
 
 pub mod l1 {
     use crate::{
-        types::{L1Height, TransactionResponse},
         Result,
+        types::{L1Height, TransactionResponse},
     };
 
     #[allow(async_fn_in_trait)]
@@ -26,7 +26,7 @@ pub mod l1 {
 }
 
 pub mod eigen_da {
-    use crate::{types::DispersalStatus, Result};
+    use crate::{Result, types::DispersalStatus};
 
     #[allow(async_fn_in_trait)]
     #[trait_variant::make(Send)]

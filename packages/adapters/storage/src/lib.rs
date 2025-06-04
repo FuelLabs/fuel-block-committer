@@ -14,10 +14,9 @@ use services::{
     Result,
     block_bundler::port::UnbundledBlocks,
     types::{
-        storage::{BundleFragment, SequentialFuelBlocks},
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
         DispersalStatus, EigenDASubmission, Fragment, L1Tx, NonEmpty, NonNegative,
-        TransactionCostUpdate, TransactionState, Utc,
+        TransactionCostUpdate, TransactionState, Utc, storage::BundleFragment,
     },
 };
 

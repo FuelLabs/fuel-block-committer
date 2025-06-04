@@ -159,28 +159,28 @@ pub async fn eigen_da_services(
         fuel.clone(),
         storage.clone(),
         cancel_token.clone(),
-        &config,
-        &registry,
+        config,
+        registry,
     );
 
     let (state_committer_handle, state_listener_handle) = match config.da_layer.clone() {
         Some(DALayer::EigenDA(eigen_config)) => {
-            let eigen_da = eigen_adapter(&eigen_config, &internal_config).await?;
+            let eigen_da = eigen_adapter(&eigen_config, internal_config).await?;
             let committer = eigen_state_committer(
                 fuel.clone(),
                 eigen_da.clone(),
                 storage.clone(),
                 cancel_token.clone(),
-                &config,
-                &registry,
+                config,
+                registry,
             )?;
 
             let listener = eigen_state_listener(
                 eigen_da,
                 storage.clone(),
                 cancel_token.clone(),
-                &config,
-                &registry,
+                config,
+                registry,
                 last_finalization_metric(), // TODO will this match on name
             )?;
 
@@ -489,7 +489,7 @@ pub async fn l1_adapter(
 
 pub async fn eigen_adapter(
     config: &EigenDaConfig,
-    internal_config: &config::Internal,
+    _internal_config: &config::Internal,
 ) -> Result<EigenDA> {
     // Configure with appropriate throughput values
     // because testing showed that the time window in which thottling is calculated allows for

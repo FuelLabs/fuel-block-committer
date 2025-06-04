@@ -1,4 +1,3 @@
-use alloy::network::TxSigner;
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -6,8 +5,8 @@ use url::Url;
 
 use e2e_helpers::{
     committer::Committer,
-    eth_node::{ContractArgs, DeployedContract, EthNode, EthNodeProcess},
-    kms::{Kms, KmsKey, KmsProcess},
+    eth_node::{EthNode, EthNodeProcess},
+    kms::{Kms, KmsProcess},
     whole_stack::{create_and_fund_kms_signers, deploy_contract},
 };
 
@@ -22,14 +21,14 @@ async fn main() -> Result<()> {
     let request_timeout = Duration::from_secs(5);
     let max_fee = 1_000_000_000_000;
 
-    let (contract_args, deployed_contract) =
+    let (_contract_args, deployed_contract) =
         deploy_contract(&eth_node, eth_signers.clone(), max_fee, request_timeout).await?;
 
     let db = start_db().await?;
 
     let fuel_node_url = Url::parse("http://localhost:4000").unwrap();
 
-    let committer = {
+    let _committer = {
         let committer_builder = Committer::default()
             .with_show_logs(true)
             .with_eth_rpc((eth_node).ws_url())

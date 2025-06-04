@@ -138,12 +138,14 @@ impl port::fuel::Api for MockFuelApi {
     }
 }
 
+type StorageFragment = (NonNegative<i32>, RangeInclusive<u32>, NonEmpty<Fragment>);
+
 // In-memory implementation of the Storage port
 #[derive(Clone)]
 struct InMemoryStorage {
     blocks: Arc<Mutex<Vec<CompressedFuelBlock>>>,
     next_id: Arc<Mutex<i32>>,
-    fragments: Arc<Mutex<Vec<(NonNegative<i32>, RangeInclusive<u32>, NonEmpty<Fragment>)>>>,
+    fragments: Arc<Mutex<Vec<StorageFragment>>>,
 }
 
 impl InMemoryStorage {

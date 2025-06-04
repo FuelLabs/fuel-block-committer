@@ -9,14 +9,17 @@ version = { workspace = true }
 publish = { workspace = true }
 rust-version = { workspace = true }
 
-[dev-dependencies]
+[dependencies]
 e2e-helpers = { workspace = true }
+
+[dev-dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 storage = { workspace = true }
 services = { workspace = true }
 rust-eigenda-signers = { workspace = true }
-rust-eigenda-client = { workspace = true }
+rust-eigenda-v2-client = { workspace = true }
+eigenda = { workspace = true }
 async-trait = { workspace = true }
 aws-config = { workspace = true }
 tracing = { workspace = true }
