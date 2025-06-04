@@ -207,7 +207,7 @@ where
 
     pub async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
         let blob_key = BlobKey::from_hex(blob_id)
-            .map_err(|_| Error::Other("conversion of blob_key failed".to_string()))?;
+            .map_err(|e| Error::Other(format!("conversion of blob_key failed: {e}")))?;
 
         let response = match self
             .eigen_client
