@@ -101,8 +101,6 @@ impl EigenBundler {
         let mut current_blocks = self.blocks.clone();
         let original_count = current_blocks.len();
         let mut iterations = 0;
-        let mut cached_bundle = None;
-        let mut cached_fragments = None;
 
         tracing::info!(
             "EigenBundler: trim_blocks_to_fit starting with {} blocks",
@@ -152,9 +150,7 @@ impl EigenBundler {
                         current_blocks.len(),
                         original_count
                     );
-                    cached_bundle = Some(bundle);
-                    cached_fragments = Some(fragments);
-                    return (current_blocks, cached_bundle, cached_fragments);
+                    return (current_blocks, Some(bundle), Some(fragments));
                 }
             }
 

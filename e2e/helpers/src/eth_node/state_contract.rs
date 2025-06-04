@@ -2,7 +2,7 @@ const FOUNDRY_PROJECT: &str = concat!(env!("OUT_DIR"), "/foundry");
 use std::time::Duration;
 
 use alloy::{
-    network::{EthereumWallet, TxSigner},
+    network::EthereumWallet,
     primitives::{Bytes, TxKind},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,

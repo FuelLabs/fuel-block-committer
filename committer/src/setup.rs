@@ -489,7 +489,7 @@ pub async fn l1_adapter(
 
 pub async fn eigen_adapter(
     config: &EigenDaConfig,
-    internal_config: &config::Internal,
+    _internal_config: &config::Internal,
 ) -> Result<EigenDA> {
     // Configure with appropriate throughput values
     // because testing showed that the time window in which thottling is calculated allows for

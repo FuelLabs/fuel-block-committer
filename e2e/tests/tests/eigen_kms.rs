@@ -4,26 +4,22 @@ use e2e_helpers::kms::Kms;
 use e2e_helpers::kms::KmsProcess;
 use eigenda::EigenDAClient;
 use eigenda::Throughput;
-use ethereum_types::H160;
 use k256::ecdsa::SigningKey as K256SigningKey;
 use rand::RngCore;
 use rand::rngs::OsRng;
 use rust_eigenda_signers::Message;
 use rust_eigenda_signers::PublicKey;
 use rust_eigenda_signers::RecoverableSignature;
-use rust_eigenda_signers::SecretKey;
 use rust_eigenda_signers::signers::private_key::Signer as PrivateKeySigner;
 use rust_eigenda_v2_client::rust_eigenda_signers::Sign;
-use rust_eigenda_v2_client::utils::SecretUrl;
 use secp256k1::Secp256k1;
 use services::types::DispersalStatus;
 use sha2::{Digest, Sha256};
 
 use signers::eigen::kms::Signer;
-use std::num::NonZero;
 use std::num::NonZeroU32;
-use std::{env, error::Error, str::FromStr, sync::Arc, time::Duration};
-use tracing::{error, info, instrument};
+use std::{env, str::FromStr, time::Duration};
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 use url::Url;
 

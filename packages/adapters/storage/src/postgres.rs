@@ -445,9 +445,7 @@ impl Postgres {
         const MAX_BLOCKS_PER_QUERY: usize = (u16::MAX / FIELDS_PER_BLOCK) as usize;
 
         let total_start = std::time::Instant::now();
-        let mut total_query_build_time = Duration::from_secs(0);
         let mut total_execute_time = Duration::from_secs(0);
-        let mut total_commit_time = Duration::from_secs(0);
 
         tracing::info!(
             target: "insert_blocks_perf",
@@ -475,7 +473,7 @@ impl Postgres {
                 query_builder
             })
             .collect_vec();
-        total_query_build_time = query_build_start.elapsed();
+        let total_query_build_time = query_build_start.elapsed();
 
         let mut chunk_index = 0;
         for mut query in queries {
@@ -497,7 +495,7 @@ impl Postgres {
 
         let commit_start = std::time::Instant::now();
         tx.commit().await?;
-        total_commit_time = commit_start.elapsed();
+        let total_commit_time = commit_start.elapsed();
 
         let total_duration = total_start.elapsed();
         tracing::info!(
@@ -579,10 +577,10 @@ impl Postgres {
     pub(crate) async fn total_unbundled_blocks(&self, starting_height: u32) -> Result<u64> {
         let count = sqlx::query!(
             r#"SELECT COUNT(*)
-                FROM fuel_blocks fb 
+                FROM fuel_blocks fb
                 WHERE fb.height >= $1
                 AND NOT EXISTS (
-                    SELECT 1 FROM bundles b 
+                    SELECT 1 FROM bundles b
                     WHERE fb.height BETWEEN b.start_height AND b.end_height
                     AND b.end_height >= $1
                 )"#,
@@ -645,14 +643,14 @@ impl Postgres {
         sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
-            SELECT fb.* 
-        FROM fuel_blocks fb 
+            SELECT fb.*
+        FROM fuel_blocks fb
         WHERE fb.height >= $1
         AND NOT EXISTS (
-            SELECT 1 FROM bundles b 
+            SELECT 1 FROM bundles b
             WHERE fb.height BETWEEN b.start_height AND b.end_height
             AND b.end_height >= $1
-        ) 
+        )
         ORDER BY fb.height"#,
             i64::from(starting_height),
         )

@@ -1,11 +1,7 @@
-use alloy::network::TxSigner;
 use anyhow::Context;
 use async_trait::async_trait;
-use aws_config::{Region, SdkConfig, default_provider::credentials::DefaultCredentialsChain};
-#[cfg(feature = "test-helpers")]
-use aws_sdk_kms::config::Credentials;
+use aws_sdk_kms::Client as InnerClient;
 use aws_sdk_kms::primitives::Blob;
-use aws_sdk_kms::{Client as InnerClient, config::BehaviorVersion};
 use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
     pkcs8::DecodePublicKey,
@@ -18,7 +14,6 @@ pub struct Signer {
     key_id: String,
     client: InnerClient,
     public_key: rust_eigenda_signers::PublicKey,
-    k256_verifying_key: VerifyingKey,
 }
 
 impl Signer {
@@ -47,7 +42,6 @@ impl Signer {
             key_id,
             client,
             public_key: secp_pub_key,
-            k256_verifying_key: k256_pub_key,
         })
     }
 
@@ -171,29 +165,4 @@ impl eigenda::Sign for crate::eigen::kms::Signer {
     fn public_key(&self) -> rust_eigenda_signers::PublicKey {
         self.public_key.into()
     }
-}
-
-// Helper function to determine k256 recovery ID.
-// Necessary because KMS returns a DER signature, and we need to extract R, S, and find V.
-fn determine_k256_recovery_id(
-    sig: &k256::ecdsa::Signature,
-    message_hash: &[u8; 32],
-    expected_pubkey: &VerifyingKey,
-) -> anyhow::Result<k256::ecdsa::RecoveryId> {
-    let recid_0 = k256::ecdsa::RecoveryId::from_byte(0).context("Bad RecoveryId byte 0")?;
-    let recid_1 = k256::ecdsa::RecoveryId::from_byte(1).context("Bad RecoveryId byte 1")?;
-
-    if let Ok(recovered_key) = VerifyingKey::recover_from_prehash(message_hash, sig, recid_0) {
-        if &recovered_key == expected_pubkey {
-            return Ok(recid_0);
-        }
-    }
-
-    if let Ok(recovered_key) = VerifyingKey::recover_from_prehash(message_hash, sig, recid_1) {
-        if &recovered_key == expected_pubkey {
-            return Ok(recid_1);
-        }
-    }
-
-    anyhow::bail!("Could not recover correct public key from k256 signature")
 }

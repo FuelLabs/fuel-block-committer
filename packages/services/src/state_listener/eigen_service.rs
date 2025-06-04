@@ -2,11 +2,10 @@ use metrics::{
     RegistersMetrics,
     prometheus::{IntGauge, Opts, core::Collector},
 };
-use tracing::info;
 
 use crate::{
     Runner,
-    types::{DispersalStatus, EigenDASubmission},
+    types::{AsB64, DispersalStatus, EigenDASubmission},
 };
 
 pub struct StateListener<EigenDA, Db> {
@@ -53,21 +52,21 @@ where
                     // log processing
                     tracing::info!(
                         "Processing submission with request_id: {}",
-                        base64::encode(submission.request_id)
+                        submission.as_base64(),
                     );
                     continue;
                 }
                 DispersalStatus::Confirmed => {
                     tracing::info!(
                         "Confirmed submission with request_id: {}",
-                        base64::encode(submission.request_id)
+                        submission.as_base64(),
                     );
                     changes.push((submission_id, DispersalStatus::Confirmed));
                 }
                 DispersalStatus::Finalized => {
                     tracing::info!(
                         "Finalized submission with request_id: {}",
-                        base64::encode(submission.request_id)
+                        submission.as_base64(),
                     );
                     changes.push((submission_id, DispersalStatus::Finalized));
                 }
@@ -75,7 +74,7 @@ where
                     // log got bad status
                     tracing::info!(
                         "Unexpected status - submission with request_id: {}",
-                        base64::encode(submission.request_id)
+                        submission.as_base64(),
                     );
                     changes.push((submission_id, DispersalStatus::Failed));
                 }

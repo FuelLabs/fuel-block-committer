@@ -1,13 +1,7 @@
-use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr, time::Duration};
+use std::{num::NonZeroU32, ops::RangeInclusive, time::Duration};
 
 use ::metrics::{HealthChecker, RegistersMetrics, prometheus::core::Collector};
-use alloy::{
-    consensus::SignableTransaction,
-    network::TxSigner,
-    primitives::{Address, B256, ChainId},
-    rpc::types::FeeHistory,
-    signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
-};
+use alloy::{network::TxSigner, primitives::Address, rpc::types::FeeHistory, signers::Signature};
 use delegate::delegate;
 use serde::Deserialize;
 use services::{

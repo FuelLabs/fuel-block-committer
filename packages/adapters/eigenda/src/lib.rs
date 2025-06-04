@@ -2,7 +2,6 @@ mod bindings;
 mod codec;
 mod connector;
 mod error;
-mod signer;
 
 use bindings::BlobStatus;
 pub use connector::*;

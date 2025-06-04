@@ -1,3 +1,4 @@
+use base64::Engine;
 use sqlx::types::chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,5 +26,15 @@ impl Default for EigenDASubmission {
             status: DispersalStatus::Processing,
             created_at: None,
         }
+    }
+}
+
+pub trait AsB64 {
+    fn as_base64(&self) -> String;
+}
+
+impl AsB64 for EigenDASubmission {
+    fn as_base64(&self) -> String {
+        base64::engine::general_purpose::STANDARD.encode(&self.request_id)
     }
 }
