@@ -7,6 +7,7 @@ use k256::ecdsa::SigningKey as K256SigningKey;
 use std::time::Duration;
 use tracing::info;
 
+#[ignore = "requires EIGEN_KEY environment variable"]
 #[tokio::test]
 async fn test_eigen_state() -> Result<()> {
     // Start required services

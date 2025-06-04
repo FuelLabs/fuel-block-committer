@@ -115,7 +115,7 @@ async fn initialize_tracing() {
         .try_init();
 }
 
-#[ignore = "longer test, needs kms access"]
+#[ignore = "requires EIGEN_KEY environment variable"]
 #[tokio::test]
 async fn test_dispatch_3mb_blob_aws_signer() -> Result<()> {
     initialize_tracing().await;
