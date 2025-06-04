@@ -14,6 +14,7 @@ pub struct Signer {
     key_id: String,
     client: InnerClient,
     public_key: rust_eigenda_signers::PublicKey,
+    k256_verifying_key: VerifyingKey,
 }
 
 impl Signer {
@@ -42,6 +43,7 @@ impl Signer {
             key_id,
             client,
             public_key: secp_pub_key,
+            k256_verifying_key: k256_pub_key,
         })
     }
 
@@ -119,6 +121,16 @@ impl Signer {
 
         Ok(encoded_point.as_bytes().to_vec())
     }
+
+    fn k256_recovery_id(
+        &self,
+        signature: &k256::ecdsa::Signature,
+        message_hash: &[u8; 32],
+    ) -> anyhow::Result<u8> {
+        signature
+            .get_recovery_id(message_hash, &self.k256_verifying_key)
+            .context("Failed to determine recovery ID")
+    }
 }
 
 #[derive(Error, Debug)]
@@ -153,8 +165,13 @@ impl eigenda::Sign for crate::eigen::kms::Signer {
 
         let k256_sig_normalized = k256_sig.normalize_s().unwrap_or(k256_sig);
 
+        let k256_recid = self
+            .k256_recovery_id(&k256_sig_normalized, digest_bytes)
+            .context("Failed to determine recovery ID")?;
+
         let mut sig: [u8; 65] = [0; 65];
-        sig.copy_from_slice(k256_sig_normalized.to_bytes().as_ref());
+        sig[0] = k256_recid;
+        sig[..64].copy_from_slice(k256_sig_normalized.to_bytes().as_ref());
 
         let standard_recoverable_sig = rust_eigenda_signers::RecoverableSignature::from_bytes(&sig)
             .context("Failed to create recoverable signature")?;
@@ -164,5 +181,36 @@ impl eigenda::Sign for crate::eigen::kms::Signer {
 
     fn public_key(&self) -> rust_eigenda_signers::PublicKey {
         self.public_key.into()
+    }
+}
+
+trait RecIdExt {
+    fn get_recovery_id(
+        &self,
+        message_hash: &[u8; 32],
+        expected_pubkey: &VerifyingKey,
+    ) -> anyhow::Result<u8>;
+}
+
+impl RecIdExt for k256::ecdsa::Signature {
+    fn get_recovery_id(
+        &self,
+        message_hash: &[u8; 32],
+        expected_pubkey: &VerifyingKey,
+    ) -> anyhow::Result<u8> {
+        (0..2)
+            .find_map(|id| {
+                let recovery_id = k256::ecdsa::RecoveryId::from_byte(id)
+                    .with_context(|| format!("Bad RecoveryId byte {}", id))
+                    .ok()?;
+
+                let recovered_key =
+                    VerifyingKey::recover_from_prehash(message_hash, self, recovery_id).ok()?;
+
+                (&recovered_key == expected_pubkey).then_some(id)
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!("Could not recover correct public key from k256 signature")
+            })
     }
 }
