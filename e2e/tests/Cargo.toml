@@ -9,8 +9,10 @@ version = { workspace = true }
 publish = { workspace = true }
 rust-version = { workspace = true }
 
-[dev-dependencies]
+[dependencies]
 e2e-helpers = { workspace = true }
+
+[dev-dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 storage = { workspace = true }
