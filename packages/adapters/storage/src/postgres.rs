@@ -1352,10 +1352,9 @@ impl Postgres {
     ) -> Result<()> {
         let mut tx = self.connection_pool.begin().await?;
 
-        let row = eigen_tables::EigenDASubmission::from(submission);
         let submission_id = sqlx::query!(
             "INSERT INTO eigen_submission (request_id, status, created_at) VALUES ($1, $2, $3) RETURNING id",
-            row.request_id,
+            submission.request_id,
             i16::from(eigen_tables::SubmissionStatus::Processing),
             created_at
         )
