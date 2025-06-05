@@ -1,7 +1,5 @@
-use anyhow::Context;
 use async_trait::async_trait;
-use aws_sdk_kms::Client as InnerClient;
-use aws_sdk_kms::primitives::Blob;
+use aws_sdk_kms::{Client as AwsKmsClient, primitives::Blob};
 use k256::{
     ecdsa::{RecoveryId, Signature, VerifyingKey},
     pkcs8::DecodePublicKey,
@@ -9,208 +7,189 @@ use k256::{
 use rust_eigenda_signers::{Message, RecoverableSignature};
 use thiserror::Error;
 
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("KMS GetPublicKey operation failed")]
+    KmsGetPublicKey(#[from] aws_sdk_kms::operation::get_public_key::GetPublicKeyError),
+
+    #[error("KMS Sign operation failed")]
+    KmsSign(#[from] aws_sdk_kms::operation::sign::SignError),
+
+    #[error("Failed to get public key from KMS")]
+    MissingPublicKey,
+
+    #[error("Failed to get signature from KMS")]
+    MissingSignature,
+
+    #[error("Failed to parse DER-encoded public key")]
+    InvalidPublicKeyDer(#[source] k256::pkcs8::spki::Error),
+
+    #[error("Failed to parse DER-encoded signature")]
+    InvalidSignatureDer(#[source] k256::ecdsa::Error),
+
+    #[error("Failed to convert public key format")]
+    PublicKeyConversion(#[source] rust_eigenda_signers::PublicKeyError),
+
+    #[error("Invalid recoverable signature")]
+    InvalidRecoverableSignature(#[source] rust_eigenda_signers::InvalidRecoveryId),
+
+    #[error("Failed to parse SEC1-encoded public key")]
+    InvalidSec1PublicKey(#[source] k256::elliptic_curve::Error),
+
+    #[error("Could not determine recovery ID for signature")]
+    RecoveryIdNotFound,
+
+    #[error("Invalid recovery ID: {0}")]
+    InvalidRecoveryId(u8),
+}
+
+type Result<T> = std::result::Result<T, Error>;
+
 #[derive(Debug, Clone)]
 pub struct Signer {
     key_id: String,
-    client: InnerClient,
+    client: AwsKmsClient,
     public_key: rust_eigenda_signers::PublicKey,
     k256_verifying_key: VerifyingKey,
 }
 
 impl Signer {
-    pub async fn new(client: InnerClient, key_id: String) -> anyhow::Result<Self> {
-        let public_key_der = client
+    pub async fn new(client: AwsKmsClient, key_id: String) -> Result<Self> {
+        let response = client
             .get_public_key()
             .key_id(&key_id)
             .send()
             .await
-            .context("Failed to get public key")?
+            .map_err(|e| e.into_service_error())?;
+
+        let public_key_der = response
             .public_key
-            .context("Public key missing from response")?
+            .ok_or(Error::MissingPublicKey)?
             .into_inner();
 
         // Parse the DER-encoded public key using k256
-        let k256_pub_key = VerifyingKey::from_public_key_der(&public_key_der)
-            .context("Failed to parse public key DER from KMS")?;
+        let k256_verifying_key = VerifyingKey::from_public_key_der(&public_key_der)
+            .map_err(Error::InvalidPublicKeyDer)?;
 
-        // Convert k256 public key to secp256k1 public key
-        let mut pub_key: [u8; 65] = [0; 65];
-        pub_key.copy_from_slice(k256_pub_key.to_encoded_point(false).as_bytes());
-        let secp_pub_key = rust_eigenda_signers::PublicKey::new(pub_key)
-            .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
+        // Convert k256 public key to rust_eigenda_signers public key
+        // Use uncompressed format directly
+        let uncompressed_bytes = k256_verifying_key.to_encoded_point(false);
+        let public_key = rust_eigenda_signers::PublicKey::new(
+            uncompressed_bytes
+                .as_bytes()
+                .try_into()
+                .expect("uncompressed point is always 65 bytes"),
+        )
+        .map_err(Error::PublicKeyConversion)?;
 
         Ok(Self {
             key_id,
             client,
-            public_key: secp_pub_key,
-            k256_verifying_key: k256_pub_key,
+            public_key,
+            k256_verifying_key,
         })
     }
 
-    pub fn inner(&self) -> &InnerClient {
+    pub fn inner(&self) -> &AwsKmsClient {
         &self.client
     }
 
-    async fn get_raw_signature(&self, key_id: &str, data: &[u8]) -> anyhow::Result<Signature> {
-        let response = self
-            .client
-            .sign()
-            .key_id(key_id)
-            .message(data.into())
-            .message_type(aws_sdk_kms::types::MessageType::Digest)
-            .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
-            .send()
-            .await?;
+    pub async fn sign_prehash(&self, key_id: &str, prehash: &[u8]) -> Result<Vec<u8>> {
+        let signature = self.sign_with_kms(key_id, prehash).await?;
+        let recovery_id = self.compute_recovery_id(prehash, &signature)?;
 
-        let der_signature = response
-            .signature
-            .ok_or_else(|| anyhow::anyhow!("kms signature missing"))?;
-
-        let signature = Signature::from_der(der_signature.as_ref())?;
-        Ok(signature.normalize_s().unwrap_or(signature))
-    }
-
-    fn determine_recovery_id(
-        &self,
-        prehash: &[u8],
-        signature: &Signature,
-        public_key: &[u8],
-    ) -> anyhow::Result<u8> {
-        let expected_key = VerifyingKey::from_sec1_bytes(public_key)?;
-
-        // try both possible recovery IDs
-        for recovery_id in 0..2 {
-            if let Ok(recovered_key) = VerifyingKey::recover_from_prehash(
-                prehash,
-                signature,
-                RecoveryId::from_byte(recovery_id).expect("valid recovery id"),
-            ) {
-                if recovered_key == expected_key {
-                    return Ok(recovery_id);
-                }
-            }
-        }
-
-        Err(anyhow::anyhow!("Could not determine recovery ID"))
-    }
-
-    pub async fn sign_prehash(&self, key_id: &str, prehash: &[u8]) -> anyhow::Result<Vec<u8>> {
-        let public_key = self.get_public_key(key_id).await?;
-        let signature = self.get_raw_signature(key_id, prehash).await?;
-
-        let recovery_id = self.determine_recovery_id(prehash, &signature, &public_key)?;
-
-        // combine into final signature
-        let mut signature_bytes = signature.to_bytes().to_vec();
+        // Combine signature and recovery ID
+        let mut signature_bytes = Vec::with_capacity(65);
+        signature_bytes.extend_from_slice(&signature.to_bytes());
         signature_bytes.push(recovery_id);
 
         Ok(signature_bytes)
     }
 
-    pub async fn get_public_key(&self, key_id: &str) -> anyhow::Result<Vec<u8>> {
-        let key_info = self.client.get_public_key().key_id(key_id).send().await?;
+    pub async fn get_public_key(&self, key_id: &str) -> Result<Vec<u8>> {
+        let response = self
+            .client
+            .get_public_key()
+            .key_id(key_id)
+            .send()
+            .await
+            .map_err(|e| e.into_service_error())?;
 
-        let der_bytes: Vec<u8> = key_info
+        let der_bytes = response
             .public_key
-            .ok_or_else(|| anyhow::anyhow!("kms public key missing"))?
-            .into();
+            .ok_or(Error::MissingPublicKey)?
+            .into_inner();
 
-        // convert to uncompressed form
-        let verifying_key = VerifyingKey::from_public_key_der(&der_bytes)?;
-        let encoded_point = verifying_key.to_encoded_point(false);
+        // Convert to uncompressed SEC1 format
+        let verifying_key =
+            VerifyingKey::from_public_key_der(&der_bytes).map_err(Error::InvalidPublicKeyDer)?;
 
-        Ok(encoded_point.as_bytes().to_vec())
+        Ok(verifying_key.to_encoded_point(false).as_bytes().to_vec())
     }
 
-    fn k256_recovery_id(
-        &self,
-        signature: &k256::ecdsa::Signature,
-        message_hash: &[u8; 32],
-    ) -> anyhow::Result<u8> {
-        signature
-            .get_recovery_id(message_hash, &self.k256_verifying_key)
-            .context("Failed to determine recovery ID")
-    }
-}
-
-#[derive(Error, Debug)]
-#[error(transparent)]
-pub struct Error(#[from] anyhow::Error);
-
-#[async_trait]
-impl eigenda::Sign for crate::eigen::kms::Signer {
-    type Error = Error;
-
-    async fn sign_digest(&self, message: &Message) -> Result<RecoverableSignature, Self::Error> {
-        let digest_bytes: &[u8; 32] = message;
-
-        let sign_response = self
+    async fn sign_with_kms(&self, key_id: &str, digest: &[u8]) -> Result<Signature> {
+        let response = self
             .client
             .sign()
-            .key_id(&self.key_id)
-            .message(Blob::new(digest_bytes))
+            .key_id(key_id)
+            .message(Blob::new(digest))
             .message_type(aws_sdk_kms::types::MessageType::Digest)
             .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
             .send()
             .await
-            .context("while requesting KMS to sign the digest")?;
+            .map_err(|e| e.into_service_error())?;
 
-        let signature_der = sign_response
-            .signature
-            .ok_or_else(|| anyhow::anyhow!("Signature missing from KMS response"))?
-            .into_inner();
+        let signature_der = response.signature.ok_or(Error::MissingSignature)?;
 
-        let k256_sig = k256::ecdsa::Signature::from_der(&signature_der)
-            .context("Failed to parse DER signature")?;
+        let signature =
+            Signature::from_der(signature_der.as_ref()).map_err(Error::InvalidSignatureDer)?;
 
-        let k256_sig_normalized = k256_sig.normalize_s().unwrap_or(k256_sig);
+        // Normalize S value to ensure it's in the lower half of the order
+        Ok(signature.normalize_s().unwrap_or(signature))
+    }
 
-        let k256_recid = self
-            .k256_recovery_id(&k256_sig_normalized, digest_bytes)
-            .context("Failed to determine recovery ID")?;
+    #[allow(clippy::result_large_err)]
+    fn compute_recovery_id(&self, prehash: &[u8], signature: &Signature) -> Result<u8> {
+        // For secp256k1, only recovery IDs 0 and 1 are valid for uncompressed keys
+        for recovery_id in 0..2 {
+            let rec_id =
+                RecoveryId::from_byte(recovery_id).ok_or(Error::InvalidRecoveryId(recovery_id))?;
 
-        let mut sig: [u8; 65] = [0; 65];
-        sig[64] = k256_recid;
-        sig[..64].copy_from_slice(k256_sig_normalized.to_bytes().as_ref());
+            if let Ok(recovered_key) =
+                VerifyingKey::recover_from_prehash(prehash, signature, rec_id)
+            {
+                if recovered_key == self.k256_verifying_key {
+                    return Ok(recovery_id);
+                }
+            }
+        }
 
-        let standard_recoverable_sig = rust_eigenda_signers::RecoverableSignature::from_bytes(&sig)
-            .context("Failed to create recoverable signature")?;
+        Err(Error::RecoveryIdNotFound)
+    }
+}
 
-        Ok(standard_recoverable_sig)
+#[async_trait]
+impl eigenda::Sign for Signer {
+    type Error = Error;
+
+    async fn sign_digest(&self, message: &Message) -> Result<RecoverableSignature> {
+        let digest_bytes: &[u8; 32] = message;
+
+        // Sign the digest with KMS
+        let signature = self.sign_with_kms(&self.key_id, digest_bytes).await?;
+
+        // Compute recovery ID
+        let recovery_id = self.compute_recovery_id(digest_bytes, &signature)?;
+
+        // Build recoverable signature
+        let mut sig_bytes = [0u8; 65];
+        sig_bytes[..64].copy_from_slice(&signature.to_bytes());
+        sig_bytes[64] = recovery_id;
+
+        RecoverableSignature::from_bytes(&sig_bytes).map_err(Error::InvalidRecoverableSignature)
     }
 
     fn public_key(&self) -> rust_eigenda_signers::PublicKey {
         self.public_key
-    }
-}
-
-trait RecIdExt {
-    fn get_recovery_id(
-        &self,
-        message_hash: &[u8; 32],
-        expected_pubkey: &VerifyingKey,
-    ) -> anyhow::Result<u8>;
-}
-
-impl RecIdExt for k256::ecdsa::Signature {
-    fn get_recovery_id(
-        &self,
-        message_hash: &[u8; 32],
-        expected_pubkey: &VerifyingKey,
-    ) -> anyhow::Result<u8> {
-        (0..2)
-            .find_map(|id| {
-                let recovery_id = k256::ecdsa::RecoveryId::from_byte(id)
-                    .with_context(|| format!("Bad RecoveryId byte {}", id))
-                    .ok()?;
-
-                let recovered_key =
-                    VerifyingKey::recover_from_prehash(message_hash, self, recovery_id).ok()?;
-
-                (&recovered_key == expected_pubkey).then_some(id)
-            })
-            .ok_or_else(|| {
-                anyhow::anyhow!("Could not recover correct public key from k256 signature")
-            })
     }
 }
