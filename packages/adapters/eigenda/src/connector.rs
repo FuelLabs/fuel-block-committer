@@ -162,7 +162,7 @@ where
         );
 
         // TODO: make configurable
-        const CERT_VERIFIER_ADDRESS: &str = "d4a7e1bd8015057293f0d0a557088c286942e84b";
+        const CERT_VERIFIER_ADDRESS: &str = "fe52fe1940858dcb6e12153e2104ad0fdfbe1162"; // holesky cert verifier address
 
         let config = PayloadDisperserConfig {
             polynomial_form: PayloadForm::Coeff,
