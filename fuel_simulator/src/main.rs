@@ -10,6 +10,7 @@ struct Args {
     #[arg(long, default_value_t = 128)]
     block_size: usize,
 
+    /// port to run the server on.
     #[arg(long, default_value_t = 4000)]
     port: u16,
 }
