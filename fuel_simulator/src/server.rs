@@ -4,10 +4,7 @@ use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use warp::{http::Response, Filter};
 
-//
-// Internal types and shared state
-//
-
+/// Represents an internal block structure used to simulate fuel-core blocks
 #[derive(Clone)]
 pub struct InternalBlock {
     pub height: u32,
@@ -15,6 +12,7 @@ pub struct InternalBlock {
     pub data: Vec<u8>,
 }
 
+/// Application state containing the blocks and block size
 pub struct AppState {
     pub blocks: Mutex<Vec<InternalBlock>>,
     pub block_size: usize,
@@ -29,10 +27,7 @@ impl AppState {
     }
 }
 
-//
-// GraphQL types – note that the types below match the cynic codegen interface.
-//
-
+/// Represents a block in the GraphQL API
 #[derive(SimpleObject, Clone)]
 #[graphql(name = "Block")]
 pub struct Block {
@@ -61,15 +56,12 @@ pub struct ChainInfo {
     pub latest_block: Block,
 }
 
-//
-// GraphQL Query Root
-//
-
+/// The root query type for the GraphQL API
 pub struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
-    // Returns chain { latestBlock { height, id } }
+    /// Returns chain { latestBlock { height, id } }
     async fn chain(&self, ctx: &Context<'_>) -> Option<ChainInfo> {
         let state = ctx.data::<Arc<AppState>>().unwrap();
         let blocks = state.blocks.lock().await;
@@ -78,7 +70,7 @@ impl QueryRoot {
         })
     }
 
-    // Returns block(height: $height) { height, id }
+    /// Returns block(height: $height) { height, id }
     async fn block(&self, ctx: &Context<'_>, height: Option<u32>) -> Option<Block> {
         let state = ctx.data::<Arc<AppState>>().unwrap();
         let blocks = state.blocks.lock().await;
@@ -93,7 +85,7 @@ impl QueryRoot {
         }
     }
 
-    // Returns daCompressedBlock(height: $height) { bytes }
+    /// Returns daCompressedBlock(height: $height) { bytes }
     async fn da_compressed_block(
         &self,
         ctx: &Context<'_>,
@@ -112,10 +104,9 @@ impl QueryRoot {
     }
 }
 
-//
-// Background block production – a new block is produced every second.
-//
+/// Background block production – a new block is produced every second.
 async fn produce_blocks(state: Arc<AppState>) {
+    const MAX_RETAINED_BLOCKS: usize = 10_000;
     loop {
         sleep(Duration::from_secs(1)).await;
         let mut blocks = state.blocks.lock().await;
@@ -130,13 +121,14 @@ async fn produce_blocks(state: Arc<AppState>) {
             data,
         };
         blocks.push(new_block);
+        if blocks.len() > MAX_RETAINED_BLOCKS {
+            blocks.remove(0);
+        }
         println!("Produced block {}", new_height);
     }
 }
 
-//
-// Run the GraphQL server with warp.
-//
+/// Run the GraphQL server with warp.
 pub async fn run_server(block_size: usize, port: u16) {
     let state = Arc::new(AppState::new(block_size));
     // Spawn the background task to produce blocks every second.
