@@ -18,17 +18,6 @@ pub struct EigenDASubmission {
     pub status: DispersalStatus,
 }
 
-impl Default for EigenDASubmission {
-    fn default() -> Self {
-        Self {
-            id: None,
-            request_id: [0; 32].to_vec(),
-            status: DispersalStatus::Processing,
-            created_at: None,
-        }
-    }
-}
-
 pub trait AsB64 {
     fn as_base64(&self) -> String;
 }

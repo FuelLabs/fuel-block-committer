@@ -32,20 +32,6 @@ impl EigenDASubmission {
     }
 }
 
-impl From<services::types::EigenDASubmission> for EigenDASubmission {
-    fn from(value: services::types::EigenDASubmission) -> Self {
-        let status = SubmissionStatus::from(value.status).into();
-
-        Self {
-            // if not present use placeholder as id is given by db
-            id: value.id.unwrap_or_default() as i32,
-            request_id: value.request_id,
-            status,
-            created_at: value.created_at,
-        }
-    }
-}
-
 impl TryFrom<EigenDASubmission> for services::types::EigenDASubmission {
     type Error = crate::error::Error;
 

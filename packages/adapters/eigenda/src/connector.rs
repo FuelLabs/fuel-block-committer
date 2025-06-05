@@ -105,10 +105,10 @@ where
         info!("Posted {original_size:.3} in {elapsed} at speed: {speed:.5}");
 
         Ok(EigenDASubmission {
+            id: None,
             request_id: blob_id.as_bytes().to_vec(),
             created_at: None,
             status: DispersalStatus::Processing,
-            ..Default::default()
         })
     }
 }
