@@ -94,18 +94,6 @@ impl Signer {
         &self.client
     }
 
-    pub async fn sign_prehash(&self, key_id: &str, prehash: &[u8]) -> Result<Vec<u8>> {
-        let signature = self.sign_with_kms(key_id, prehash).await?;
-        let recovery_id = self.compute_recovery_id(prehash, &signature)?;
-
-        // Combine signature and recovery ID
-        let mut signature_bytes = Vec::with_capacity(65);
-        signature_bytes.extend_from_slice(&signature.to_bytes());
-        signature_bytes.push(recovery_id);
-
-        Ok(signature_bytes)
-    }
-
     pub async fn get_public_key(&self, key_id: &str) -> Result<Vec<u8>> {
         let response = self
             .client
@@ -149,14 +137,13 @@ impl Signer {
     }
 
     #[allow(clippy::result_large_err)]
-    fn compute_recovery_id(&self, prehash: &[u8], signature: &Signature) -> Result<u8> {
+    fn compute_recovery_id(&self, digest: &[u8; 32], signature: &Signature) -> Result<u8> {
         // For secp256k1, only recovery IDs 0 and 1 are valid for uncompressed keys
         for recovery_id in 0..2 {
             let rec_id =
                 RecoveryId::from_byte(recovery_id).ok_or(Error::InvalidRecoveryId(recovery_id))?;
 
-            if let Ok(recovered_key) =
-                VerifyingKey::recover_from_prehash(prehash, signature, rec_id)
+            if let Ok(recovered_key) = VerifyingKey::recover_from_prehash(digest, signature, rec_id)
             {
                 if recovered_key == self.k256_verifying_key {
                     return Ok(recovery_id);
