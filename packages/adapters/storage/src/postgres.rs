@@ -1358,9 +1358,8 @@ impl Postgres {
             contract_transactions: response.size_contract_transactions.unwrap_or_default() as u32,
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
             eigen_submissions: response.size_eigen_submissions.unwrap_or_default() as u32,
-            eigen_submission_fragments: response
-                .size_eigen_submission_fragments
-                .unwrap_or_default() as u32,
+            eigen_submission_fragments: response.size_eigen_submission_fragments.unwrap_or_default()
+                as u32,
         })
     }
 

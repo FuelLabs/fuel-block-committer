@@ -199,12 +199,7 @@ pub async fn eigen_da_services(
         registry,
     );
 
-    let state_pruner_handle = state_pruner(
-        storage.clone(),
-        cancel_token.clone(),
-        registry,
-        config
-    );
+    let state_pruner_handle = state_pruner(storage.clone(), cancel_token.clone(), registry, config);
 
     // TODO: fee metric handle
 
