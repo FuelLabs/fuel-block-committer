@@ -7,7 +7,7 @@ use k256::ecdsa::SigningKey as K256SigningKey;
 use std::time::Duration;
 use tracing::info;
 
-#[ignore = "requires EIGEN_KEY environment variable"]
+// #[ignore = "requires EIGEN_KEY environment variable"]
 #[tokio::test]
 async fn test_eigen_state() -> Result<()> {
     // Start required services
@@ -72,7 +72,7 @@ async fn test_eigen_state() -> Result<()> {
     // Check if committer has processed any blocks
     let metrics = client.get(metrics_url).send().await?.text().await?;
     assert!(
-        metrics.contains("blocks_processed_total"),
+        metrics.contains("height_of_latest_commitment"),
         "Committer should have processed some blocks"
     );
 
