@@ -1,4 +1,4 @@
-use aws_config::{Region, SdkConfig, default_provider::credentials::DefaultCredentialsChain};
+use aws_config::{SdkConfig, default_provider::credentials::DefaultCredentialsChain};
 use aws_sdk_kms::config::BehaviorVersion;
 
 pub async fn load_config_from_env() -> SdkConfig {
@@ -24,7 +24,7 @@ pub async fn config_for_testing(url: String) -> SdkConfig {
             "Static Credentials",
         ))
         .endpoint_url(url)
-        .region(Region::new("us-east-1")) // placeholder region for test
+        .region(aws_config::Region::new("us-east-1")) // placeholder region for test
         .load()
         .await
 }

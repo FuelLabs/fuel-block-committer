@@ -8,12 +8,14 @@ use eth::Address;
 
 pub mod kms {
     pub use alloy::signers::aws::AwsSigner as Signer;
+    #[cfg(feature = "test-helpers")]
     use alloy::{
         consensus::SignableTransaction,
         network::TxSigner,
         primitives::{B256, ChainId},
         signers::Signature,
     };
+    #[cfg(feature = "test-helpers")]
     use eth::Address;
 
     #[cfg(feature = "test-helpers")]
@@ -24,6 +26,7 @@ pub mod kms {
         pub signer: Signer,
     }
 
+    #[cfg(feature = "test-helpers")]
     #[async_trait::async_trait]
     impl TxSigner<Signature> for TestEthKmsSigner {
         fn address(&self) -> Address {
@@ -38,6 +41,7 @@ pub mod kms {
         }
     }
 
+    #[cfg(feature = "test-helpers")]
     #[async_trait::async_trait]
     impl alloy::signers::Signer<Signature> for TestEthKmsSigner {
         async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {

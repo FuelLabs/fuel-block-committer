@@ -21,11 +21,10 @@ impl eigenda::Sign for Signer {
         match self {
             Signer::Private(signer) => {
                 // private_key.sign_digest cannot fail
-                let Ok(sig) = signer.sign_digest(message).await else {
-                    return Err(
-                        anyhow::anyhow!("Failed to sign digest with private key signer").into(),
-                    );
-                };
+                let sig = signer
+                    .sign_digest(message)
+                    .await
+                    .expect("Private key signing should never fail");
                 Ok(sig)
             }
             Signer::Kms(signer) => signer.sign_digest(message).await,
