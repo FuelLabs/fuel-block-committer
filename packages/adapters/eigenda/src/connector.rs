@@ -154,12 +154,8 @@ where
         // Set a default Holesky RPC endpoint for Ethereum interaction
         // This could be changed to a configurable parameter
         let eth_rpc_str = "https://ethereum-holesky-rpc.publicnode.com";
-        // TODO: segfault
-        let eth_rpc_url = SecretUrl::new(
-            Url::parse(eth_rpc_str)
-                .map_err(|e| Error::Other(format!("Invalid Ethereum RPC URL: {e}")))
-                .expect("TODO: segfault"),
-        );
+        let eth_rpc_url =
+            SecretUrl::new(Url::parse(eth_rpc_str).map_err(|e| Error::InvalidRPCUrl(e))?);
 
         // TODO: make configurable
         const CERT_VERIFIER_ADDRESS: &str = "fe52fe1940858dcb6e12153e2104ad0fdfbe1162"; // holesky cert verifier address
@@ -176,7 +172,7 @@ where
         // Create PayloadDisperser instance
         let eigen_client = EigenClient::new(config, signer)
             .await
-            .map_err(|e| Error::Other(format!("Failed to initialize EigenClient: {e}")))?;
+            .map_err(|e| Error::EigenDAClientInit(e))?;
 
         let throughput_quota =
             Quota::per_second(throughput.bytes_per_sec).allow_burst(throughput.max_burst);
@@ -202,14 +198,13 @@ where
             .payload_disperser
             .send_payload(Payload::new(padded_data))
             .await
-            .map_err(|e| Error::Other(format!("Failed to dispatch blob: {e}")))?;
+            .map_err(|e| Error::BlockDispacthFailed(e))?;
 
         Ok(blob_id.to_hex())
     }
 
     pub async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
-        let blob_key = BlobKey::from_hex(blob_id)
-            .map_err(|e| Error::Other(format!("conversion of blob_key failed: {e}")))?;
+        let blob_key = BlobKey::from_hex(blob_id).map_err(|e| Error::InvalidBlobKey(e))?;
 
         let response = match self
             .eigen_client
