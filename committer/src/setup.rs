@@ -132,7 +132,6 @@ pub fn ethereum_da_services(
         registry,
     );
 
-    // TODO: state pruner currently only works with the Ethereum DA
     let state_pruner_handle = state_pruner(storage.clone(), cancel_token.clone(), registry, config);
 
     let handles = vec![
@@ -200,13 +199,21 @@ pub async fn eigen_da_services(
         registry,
     );
 
-    // TODO: no pruner or fee metric handle
+    let state_pruner_handle = state_pruner(
+        storage.clone(),
+        cancel_token.clone(),
+        registry,
+        config
+    );
+
+    // TODO: fee metric handle
 
     let handles = vec![
         state_committer_handle,
         state_importer_handle,
         block_bundler,
         state_listener_handle,
+        state_pruner_handle,
     ];
 
     Ok(handles)
