@@ -69,6 +69,7 @@ async fn test_eigen_state() -> Result<()> {
     // Wait for some blocks to be processed
     tokio::time::sleep(Duration::from_secs(30)).await;
 
+    // TODO: we should investigate directly querying the database instead of using metrics.
     // Check if committer has processed any blocks
     let metrics = client.get(metrics_url).send().await?.text().await?;
     assert!(
