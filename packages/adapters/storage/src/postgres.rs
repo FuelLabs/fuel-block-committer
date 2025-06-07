@@ -1280,6 +1280,20 @@ impl Postgres {
                 RETURNING id, submission_id
             ),
 
+            -- Delete from eigen_submission
+            deleted_eigen_submissions AS (
+                DELETE FROM eigen_submission
+                WHERE created_at < $1
+                RETURNING id
+            ),
+
+            -- Delete from eigen_submission_fragments
+            deleted_eigen_submission_fragments AS (
+                DELETE FROM eigen_submission_fragments
+                WHERE submission_id IN (SELECT id FROM deleted_eigen_submissions)
+                RETURNING submission_id, fragment_id
+            ),
+
             -- Build updated_transactions that represent the state after deletions
             updated_transactions AS (
                 SELECT submission_id FROM l1_transaction
@@ -1326,7 +1340,9 @@ impl Postgres {
                 (SELECT COUNT(*) FROM bundle_cost) AS size_bundle_costs,
                 (SELECT COUNT(*) FROM fuel_blocks) AS size_fuel_blocks,
                 (SELECT COUNT(*) FROM l1_transaction) AS size_contract_transactions,
-                (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions
+                (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions,
+                (SELECT COUNT(*) FROM eigen_submission) AS size_eigen_submissions,
+                (SELECT COUNT(*) FROM eigen_submission_fragments) AS size_eigen_submission_fragments
             "#,
         )
         .fetch_one(&self.connection_pool)
@@ -1341,6 +1357,9 @@ impl Postgres {
             blocks: response.size_fuel_blocks.unwrap_or_default() as u32,
             contract_transactions: response.size_contract_transactions.unwrap_or_default() as u32,
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
+            eigen_submissions: response.size_eigen_submissions.unwrap_or_default() as u32,
+            eigen_submission_fragments: response.size_eigen_submission_fragments.unwrap_or_default()
+                as u32,
         })
     }
 

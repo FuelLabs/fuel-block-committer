@@ -203,6 +203,8 @@ pub mod port {
         pub blocks: u32,
         pub contract_transactions: u32,
         pub contract_submissions: u32,
+        pub eigen_submissions: u32,
+        pub eigen_submission_fragments: u32,
     }
 
     #[derive(Debug, Clone)]
