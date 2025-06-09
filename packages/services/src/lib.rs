@@ -40,6 +40,8 @@ pub enum Error {
     Storage(String),
     #[error("Block validation error: {0}")]
     BlockValidation(String),
+    #[error("Bundling error: {0}")]
+    Bundler(String),
 }
 
 impl From<InvalidL1Height> for Error {

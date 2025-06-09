@@ -16,6 +16,16 @@ impl Default for Encoder {
     }
 }
 
+/// Trait for encoding a bundle into a compressed byte vector.
+pub trait BundleEncoder {
+    type Error: ToString + Send + Sync + 'static;
+
+    /// Encodes the given bundle into a compressed byte vector.
+    fn encode(&self, bundle: Bundle) -> Result<Vec<u8>, Self::Error>;
+    /// Compresses the given data using the configured compression level.
+    fn compress(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
+
 impl Encoder {
     pub fn new(level: CompressionLevel) -> Self {
         let level = match level {
@@ -36,8 +46,12 @@ impl Encoder {
             compression_level: level.map(Compression::new),
         }
     }
+}
 
-    pub fn encode(&self, bundle: Bundle) -> anyhow::Result<Vec<u8>> {
+impl BundleEncoder for Encoder {
+    type Error = anyhow::Error;
+
+    fn encode(&self, bundle: Bundle) -> anyhow::Result<Vec<u8>> {
         const VERSION_SIZE: usize = std::mem::size_of::<u16>();
 
         let Bundle::V1(v1) = bundle;
@@ -150,7 +164,7 @@ impl CompressionLevel {
 
 #[cfg(test)]
 mod tests {
-    use crate::bundle::{CompressionLevel, Encoder};
+    use crate::bundle::{BundleEncoder, CompressionLevel, Encoder};
 
     #[test]
     fn can_disable_compression() {

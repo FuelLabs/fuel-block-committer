@@ -4,7 +4,7 @@ mod tests {
     use bitvec::{order::Msb0, vec::BitVec};
     use fuel_block_committer_encoding::{
         blob::{self, generate_sidecar},
-        bundle::{self, BundleV1},
+        bundle::{self, BundleEncoder, BundleV1},
     };
     use itertools::Itertools;
     use proptest::prelude::*;
