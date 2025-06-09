@@ -54,6 +54,7 @@ base64 = { version = "0.22.1", default-features = false }
 bitvec = { version = "1.0", default-features = false }
 bytesize = { version = "1.3", default-features = false }
 alloy = { version = "0.3.6", default-features = false }
+derive_more = { version = "2.0.1", default-features = false }
 xdg = { version = "2.5", default-features = false }
 proptest = { version = "1.0", default-features = false }
 rayon = { version = "1.10", default-features = false }

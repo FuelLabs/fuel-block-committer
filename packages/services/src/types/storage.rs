@@ -41,6 +41,12 @@ impl Index<usize> for SequentialFuelBlocks {
 }
 
 impl SequentialFuelBlocks {
+    pub fn new(
+        blocks: NonEmpty<CompressedFuelBlock>,
+    ) -> std::result::Result<Self, InvalidSequence> {
+        blocks.try_into()
+    }
+
     pub fn cumulative_size(&self) -> NonZeroUsize {
         let size: usize = self.blocks.iter().map(|block| block.data.len()).sum();
 

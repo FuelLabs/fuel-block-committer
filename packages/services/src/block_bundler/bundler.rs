@@ -1,6 +1,6 @@
 use std::{cmp::min, collections::VecDeque, num::NonZeroUsize};
 
-use fuel_block_committer_encoding::bundle::{self, BundleV1};
+use fuel_block_committer_encoding::bundle::{self, BundleEncoder, BundleV1};
 use itertools::Itertools;
 use rayon::prelude::*;
 

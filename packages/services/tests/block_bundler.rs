@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, time::Duration};
 
 use clock::TestClock;
 use eth::BlobEncoder;
-use fuel_block_committer_encoding::bundle::{self, CompressionLevel};
+use fuel_block_committer_encoding::bundle::{self, BundleEncoder, CompressionLevel};
 use itertools::Itertools;
 use metrics::RegistersMetrics;
 use services::{

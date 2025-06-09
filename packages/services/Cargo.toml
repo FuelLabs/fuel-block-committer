@@ -33,6 +33,7 @@ tracing = { workspace = true }
 trait-variant = { workspace = true }
 
 [dev-dependencies]
+derive_more = { workspace = true, features = ["error", "display"] }
 test-case = { workspace = true }
 clock = { workspace = true, features = ["test-helpers"] }
 eth = { workspace = true, features = ["test-helpers"] }
