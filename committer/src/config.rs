@@ -106,6 +106,9 @@ pub struct EigenDaConfig {
     /// URL to an EigenDA RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
     pub rpc: Url,
+    /// Blob fragment size.
+    /// Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
+    pub fragment_size: NonZeroU32,
     // Allocated throughput in MiB for the address corresponding to the key
     // pub throughput: f32,
 }
