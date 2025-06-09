@@ -15,7 +15,7 @@ pub enum Error {
     #[error("EigenDA client error: {0}")]
     EigenDAClient(#[from] rust_eigenda_v2_client::errors::EigenClientError),
     #[error("Failed to dispatch blob: {0}")]
-    BlockDispacthFailed(#[from] PayloadDisperserError),
+    BlockDispatchFailed(#[from] PayloadDisperserError),
     #[error("Invalid hex representation of blob key: {0}")]
     InvalidBlobKey(#[from] ConversionError),
 }
