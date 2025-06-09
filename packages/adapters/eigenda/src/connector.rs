@@ -198,7 +198,7 @@ where
             .payload_disperser
             .send_payload(Payload::new(padded_data))
             .await
-            .map_err(|e| Error::BlockDispacthFailed(e))?;
+            .map_err(|e| Error::BlockDispatchFailed(e))?;
 
         Ok(blob_id.to_hex())
     }
