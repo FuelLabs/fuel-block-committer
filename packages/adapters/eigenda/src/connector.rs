@@ -154,8 +154,7 @@ where
         // Set a default Holesky RPC endpoint for Ethereum interaction
         // This could be changed to a configurable parameter
         let eth_rpc_str = "https://ethereum-holesky-rpc.publicnode.com";
-        let eth_rpc_url =
-            SecretUrl::new(Url::parse(eth_rpc_str).map_err(Error::InvalidRPCUrl)?);
+        let eth_rpc_url = SecretUrl::new(Url::parse(eth_rpc_str).map_err(Error::InvalidRPCUrl)?);
 
         // TODO: make configurable
         const CERT_VERIFIER_ADDRESS: &str = "fe52fe1940858dcb6e12153e2104ad0fdfbe1162"; // holesky cert verifier address
