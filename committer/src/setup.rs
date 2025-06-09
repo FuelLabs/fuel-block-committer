@@ -221,10 +221,15 @@ pub fn eigen_block_bundler(
     config: &config::Config,
     registry: &Registry,
 ) -> tokio::task::JoinHandle<()> {
-    // blob_size: 3.5MB, 4+MB errors out on the server side when checking for inclusion
     let bundler_factory = services::EigenBundlerFactory::new(
         bundle::Encoder::new(config.app.bundle.compression_level),
-        NonZeroU32::new(3_500_000).unwrap(), // TODO pass this via config
+        match &config.da_layer {
+            // Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
+            Some(DALayer::EigenDA(eigen_da)) => eigen_da
+                .fragment_size
+                .unwrap_or(NonZeroU32::new(3_500_000).unwrap()),
+            other => panic!("Wrong DA layer configuration for Eigen bundler: {other:?}"),
+        },
         config.app.bundle.max_fragments_per_bundle,
     );
 
