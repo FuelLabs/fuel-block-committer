@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
 use eigenda::{EigenDAClient, Throughput};
@@ -224,7 +224,10 @@ pub fn eigen_block_bundler(
     let bundler_factory = services::EigenBundlerFactory::new(
         bundle::Encoder::new(config.app.bundle.compression_level),
         match &config.da_layer {
-            Some(DALayer::EigenDA(eigen_da)) => eigen_da.fragment_size,
+            // Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
+            Some(DALayer::EigenDA(eigen_da)) => eigen_da
+                .fragment_size
+                .unwrap_or(NonZeroU32::new(3_500_000).unwrap()),
             other => panic!("Wrong DA layer configuration for Eigen bundler: {other:?}"),
         },
         config.app.bundle.max_fragments_per_bundle,
