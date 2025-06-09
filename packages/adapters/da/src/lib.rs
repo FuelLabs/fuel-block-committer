@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 pub enum DALayerError {
-    Eroor,
+    Error,
 }
 
 pub enum SubmissionStatus {
