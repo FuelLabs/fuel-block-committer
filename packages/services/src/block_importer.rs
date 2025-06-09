@@ -1,6 +1,8 @@
 mod chunking;
 pub mod service {
 
+    use std::time::Instant;
+
     use futures::{StreamExt, TryStreamExt};
     use metrics::{
         RegistersMetrics,
@@ -26,7 +28,6 @@ pub mod service {
         /// Maximum total size (in bytes) to accumulate before importing.
         max_size: usize,
         metrics: Metrics,
-        last_import_timestamp: std::time::Instant,
     }
 
     #[derive(Debug, Clone)]
@@ -100,7 +101,6 @@ pub mod service {
                 max_blocks,
                 max_size,
                 metrics: Metrics::default(),
-                last_import_timestamp: std::time::Instant::now(),
             }
         }
     }
@@ -110,7 +110,11 @@ pub mod service {
         Db: crate::block_importer::port::Storage,
         FuelApi: crate::block_importer::port::fuel::Api,
     {
-        async fn import_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
+        async fn import_blocks(
+            &self,
+            blocks: NonEmpty<CompressedFuelBlock>,
+            per_second_metrics_last_collected: &mut Instant,
+        ) -> Result<()> {
             let starting_height = blocks.first().height;
             let ending_height = blocks.last().height;
             let import_start = std::time::Instant::now();
@@ -127,11 +131,13 @@ pub mod service {
                 .set(ending_height as i64);
 
             // Calculate import rate (blocks per second)
-            let elapsed_since_last = self.last_import_timestamp.elapsed();
+            let now = Instant::now();
+            let elapsed_since_last = now.duration_since(*per_second_metrics_last_collected);
             if elapsed_since_last.as_secs() > 0 {
                 let blocks_count = (ending_height - starting_height + 1) as f64;
                 let rate = blocks_count / elapsed_since_last.as_secs_f64();
                 self.metrics.blocks_import_rate.observe(rate);
+                *per_second_metrics_last_collected = now;
             }
 
             info!("Imported blocks: {starting_height}..={ending_height}");
@@ -169,13 +175,14 @@ pub mod service {
                         Err(err) => (err.blocks, Some(err.error)),
                     });
 
-                self.last_import_timestamp = std::time::Instant::now();
+                let mut per_second_metrics_last_collected = std::time::Instant::now();
 
                 while let Some((blocks_until_potential_error, maybe_err)) =
                     block_stream.next().await
                 {
                     if let Some(blocks) = blocks_until_potential_error {
-                        self.import_blocks(blocks).await?;
+                        self.import_blocks(blocks, &mut per_second_metrics_last_collected)
+                            .await?;
                     }
 
                     if let Some(err) = maybe_err {
