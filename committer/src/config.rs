@@ -155,7 +155,6 @@ impl Eth {
         let make_signer = |ks: KeySource, label: &'static str| async move {
             match ks.clone() {
                 KeySource::Kms(key) => {
-                    // TODO: segfault, centralize client creation
                     let config = load_config_from_env().await;
                     let client = Client::new(&config);
                     let kms = signers::eth::kms::Signer::new(client, key.to_owned(), None)
