@@ -126,6 +126,22 @@ where
     }
 }
 
+impl<S> services::fees::Api for EigenDAClient<S>
+where
+    S: Send + Sync,
+{
+    async fn fees(
+        &self,
+        _height_range: std::ops::RangeInclusive<u64>,
+    ) -> ServiceResult<services::fees::SequentialBlockFees> {
+        todo!()
+    }
+
+    async fn current_height(&self) -> ServiceResult<u64> {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EigenDAClient<S> {
     eigen_client: EigenClient<S>,
