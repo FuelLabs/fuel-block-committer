@@ -103,8 +103,8 @@ where
             .chunks(fragment_size.get() as usize)
             .map(|chunk| Fragment {
                 data: NonEmpty::from_vec(chunk.to_vec()).expect("chunk should not be empty"),
-                unused_bytes: 0,
-                total_bytes: fragment_size,
+                unused_bytes: (fragment_size.get() as usize - chunk.len()) as u32,
+                total_bytes: NonZeroU32::new(chunk.len() as u32).unwrap(),
             })
             .collect();
 
@@ -591,10 +591,18 @@ mod tests {
 
         // Verify fragments structure
         assert!(!bundle_proposal.fragments.is_empty());
-        for fragment in bundle_proposal.fragments.iter() {
-            assert!(!fragment.data.is_empty());
-            assert_eq!(fragment.total_bytes, fragment_size);
-            assert_eq!(fragment.unused_bytes, 0);
+
+        let len = bundle_proposal.fragments.len();
+        for (i, fragment) in bundle_proposal.fragments.iter().enumerate() {
+            if i < len - 1 {
+                assert!(!fragment.data.is_empty());
+                assert_eq!(fragment.total_bytes, fragment_size);
+                assert_eq!(fragment.unused_bytes, 0);
+            } else {
+                // Different assertions for the last fragment
+                assert!(fragment.total_bytes <= fragment_size);
+                assert!(fragment.unused_bytes > 0);
+            }
         }
 
         // Verify fragment count calculation
