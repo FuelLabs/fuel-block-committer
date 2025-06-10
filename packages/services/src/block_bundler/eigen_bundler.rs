@@ -103,8 +103,8 @@ where
             .chunks(fragment_size.get() as usize)
             .map(|chunk| Fragment {
                 data: NonEmpty::from_vec(chunk.to_vec()).expect("chunk should not be empty"),
-                unused_bytes: 0,
-                total_bytes: fragment_size,
+                unused_bytes: (fragment_size.get() as usize - chunk.len()) as u32,
+                total_bytes: NonZeroU32::new(chunk.len() as u32).unwrap(),
             })
             .collect();
 
