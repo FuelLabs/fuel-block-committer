@@ -31,14 +31,14 @@ pub mod service {
 
     #[derive(Clone)]
     pub struct FeeMetricsTracker<P> {
-        _fee_provider: P,
+        fee_provider: P,
         metrics: FeeMetrics,
     }
 
     impl<P> FeeMetricsTracker<P> {
         pub fn new(fee_provider: P) -> Self {
             Self {
-                _fee_provider: fee_provider,
+                fee_provider,
                 metrics: FeeMetrics::default(),
             }
         }
@@ -46,6 +46,14 @@ pub mod service {
 
     impl<P: Api> FeeMetricsTracker<P> {
         pub async fn update_metrics(&self) -> Result<()> {
+            // eigenda has a reservation for fees, not dynamically changing fees
+            // their fee api doesn't exist *yet*
+            let fees = self.fee_provider.fees(0..=1).await?;
+            let last_fee =
+                i64::try_from(fees.last().fees.base_fee_per_blob_gas).unwrap_or(i64::MAX);
+
+            self.metrics.current.set(last_fee);
+
             Ok(())
         }
     }
