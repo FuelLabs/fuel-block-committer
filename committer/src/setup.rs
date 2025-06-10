@@ -120,7 +120,7 @@ pub fn ethereum_da_services(
         cancel_token.clone(),
         registry,
         config,
-        last_finalization_metric(), // TODO: will this match on the metric name?
+        last_finalization_metric(),
     );
 
     let state_importer_handle = block_importer(
@@ -180,7 +180,7 @@ pub async fn eigen_da_services(
                 cancel_token.clone(),
                 config,
                 registry,
-                last_finalization_metric(), // TODO will this match on name
+                last_finalization_metric(),
             )?;
 
             (committer, listener)
