@@ -637,8 +637,8 @@ pub fn eigen_fee_metrics_tracker<S: Send + Sync + 'static>(
     let polling_interval = config
         .da_layer
         .as_ref()
-        .and_then(|layer| match layer {
-            DALayer::EigenDA(eigenda_config) => Some(eigenda_config.fee_check_interval),
+        .map(|layer| match layer {
+            DALayer::EigenDA(eigenda_config) => eigenda_config.fee_check_interval,
         })
         .ok_or_else(|| {
             Error::Other("Invalid DA layer configuration for Eigen fee metrics tracker".to_string())
