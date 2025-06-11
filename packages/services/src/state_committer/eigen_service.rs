@@ -146,10 +146,12 @@ where
     }
 
     async fn should_submit(&self, fragment: &BundleFragment) -> Result<bool> {
-        // TODO check if eigen API is ready to accept more data
-        let _size = fragment.fragment.data.len();
+        let should_submit = self
+            .da_layer
+            .should_submit_fragment(&fragment.fragment)
+            .await?;
 
-        Ok(true)
+        Ok(should_submit)
     }
 
     async fn submit_fragment_if_ready(&self, fragment: BundleFragment) -> Result<()> {
