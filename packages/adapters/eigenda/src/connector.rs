@@ -125,11 +125,11 @@ where
                 true
             }
             Ok(Err(_)) => {
-                // If we cannot dispatch the fragment due to rate limiting, we should not submit it
+                // Do not perform partial dispatches, if we cannot dispatch the fragment due to rate limiting, we should not submit it
                 false
             }
             Err(_) => {
-                // If the future is not ready, we assume we should not submit it
+                // The fragment is too large to be dispatched, we should not submit it
                 false
             }
         };
@@ -143,11 +143,11 @@ where
                 true
             }
             Ok(Err(_)) => {
-                // If we cannot post the fragment due to rate limiting, we should not submit it
+                // Do not perform partial dispatches, if we cannot post the fragment due to rate limiting, we should not submit it
                 false
             }
             Err(_) => {
-                // If the future is not ready, we assume we should not submit it
+                // No more available slots for posting, we should not submit it
                 false
             }
         };
