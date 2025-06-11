@@ -7,7 +7,6 @@ use std::{
 
 use byte_unit::Byte;
 use ethereum_types::H160;
-use futures::FutureExt;
 use governor::{
     Quota, RateLimiter,
     clock::DefaultClock,
@@ -71,6 +70,7 @@ where
         let start = Instant::now();
 
         // even though the check exists in `should_submit_fragment`, we still need to throttle the request
+        // these should resolve immediately if `should_submit_fragment` returned true
         self.throughput_limiter
             .until_n_ready(NonZeroU32::new(data.len() as u32).unwrap())
             .await
@@ -115,24 +115,20 @@ where
         })
     }
 
-    async fn should_submit_fragment(&self, fragment: &Fragment) -> ServiceResult<bool> {
-        let throughput_conditional = match self
-            .throughput_limiter
-            .until_n_ready(
-                NonZeroU32::new(u32::try_from(fragment.data.len()).unwrap_or(u32::MAX))
-                    .expect("if fragment data in NonEmpty, then the len will also be NonZero"),
-            )
-            .now_or_never()
-        {
-            Some(Ok(())) => {
+    fn should_submit_fragment(&self, fragment: &Fragment) -> bool {
+        let throughput_conditional = match self.throughput_limiter.check_n(
+            NonZeroU32::new(u32::try_from(fragment.data.len()).unwrap_or(u32::MAX))
+                .expect("if fragment data in NonEmpty, then the len will also be NonZero"),
+        ) {
+            Ok(Ok(())) => {
                 // If we can dispatch the fragment, we should submit it
                 true
             }
-            Some(Err(_)) => {
+            Ok(Err(_)) => {
                 // If we cannot dispatch the fragment due to rate limiting, we should not submit it
                 false
             }
-            None => {
+            Err(_) => {
                 // If the future is not ready, we assume we should not submit it
                 false
             }
@@ -140,28 +136,23 @@ where
 
         let post_frequency_conditional = match self
             .post_frequency_limiter
-            .until_n_ready(NonZeroU32::new(1).expect("qed"))
-            .now_or_never()
+            .check_n(NonZeroU32::new(1).expect("qed"))
         {
-            Some(Ok(())) => {
+            Ok(Ok(())) => {
                 // If we can post the fragment, we should submit it
                 true
             }
-            Some(Err(_)) => {
+            Ok(Err(_)) => {
                 // If we cannot post the fragment due to rate limiting, we should not submit it
                 false
             }
-            None => {
+            Err(_) => {
                 // If the future is not ready, we assume we should not submit it
                 false
             }
         };
 
-        if throughput_conditional && post_frequency_conditional {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        throughput_conditional && post_frequency_conditional
     }
 }
 

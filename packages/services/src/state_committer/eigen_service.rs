@@ -146,10 +146,7 @@ where
     }
 
     async fn should_submit(&self, fragment: &BundleFragment) -> Result<bool> {
-        let should_submit = self
-            .da_layer
-            .should_submit_fragment(&fragment.fragment)
-            .await?;
+        let should_submit = self.da_layer.should_submit_fragment(&fragment.fragment);
 
         Ok(should_submit)
     }

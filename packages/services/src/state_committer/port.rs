@@ -66,7 +66,7 @@ pub mod eigen_da {
     #[cfg_attr(feature = "test-helpers", mockall::automock)]
     pub trait Api {
         async fn submit_state_fragment(&self, fragment: Fragment) -> Result<EigenDASubmission>;
-        async fn should_submit_fragment(&self, fragment: &Fragment) -> Result<bool>;
+        fn should_submit_fragment(&self, fragment: &Fragment) -> bool;
     }
 }
 
