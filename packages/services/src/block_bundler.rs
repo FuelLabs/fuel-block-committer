@@ -1,6 +1,6 @@
 pub mod bundler;
 pub mod common;
-pub mod eigen_bundler; // TODO
+pub mod eigen_bundler; 
 
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
