@@ -1,8 +1,9 @@
-use std::{num::NonZeroU32, time::Duration};
+use std::{num::NonZeroU32, str::FromStr, time::Duration};
 
 use clock::SystemClock;
 use eigenda::{EigenDAClient, Throughput};
 use eth::{AcceptablePriorityFeePercentages, BlobEncoder};
+use ethereum_types::H160;
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,
@@ -356,7 +357,9 @@ pub fn eigen_state_committer(
         fuel,
         storage,
         services::EigenStatecommitterConfig {
-            api_throughput: eigen_config.api_throughput.unwrap_or(16),
+            api_throughput: eigen_config
+                .api_throughput
+                .unwrap_or(DEFAULT_EIGEN_THROUGHPUT),
             lookback_window: config.app.bundle.block_height_lookback,
         },
         SystemClock,
@@ -499,6 +502,9 @@ pub async fn l1_adapter(
     Ok((l1, health_check))
 }
 
+pub const DEFAULT_EIGEN_THROUGHPUT: u32 = 16_000_000;
+pub const DEFAULT_EIGEN_CALLS_PER_SEC: u32 = 1;
+
 pub async fn eigen_adapter(
     config: &EigenDaConfig,
     _internal_config: &config::Internal,
@@ -506,15 +512,31 @@ pub async fn eigen_adapter(
     // Configure with appropriate throughput values
     // because testing showed that the time window in which thottling is calculated allows for
     // around 500MB to be sent before throttling comes into effect
-    let burst = 16_000_000.try_into().unwrap();
+    let burst = DEFAULT_EIGEN_THROUGHPUT.try_into().unwrap();
     let eigen_da = EigenDAClient::new(
         config.signer().await?,
-        config.rpc.clone(),
+        config.disperser_rpc_url.clone(),
         Throughput {
-            bytes_per_sec: 2_000_000.try_into().unwrap(),
+            bytes_per_sec: config
+                .api_throughput
+                .unwrap_or(DEFAULT_EIGEN_THROUGHPUT)
+                .try_into()
+                .map_err(|e| {
+                    Error::Other(format!(
+                        "Invalid throughput value ({e}): {:?}",
+                        config.api_throughput
+                    ))
+                })?,
             max_burst: burst,
-            calls_per_sec: 1.try_into().unwrap(),
+            calls_per_sec: DEFAULT_EIGEN_CALLS_PER_SEC.try_into().unwrap(),
         },
+        H160::from_str(&config.cert_verifier_address).map_err(|e| {
+            Error::Other(format!(
+                "Invalid cert verifier address ({e}): {}",
+                config.cert_verifier_address
+            ))
+        })?,
+        config.eth_rpc_url.clone(),
     )
     .await
     .map_err(|e| Error::Other(format!("Failed to initialize EigenDA client: {}", e)))?;

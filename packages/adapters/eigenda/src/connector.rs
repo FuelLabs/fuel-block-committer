@@ -1,6 +1,5 @@
 use std::{
     num::NonZeroU32,
-    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -216,24 +215,26 @@ impl<S> EigenDAClient<S>
 where
     S: Sign + Clone,
 {
-    pub async fn new(signer: S, rpc: Url, throughput: Throughput) -> Result<Self> {
+    pub async fn new(
+        signer: S,
+        rpc: Url,
+        throughput: Throughput,
+        cert_verifier_address: H160,
+        eth_rpc: Url,
+    ) -> Result<Self> {
         // Set up Ethereum RPC URL
         // For now, we're using the same URL for disperser and eth - this may need to be revised
         let disperser_rpc_url = rpc.to_string();
 
         // Set a default Holesky RPC endpoint for Ethereum interaction
         // This could be changed to a configurable parameter
-        let eth_rpc_str = "https://ethereum-holesky-rpc.publicnode.com";
-        let eth_rpc_url = SecretUrl::new(Url::parse(eth_rpc_str).map_err(Error::InvalidRPCUrl)?);
-
-        // TODO: make configurable
-        const CERT_VERIFIER_ADDRESS: &str = "fe52fe1940858dcb6e12153e2104ad0fdfbe1162"; // holesky cert verifier address
+        let eth_rpc_url = SecretUrl::new(eth_rpc);
 
         let config = PayloadDisperserConfig {
             polynomial_form: PayloadForm::Coeff,
             blob_version: 0,
-            cert_verifier_address: H160::from_str(CERT_VERIFIER_ADDRESS).expect("qed"),
-            eth_rpc_url: eth_rpc_url.clone(),
+            cert_verifier_address,
+            eth_rpc_url,
             disperser_rpc: disperser_rpc_url,
             use_secure_grpc_flag: true,
         };

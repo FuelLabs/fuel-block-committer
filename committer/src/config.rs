@@ -105,7 +105,7 @@ pub struct EigenDaConfig {
     pub key: KeySource,
     /// URL to an EigenDA RPC endpoint.
     #[serde(deserialize_with = "parse_url")]
-    pub rpc: Url,
+    pub disperser_rpc_url: Url,
     /// Blob fragment size.
     /// Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
     pub fragment_size: Option<NonZeroU32>,
@@ -115,9 +115,14 @@ pub struct EigenDaConfig {
     /// Polling interval.
     /// Defaults to 1s if not given.
     pub polling_interval: Option<Duration>,
-    /// Allocated API throughput limit in MiB/s (for the address corresponding to the key).
+    /// Allocated API throughput limit in bytes/s (for the address corresponding to the key).
     /// Defaults to 16 MiB/s if not given.
     pub api_throughput: Option<u32>,
+    /// URL to the EigenDA RPC endpoint for Ethereum.
+    #[serde(deserialize_with = "parse_url")]
+    pub eth_rpc_url: Url,
+    /// Certificate verifier address.
+    pub cert_verifier_address: String,
 }
 
 impl EigenDaConfig {
