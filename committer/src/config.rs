@@ -109,6 +109,9 @@ pub struct EigenDaConfig {
     /// Blob fragment size.
     /// Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
     pub fragment_size: Option<NonZeroU32>,
+    /// Fee check interval.
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub fee_check_interval: Duration,
     /// Polling interval.
     /// Defaults to 1s if not given.
     pub polling_interval: Option<Duration>,

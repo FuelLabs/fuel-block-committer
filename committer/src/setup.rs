@@ -11,7 +11,6 @@ use metrics::{
 use services::{
     BlockBundler, BlockBundlerConfig, Runner,
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_metrics_tracker::service::FeeMetricsTracker,
     fees::cache::CachingApi,
     state_committer::port::Storage,
     state_listener::{eigen_service::StateListener as EigenStateListener, service::StateListener},
@@ -102,7 +101,7 @@ pub fn ethereum_da_services(
     );
 
     let fee_metrics_updater_handle =
-        fee_metrics_tracker(fee_api.clone(), cancel_token.clone(), config, registry)?;
+        ethereum_da_fee_metrics_tracker(fee_api.clone(), cancel_token.clone(), config, registry)?;
 
     let committer = state_committer(
         fuel.clone(),
@@ -162,33 +161,37 @@ pub async fn eigen_da_services(
         registry,
     );
 
-    let (state_committer_handle, state_listener_handle) = match config.da_layer.clone() {
-        Some(DALayer::EigenDA(eigen_config)) => {
-            let eigen_da = eigen_adapter(&eigen_config, internal_config).await?;
-            let committer = eigen_state_committer(
-                fuel.clone(),
-                eigen_da.clone(),
-                storage.clone(),
-                cancel_token.clone(),
-                config,
-                registry,
-            )?;
+    let (state_committer_handle, state_listener_handle, fee_metrics_handle) =
+        match config.da_layer.clone() {
+            Some(DALayer::EigenDA(eigen_config)) => {
+                let eigen_da = eigen_adapter(&eigen_config, internal_config).await?;
+                let committer = eigen_state_committer(
+                    fuel.clone(),
+                    eigen_da.clone(),
+                    storage.clone(),
+                    cancel_token.clone(),
+                    config,
+                    registry,
+                )?;
 
-            let listener = eigen_state_listener(
-                eigen_da,
-                storage.clone(),
-                cancel_token.clone(),
-                config,
-                registry,
-                last_finalization_metric(),
-            )?;
+                let listener = eigen_state_listener(
+                    eigen_da.clone(),
+                    storage.clone(),
+                    cancel_token.clone(),
+                    config,
+                    registry,
+                    last_finalization_metric(),
+                )?;
 
-            (committer, listener)
-        }
-        _ => {
-            return Err(Error::Other("Invalid da layer config".to_string()));
-        }
-    };
+                let fee_metrics_handle =
+                    eigen_fee_metrics_tracker(eigen_da, cancel_token.clone(), config, registry)?;
+
+                (committer, listener, fee_metrics_handle)
+            }
+            _ => {
+                return Err(Error::Other("Invalid da layer config".to_string()));
+            }
+        };
 
     let state_importer_handle = block_importer(
         fuel,
@@ -201,14 +204,13 @@ pub async fn eigen_da_services(
 
     let state_pruner_handle = state_pruner(storage.clone(), cancel_token.clone(), registry, config);
 
-    // TODO: fee metric handle
-
     let handles = vec![
         state_committer_handle,
         state_importer_handle,
         block_bundler,
         state_listener_handle,
         state_pruner_handle,
+        fee_metrics_handle,
     ];
 
     Ok(handles)
@@ -601,12 +603,14 @@ pub async fn shut_down(
     Ok(())
 }
 
-pub fn fee_metrics_tracker(
+pub fn ethereum_da_fee_metrics_tracker(
     api: CachingApi<L1>,
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
 ) -> Result<tokio::task::JoinHandle<()>> {
+    use services::fee_metrics_tracker::ethereum_da::service::FeeMetricsTracker;
+
     let fee_metrics_tracker = FeeMetricsTracker::new(api);
 
     fee_metrics_tracker.register_metrics(registry);
@@ -615,6 +619,38 @@ pub fn fee_metrics_tracker(
         config.app.l1_fee_check_interval,
         fee_metrics_tracker,
         "Fee Tracker",
+        cancel_token,
+    );
+
+    Ok(handle)
+}
+
+pub fn eigen_fee_metrics_tracker<S: Send + Sync + 'static>(
+    eigen_da_client: EigenDAClient<S>,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> Result<tokio::task::JoinHandle<()>> {
+    use services::fee_metrics_tracker::eigen_da::service::FeeMetricsTracker;
+
+    let fee_metrics_tracker = FeeMetricsTracker::new(eigen_da_client);
+
+    fee_metrics_tracker.register_metrics(registry);
+
+    let polling_interval = config
+        .da_layer
+        .as_ref()
+        .map(|layer| match layer {
+            DALayer::EigenDA(eigenda_config) => eigenda_config.fee_check_interval,
+        })
+        .ok_or_else(|| {
+            Error::Other("Invalid DA layer configuration for Eigen fee metrics tracker".to_string())
+        })?;
+
+    let handle = schedule_polling(
+        polling_interval,
+        fee_metrics_tracker,
+        "Fee Tracker", // has the same name as the Ethereum DA fee tracker, all other eigen specific modules have the same name as the Ethereum DA modules
         cancel_token,
     );
 

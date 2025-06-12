@@ -4,7 +4,7 @@ use actix_web::{HttpResponse, Responder, ResponseError, web};
 use anyhow::Result;
 use eth::HttpClient;
 use services::{
-    fee_metrics_tracker::service::calculate_blob_tx_fee,
+    fee_metrics_tracker::ethereum_da::service::calculate_blob_tx_fee,
     fees::{Api, FeesAtHeight, SequentialBlockFees, cache::CachingApi},
     state_committer::{AlgoConfig, SmaFeeAlgo},
     types::{DateTime, Utc},

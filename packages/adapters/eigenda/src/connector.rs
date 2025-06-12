@@ -169,6 +169,33 @@ where
     }
 }
 
+impl<S> services::fees::Api for EigenDAClient<S>
+where
+    S: Send + Sync,
+{
+    async fn fees(
+        &self,
+        _height_range: std::ops::RangeInclusive<u64>,
+    ) -> ServiceResult<services::fees::SequentialBlockFees> {
+        // This method is not implemented yet, as EigenDA does not provide fee information *yet*.
+        // we return default data to satisfy the trait requirements.
+        let fees = vec![services::fees::FeesAtHeight {
+            height: 0,
+            fees: services::fees::Fees {
+                base_fee_per_gas: 0,
+                reward: 0,
+                base_fee_per_blob_gas: 0,
+            },
+        }];
+        Ok(fees.try_into().unwrap())
+    }
+
+    async fn current_height(&self) -> ServiceResult<u64> {
+        // Fetch the latest block height from the Ethereum client
+        Ok(0) // Placeholder, as EigenDA does not provide height information yet.
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EigenDAClient<S> {
     eigen_client: EigenClient<S>,
