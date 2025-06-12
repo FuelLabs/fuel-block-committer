@@ -112,8 +112,12 @@ pub struct EigenDaConfig {
     /// Fee check interval.
     #[serde(deserialize_with = "human_readable_duration")]
     pub fee_check_interval: Duration,
-    // Allocated throughput in MiB for the address corresponding to the key
-    // pub throughput: f32,
+    /// Polling interval.
+    /// Defaults to 1s if not given.
+    pub polling_interval: Option<Duration>,
+    /// Allocated API throughput limit in MiB/s (for the address corresponding to the key).
+    /// Defaults to 16 MiB/s if not given.
+    pub api_throughput: Option<u32>,
 }
 
 impl EigenDaConfig {

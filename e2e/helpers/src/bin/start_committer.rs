@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
 
     let eth_node = start_eth(false).await?;
     let eth_signers = create_and_fund_kms_signers(&kms, &eth_node).await?;
-    let eigen_key = "".to_string(); // TODO: fill in eigen_key
+    let eigen_key = env!("EIGEN_KEY").to_string();
 
     let request_timeout = Duration::from_secs(5);
     let max_fee = 1_000_000_000_000;

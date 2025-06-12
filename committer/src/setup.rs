@@ -347,12 +347,16 @@ pub fn eigen_state_committer(
     config: &config::Config,
     registry: &Registry,
 ) -> Result<tokio::task::JoinHandle<()>> {
+    let Some(DALayer::EigenDA(eigen_config)) = &config.da_layer else {
+        panic!("Invalid DA layer configuration for Eigen state committer");
+    };
+
     let state_committer = services::EigenStateCommitter::new(
         eigen_da,
         fuel,
         storage,
         services::EigenStatecommitterConfig {
-            api_throughput: 16, // TODO
+            api_throughput: eigen_config.api_throughput.unwrap_or(16),
             lookback_window: config.app.bundle.block_height_lookback,
         },
         SystemClock,
@@ -360,9 +364,8 @@ pub fn eigen_state_committer(
 
     state_committer.register_metrics(registry);
 
-    // TODO: have a separate configurable polling interval
     Ok(schedule_polling(
-        Duration::from_secs(1),
+        eigen_config.polling_interval.unwrap_or(Duration::new(1, 0)),
         state_committer,
         "State Committer",
         cancel_token,
