@@ -109,8 +109,12 @@ pub struct EigenDaConfig {
     /// Blob fragment size.
     /// Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
     pub fragment_size: Option<NonZeroU32>,
-    // Allocated throughput in MiB for the address corresponding to the key
-    // pub throughput: f32,
+    /// Polling interval.
+    /// Defaults to 1s if not given.
+    pub polling_interval: Option<Duration>,
+    /// Allocated API throughput limit in MiB/s (for the address corresponding to the key).
+    /// Defaults to 16 MiB/s if not given.
+    pub api_throughput: Option<u32>,
 }
 
 impl EigenDaConfig {
