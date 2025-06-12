@@ -68,6 +68,9 @@ where
     async fn submit_state_fragment(&self, fragment: Fragment) -> ServiceResult<EigenDASubmission> {
         let data = fragment.data;
         let start = Instant::now();
+
+        // even though the check exists in `should_submit_fragment`, we still need to throttle the request
+        // these should resolve immediately if `should_submit_fragment` returned true
         self.throughput_limiter
             .until_n_ready(NonZeroU32::new(data.len() as u32).unwrap())
             .await
@@ -110,6 +113,46 @@ where
             created_at: None,
             status: DispersalStatus::Processing,
         })
+    }
+
+    fn should_submit_fragment(&self, fragment: &Fragment) -> bool {
+        let throughput_conditional = match self.throughput_limiter.check_n(
+            NonZeroU32::new(u32::try_from(fragment.data.len()).unwrap_or(u32::MAX))
+                .expect("if fragment data in NonEmpty, then the len will also be NonZero"),
+        ) {
+            Ok(Ok(())) => {
+                // If we can dispatch the fragment, we should submit it
+                true
+            }
+            Ok(Err(_)) => {
+                // Do not perform partial dispatches, if we cannot dispatch the fragment due to rate limiting, we should not submit it
+                false
+            }
+            Err(_) => {
+                // The fragment is too large to be dispatched, we should not submit it
+                false
+            }
+        };
+
+        let post_frequency_conditional = match self
+            .post_frequency_limiter
+            .check_n(NonZeroU32::new(1).expect("qed"))
+        {
+            Ok(Ok(())) => {
+                // If we can post the fragment, we should submit it
+                true
+            }
+            Ok(Err(_)) => {
+                // Do not perform partial dispatches, if we cannot post the fragment due to rate limiting, we should not submit it
+                false
+            }
+            Err(_) => {
+                // No more available slots for posting, we should not submit it
+                false
+            }
+        };
+
+        throughput_conditional && post_frequency_conditional
     }
 }
 
