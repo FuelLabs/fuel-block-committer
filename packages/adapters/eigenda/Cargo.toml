@@ -34,7 +34,7 @@ humantime = { workspace = true }
 byte-unit = { workspace = true, features = ["byte", "u128"] }
 rust-eigenda-v2-client = { workspace = true }
 rust-eigenda-v2-common = { workspace = true }
-ethereum-types = "0.14.1"
+ethereum-types = { workspace = true }
 async-trait = { workspace = true }
 secp256k1 = { workspace = true }
 anyhow = { workspace = true }
