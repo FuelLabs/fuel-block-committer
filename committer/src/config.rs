@@ -114,6 +114,7 @@ pub struct EigenDaConfig {
     pub fee_check_interval: Duration,
     /// Polling interval.
     /// Defaults to 1s if not given.
+    #[serde(deserialize_with = "maybe_human_readable_duration")]
     pub polling_interval: Option<Duration>,
     /// Allocated API throughput limit in bytes/s (for the address corresponding to the key).
     /// Defaults to 16 MiB/s if not given.
@@ -421,6 +422,24 @@ where
         let msg = format!("Failed to parse duration '{duration_str}': {e};");
         serde::de::Error::custom(msg)
     })
+}
+
+fn maybe_human_readable_duration<'de, D>(
+    deserializer: D,
+) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration_str: Option<String> = Deserialize::deserialize(deserializer)?;
+    match duration_str {
+        Some(s) => humantime::parse_duration(&s)
+            .map(Some)
+            .map_err(|e| {
+                let msg = format!("Failed to parse duration '{s}': {e}");
+                serde::de::Error::custom(msg)
+            }),
+        None => Ok(None),
+    }
 }
 
 fn human_readable_bytes<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
