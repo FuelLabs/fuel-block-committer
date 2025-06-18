@@ -105,7 +105,10 @@ where
     async fn run(&mut self) -> crate::Result<()> {
         let non_finalized = self.storage.get_non_finalized_eigen_submission().await?;
 
-        tracing::info!("Checking non-finalized submissions: {}", non_finalized.len());
+        tracing::info!(
+            "Checking non-finalized submissions: {}",
+            non_finalized.len()
+        );
 
         if non_finalized.is_empty() {
             return Ok(());

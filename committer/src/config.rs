@@ -424,20 +424,16 @@ where
     })
 }
 
-fn maybe_human_readable_duration<'de, D>(
-    deserializer: D,
-) -> Result<Option<Duration>, D::Error>
+fn maybe_human_readable_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let duration_str: Option<String> = Deserialize::deserialize(deserializer)?;
     match duration_str {
-        Some(s) => humantime::parse_duration(&s)
-            .map(Some)
-            .map_err(|e| {
-                let msg = format!("Failed to parse duration '{s}': {e}");
-                serde::de::Error::custom(msg)
-            }),
+        Some(s) => humantime::parse_duration(&s).map(Some).map_err(|e| {
+            let msg = format!("Failed to parse duration '{s}': {e}");
+            serde::de::Error::custom(msg)
+        }),
         None => Ok(None),
     }
 }
