@@ -42,8 +42,18 @@ where
                 .await?;
             let submission_id = submission.id.expect("submission id to be present") as u32;
 
+            tracing::info!(
+                "Checking submission with request_id: {} - current status: {:?}",
+                submission.as_base64(),
+                status,
+            );
+
             // skip if status didn't change
             if status == submission.status {
+                tracing::info!(
+                    "Skipping submission with request_id: {} - status didn't change",
+                    submission.as_base64(),
+                );
                 continue;
             }
 
@@ -94,6 +104,8 @@ where
 {
     async fn run(&mut self) -> crate::Result<()> {
         let non_finalized = self.storage.get_non_finalized_eigen_submission().await?;
+
+        tracing::info!("Checking non-finalized submissions: {}", non_finalized.len());
 
         if non_finalized.is_empty() {
             return Ok(());
