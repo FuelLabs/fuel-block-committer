@@ -383,7 +383,8 @@ pub fn eigen_state_listener(
     registry: &Registry,
     last_finalization: IntGauge,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let state_committer = EigenStateListener::new(eigen_da, storage, last_finalization);
+    let state_committer =
+        EigenStateListener::new(eigen_da, storage, SystemClock, last_finalization);
 
     state_committer.register_metrics(registry);
 

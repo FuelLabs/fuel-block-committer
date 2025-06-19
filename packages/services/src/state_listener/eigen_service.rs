@@ -8,26 +8,34 @@ use crate::{
     types::{AsB64, DispersalStatus, EigenDASubmission},
 };
 
-pub struct StateListener<EigenDA, Db> {
+pub struct StateListener<EigenDA, Db, Clock> {
     eigenda_adapter: EigenDA,
     storage: Db,
     metrics: Metrics,
+    clock: Clock,
 }
 
-impl<EigenDA, Db> StateListener<EigenDA, Db> {
-    pub fn new(l1_adapter: EigenDA, storage: Db, last_finalization_time_metric: IntGauge) -> Self {
+impl<EigenDA, Db, Clock> StateListener<EigenDA, Db, Clock> {
+    pub fn new(
+        l1_adapter: EigenDA,
+        storage: Db,
+        clock: Clock,
+        last_finalization_time_metric: IntGauge,
+    ) -> Self {
         Self {
             eigenda_adapter: l1_adapter,
             storage,
             metrics: Metrics::new(last_finalization_time_metric),
+            clock,
         }
     }
 }
 
-impl<EigenDA, Db> StateListener<EigenDA, Db>
+impl<EigenDA, Db, Clock> StateListener<EigenDA, Db, Clock>
 where
     EigenDA: crate::state_listener::port::eigen_da::Api,
     Db: crate::state_listener::port::Storage,
+    Clock: crate::state_listener::port::Clock,
 {
     async fn check_non_finalized(
         &self,
@@ -74,6 +82,8 @@ where
                     changes.push((submission_id, DispersalStatus::Confirmed));
                 }
                 DispersalStatus::Finalized => {
+                    let now = self.clock.now();
+                    self.metrics.last_finalization_time.set(now.timestamp());
                     tracing::info!(
                         "Finalized submission with request_id: {}",
                         submission.as_base64(),
@@ -104,10 +114,11 @@ where
     }
 }
 
-impl<EigenDA, Db> Runner for StateListener<EigenDA, Db>
+impl<EigenDA, Db, Clock> Runner for StateListener<EigenDA, Db, Clock>
 where
     EigenDA: crate::state_listener::port::eigen_da::Api + Send + Sync,
     Db: crate::state_listener::port::Storage,
+    Clock: crate::state_listener::port::Clock + Send + Sync,
 {
     async fn run(&mut self) -> crate::Result<()> {
         let non_finalized = self.storage.get_non_finalized_eigen_submission().await?;
@@ -134,7 +145,7 @@ struct Metrics {
     last_finalization_interval: IntGauge,
 }
 
-impl<L1, Db> RegistersMetrics for StateListener<L1, Db> {
+impl<EigenDA, Db, Clock> RegistersMetrics for StateListener<EigenDA, Db, Clock> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![
             Box::new(self.metrics.last_eth_block_w_blob.clone()),
