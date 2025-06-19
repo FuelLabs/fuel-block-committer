@@ -82,6 +82,15 @@ pub mod service {
                 old.contract_submissions
                     .saturating_sub(new.contract_submissions)
             ),
+            format!(
+                "eigen_submissions: {}, ",
+                old.eigen_submissions.saturating_sub(new.eigen_submissions)
+            ),
+            format!(
+                "eigen_submission_fragments: {}",
+                old.eigen_submission_fragments
+                    .saturating_sub(new.eigen_submission_fragments)
+            ),
         ]
         .join("")
     }
