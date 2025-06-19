@@ -27,6 +27,9 @@ pub struct Committer {
     new_bundle_check_interval: Option<String>,
     state_pruner_retention: Option<String>,
     state_pruner_run_interval: Option<String>,
+    da_fee_check_interval: Option<String>,
+    da_layer_polling_interval: Option<String>,
+    da_layer_api_throughput: Option<u32>,
 }
 
 impl Committer {
@@ -151,8 +154,18 @@ impl Committer {
                     "https://disperser-holesky.eigenda.xyz",
                 )
                 .env("COMMITTER__DA_LAYER__KEY", key)
-                .env("COMMITTER__DA_LAYER__FEE_CHECK_INTERVAL", "30s")
-                .env("COMMITTER__DA_LAYER__POLLING_INTERVAL", "2s")
+                .env(
+                    "COMMITTER__DA_LAYER__FEE_CHECK_INTERVAL",
+                    get_field!(da_fee_check_interval),
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__POLLING_INTERVAL",
+                    get_field!(da_layer_polling_interval),
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__API_THROUGHPUT",
+                    get_field!(da_layer_api_throughput).to_string(),
+                )
                 .env(
                     "COMMITTER__DA_LAYER__ETH_RPC_URL",
                     "https://ethereum-holesky-rpc.publicnode.com",
@@ -280,6 +293,21 @@ impl Committer {
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
         self.show_logs = show_logs;
+        self
+    }
+
+    pub fn with_da_fee_check_interval(mut self, interval: String) -> Self {
+        self.da_fee_check_interval = Some(interval);
+        self
+    }
+
+    pub fn with_da_layer_polling_interval(mut self, interval: String) -> Self {
+        self.da_layer_polling_interval = Some(interval);
+        self
+    }
+
+    pub fn with_da_layer_api_throughput(mut self, throughput: u32) -> Self {
+        self.da_layer_api_throughput = Some(throughput);
         self
     }
 }
