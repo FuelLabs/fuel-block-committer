@@ -106,6 +106,8 @@ pub mod service {
         blocks: IntGauge,
         contract_transactions: IntGauge,
         contract_submissions: IntGauge,
+        eigen_submissions: IntGauge,
+        eigen_submission_fragments: IntGauge,
     }
 
     #[derive(Clone)]
@@ -131,6 +133,12 @@ pub mod service {
             self.sizes
                 .contract_submissions
                 .set(sizes.contract_submissions.into());
+            self.sizes
+                .eigen_submissions
+                .set(sizes.eigen_submissions.into());
+            self.sizes
+                .eigen_submission_fragments
+                .set(sizes.eigen_submission_fragments.into());
         }
     }
 
@@ -145,6 +153,8 @@ pub mod service {
                 Box::new(self.metrics.sizes.blocks.clone()),
                 Box::new(self.metrics.sizes.contract_transactions.clone()),
                 Box::new(self.metrics.sizes.contract_submissions.clone()),
+                Box::new(self.metrics.sizes.eigen_submissions.clone()),
+                Box::new(self.metrics.sizes.eigen_submission_fragments.clone()),
             ]
         }
     }
@@ -170,6 +180,12 @@ pub mod service {
                 "tsize_contract_submissions",
                 "Contract submissions table size.",
             );
+            let eigen_submissions =
+                create_int_gauge("tsize_eigen_submissions", "Eigen submissions table size.");
+            let eigen_submission_fragments = create_int_gauge(
+                "tsize_eigen_submission_fragments",
+                "Eigen submission fragments table size.",
+            );
 
             let sizes = TableSizes {
                 blob_transactions,
@@ -180,6 +196,8 @@ pub mod service {
                 blocks,
                 contract_transactions,
                 contract_submissions,
+                eigen_submissions,
+                eigen_submission_fragments,
             };
 
             Self { sizes }
