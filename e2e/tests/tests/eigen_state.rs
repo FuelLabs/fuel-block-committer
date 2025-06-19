@@ -76,5 +76,7 @@ async fn test_eigen_state() -> Result<()> {
         "Committer should have processed some blocks"
     );
 
+    println!("metrics: {}", metrics);
+
     Ok(())
 }
