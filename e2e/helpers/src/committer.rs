@@ -146,22 +146,21 @@ impl Committer {
             let key = format!("Kms({key})");
 
             cmd.env("COMMITTER__DA_LAYER__TYPE", "EigenDA")
-            .env(
-                "COMMITTER__DA_LAYER__DISPERSER_RPC_URL",
-                "https://disperser-holesky.eigenda.xyz",
-            )
-            .env("COMMITTER__DA_LAYER__KEY", key)
-            .env("COMMITTER__DA_LAYER__FEE_CHECK_INTERVAL", "30s")
-            .env("COMMITTER__DA_LAYER__POLLING_INTERVAL", "2s")
-            // .env("COMMITTER__DA_LAYER__API_THROUGHPUT", "16777216")
-            .env(
-                "COMMITTER__DA_LAYER__ETH_RPC_URL",
-                "https://ethereum-holesky-rpc.publicnode.com",
-            )
-            .env(
-                "COMMITTER__DA_LAYER__CERT_VERIFIER_ADDRESS",
-                "0xFe52fE1940858DCb6e12153E2104aD0fDFbE1162",
-            );
+                .env(
+                    "COMMITTER__DA_LAYER__DISPERSER_RPC_URL",
+                    "https://disperser-holesky.eigenda.xyz",
+                )
+                .env("COMMITTER__DA_LAYER__KEY", key)
+                .env("COMMITTER__DA_LAYER__FEE_CHECK_INTERVAL", "30s")
+                .env("COMMITTER__DA_LAYER__POLLING_INTERVAL", "2s")
+                .env(
+                    "COMMITTER__DA_LAYER__ETH_RPC_URL",
+                    "https://ethereum-holesky-rpc.publicnode.com",
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__CERT_VERIFIER_ADDRESS",
+                    "0xFe52fE1940858DCb6e12153E2104aD0fDFbE1162",
+                );
         }
 
         let sink = if self.show_logs {
