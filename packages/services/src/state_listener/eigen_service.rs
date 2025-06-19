@@ -86,6 +86,13 @@ where
                         "Unexpected status {other_status} - submission with request_id: {}",
                         submission.as_base64(),
                     );
+                    changes.push((submission_id, DispersalStatus::Other(other_status)));
+                }
+                DispersalStatus::Failed => {
+                    tracing::info!(
+                        "Failed submission with request_id: {}",
+                        submission.as_base64(),
+                    );
                     changes.push((submission_id, DispersalStatus::Failed));
                 }
             }
