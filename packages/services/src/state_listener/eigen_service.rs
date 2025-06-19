@@ -80,10 +80,10 @@ where
                     );
                     changes.push((submission_id, DispersalStatus::Finalized));
                 }
-                _ => {
+                DispersalStatus::Other(other_status) => {
                     // log got bad status
                     tracing::info!(
-                        "Unexpected status - submission with request_id: {}",
+                        "Unexpected status {other_status} - submission with request_id: {}",
                         submission.as_base64(),
                     );
                     changes.push((submission_id, DispersalStatus::Failed));
