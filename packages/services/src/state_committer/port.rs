@@ -110,6 +110,8 @@ pub trait Storage: Sync {
         created_at: DateTime<Utc>,
     ) -> Result<()>;
 
+    async fn last_eigen_submission_was_finalized(&self) -> Result<Option<DateTime<Utc>>>;
+
     async fn oldest_unsubmitted_fragments(
         &self,
         starting_height: u32,

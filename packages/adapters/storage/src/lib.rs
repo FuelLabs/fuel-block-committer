@@ -232,6 +232,12 @@ impl services::state_committer::port::Storage for Postgres {
             .await
             .map_err(Into::into)
     }
+
+    async fn last_eigen_submission_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
+        self._last_eigen_submission_was_finalized()
+            .await
+            .map_err(Into::into)
+    }
 }
 
 impl services::state_pruner::port::Storage for Postgres {

@@ -604,8 +604,19 @@ pub async fn storage(
 
     postgres.register_metrics(registry);
 
-    if let Some(last_fragment_time) = postgres.last_time_a_fragment_was_finalized().await? {
-        last_finalization.set(last_fragment_time.timestamp());
+    let last_time = match config.da_layer {
+        Some(DALayer::EigenDA(_)) => {
+            // For Eigen DA, we use the last eigen submission time
+            postgres.last_eigen_submission_was_finalized().await?
+        }
+        None => {
+            // For Ethereum DA or no DA, we use the last fragment finalization time
+            postgres.last_time_a_fragment_was_finalized().await?
+        }
+    };
+
+    if let Some(time) = last_time {
+        last_finalization.set(time.timestamp());
     }
 
     Ok(postgres)

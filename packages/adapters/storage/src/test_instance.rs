@@ -383,6 +383,10 @@ impl services::state_committer::port::Storage for DbWithProcess {
     ) -> services::Result<Vec<BundleFragment>> {
         unimplemented!()
     }
+
+    async fn last_eigen_submission_was_finalized(&self) -> services::Result<Option<DateTime<Utc>>> {
+        unimplemented!()
+    }
 }
 
 impl services::status_reporter::port::Storage for DbWithProcess {

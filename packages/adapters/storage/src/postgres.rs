@@ -1384,6 +1384,20 @@ impl Postgres {
         Ok(response)
     }
 
+    pub(crate) async fn _last_eigen_submission_was_finalized(
+        &self,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let response = sqlx::query!(
+            "SELECT created_at FROM eigen_submission WHERE status = $1 ORDER BY created_at DESC LIMIT 1;",
+            i16::from(eigen_tables::SubmissionStatus::Finalized)
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .map(|response| response.created_at);
+
+        Ok(response)
+    }
+
     pub(crate) async fn _record_eigenda_submission(
         &self,
         submission: EigenDASubmission,
