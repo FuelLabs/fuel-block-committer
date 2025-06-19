@@ -2,10 +2,12 @@ mod bindings;
 mod codec;
 mod connector;
 mod error;
+mod throttler;
 
 use bindings::BlobStatus;
 pub use connector::*;
 use services::types::DispersalStatus;
+pub use throttler::Throughput;
 
 impl From<BlobStatus> for DispersalStatus {
     fn from(status: BlobStatus) -> Self {

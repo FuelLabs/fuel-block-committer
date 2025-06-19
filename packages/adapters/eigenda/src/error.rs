@@ -18,6 +18,8 @@ pub enum Error {
     BlockDispatchFailed(#[from] PayloadDisperserError),
     #[error("Invalid hex representation of blob key: {0}")]
     InvalidBlobKey(#[from] ConversionError),
+    #[error("Failed throughput query: {0}")]
+    ThroughputQueryFailed(#[from] governor::InsufficientCapacity),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

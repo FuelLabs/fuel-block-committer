@@ -1,16 +1,7 @@
-use std::{
-    num::NonZeroU32,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::Instant;
 
 use byte_unit::Byte;
 use ethereum_types::H160;
-use governor::{
-    Quota, RateLimiter,
-    clock::DefaultClock,
-    state::{InMemoryState, NotKeyed},
-};
 pub use rust_eigenda_v2_client::rust_eigenda_signers::Sign;
 use rust_eigenda_v2_client::{
     core::BlobKey,
@@ -30,6 +21,7 @@ use crate::{
     bindings::BlobStatus,
     codec::convert_by_padding_empty_byte,
     error::{Error, Result},
+    throttler::{Throttler, Throughput},
 };
 
 #[derive(Debug, Clone)]
@@ -66,24 +58,10 @@ where
 {
     async fn submit_state_fragment(&self, fragment: Fragment) -> ServiceResult<EigenDASubmission> {
         let data = fragment.data;
-        let start = Instant::now();
 
         // even though the check exists in `should_submit_fragment`, we still need to throttle the request
         // these should resolve immediately if `should_submit_fragment` returned true
-        self.throughput_limiter
-            .until_n_ready(NonZeroU32::new(data.len() as u32).unwrap())
-            .await
-            .unwrap();
-        self.post_frequency_limiter
-            .until_n_ready(NonZeroU32::new(1).unwrap())
-            .await
-            .unwrap();
-
-        let elapsed = start.elapsed();
-        if elapsed > Duration::from_millis(100) {
-            let elapsed = humantime::format_duration(elapsed);
-            info!("Was throttled for {elapsed}");
-        }
+        self.throttler.wait_for_capacity(data.len()).await?;
 
         let data: Vec<_> = data.into_iter().collect();
 
@@ -115,43 +93,7 @@ where
     }
 
     fn should_submit_fragment(&self, fragment: &Fragment) -> bool {
-        let throughput_conditional = match self.throughput_limiter.check_n(
-            NonZeroU32::new(u32::try_from(fragment.data.len()).unwrap_or(u32::MAX))
-                .expect("if fragment data in NonEmpty, then the len will also be NonZero"),
-        ) {
-            Ok(Ok(())) => {
-                // If we can dispatch the fragment, we should submit it
-                true
-            }
-            Ok(Err(_)) => {
-                // Do not perform partial dispatches, if we cannot dispatch the fragment due to rate limiting, we should not submit it
-                false
-            }
-            Err(_) => {
-                // The fragment is too large to be dispatched, we should not submit it
-                false
-            }
-        };
-
-        let post_frequency_conditional = match self
-            .post_frequency_limiter
-            .check_n(NonZeroU32::new(1).expect("qed"))
-        {
-            Ok(Ok(())) => {
-                // If we can post the fragment, we should submit it
-                true
-            }
-            Ok(Err(_)) => {
-                // Do not perform partial dispatches, if we cannot post the fragment due to rate limiting, we should not submit it
-                false
-            }
-            Err(_) => {
-                // No more available slots for posting, we should not submit it
-                false
-            }
-        };
-
-        throughput_conditional && post_frequency_conditional
+        self.throttler.can_proceed(fragment.data.len())
     }
 }
 
@@ -199,16 +141,7 @@ where
 pub struct EigenDAClient<S> {
     eigen_client: EigenClient<S>,
     // Limits the number of bytes that can be posted per second.
-    throughput_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
-    // Limits the posting frequency to one request per second.
-    post_frequency_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Throughput {
-    pub bytes_per_sec: NonZeroU32,
-    pub max_burst: NonZeroU32,
-    pub calls_per_sec: NonZeroU32,
+    throttler: Throttler,
 }
 
 impl<S> EigenDAClient<S>
@@ -244,14 +177,11 @@ where
             .await
             .map_err(Error::EigenDAClientInit)?;
 
-        let throughput_quota =
-            Quota::per_second(throughput.bytes_per_sec).allow_burst(throughput.max_burst);
-        let post_quota = Quota::per_second(throughput.calls_per_sec);
+        let throttler = Throttler::new(throughput);
 
         Ok(Self {
             eigen_client,
-            throughput_limiter: Arc::new(RateLimiter::direct(throughput_quota)),
-            post_frequency_limiter: Arc::new(RateLimiter::direct(post_quota)),
+            throttler,
         })
     }
 
