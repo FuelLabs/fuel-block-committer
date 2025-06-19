@@ -110,18 +110,21 @@ where
 
         // get the last request that was finalized, and update metrics accordingly -
         if let Some(request_id) = last_finalized_request_id {
-            if let Some(earliest_submission_attempt) = self
+            let now = self.clock.now();
+            self.metrics.last_finalization_time.set(now.timestamp());
+
+            let earliest_submission_attempt = self
                 .storage
                 .earliest_eigen_submission_attempt(&request_id)
-                .await?
-            {
-                let now = self.clock.now();
-                let duration = now.signed_duration_since(earliest_submission_attempt);
-                self.metrics
-                    .last_finalization_interval
-                    .set(duration.num_seconds());
-                self.metrics.last_finalization_time.set(now.timestamp());
-            }
+                .await?;
+
+            self.metrics.last_finalization_interval.set(
+                earliest_submission_attempt
+                    .map(|earliest_submission_attempt| {
+                        (now - earliest_submission_attempt).num_seconds()
+                    })
+                    .unwrap_or(0),
+            );
         }
 
         self.storage.update_eigen_submissions(changes).await?;
