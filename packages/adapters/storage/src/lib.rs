@@ -15,8 +15,8 @@ use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
-        DispersalStatus, EigenDASubmission, Fragment, L1Tx, NonEmpty, NonNegative,
-        TransactionCostUpdate, TransactionState, Utc, storage::BundleFragment,
+        DispersalStatus, EigenDARequestId, EigenDASubmission, Fragment, L1Tx, NonEmpty,
+        NonNegative, TransactionCostUpdate, TransactionState, Utc, storage::BundleFragment,
     },
 };
 
@@ -42,6 +42,15 @@ impl services::state_listener::port::Storage for Postgres {
 
     async fn earliest_submission_attempt(&self, nonce: u32) -> Result<Option<DateTime<Utc>>> {
         self._earliest_submission_attempt(nonce)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn earliest_eigen_submission_attempt(
+        &self,
+        request_id: &EigenDARequestId,
+    ) -> Result<Option<DateTime<Utc>>> {
+        self._earliest_eigen_submission_attempt(request_id)
             .await
             .map_err(Into::into)
     }

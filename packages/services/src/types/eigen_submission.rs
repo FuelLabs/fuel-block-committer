@@ -10,10 +10,12 @@ pub enum DispersalStatus {
     Other(String),
 }
 
+pub type EigenDARequestId = Vec<u8>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EigenDASubmission {
     pub id: Option<u64>,
-    pub request_id: Vec<u8>,
+    pub request_id: EigenDARequestId,
     pub created_at: Option<DateTime<Utc>>,
     pub status: DispersalStatus,
 }

@@ -10,8 +10,8 @@ use services::{
     block_committer, block_importer,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
-        DispersalStatus, EigenDASubmission, Fragment, L1Tx, NonEmpty, NonNegative,
-        TransactionCostUpdate, TransactionState, Utc, storage::BundleFragment,
+        DispersalStatus, EigenDARequestId, EigenDASubmission, Fragment, L1Tx, NonEmpty,
+        NonNegative, TransactionCostUpdate, TransactionState, Utc, storage::BundleFragment,
     },
 };
 use sqlx::Executor;
@@ -216,6 +216,14 @@ impl services::state_listener::port::Storage for DbWithProcess {
     async fn get_non_finalized_eigen_submission(&self) -> services::Result<Vec<EigenDASubmission>> {
         unimplemented!();
     }
+
+    async fn earliest_eigen_submission_attempt(
+        &self,
+        _request_id: &EigenDARequestId,
+    ) -> services::Result<Option<DateTime<Utc>>> {
+        unimplemented!();
+    }
+
     async fn update_eigen_submissions(
         &self,
         _changes: Vec<(u32, DispersalStatus)>,

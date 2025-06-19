@@ -7,8 +7,8 @@ use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
         BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
-        DispersalStatus, EigenDASubmission, Fragment, NonEmpty, NonNegative, TransactionCostUpdate,
-        TransactionState, Utc, storage::SequentialFuelBlocks,
+        DispersalStatus, EigenDARequestId, EigenDASubmission, Fragment, NonEmpty, NonNegative,
+        TransactionCostUpdate, TransactionState, Utc, storage::SequentialFuelBlocks,
     },
 };
 use sqlx::{
@@ -1361,6 +1361,27 @@ impl Postgres {
             eigen_submission_fragments: response.size_eigen_submission_fragments.unwrap_or_default()
                 as u32,
         })
+    }
+
+    pub(crate) async fn _earliest_eigen_submission_attempt(
+        &self,
+        request_id: &EigenDARequestId,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let response = sqlx::query!(
+            r#"SELECT
+            MIN(created_at) AS earliest_submission_time
+        FROM
+            eigen_submission
+        WHERE
+            request_id = $1;
+        "#,
+            request_id
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .and_then(|response| response.earliest_submission_time);
+
+        Ok(response)
     }
 
     pub(crate) async fn _record_eigenda_submission(

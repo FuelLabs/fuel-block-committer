@@ -1,8 +1,8 @@
 use crate::{
     Result,
     types::{
-        DateTime, DispersalStatus, EigenDASubmission, L1Tx, TransactionCostUpdate,
-        TransactionState, Utc,
+        DateTime, DispersalStatus, EigenDARequestId, EigenDASubmission, L1Tx,
+        TransactionCostUpdate, TransactionState, Utc,
     },
 };
 
@@ -51,6 +51,10 @@ pub trait Storage: Sync {
 
     // EigenDA
     async fn get_non_finalized_eigen_submission(&self) -> Result<Vec<EigenDASubmission>>;
+    async fn earliest_eigen_submission_attempt(
+        &self,
+        request_id: &EigenDARequestId,
+    ) -> Result<Option<DateTime<Utc>>>;
     async fn update_eigen_submissions(&self, changes: Vec<(u32, DispersalStatus)>) -> Result<()>;
 }
 

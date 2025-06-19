@@ -1,6 +1,6 @@
 use metrics::{
     RegistersMetrics,
-    prometheus::{IntGauge, Opts, core::Collector},
+    prometheus::{IntGauge, core::Collector},
 };
 
 use crate::{
@@ -42,6 +42,7 @@ where
         non_finalized: Vec<EigenDASubmission>,
     ) -> crate::Result<()> {
         let mut changes = Vec::with_capacity(non_finalized.len());
+        let mut last_finalized_request_id = None;
 
         for submission in non_finalized {
             let status = self
@@ -82,8 +83,7 @@ where
                     changes.push((submission_id, DispersalStatus::Confirmed));
                 }
                 DispersalStatus::Finalized => {
-                    let now = self.clock.now();
-                    self.metrics.last_finalization_time.set(now.timestamp());
+                    last_finalized_request_id = Some(submission.request_id.clone());
                     tracing::info!(
                         "Finalized submission with request_id: {}",
                         submission.as_base64(),
@@ -108,6 +108,22 @@ where
             }
         }
 
+        // get the last request that was finalized, and update metrics accordingly -
+        if let Some(request_id) = last_finalized_request_id {
+            if let Some(earliest_submission_attempt) = self
+                .storage
+                .earliest_eigen_submission_attempt(&request_id)
+                .await?
+            {
+                let now = self.clock.now();
+                let duration = now.signed_duration_since(earliest_submission_attempt);
+                self.metrics
+                    .last_finalization_interval
+                    .set(duration.num_seconds());
+                self.metrics.last_finalization_time.set(now.timestamp());
+            }
+        }
+
         self.storage.update_eigen_submissions(changes).await?;
 
         Ok(())
@@ -123,7 +139,7 @@ where
     async fn run(&mut self) -> crate::Result<()> {
         let non_finalized = self.storage.get_non_finalized_eigen_submission().await?;
 
-        tracing::info!(
+        tracing::debug!(
             "Checking non-finalized submissions: {}",
             non_finalized.len()
         );
@@ -140,7 +156,6 @@ where
 
 #[derive(Clone)]
 struct Metrics {
-    last_eth_block_w_blob: IntGauge,
     last_finalization_time: IntGauge,
     last_finalization_interval: IntGauge,
 }
@@ -148,7 +163,6 @@ struct Metrics {
 impl<EigenDA, Db, Clock> RegistersMetrics for StateListener<EigenDA, Db, Clock> {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         vec![
-            Box::new(self.metrics.last_eth_block_w_blob.clone()),
             Box::new(self.metrics.last_finalization_time.clone()),
             Box::new(self.metrics.last_finalization_interval.clone()),
         ]
@@ -157,12 +171,6 @@ impl<EigenDA, Db, Clock> RegistersMetrics for StateListener<EigenDA, Db, Clock> 
 
 impl Metrics {
     fn new(last_finalization_time: IntGauge) -> Self {
-        let last_eth_block_w_blob = IntGauge::with_opts(Opts::new(
-            "last_eth_block_w_blob",
-            "The height of the latest Ethereum block used for state submission.",
-        ))
-        .expect("last_eth_block_w_blob metric to be correctly configured");
-
         let last_finalization_interval = IntGauge::new(
             "seconds_from_earliest_submission_to_finalization",
             "The number of seconds from the earliest submission to finalization",
@@ -172,7 +180,6 @@ impl Metrics {
         );
 
         Self {
-            last_eth_block_w_blob,
             last_finalization_time,
             last_finalization_interval,
         }
