@@ -83,11 +83,11 @@ where
                     changes.push((submission_id, DispersalStatus::Confirmed));
                 }
                 DispersalStatus::Finalized => {
-                    last_finalized_request_id = Some(submission.request_id.clone());
                     tracing::info!(
                         "Finalized submission with request_id: {}",
                         submission.as_base64(),
                     );
+                    last_finalized_request_id = Some(submission.request_id);
                     changes.push((submission_id, DispersalStatus::Finalized));
                 }
                 DispersalStatus::Other(other_status) => {
