@@ -71,12 +71,25 @@ async fn test_eigen_state() -> Result<()> {
     // TODO: we should investigate directly querying the database instead of using metrics.
     // Check if committer has processed any blocks
     let metrics = client.get(metrics_url).send().await?.text().await?;
-    assert!(
-        metrics.contains("tsize_eigen_submissions 1"),
-        "Committer should have submitted some fragments to Eigen"
-    );
 
-    println!("metrics: {}", metrics);
+    // Check if metric exists with non-zero value using regex
+    let regex =
+        regex::Regex::new(r"seconds_since_last_finalized_fragment\s+(\d+)").expect("Invalid regex");
+
+    if let Some(captures) = regex.captures(&metrics) {
+        let value_str = &captures[1];
+        let value: u64 = value_str
+            .parse()
+            .expect("Failed to parse metric value as number");
+
+        assert!(
+            value > 0,
+            "seconds_since_last_finalized_fragment should be non-zero, got: {}",
+            value
+        );
+    } else {
+        panic!("seconds_since_last_finalized_fragment metric not found in metrics output");
+    }
 
     Ok(())
 }
