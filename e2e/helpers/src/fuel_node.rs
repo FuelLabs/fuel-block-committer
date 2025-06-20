@@ -97,6 +97,8 @@ impl FuelNode {
             .arg(format!("--native-executor-version={executor_version}"))
             .arg("--da-compression")
             .arg("1hr")
+            .arg("--poa-interval-period")
+            .arg("200ms")
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null());
 

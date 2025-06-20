@@ -48,7 +48,7 @@ async fn test_eigen_state() -> Result<()> {
         &deployed_contract,
         eth_signers.main,
         kms_key_id, // Use the KMS key ID instead of raw EIGEN_KEY
-        "28 MB",
+        "1 KB",
     )
     .await?;
 
@@ -66,14 +66,14 @@ async fn test_eigen_state() -> Result<()> {
 
     // Test 2: Verify state synchronization
     // Wait for some blocks to be processed
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    tokio::time::sleep(Duration::from_secs(100)).await;
 
     // TODO: we should investigate directly querying the database instead of using metrics.
     // Check if committer has processed any blocks
     let metrics = client.get(metrics_url).send().await?.text().await?;
     assert!(
-        metrics.contains("height_of_latest_commitment"),
-        "Committer should have processed some blocks"
+        metrics.contains("tsize_eigen_submissions 1"),
+        "Committer should have submitted some fragments to Eigen"
     );
 
     println!("metrics: {}", metrics);
