@@ -72,7 +72,6 @@ async fn test_eigen_state() -> Result<()> {
     // Check if committer has processed any blocks
     let metrics = client.get(metrics_url).send().await?.text().await?;
 
-    // Check if metric exists with non-zero value using regex
     let last_finalized_time =
         extract_metric_value(&metrics, "seconds_since_last_finalized_fragment");
 
