@@ -99,15 +99,11 @@ fn extract_metric_value(input: &str, target_metric: &str) -> Option<u64> {
 
         // Check for target metric at start of line
         if line.starts_with(target_metric) {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-
-            // Value is always the second component
-            if parts.len() >= 2 {
-                if let Ok(value) = parts[1].parse() {
-                    return Some(value);
-                }
-            }
-        }
+           // Value is always the second component
+           if let Some(value) = line.split_whitespace().nth(1)?.parse().ok() {
+               return Some(value);
+           }
+       }
     }
     None
 }
