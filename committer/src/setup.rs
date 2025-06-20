@@ -7,7 +7,7 @@ use ethereum_types::H160;
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,
-    prometheus::{IntGauge, Registry},
+    prometheus::{IntGauge, Registry, core::Collector},
 };
 use services::{
     BlockBundler, BlockBundlerConfig, Runner,

@@ -73,15 +73,10 @@ async fn test_eigen_state() -> Result<()> {
     let metrics = client.get(metrics_url).send().await?.text().await?;
 
     // Check if metric exists with non-zero value using regex
-    let regex =
-        regex::Regex::new(r"seconds_since_last_finalized_fragment\s+(\d+)").expect("Invalid regex");
+    let last_finalized_time =
+        extract_metric_value(&metrics, "seconds_since_last_finalized_fragment");
 
-    if let Some(captures) = regex.captures(&metrics) {
-        let value_str = &captures[1];
-        let value: u64 = value_str
-            .parse()
-            .expect("Failed to parse metric value as number");
-
+    if let Some(value) = last_finalized_time {
         assert!(
             value > 0,
             "seconds_since_last_finalized_fragment should be non-zero, got: {}",
@@ -92,4 +87,28 @@ async fn test_eigen_state() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn extract_metric_value(input: &str, target_metric: &str) -> Option<u64> {
+    for line in input.lines() {
+        let line = line.trim();
+
+        // Skip comments and empty lines
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+
+        // Check for target metric at start of line
+        if line.starts_with(target_metric) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+
+            // Value is always the second component
+            if parts.len() >= 2 {
+                if let Ok(value) = parts[1].parse() {
+                    return Some(value);
+                }
+            }
+        }
+    }
+    None
 }
