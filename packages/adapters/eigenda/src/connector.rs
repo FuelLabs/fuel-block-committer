@@ -206,6 +206,9 @@ where
     pub async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
         let blob_key = BlobKey::from_hex(blob_id).map_err(Error::InvalidBlobKey)?;
 
+        // we wait for the throttler to ensure we don't exceed the polling limits
+        self.throttler.wait_for_capacity(0).await?;
+
         let response = match self
             .eigen_client
             .disperser_client
