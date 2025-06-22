@@ -615,6 +615,11 @@ pub async fn storage(
         }
     };
 
+    info!(
+        "setup::storage: Last finalization time: {:?}",
+        last_time.map(|t| t.to_rfc3339())
+    );
+
     if let Some(time) = last_time {
         last_finalization.set(time.timestamp());
     }
