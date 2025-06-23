@@ -167,7 +167,7 @@ jobs:
       - name: Run E2E tests
         run: |
           ./target/release/fuel-block-committer --version
-          PATH="$(pwd)/target/release:$PATH" cargo test --package e2e-tests --jobs 1
+          PATH="$(pwd)/target/release:$PATH" cargo test --package e2e-tests --jobs 1 -- --test-threads 1
 
   publish-crates-check:
     runs-on: ubuntu-latest
