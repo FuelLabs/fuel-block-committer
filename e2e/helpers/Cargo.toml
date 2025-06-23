@@ -45,6 +45,7 @@ fuel-core-chain-config = { workspace = true, features = [
 fuel-core-types = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
+humantime = { workspace = true }
 itertools = { workspace = true, features = ["use_alloc"] }
 portpicker = { workspace = true }
 services = { workspace = true }

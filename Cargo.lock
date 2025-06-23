@@ -3160,6 +3160,7 @@ dependencies = [
  "fuel-core-types",
  "futures",
  "hex",
+ "humantime",
  "itertools 0.13.0",
  "portpicker",
  "rand 0.8.5",

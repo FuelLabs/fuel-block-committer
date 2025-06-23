@@ -37,7 +37,7 @@ async fn test_eigen_state() -> Result<()> {
     let (_contract_args, deployed_contract) =
         deploy_contract(&eth_node, eth_signers.clone(), max_fee, request_timeout).await?;
     let db = start_db().await?;
-    let fuel_node = start_fuel_node(logs).await?;
+    let fuel_node = start_fuel_node(logs, Some(Duration::from_millis(200))).await?;
 
     // Start Eigen committer with KMS key
     let logs = true;

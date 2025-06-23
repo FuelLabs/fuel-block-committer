@@ -58,7 +58,7 @@ impl WholeStack {
         let (contract_args, deployed_contract) =
             deploy_contract(&eth_node, eth_signers.clone(), max_fee, request_timeout).await?;
 
-        let fuel_node = FuelNodeType::Local(start_fuel_node(logs).await?);
+        let fuel_node = FuelNodeType::Local(start_fuel_node(logs, None).await?);
 
         let db = start_db().await?;
 
@@ -136,8 +136,15 @@ pub async fn deploy_contract(
     Ok((contract_args, deployed_contract))
 }
 
-pub async fn start_fuel_node(logs: bool) -> anyhow::Result<FuelNodeProcess> {
-    FuelNode::default().with_show_logs(logs).start().await
+pub async fn start_fuel_node(
+    logs: bool,
+    poa_interval_period: Option<Duration>,
+) -> anyhow::Result<FuelNodeProcess> {
+    FuelNode::default()
+        .with_show_logs(logs)
+        .with_poa_interval_period(poa_interval_period)
+        .start()
+        .await
 }
 
 pub async fn start_db() -> anyhow::Result<DbWithProcess> {
