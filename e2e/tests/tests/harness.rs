@@ -64,7 +64,9 @@ async fn submitted_state_and_was_finalized() -> Result<()> {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
 
-    let bundle_cost = stack.committer.fetch_costs(0, 10).await?.pop().unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+
+    let bundle_cost = stack.committer.fetch_costs(0, 10).await?.pop().expect("expected some costs to exist for the committer");
     assert!(bundle_cost.cost > 0);
 
     Ok(())

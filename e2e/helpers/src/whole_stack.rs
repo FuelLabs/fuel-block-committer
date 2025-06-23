@@ -177,7 +177,7 @@ pub async fn start_committer(
         .with_bundle_compression_level("level6".to_owned())
         .with_new_bundle_check_interval("3s".to_owned())
         .with_state_pruner_retention("10s".to_owned())
-        .with_state_pruner_run_interval("50s".to_owned())
+        .with_state_pruner_run_interval("20s".to_owned())
         .with_da_fee_check_interval("30s".to_owned())
         .with_da_layer_polling_interval("2s".to_owned())
         .with_da_layer_api_throughput(16777216);
