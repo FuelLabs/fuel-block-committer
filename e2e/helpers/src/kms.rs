@@ -51,7 +51,6 @@ impl Kms {
         }
 
         let port = container.get_host_port_ipv4(4566).await?;
-        dbg!(port);
         let url = format!("http://localhost:{}", port);
 
         let config = kms_utils::config_for_testing(url.clone()).await;

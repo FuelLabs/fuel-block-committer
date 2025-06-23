@@ -30,6 +30,9 @@ pub enum Error {
     #[error("Failed to convert public key format")]
     PublicKeyConversion(#[source] rust_eigenda_signers::PublicKeyError),
 
+    #[error("Invalid public key length: expected 65 bytes, got {0}")]
+    InvalidPublicKeyLength(usize),
+
     #[error("Invalid recoverable signature")]
     InvalidRecoverableSignature(#[source] rust_eigenda_signers::InvalidRecoveryId),
 
@@ -74,13 +77,13 @@ impl Signer {
         // Convert k256 public key to rust_eigenda_signers public key
         // Use uncompressed format directly
         let uncompressed_bytes = k256_verifying_key.to_encoded_point(false);
-        let public_key = rust_eigenda_signers::PublicKey::new(
-            uncompressed_bytes
-                .as_bytes()
-                .try_into()
-                .expect("uncompressed point is always 65 bytes"),
-        )
-        .map_err(Error::PublicKeyConversion)?;
+        let uncompressed_slice = uncompressed_bytes.as_bytes();
+        let uncompressed_array: [u8; 65] = uncompressed_slice
+            .try_into()
+            .map_err(|_| Error::InvalidPublicKeyLength(uncompressed_slice.len()))?;
+
+        let public_key = rust_eigenda_signers::PublicKey::new(uncompressed_array)
+            .map_err(Error::PublicKeyConversion)?;
 
         Ok(Self {
             key_id,

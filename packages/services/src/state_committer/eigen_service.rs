@@ -14,8 +14,6 @@ use super::commit_helpers::update_current_height_to_commit_metric;
 // src/config.rs
 #[derive(Debug, Clone)]
 pub struct Config {
-    // The throughput of the da layer API in MB/s.
-    pub api_throughput: u32,
     /// The lookback window in blocks to determine the starting height.
     pub lookback_window: u32,
 }
@@ -24,7 +22,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            api_throughput: 16,
             lookback_window: 1000,
         }
     }
@@ -128,12 +125,14 @@ where
     }
 
     async fn next_fragment_to_submit(&self) -> Result<Option<BundleFragment>> {
+        const FRAGMENT_LOOKBACK: usize = 6;
+
         let latest_height = self.fuel_api.latest_height().await?;
         let starting_height = latest_height.saturating_sub(self.config.lookback_window);
 
         let fragment = self
             .storage
-            .oldest_unsubmitted_fragments(starting_height, 6)
+            .oldest_unsubmitted_fragments(starting_height, FRAGMENT_LOOKBACK)
             .await?
             .first()
             .cloned();

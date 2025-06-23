@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
 
     let eth_node = start_eth(false).await?;
     let eth_signers = create_and_fund_kms_signers(&kms, &eth_node).await?;
-    let eigen_key = env!("EIGEN_KEY").to_string();
+    let eigen_key = std::env::var("EIGEN_KEY").expect("EIGEN_KEY environment variable must be set");
 
     let request_timeout = Duration::from_secs(5);
     let max_fee = 1_000_000_000_000;

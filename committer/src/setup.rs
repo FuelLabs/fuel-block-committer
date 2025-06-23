@@ -190,7 +190,10 @@ pub async fn eigen_da_services(
                 (committer, listener, fee_metrics_handle)
             }
             _ => {
-                return Err(Error::Other("Invalid da layer config".to_string()));
+                return Err(Error::Other(format!(
+                    "Expected EigenDA configuration but received: {:?}",
+                    config.da_layer
+                )));
             }
         };
 
@@ -357,9 +360,6 @@ pub fn eigen_state_committer(
         fuel,
         storage,
         services::EigenStatecommitterConfig {
-            api_throughput: eigen_config
-                .api_throughput
-                .unwrap_or(DEFAULT_EIGEN_THROUGHPUT),
             lookback_window: config.app.bundle.block_height_lookback,
         },
         SystemClock,

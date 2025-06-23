@@ -31,8 +31,7 @@ async fn main() -> Result<()> {
     let kms = start_kms(logs).await?;
     let eth_node = start_eth(logs).await?;
     let eth_signers = create_and_fund_kms_signers(&kms, &eth_node).await?;
-    let eigen_key = env!("EIGEN_KEY").to_string();
-    let request_timeout = Duration::from_secs(50);
+    let eigen_key = std::env::var("EIGEN_KEY").expect("EIGEN_KEY environment variable must be set");
     let max_fee = 1_000_000_000_000;
     let (_contract_args, deployed_contract) =
         deploy_contract(&eth_node, eth_signers.clone(), max_fee, request_timeout).await?;
