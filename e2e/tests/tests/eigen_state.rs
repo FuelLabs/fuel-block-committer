@@ -10,7 +10,7 @@ use tracing::info;
 #[tokio::test]
 async fn test_eigen_state() -> Result<()> {
     // Start required services
-    let logs = false;
+    let logs = true;
     let kms = start_kms(logs).await?;
     let eth_node = start_eth(logs).await?;
     let eth_signers = create_and_fund_kms_signers(&kms, &eth_node).await?;
