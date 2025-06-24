@@ -235,7 +235,10 @@ pub async fn start_eigen_committer(
         .with_new_bundle_check_interval("3s".to_owned())
         .with_state_pruner_retention("1s".to_owned())
         .with_state_pruner_run_interval("30s".to_owned())
-        .with_alt_da_key(eigen_key);
+        .with_alt_da_key(eigen_key)
+        .with_da_fee_check_interval("30s".to_owned())
+        .with_da_layer_polling_interval("2s".to_owned())
+        .with_da_layer_api_throughput(16777216);
 
     committer_builder.start().await
 }

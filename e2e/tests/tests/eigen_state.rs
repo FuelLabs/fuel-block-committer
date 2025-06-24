@@ -7,11 +7,10 @@ use k256::ecdsa::SigningKey as K256SigningKey;
 use std::time::Duration;
 use tracing::info;
 
-#[ignore = "requires EIGEN_KEY environment variable"]
 #[tokio::test]
 async fn test_eigen_state() -> Result<()> {
     // Start required services
-    let logs = false;
+    let logs = true;
     let kms = start_kms(logs).await?;
     let eth_node = start_eth(logs).await?;
     let eth_signers = create_and_fund_kms_signers(&kms, &eth_node).await?;
@@ -49,7 +48,7 @@ async fn test_eigen_state() -> Result<()> {
         &deployed_contract,
         eth_signers.main,
         kms_key_id, // Use the KMS key ID instead of raw EIGEN_KEY
-        "28 MB",
+        "1 KB",
     )
     .await?;
 
@@ -67,14 +66,44 @@ async fn test_eigen_state() -> Result<()> {
 
     // Test 2: Verify state synchronization
     // Wait for some blocks to be processed
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    tokio::time::sleep(Duration::from_secs(100)).await;
 
+    // TODO: we should investigate directly querying the database instead of using metrics.
     // Check if committer has processed any blocks
     let metrics = client.get(metrics_url).send().await?.text().await?;
-    assert!(
-        metrics.contains("blocks_processed_total"),
-        "Committer should have processed some blocks"
-    );
+
+    let last_finalized_time =
+        extract_metric_value(&metrics, "seconds_since_last_finalized_fragment");
+
+    if let Some(value) = last_finalized_time {
+        assert!(
+            value > 0,
+            "seconds_since_last_finalized_fragment should be non-zero, got: {}",
+            value
+        );
+    } else {
+        panic!("seconds_since_last_finalized_fragment metric not found in metrics output");
+    }
 
     Ok(())
+}
+
+fn extract_metric_value(input: &str, target_metric: &str) -> Option<u64> {
+    for line in input.lines() {
+        let line = line.trim();
+
+        // Skip comments and empty lines
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+
+        // Check for target metric at start of line
+        if line.starts_with(target_metric) {
+            // Value is always the second component
+            if let Ok(value) = line.split_whitespace().nth(1)?.parse() {
+                return Some(value);
+            }
+        }
+    }
+    None
 }

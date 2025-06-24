@@ -118,6 +118,7 @@ pub struct EigenDaConfig {
     pub polling_interval: Option<Duration>,
     /// Allocated API throughput limit in bytes/s (for the address corresponding to the key).
     /// Defaults to 16 MiB/s if not given.
+    #[serde(deserialize_with = "parse_u32")]
     pub api_throughput: Option<u32>,
     /// URL to the EigenDA RPC endpoint for Ethereum.
     #[serde(deserialize_with = "parse_url")]
@@ -268,6 +269,28 @@ where
         let msg = format!("Failed to parse URL '{url_str}': {e};");
         serde::de::Error::custom(msg)
     })
+}
+
+// Custom deserializer that handles string or number input for u32
+fn parse_u32<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        Number(u32),
+    }
+
+    let value: Option<StringOrNumber> = Option::deserialize(deserializer)?;
+    match value {
+        Some(StringOrNumber::String(s)) => s.parse().map(Some).map_err(|e| {
+            serde::de::Error::custom(format!("Failed to parse '{}' as u32: {}", s, e))
+        }),
+        Some(StringOrNumber::Number(n)) => Ok(Some(n)),
+        None => Ok(None),
+    }
 }
 
 #[allow(dead_code)]
