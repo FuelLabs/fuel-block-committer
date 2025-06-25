@@ -41,7 +41,7 @@ impl Decoder {
 
 #[cfg(test)]
 mod tests {
-    use crate::bundle::{Bundle, BundleV1, Encoder};
+    use crate::bundle::{Bundle, BundleEncoder, BundleV1, Encoder};
 
     #[test]
     fn complains_about_unsupported_version() {

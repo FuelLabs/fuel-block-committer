@@ -1,13 +1,7 @@
-use std::{num::NonZeroU32, ops::RangeInclusive, str::FromStr, time::Duration};
+use std::{num::NonZeroU32, ops::RangeInclusive, time::Duration};
 
 use ::metrics::{HealthChecker, RegistersMetrics, prometheus::core::Collector};
-use alloy::{
-    consensus::SignableTransaction,
-    network::TxSigner,
-    primitives::{Address, B256, ChainId},
-    rpc::types::FeeHistory,
-    signers::{Signature, local::PrivateKeySigner},
-};
+use alloy::{network::TxSigner, primitives::Address, rpc::types::FeeHistory, signers::Signature};
 use delegate::delegate;
 use serde::Deserialize;
 use services::{
@@ -24,7 +18,7 @@ use self::{
     connection::WsConnection,
     health_tracking_middleware::{EthApi, HealthTrackingMiddleware},
 };
-use crate::{AwsClient, AwsConfig, fee_api_helpers::batch_requests};
+use crate::fee_api_helpers::batch_requests;
 
 mod connection;
 mod health_tracking_middleware;
@@ -117,43 +111,12 @@ impl services::state_committer::port::l1::Api for WebsocketClient {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum L1Key {
-    Kms(String),
-    Private(String),
-}
-
-impl<'a> serde::Deserialize<'a> for L1Key {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
-            Ok(L1Key::Kms(k.to_string()))
-        } else if let Some(k) = value
-            .strip_prefix("Private(")
-            .and_then(|s| s.strip_suffix(')'))
-        {
-            Ok(L1Key::Private(k.to_string()))
-        } else {
-            Err(serde::de::Error::custom("invalid L1Key format"))
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct L1Keys {
-    /// The eth key authorized by the L1 bridging contracts to post block commitments.
-    pub main: L1Key,
-    /// The eth key for posting L2 state to L1.
-    pub blob: Option<L1Key>,
-}
-
-impl L1Keys {
-    pub fn uses_aws(&self) -> bool {
-        matches!(self.main, L1Key::Kms(_)) || matches!(self.blob, Some(L1Key::Kms(_)))
-    }
+pub struct L1Signers<S1, S2> {
+    /// The eth signer authorized by the L1 bridging contracts to post block commitments.
+    pub main: S1,
+    /// The eth signer for posting L2 state to L1.
+    pub blob: Option<S2>,
 }
 
 #[derive(Debug, Clone)]
@@ -216,106 +179,21 @@ impl AcceptablePriorityFeePercentages {
 
 // This trait is needed because you cannot write `dyn TraitA + TraitB` except when TraitB is an
 // auto-trait.
-trait CompositeSigner: alloy::signers::Signer + TxSigner<Signature> {}
-impl<T: alloy::signers::Signer + TxSigner<Signature>> CompositeSigner for T {}
-
-pub struct Signer {
-    signer: Box<dyn CompositeSigner + 'static + Send + Sync>,
-}
-
-#[async_trait::async_trait]
-impl TxSigner<Signature> for Signer {
-    fn address(&self) -> Address {
-        TxSigner::<Signature>::address(&self.signer)
-    }
-
-    async fn sign_transaction(
-        &self,
-        tx: &mut dyn SignableTransaction<Signature>,
-    ) -> alloy::signers::Result<Signature> {
-        TxSigner::<Signature>::sign_transaction(&self.signer, tx).await
-    }
-}
-
-#[async_trait::async_trait]
-impl alloy::signers::Signer<Signature> for Signer {
-    async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
-        self.signer.sign_hash(hash).await
-    }
-
-    fn address(&self) -> Address {
-        alloy::signers::Signer::<Signature>::address(&self.signer)
-    }
-
-    fn chain_id(&self) -> Option<ChainId> {
-        self.signer.chain_id()
-    }
-
-    fn set_chain_id(&mut self, chain_id: Option<ChainId>) {
-        self.signer.set_chain_id(chain_id)
-    }
-}
-
-impl Signer {
-    pub async fn make_aws_signer(client: &AwsClient, key: String) -> Result<Self> {
-        let signer = client.make_signer(key).await?;
-
-        Ok(Signer {
-            signer: Box::new(signer),
-        })
-    }
-
-    pub fn make_private_key_signer(key: &str) -> Result<Self> {
-        let signer = PrivateKeySigner::from_str(key)
-            .map_err(|_| services::Error::Other("Invalid private key".to_string()))?;
-
-        Ok(Signer {
-            signer: Box::new(signer),
-        })
-    }
-}
-
-pub struct Signers {
-    pub main: Signer,
-    pub blob: Option<Signer>,
-}
-impl Signers {
-    pub async fn for_keys(keys: L1Keys) -> Result<Self> {
-        let aws_client = if keys.uses_aws() {
-            let config = AwsConfig::from_env().await;
-            Some(AwsClient::new(config))
-        } else {
-            None
-        };
-
-        let blob_signer = match keys.blob {
-            Some(L1Key::Kms(key)) => {
-                Some(Signer::make_aws_signer(aws_client.as_ref().expect("is set"), key).await?)
-            }
-            Some(L1Key::Private(key)) => Some(Signer::make_private_key_signer(&key)?),
-            None => None,
-        };
-
-        let main_signer = match keys.main {
-            L1Key::Kms(key) => Signer::make_aws_signer(&aws_client.expect("is set"), key).await?,
-            L1Key::Private(key) => Signer::make_private_key_signer(&key)?,
-        };
-
-        Ok(Self {
-            main: main_signer,
-            blob: blob_signer,
-        })
-    }
-}
+pub trait Sign: alloy::signers::Signer + TxSigner<Signature> {}
+impl<T: alloy::signers::Signer + TxSigner<Signature>> Sign for T {}
 
 impl WebsocketClient {
-    pub async fn connect(
+    pub async fn connect<S1, S2>(
         url: Url,
         contract_address: Address,
-        signers: Signers,
+        signers: L1Signers<S1, S2>,
         unhealthy_after_n_errors: usize,
         tx_config: TxConfig,
-    ) -> services::Result<Self> {
+    ) -> services::Result<Self>
+    where
+        S1: Sign + Send + Sync + 'static,
+        S2: Sign + Send + Sync + 'static,
+    {
         let blob_poster_address = signers
             .blob
             .as_ref()
@@ -408,73 +286,5 @@ impl WebsocketClient {
 impl RegistersMetrics for WebsocketClient {
     fn metrics(&self) -> Vec<Box<dyn Collector>> {
         self.inner.metrics()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_eq;
-    use services::state_committer::port::l1::Priority;
-
-    use super::L1Key;
-
-    #[test]
-    fn can_deserialize_private_key() {
-        // given
-        let val = r#""Private(0x1234)""#;
-
-        // when
-        let key: L1Key = serde_json::from_str(val).unwrap();
-
-        // then
-        assert_eq!(key, L1Key::Private("0x1234".to_owned()));
-    }
-
-    #[test]
-    fn can_deserialize_kms_key() {
-        // given
-        let val = r#""Kms(0x1234)""#;
-
-        // when
-        let key: L1Key = serde_json::from_str(val).unwrap();
-
-        // then
-        assert_eq!(key, L1Key::Kms("0x1234".to_owned()));
-    }
-
-    #[test]
-    fn lowest_priority_gives_min_priority_fee_perc() {
-        // given
-        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
-
-        // when
-        let fee_perc = sut.apply(Priority::MIN);
-
-        // then
-        assert_eq!(fee_perc, 20.);
-    }
-
-    #[test]
-    fn medium_priority_gives_middle_priority_fee_perc() {
-        // given
-        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
-
-        // when
-        let fee_perc = sut.apply(Priority::new(50.).unwrap());
-
-        // then
-        assert_eq!(fee_perc, 30.);
-    }
-
-    #[test]
-    fn highest_priority_gives_max_priority_fee_perc() {
-        // given
-        let sut = super::AcceptablePriorityFeePercentages::new(20., 40.).unwrap();
-
-        // when
-        let fee_perc = sut.apply(Priority::MAX);
-
-        // then
-        assert_eq!(fee_perc, 40.);
     }
 }

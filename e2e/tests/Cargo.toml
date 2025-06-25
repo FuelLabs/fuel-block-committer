@@ -9,9 +9,35 @@ version = { workspace = true }
 publish = { workspace = true }
 rust-version = { workspace = true }
 
-[dev-dependencies]
+[dependencies]
 e2e-helpers = { workspace = true }
+
+[dev-dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 storage = { workspace = true }
 services = { workspace = true }
+rust-eigenda-signers = { workspace = true }
+rust-eigenda-v2-client = { workspace = true }
+eigenda = { workspace = true }
+async-trait = { workspace = true }
+aws-config = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = [
+  "env-filter",
+  "fmt",
+  "json",
+] }
+url = { workspace = true }
+hex = { workspace = true }
+k256 = { workspace = true, features = ["ecdsa"] }
+rand = { workspace = true }
+secp256k1 = { workspace = true, features = ["default", "recovery", "rand-std"] }
+sha2 = { workspace = true }
+ethereum-types = { workspace = true }
+reqwest = { version = "0.11.24", features = ["json"] }
+signers = { workspace = true, features = ["test-helpers"] }
+
+[features]
+default = ["fuel-core-simulated"]
+fuel-core-simulated = ["e2e-helpers/fuel-core-simulated"]

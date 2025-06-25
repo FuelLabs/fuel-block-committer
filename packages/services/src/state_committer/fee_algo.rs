@@ -44,8 +44,10 @@ where
             .await?
             .mean();
 
-        let short_term_tx_fee =
-            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &short_term_sma);
+        let short_term_tx_fee = fee_metrics_tracker::ethereum_da::service::calculate_blob_tx_fee(
+            num_blobs,
+            &short_term_sma,
+        );
 
         if self.fee_always_acceptable(short_term_tx_fee) {
             info!(
@@ -55,8 +57,10 @@ where
             return Ok(true);
         }
 
-        let long_term_tx_fee =
-            fee_metrics_tracker::service::calculate_blob_tx_fee(num_blobs, &long_term_sma);
+        let long_term_tx_fee = fee_metrics_tracker::ethereum_da::service::calculate_blob_tx_fee(
+            num_blobs,
+            &long_term_sma,
+        );
         let max_upper_tx_fee = calculate_max_upper_fee(
             &self.config.fee_thresholds,
             long_term_tx_fee,

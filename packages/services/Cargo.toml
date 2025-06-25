@@ -14,6 +14,7 @@ humantime = { workspace = true }
 byte-unit = { workspace = true, features = ["byte", "u128"] }
 alloy = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 bytesize = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
 futures = { workspace = true }
@@ -32,9 +33,11 @@ tracing = { workspace = true }
 trait-variant = { workspace = true }
 
 [dev-dependencies]
+derive_more = { workspace = true, features = ["error", "display"] }
 test-case = { workspace = true }
 clock = { workspace = true, features = ["test-helpers"] }
 eth = { workspace = true, features = ["test-helpers"] }
+eigenda = { workspace = true }
 mockall = { workspace = true }
 services = { workspace = true, features = ["test-helpers"] }
 pretty_assertions = { workspace = true, features = ["std"] }

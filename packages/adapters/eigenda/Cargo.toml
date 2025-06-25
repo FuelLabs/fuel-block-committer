@@ -1,0 +1,46 @@
+[package]
+name = "eigenda"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+publish = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+services = { workspace = true }
+sha3 = { workspace = true }
+hex = { workspace = true }
+k256 = { workspace = true, features = ["ecdsa"] }
+futures = { workspace = true }
+metrics = { workspace = true }
+prost = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true, features = [
+  "tls",
+  "transport",
+  "tls-roots",
+  "codegen",
+  "prost",
+] }
+tonic-build = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+governor = { workspace = true, features = ["default"] }
+humantime = { workspace = true }
+byte-unit = { workspace = true, features = ["byte", "u128"] }
+rust-eigenda-v2-client = { workspace = true }
+rust-eigenda-v2-common = { workspace = true }
+ethereum-types = { workspace = true }
+async-trait = { workspace = true }
+secp256k1 = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+
+
+[features]
+test-helpers = []

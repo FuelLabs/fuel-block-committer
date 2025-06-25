@@ -10,6 +10,7 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+tracing = { workspace = true }
 futures = { workspace = true }
 delegate = { workspace = true, optional = true }
 hex = { workspace = true }
@@ -19,6 +20,7 @@ num-bigint = { workspace = true }
 services = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 sqlx = { workspace = true, features = [
   "bigdecimal",
   "postgres",
@@ -28,6 +30,7 @@ sqlx = { workspace = true, features = [
   "tls-rustls",
   "time",
   "chrono",
+  "json",
 ] }
 testcontainers = { workspace = true, optional = true, features = [
   "signal-hook",

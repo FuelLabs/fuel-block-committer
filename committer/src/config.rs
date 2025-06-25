@@ -7,16 +7,18 @@ use std::{
 
 use byte_unit::Byte;
 use clap::{Parser, command};
-use eth::{Address, L1Keys};
+use eth::{Address, L1Signers};
 use fuel_block_committer_encoding::bundle::CompressionLevel;
 use serde::Deserialize;
 use services::state_committer::{AlgoConfig, FeeMultiplierRange, FeeThresholds, SmaPeriods};
+use signers::{aws_sdk_kms::Client, kms_utils::load_config_from_env};
 use storage::DbConfig;
 use url::Url;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub eth: Eth,
+    pub da_layer: Option<DALayer>,
     pub fuel: Fuel,
     pub app: App,
 }
@@ -91,6 +93,67 @@ pub struct Fuel {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+pub enum DALayer {
+    #[serde(rename = "EigenDA")]
+    EigenDA(EigenDaConfig),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EigenDaConfig {
+    /// Key for posting authenticated requests to the EigenDA disperser.
+    pub key: KeySource,
+    /// URL to an EigenDA RPC endpoint.
+    #[serde(deserialize_with = "parse_url")]
+    pub disperser_rpc_url: Url,
+    /// Blob fragment size.
+    /// Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
+    pub fragment_size: Option<NonZeroU32>,
+    /// Fee check interval.
+    #[serde(deserialize_with = "human_readable_duration")]
+    pub fee_check_interval: Duration,
+    /// Polling interval.
+    /// Defaults to 1s if not given.
+    #[serde(deserialize_with = "maybe_human_readable_duration")]
+    pub polling_interval: Option<Duration>,
+    /// Allocated API throughput limit in bytes/s (for the address corresponding to the key).
+    /// Defaults to 16 MiB/s if not given.
+    #[serde(deserialize_with = "parse_u32")]
+    pub api_throughput: Option<u32>,
+    /// URL to the EigenDA RPC endpoint for Ethereum.
+    #[serde(deserialize_with = "parse_url")]
+    pub eth_rpc_url: Url,
+    /// Certificate verifier address.
+    pub cert_verifier_address: String,
+}
+
+impl EigenDaConfig {
+    pub async fn signer(&self) -> crate::errors::Result<signers::eigen::Signer> {
+        let signer = match &self.key {
+            KeySource::Private(key) => {
+                let key = key.parse().map_err(|_| {
+                    crate::errors::Error::Other("Failed to parse eigen private key".to_owned())
+                })?;
+                signers::eigen::Signer::Private(signers::eigen::private_key::Signer::new(key))
+            }
+            KeySource::Kms(key) => {
+                let config = load_config_from_env().await;
+                let client = Client::new(&config);
+                let signer = signers::eigen::kms::Signer::new(client, key.clone())
+                    .await
+                    .map_err(|e| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to create eigen kms signer: {e}"
+                        ))
+                    })?;
+                signers::eigen::Signer::Kms(signer)
+            }
+        };
+        Ok(signer)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Eth {
     /// L1 keys for state contract calls and postings.
     pub l1_keys: L1Keys,
@@ -99,6 +162,102 @@ pub struct Eth {
     pub rpc: Url,
     /// Ethereum address of the fuel chain state contract.
     pub state_contract_address: Address,
+}
+
+impl Eth {
+    pub async fn signers(
+        &self,
+    ) -> crate::errors::Result<L1Signers<signers::eth::Signer, signers::eth::Signer>> {
+        // A little helper to turn a KeySource into a Signer, tagging errors appropriately.
+        let make_signer = |ks: KeySource, label: &'static str| async move {
+            match ks.clone() {
+                KeySource::Kms(key) => {
+                    let config = load_config_from_env().await;
+                    let client = Client::new(&config);
+                    let kms = signers::eth::kms::Signer::new(client, key.to_owned(), None)
+                        .await
+                        .map_err(|e| {
+                            crate::errors::Error::Other(format!(
+                                "Failed to create {} kms signer: {e}",
+                                label
+                            ))
+                        })?;
+
+                    crate::Result::<_>::Ok(signers::eth::Signer::Kms(kms))
+                }
+                KeySource::Private(key) => {
+                    let pk = signers::eth::private_key::Signer::from_str(&key).map_err(|_| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to create {} private key signer",
+                            label
+                        ))
+                    })?;
+                    Ok(signers::eth::Signer::Private(pk))
+                }
+            }
+        };
+
+        // Build the `main` signer
+        let main = make_signer(self.l1_keys.main.clone(), "main").await?;
+
+        // Build the optional `blob` signer
+        let blob = if let Some(ref ks) = self.l1_keys.blob {
+            Some(make_signer(ks.clone(), "blob").await?)
+        } else {
+            None
+        };
+
+        Ok(L1Signers { main, blob })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct L1Keys {
+    pub main: KeySource,
+    pub blob: Option<KeySource>,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum KeySource {
+    Kms(String),
+    Private(String),
+}
+
+impl std::fmt::Debug for KeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeySource::Kms(_) => write!(f, "KeySource::Kms"),
+            KeySource::Private(_) => write!(f, "KeySource::Private"),
+        }
+    }
+}
+
+impl std::fmt::Display for KeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeySource::Kms(_) => write!(f, "Kms(...)"),
+            KeySource::Private(_) => write!(f, "Private(...)"),
+        }
+    }
+}
+
+impl<'a> serde::Deserialize<'a> for KeySource {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if let Some(k) = value.strip_prefix("Kms(").and_then(|s| s.strip_suffix(')')) {
+            Ok(KeySource::Kms(k.to_string()))
+        } else if let Some(k) = value
+            .strip_prefix("Private(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            Ok(KeySource::Private(k.to_string()))
+        } else {
+            Err(serde::de::Error::custom("invalid KeySource format"))
+        }
+    }
 }
 
 fn parse_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
@@ -110,6 +269,28 @@ where
         let msg = format!("Failed to parse URL '{url_str}': {e};");
         serde::de::Error::custom(msg)
     })
+}
+
+// Custom deserializer that handles string or number input for u32
+fn parse_u32<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        Number(u32),
+    }
+
+    let value: Option<StringOrNumber> = Option::deserialize(deserializer)?;
+    match value {
+        Some(StringOrNumber::String(s)) => s.parse().map(Some).map_err(|e| {
+            serde::de::Error::custom(format!("Failed to parse '{}' as u32: {}", s, e))
+        }),
+        Some(StringOrNumber::Number(n)) => Ok(Some(n)),
+        None => Ok(None),
+    }
 }
 
 #[allow(dead_code)]
@@ -266,6 +447,20 @@ where
     })
 }
 
+fn maybe_human_readable_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration_str: Option<String> = Deserialize::deserialize(deserializer)?;
+    match duration_str {
+        Some(s) => humantime::parse_duration(&s).map(Some).map_err(|e| {
+            let msg = format!("Failed to parse duration '{s}': {e}");
+            serde::de::Error::custom(msg)
+        }),
+        None => Ok(None),
+    }
+}
+
 fn human_readable_bytes<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -351,4 +546,33 @@ pub fn parse() -> crate::errors::Result<Config> {
         .build()?;
 
     Ok(config.try_deserialize()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KeySource;
+
+    #[test]
+    fn can_deserialize_private_key() {
+        // given
+        let val = r#""Private(0x1234)""#;
+
+        // when
+        let key: KeySource = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, KeySource::Private("0x1234".to_owned()));
+    }
+
+    #[test]
+    fn can_deserialize_kms_key() {
+        // given
+        let val = r#""Kms(0x1234)""#;
+
+        // when
+        let key: KeySource = serde_json::from_str(val).unwrap();
+
+        // then
+        assert_eq!(key, KeySource::Kms("0x1234".to_owned()));
+    }
 }

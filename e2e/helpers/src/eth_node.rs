@@ -7,13 +7,12 @@ use alloy::{
     rpc::types::TransactionRequest,
     signers::local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
 };
-use eth::Address;
+use eth::{Address, L1Signers};
 use services::types::U256;
+use signers::eth::kms::TestEthKmsSigner;
 use state_contract::CreateTransactions;
 pub use state_contract::{ContractArgs, DeployedContract};
 use url::Url;
-
-use crate::kms::KmsKey;
 
 #[derive(Default, Debug)]
 pub struct EthNode {
@@ -75,24 +74,28 @@ impl EthNodeProcess {
 
     pub async fn deploy_state_contract(
         &self,
-        kms_key: KmsKey,
+        signers: L1Signers<TestEthKmsSigner, TestEthKmsSigner>,
         contract_args: ContractArgs,
         tx_max_fee: u128,
         request_timeout: Duration,
     ) -> anyhow::Result<DeployedContract> {
+        let main_addr = alloy::signers::Signer::address(&signers.main.signer);
         let prepared_transactions =
-            CreateTransactions::prepare(self.ws_url(), &kms_key, contract_args).await?;
+            CreateTransactions::prepare(self.ws_url(), main_addr, contract_args).await?;
 
         let proxy_contract_address = prepared_transactions.proxy_contract_address()?;
 
         prepared_transactions
-            .deploy(self.ws_url(), &kms_key)
+            .deploy(
+                self.ws_url(),
+                signers::eth::Signer::Kms(signers.main.signer.clone()),
+            )
             .await?;
 
         DeployedContract::connect(
             self.ws_url(),
             proxy_contract_address,
-            kms_key,
+            signers,
             tx_max_fee,
             request_timeout,
         )

@@ -324,6 +324,63 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Allowed Values:** `"disabled"`, `"min"`, or any value up to `"max"` (`"level1"`, `"level2"`, ...)
   - **Example:** `"min"`
 
+#### DA Layer Configuration
+
+- **`COMMITTER__DA_LAYER__TYPE`**
+
+  - **Description:** Specifies the Data Availability layer type to use.
+  - **Allowed Values:** `"EigenDA"`
+  - **Example:** `EigenDA`
+
+- **`COMMITTER__DA_LAYER__KEY`**
+
+  - **Description:** Authentication key for posting requests to the EigenDA disperser.
+  - **Format:** `Private(0x...)` for private keys or `Kms(key-id)` for AWS KMS keys
+  - **Example:** `Kms(arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012)`
+
+- **`COMMITTER__DA_LAYER__DISPERSER_RPC_URL`**
+
+  - **Description:** URL endpoint for the EigenDA disperser RPC service.
+  - **Format:** Valid URL
+  - **Example:** `https://disperser-holesky.eigenda.xyz`
+
+- **`COMMITTER__DA_LAYER__FRAGMENT_SIZE`**
+
+  - **Description:** Size of blob fragments sent to EigenDA. Defaults to 3.5MB if not specified.
+  - **Type:** Positive integer (`NonZeroU32`) in bytes
+  - **Example:** `3670016`
+  - **Note:** Values over 4MB may cause server-side errors during inclusion checks.
+
+- **`COMMITTER__DA_LAYER__FEE_CHECK_INTERVAL`**
+
+  - **Description:** Interval for checking EigenDA fees.
+  - **Format:** Human-readable duration
+  - **Example:** `30s`
+
+- **`COMMITTER__DA_LAYER__POLLING_INTERVAL`**
+
+  - **Description:** Interval for polling EigenDA status. Defaults to 1 second if not specified.
+  - **Format:** Human-readable duration
+  - **Example:** `2s`
+
+- **`COMMITTER__DA_LAYER__API_THROUGHPUT`**
+
+  - **Description:** Allocated API throughput limit in bytes/s for the authenticated address. Defaults to 16 MiB/s if not specified.
+  - **Type:** `u32`
+  - **Example:** `16777216`
+
+- **`COMMITTER__DA_LAYER__ETH_RPC_URL`**
+
+  - **Description:** URL endpoint for the Ethereum RPC service used by EigenDA.
+  - **Format:** Valid URL
+  - **Example:** `https://ethereum-holesky-rpc.publicnode.com`
+
+- **`COMMITTER__DA_LAYER__CERT_VERIFIER_ADDRESS`**
+
+  - **Description:** Address of the certificate verifier contract. Get it from the EigenDA documentation or deployment details.
+  - **Type:** String
+  - **Example:** `0x1234567890123456789012345678901234567890`
+
 ### Configuration Validation
 
 At startup, the committer validates the provided configuration to ensure that:

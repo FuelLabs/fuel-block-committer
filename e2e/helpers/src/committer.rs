@@ -9,6 +9,7 @@ pub struct Committer {
     show_logs: bool,
     main_key_arn: Option<String>,
     blob_key_arn: Option<String>,
+    alt_da_key_arn: Option<String>,
     state_contract_address: Option<String>,
     eth_rpc: Option<Url>,
     fuel_rpc: Option<Url>,
@@ -26,6 +27,9 @@ pub struct Committer {
     new_bundle_check_interval: Option<String>,
     state_pruner_retention: Option<String>,
     state_pruner_run_interval: Option<String>,
+    da_fee_check_interval: Option<String>,
+    da_layer_polling_interval: Option<String>,
+    da_layer_api_throughput: Option<u32>,
 }
 
 impl Committer {
@@ -140,7 +144,36 @@ impl Committer {
             .kill_on_drop(true);
 
         if let Some(key) = blob_key {
-            cmd.env("COMMITTER__ETH__L1_KEYS__BLOB", key);
+            cmd.env("COMMITTER__ETH__L1_KEYS__BLOB", key.clone());
+        } else if let Some(key) = self.alt_da_key_arn {
+            let key = format!("Kms({key})");
+
+            cmd.env("COMMITTER__DA_LAYER__TYPE", "EigenDA")
+                .env(
+                    "COMMITTER__DA_LAYER__DISPERSER_RPC_URL",
+                    "https://disperser-holesky.eigenda.xyz",
+                )
+                .env("COMMITTER__DA_LAYER__KEY", key)
+                .env(
+                    "COMMITTER__DA_LAYER__FEE_CHECK_INTERVAL",
+                    get_field!(da_fee_check_interval),
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__POLLING_INTERVAL",
+                    get_field!(da_layer_polling_interval),
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__API_THROUGHPUT",
+                    get_field!(da_layer_api_throughput).to_string(),
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__ETH_RPC_URL",
+                    "https://ethereum-holesky-rpc.publicnode.com",
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__CERT_VERIFIER_ADDRESS",
+                    "0xFe52fE1940858DCb6e12153E2104aD0fDFbE1162",
+                );
         }
 
         let sink = if self.show_logs {
@@ -228,6 +261,11 @@ impl Committer {
         self
     }
 
+    pub fn with_alt_da_key(mut self, alt_da_key: String) -> Self {
+        self.alt_da_key_arn = Some(alt_da_key);
+        self
+    }
+
     pub fn with_state_contract_address(mut self, state_contract_address: Address) -> Self {
         self.state_contract_address = Some(hex::encode(state_contract_address));
         self
@@ -255,6 +293,21 @@ impl Committer {
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
         self.show_logs = show_logs;
+        self
+    }
+
+    pub fn with_da_fee_check_interval(mut self, interval: String) -> Self {
+        self.da_fee_check_interval = Some(interval);
+        self
+    }
+
+    pub fn with_da_layer_polling_interval(mut self, interval: String) -> Self {
+        self.da_layer_polling_interval = Some(interval);
+        self
+    }
+
+    pub fn with_da_layer_api_throughput(mut self, throughput: u32) -> Self {
+        self.da_layer_api_throughput = Some(throughput);
         self
     }
 }

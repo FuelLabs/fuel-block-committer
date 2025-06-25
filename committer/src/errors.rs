@@ -11,6 +11,10 @@ pub enum Error {
     Network(String),
     #[error("Storage error: {0}")]
     Storage(String),
+    #[error("Block validation error: {0}")]
+    BlockValidation(String),
+    #[error("Bundler error: {0}")]
+    Bundler(String),
 }
 
 pub trait WithContext<T> {
@@ -43,7 +47,9 @@ impl From<services::Error> for Error {
         match error {
             services::Error::Network(e) => Self::Network(e),
             services::Error::Storage(e) => Self::Storage(e),
-            services::Error::BlockValidation(e) | services::Error::Other(e) => Self::Other(e),
+            services::Error::BlockValidation(e) => Self::BlockValidation(e),
+            services::Error::Bundler(e) => Self::Bundler(e),
+            services::Error::Other(e) => Self::Other(e.to_string()),
         }
     }
 }
@@ -69,6 +75,10 @@ impl<T> WithContext<T> for Result<T> {
                 Error::Other(e) => Error::Other(format!("{}: {}", context(), e)),
                 Error::Network(e) => Error::Network(format!("{}: {}", context(), e)),
                 Error::Storage(e) => Error::Storage(format!("{}: {}", context(), e)),
+                Error::BlockValidation(e) => {
+                    Error::BlockValidation(format!("{}: {}", context(), e))
+                }
+                Error::Bundler(e) => Error::Bundler(format!("{}: {}", context(), e)),
             };
             Err(new_err)
         } else {

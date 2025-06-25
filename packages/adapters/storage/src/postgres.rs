@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::RangeInclusive};
+use std::{collections::HashMap, ops::RangeInclusive, time::Duration};
 
 use futures::{TryStreamExt, stream::BoxStream};
 use itertools::Itertools;
@@ -6,9 +6,9 @@ use metrics::{RegistersMetrics, prometheus::IntGauge};
 use services::{
     block_bundler::port::UnbundledBlocks,
     types::{
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
-        storage::SequentialFuelBlocks,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        DispersalStatus, EigenDARequestId, EigenDASubmission, Fragment, NonEmpty, NonNegative,
+        TransactionCostUpdate, TransactionState, Utc, storage::SequentialFuelBlocks,
     },
 };
 use sqlx::{
@@ -18,7 +18,10 @@ use sqlx::{
 
 use super::error::{Error, Result};
 use crate::{
-    mappings::tables::{self, L1TxState},
+    mappings::{
+        eigen_tables::{self, SubmissionStatus},
+        tables::{self, L1TxState},
+    },
     postgres::tables::u128_to_bigdecimal,
 };
 
@@ -269,6 +272,60 @@ impl Postgres {
         Ok(submission_row)
     }
 
+    pub(crate) async fn _oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<services::types::storage::BundleFragment>> {
+        let limit: i64 = limit.try_into().unwrap_or(i64::MAX);
+        let fragments = sqlx::query_as!(
+            tables::BundleFragment,
+            r#"SELECT
+        sub.id,
+        sub.idx,
+        sub.bundle_id,
+        sub.data,
+        sub.unused_bytes,
+        sub.total_bytes,
+        sub.start_height
+    FROM (
+        SELECT DISTINCT ON (f.id)
+            f.*,
+            b.start_height
+        FROM l1_fragments f
+        JOIN bundles b ON b.id = f.bundle_id
+        WHERE
+            b.end_height >= $2
+            AND NOT EXISTS (
+                SELECT 1
+                FROM eigen_submission_fragments tf
+                JOIN eigen_submission t ON t.id = tf.submission_id
+                WHERE tf.fragment_id = f.id
+                  AND t.status <> $1
+            )
+        ORDER BY
+            f.id,
+            b.start_height ASC,
+            f.idx ASC
+    ) AS sub
+    ORDER BY
+        sub.start_height ASC,
+        sub.idx ASC
+    LIMIT $3;
+"#,
+            i16::from(SubmissionStatus::Failed),
+            i64::from(starting_height),
+            limit
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .try_collect()?;
+
+        Ok(fragments)
+    }
+
     pub(crate) async fn _oldest_nonfinalized_fragments(
         &self,
         starting_height: u32,
@@ -387,8 +444,19 @@ impl Postgres {
         /// u16::MAX. Sqlx panics if this limit is exceeded.
         const MAX_BLOCKS_PER_QUERY: usize = (u16::MAX / FIELDS_PER_BLOCK) as usize;
 
+        let total_start = std::time::Instant::now();
+        let mut total_execute_time = Duration::from_secs(0);
+
+        tracing::info!(
+            target: "insert_blocks_perf",
+            blocks_count = blocks.len(),
+            max_blocks_per_query = MAX_BLOCKS_PER_QUERY,
+            "Starting _insert_blocks"
+        );
+
         let mut tx = self.connection_pool.begin().await?;
 
+        let query_build_start = std::time::Instant::now();
         let queries = blocks
             .into_iter()
             .map(tables::DBCompressedFuelBlock::from)
@@ -405,12 +473,37 @@ impl Postgres {
                 query_builder
             })
             .collect_vec();
+        let total_query_build_time = query_build_start.elapsed();
 
-        for mut query in queries {
-            query.build().execute(&mut *tx).await?;
+        for (chunk_index, mut query) in queries.into_iter().enumerate() {
+            let execute_start = std::time::Instant::now();
+            let result = query.build().execute(&mut *tx).await;
+            let execute_duration = execute_start.elapsed();
+            total_execute_time += execute_duration;
+
+            tracing::info!(
+                target: "insert_blocks_perf",
+                chunk_index,
+                duration_ms = execute_duration.as_millis(),
+                "Executed insert chunk"
+            );
+
+            result?; // Propagate errors after logging duration
         }
 
+        let commit_start = std::time::Instant::now();
         tx.commit().await?;
+        let total_commit_time = commit_start.elapsed();
+
+        let total_duration = total_start.elapsed();
+        tracing::info!(
+            target: "insert_blocks_perf",
+            total_duration_ms = total_duration.as_millis(),
+            query_build_duration_ms = total_query_build_time.as_millis(),
+            execute_duration_ms = total_execute_time.as_millis(),
+            commit_duration_ms = total_commit_time.as_millis(),
+            "Finished _insert_blocks"
+        );
 
         Ok(())
     }
@@ -482,10 +575,10 @@ impl Postgres {
     pub(crate) async fn total_unbundled_blocks(&self, starting_height: u32) -> Result<u64> {
         let count = sqlx::query!(
             r#"SELECT COUNT(*)
-                FROM fuel_blocks fb 
+                FROM fuel_blocks fb
                 WHERE fb.height >= $1
                 AND NOT EXISTS (
-                    SELECT 1 FROM bundles b 
+                    SELECT 1 FROM bundles b
                     WHERE fb.height BETWEEN b.start_height AND b.end_height
                     AND b.end_height >= $1
                 )"#,
@@ -548,14 +641,14 @@ impl Postgres {
         sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
-            SELECT fb.* 
-        FROM fuel_blocks fb 
+            SELECT fb.*
+        FROM fuel_blocks fb
         WHERE fb.height >= $1
         AND NOT EXISTS (
-            SELECT 1 FROM bundles b 
+            SELECT 1 FROM bundles b
             WHERE fb.height BETWEEN b.start_height AND b.end_height
             AND b.end_height >= $1
-        ) 
+        )
         ORDER BY fb.height"#,
             i64::from(starting_height),
         )
@@ -1187,6 +1280,20 @@ impl Postgres {
                 RETURNING id, submission_id
             ),
 
+            -- Delete from eigen_submission
+            deleted_eigen_submissions AS (
+                DELETE FROM eigen_submission
+                WHERE created_at < $1
+                RETURNING id
+            ),
+
+            -- Delete from eigen_submission_fragments
+            deleted_eigen_submission_fragments AS (
+                DELETE FROM eigen_submission_fragments
+                WHERE submission_id IN (SELECT id FROM deleted_eigen_submissions)
+                RETURNING submission_id, fragment_id
+            ),
+
             -- Build updated_transactions that represent the state after deletions
             updated_transactions AS (
                 SELECT submission_id FROM l1_transaction
@@ -1233,7 +1340,9 @@ impl Postgres {
                 (SELECT COUNT(*) FROM bundle_cost) AS size_bundle_costs,
                 (SELECT COUNT(*) FROM fuel_blocks) AS size_fuel_blocks,
                 (SELECT COUNT(*) FROM l1_transaction) AS size_contract_transactions,
-                (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions
+                (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions,
+                (SELECT COUNT(*) FROM eigen_submission) AS size_eigen_submissions,
+                (SELECT COUNT(*) FROM eigen_submission_fragments) AS size_eigen_submission_fragments
             "#,
         )
         .fetch_one(&self.connection_pool)
@@ -1248,7 +1357,132 @@ impl Postgres {
             blocks: response.size_fuel_blocks.unwrap_or_default() as u32,
             contract_transactions: response.size_contract_transactions.unwrap_or_default() as u32,
             contract_submissions: response.size_contract_submissions.unwrap_or_default() as u32,
+            eigen_submissions: response.size_eigen_submissions.unwrap_or_default() as u32,
+            eigen_submission_fragments: response.size_eigen_submission_fragments.unwrap_or_default()
+                as u32,
         })
+    }
+
+    pub(crate) async fn _earliest_eigen_submission_attempt(
+        &self,
+        request_id: &EigenDARequestId,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let response = sqlx::query!(
+            r#"SELECT
+            MIN(created_at) AS earliest_submission_time
+        FROM
+            eigen_submission
+        WHERE
+            request_id = $1;
+        "#,
+            request_id
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .and_then(|response| response.earliest_submission_time);
+
+        Ok(response)
+    }
+
+    pub(crate) async fn _last_eigen_submission_was_finalized(
+        &self,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let response = sqlx::query!(
+            "SELECT created_at FROM eigen_submission WHERE status = $1 ORDER BY created_at DESC LIMIT 1;",
+            i16::from(eigen_tables::SubmissionStatus::Finalized)
+        )
+        .fetch_optional(&self.connection_pool)
+        .await?
+        .map(|response| response.created_at);
+
+        Ok(response)
+    }
+
+    pub(crate) async fn _record_eigenda_submission(
+        &self,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        let submission_id = sqlx::query!(
+            "INSERT INTO eigen_submission (request_id, status, created_at) VALUES ($1, $2, $3) RETURNING id",
+            submission.request_id,
+            i16::from(eigen_tables::SubmissionStatus::Processing),
+            created_at
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .id;
+
+        sqlx::query!(
+            "INSERT INTO eigen_submission_fragments (submission_id, fragment_id) VALUES ($1, $2)",
+            submission_id,
+            fragment_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_non_finalized_eigen_submission(
+        &self,
+    ) -> Result<Vec<EigenDASubmission>> {
+        sqlx::query_as!(
+            eigen_tables::EigenDASubmission,
+            "SELECT * FROM eigen_submission WHERE status = $1 or status = $2",
+            i16::from(eigen_tables::SubmissionStatus::Processing),
+            i16::from(eigen_tables::SubmissionStatus::Confirmed),
+        )
+        .fetch_all(&self.connection_pool)
+        .await?
+        .into_iter()
+        .map(TryFrom::try_from)
+        .collect::<Result<Vec<_>>>()
+    }
+
+    pub(crate) async fn _update_eigen_submissions(
+        &self,
+        changes: Vec<(u32, DispersalStatus)>,
+    ) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        for (id, status) in changes {
+            let status: i16 = SubmissionStatus::from(status).into();
+
+            sqlx::query!(
+                "UPDATE eigen_submission SET status = $1 WHERE id = $2",
+                status,
+                id as i32
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn _get_latest_block_height(&self) -> Result<u32> {
+        let result = sqlx::query!(r#"SELECT MAX(height) as max_height FROM fuel_blocks"#)
+            .fetch_one(&self.connection_pool)
+            .await?;
+
+        match result.max_height {
+            Some(height) => {
+                // Convert from i64 to u32
+                let height_u32 = u32::try_from(height).map_err(|_| {
+                    crate::error::Error::Conversion("invalid block height".to_string())
+                })?;
+                Ok(height_u32)
+            }
+            None => Ok(0), // No blocks in the database yet
+        }
     }
 }
 

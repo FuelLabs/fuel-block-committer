@@ -1,22 +1,21 @@
-#![deny(unused_crate_dependencies)]
 mod api;
 mod config;
 mod errors;
 mod setup;
 
 use api::launch_api_server;
+use eigenda::EigenDAClient;
 use errors::{Result, WithContext};
 use metrics::prometheus::Registry;
-use services::fees::cache::CachingApi;
 use setup::last_finalization_metric;
 use tokio_util::sync::CancellationToken;
 
 use crate::setup::shut_down;
 
 pub type L1 = eth::WebsocketClient;
-pub type AwsClient = eth::AwsClient;
 pub type Database = storage::Postgres;
 pub type FuelApi = fuel::HttpClient;
+pub type EigenDA = EigenDAClient<signers::eigen::Signer>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -64,68 +63,31 @@ async fn main() -> Result<()> {
 
     // If the blob pool wallet key is set, we need to start
     // the state committer and state importer
-    if config.eth.l1_keys.blob.is_some() {
-        let block_bundler = setup::block_bundler(
-            fuel_adapter.clone(),
+    let da_handles = if config.eth.l1_keys.blob.is_some() {
+        setup::ethereum_da_services(
+            fuel_adapter,
+            ethereum_rpc,
             storage.clone(),
             cancel_token.clone(),
             &config,
+            &internal_config,
             &metrics_registry,
-        );
-
-        let fee_api = CachingApi::new(
-            ethereum_rpc.clone(),
-            internal_config.l1_blocks_cached_for_fee_metrics_tracker,
-        );
-
-        let fee_metrics_updater_handle = setup::fee_metrics_tracker(
-            fee_api.clone(),
-            cancel_token.clone(),
-            &config,
-            &metrics_registry,
-        )?;
-
-        let state_committer_handle = setup::state_committer(
-            fuel_adapter.clone(),
-            ethereum_rpc.clone(),
-            storage.clone(),
-            cancel_token.clone(),
-            &config,
-            &metrics_registry,
-            fee_api,
-        )?;
-
-        let state_importer_handle = setup::block_importer(
+        )?
+    } else if config.da_layer.is_some() {
+        setup::eigen_da_services(
             fuel_adapter,
             storage.clone(),
             cancel_token.clone(),
             &config,
             &internal_config,
-        );
-
-        let state_listener_handle = setup::state_listener(
-            ethereum_rpc,
-            storage.clone(),
-            cancel_token.clone(),
             &metrics_registry,
-            &config,
-            finalization_metric,
-        );
+        )
+        .await?
+    } else {
+        vec![]
+    };
 
-        let state_pruner_handle = setup::state_pruner(
-            storage.clone(),
-            cancel_token.clone(),
-            &metrics_registry,
-            &config,
-        );
-
-        handles.push(state_committer_handle);
-        handles.push(state_importer_handle);
-        handles.push(block_bundler);
-        handles.push(state_listener_handle);
-        handles.push(fee_metrics_updater_handle);
-        handles.push(state_pruner_handle);
-    }
+    handles.extend(da_handles);
 
     launch_api_server(
         &config,

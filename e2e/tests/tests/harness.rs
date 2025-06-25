@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use anyhow::Result;
 use e2e_helpers::whole_stack::{FuelNodeType, WholeStack};
@@ -64,7 +64,14 @@ async fn submitted_state_and_was_finalized() -> Result<()> {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
 
-    let bundle_cost = stack.committer.fetch_costs(0, 10).await?.pop().unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+
+    let bundle_cost = stack
+        .committer
+        .fetch_costs(0, 10)
+        .await?
+        .pop()
+        .expect("expected some costs to exist for the committer");
     assert!(bundle_cost.cost > 0);
 
     Ok(())
@@ -150,17 +157,4 @@ async fn state_submitting_finished(
         && db.missing_blocks(0, end_range).await?.is_empty();
 
     Ok(finished)
-}
-
-#[ignore = "meant for running manually and tweaking configuration parameters"]
-#[tokio::test(flavor = "multi_thread")]
-async fn connecting_to_testnet() -> Result<()> {
-    // given
-    let show_logs = false;
-    let blob_support = true;
-    let _stack = WholeStack::connect_to_testnet(show_logs, blob_support).await?;
-
-    tokio::time::sleep(Duration::from_secs(10000)).await;
-
-    Ok(())
 }

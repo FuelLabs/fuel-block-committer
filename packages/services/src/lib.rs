@@ -13,14 +13,19 @@ pub mod wallet_balance_tracker;
 
 pub mod fees;
 
-pub use block_bundler::{
-    bundler::Factory as BundlerFactory,
-    service::{BlockBundler, Config as BlockBundlerConfig},
-};
 #[cfg(feature = "test-helpers")]
 pub use block_bundler::{
-    bundler::{Bundle, BundleProposal, Bundler, Metadata},
+    bundler::Bundler,
+    common::{Bundle, BundleProposal, Metadata},
     test_helpers::ControllableBundlerFactory,
+};
+pub use block_bundler::{
+    bundler::Factory as BundlerFactory,
+    eigen_bundler::Factory as EigenBundlerFactory,
+    service::{BlockBundler, Config as BlockBundlerConfig},
+};
+pub use state_committer::eigen_service::{
+    Config as EigenStatecommitterConfig, StateCommitter as EigenStateCommitter,
 };
 pub use state_committer::service::{Config as StateCommitterConfig, StateCommitter};
 use types::InvalidL1Height;
@@ -35,6 +40,8 @@ pub enum Error {
     Storage(String),
     #[error("Block validation error: {0}")]
     BlockValidation(String),
+    #[error("Bundling error: {0}")]
+    Bundler(String),
 }
 
 impl From<InvalidL1Height> for Error {

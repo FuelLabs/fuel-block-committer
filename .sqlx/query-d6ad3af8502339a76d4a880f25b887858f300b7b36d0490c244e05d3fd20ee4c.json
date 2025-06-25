@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            MIN(created_at) AS earliest_submission_time\n        FROM\n            eigen_submission\n        WHERE\n            request_id = $1;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "earliest_submission_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d6ad3af8502339a76d4a880f25b887858f300b7b36d0490c244e05d3fd20ee4c"
+}

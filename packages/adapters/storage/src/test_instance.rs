@@ -9,9 +9,9 @@ use services::{
     block_bundler::{self, port::UnbundledBlocks},
     block_committer, block_importer,
     types::{
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
-        storage::BundleFragment,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        DispersalStatus, EigenDARequestId, EigenDASubmission, Fragment, L1Tx, NonEmpty,
+        NonNegative, TransactionCostUpdate, TransactionState, Utc, storage::BundleFragment,
     },
 };
 use sqlx::Executor;
@@ -212,6 +212,24 @@ impl services::state_listener::port::Storage for DbWithProcess {
             .await
             .map_err(Into::into)
     }
+
+    async fn get_non_finalized_eigen_submission(&self) -> services::Result<Vec<EigenDASubmission>> {
+        unimplemented!();
+    }
+
+    async fn earliest_eigen_submission_attempt(
+        &self,
+        _request_id: &EigenDARequestId,
+    ) -> services::Result<Option<DateTime<Utc>>> {
+        unimplemented!();
+    }
+
+    async fn update_eigen_submissions(
+        &self,
+        _changes: Vec<(u32, DispersalStatus)>,
+    ) -> services::Result<()> {
+        unimplemented!();
+    }
 }
 
 impl block_importer::port::Storage for DbWithProcess {
@@ -228,6 +246,10 @@ impl block_importer::port::Storage for DbWithProcess {
 
     async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> services::Result<()> {
         self.db._insert_blocks(blocks).await.map_err(Into::into)
+    }
+
+    async fn get_latest_block_height(&self) -> services::Result<u32> {
+        self.db._get_latest_block_height().await.map_err(Into::into)
     }
 }
 
@@ -343,6 +365,27 @@ impl services::state_committer::port::Storage for DbWithProcess {
 
     async fn latest_bundled_height(&self) -> services::Result<Option<u32>> {
         self.db._latest_bundled_height().await.map_err(Into::into)
+    }
+
+    async fn record_eigenda_submission(
+        &self,
+        _submission: EigenDASubmission,
+        _fragment_id: i32,
+        _created_at: DateTime<Utc>,
+    ) -> services::Result<()> {
+        unimplemented!()
+    }
+
+    async fn oldest_unsubmitted_fragments(
+        &self,
+        _starting_height: u32,
+        _limit: usize,
+    ) -> services::Result<Vec<BundleFragment>> {
+        unimplemented!()
+    }
+
+    async fn last_eigen_submission_was_finalized(&self) -> services::Result<Option<DateTime<Utc>>> {
+        unimplemented!()
     }
 }
 

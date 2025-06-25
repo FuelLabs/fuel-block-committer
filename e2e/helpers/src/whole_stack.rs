@@ -1,6 +1,9 @@
 use std::time::Duration;
 
+use alloy::network::TxSigner;
+use eth::L1Signers;
 use fuel::HttpClient;
+use signers::eth::kms::TestEthKmsSigner;
 use storage::DbWithProcess;
 use url::Url;
 
@@ -8,7 +11,7 @@ use crate::{
     committer::{Committer, CommitterProcess},
     eth_node::{ContractArgs, DeployedContract, EthNode, EthNodeProcess},
     fuel_node::{FuelNode, FuelNodeProcess},
-    kms::{Kms, KmsKey, KmsProcess},
+    kms::{Kms, KmsProcess},
 };
 
 pub enum FuelNodeType {
@@ -47,89 +50,28 @@ impl WholeStack {
         let kms = start_kms(logs).await?;
 
         let eth_node = start_eth(logs).await?;
-        let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
+        let eth_signers = create_and_fund_kms_signers(&kms, &eth_node).await?;
 
         let request_timeout = Duration::from_secs(5);
         let max_fee = 1_000_000_000_000;
 
         let (contract_args, deployed_contract) =
-            deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
+            deploy_contract(&eth_node, eth_signers.clone(), max_fee, request_timeout).await?;
 
-        let fuel_node = FuelNodeType::Local(start_fuel_node(logs).await?);
+        let fuel_node = FuelNodeType::Local(start_fuel_node(logs, None).await?);
 
         let db = start_db().await?;
 
         let committer = start_committer(
-            logs,
+            true,
             blob_support,
             db.clone(),
             &eth_node,
             &fuel_node.url(),
             &deployed_contract,
-            &main_key,
-            &secondary_key,
+            eth_signers,
         )
         .await?;
-
-        Ok(WholeStack {
-            eth_node,
-            fuel_node,
-            committer,
-            db,
-            deployed_contract,
-            contract_args,
-            kms,
-        })
-    }
-
-    pub async fn connect_to_testnet(logs: bool, blob_support: bool) -> anyhow::Result<Self> {
-        let kms = start_kms(logs).await?;
-
-        let eth_node = start_eth(logs).await?;
-        let (main_key, secondary_key) = create_and_fund_kms_keys(&kms, &eth_node).await?;
-
-        let request_timeout = Duration::from_secs(5);
-        // 0.004 ETH
-        let max_fee = 4000000000000000;
-
-        let (contract_args, deployed_contract) =
-            deploy_contract(&eth_node, &main_key, max_fee, request_timeout).await?;
-
-        let fuel_node = FuelNodeType::Testnet {
-            url: "https://testnet.fuel.network/v1/graphql".parse().unwrap(),
-        };
-
-        let db = start_db().await?;
-
-        let committer = {
-            let committer_builder = Committer::default()
-                .with_show_logs(logs)
-                .with_eth_rpc((eth_node).ws_url().clone())
-                .with_fuel_rpc(fuel_node.url())
-                .with_db_port(db.port())
-                .with_db_name(db.db_name())
-                .with_state_contract_address(deployed_contract.address())
-                .with_main_key_arn(main_key.id.clone())
-                .with_kms_url(main_key.url.clone())
-                .with_bundle_accumulation_timeout("3600s".to_owned())
-                .with_block_bytes_to_accumulate("3 MB".to_string())
-                .with_bundle_optimization_timeout("60s".to_owned())
-                .with_bundle_block_height_lookback("8500".to_owned())
-                .with_bundle_optimization_step("100".to_owned())
-                .with_bundle_fragments_to_accumulate("3".to_owned())
-                .with_bundle_fragment_accumulation_timeout("10m".to_owned())
-                .with_new_bundle_check_interval("3s".to_owned())
-                .with_bundle_compression_level("level6".to_owned())
-                .with_state_pruner_retention("14d".to_owned())
-                .with_state_pruner_run_interval("60s".to_owned());
-
-            let committer = if blob_support {
-                committer_builder.with_blob_key_arn(secondary_key.id.clone())
-            } else {
-                committer_builder
-            };
-            committer.start().await?
-        };
 
         Ok(WholeStack {
             eth_node,
@@ -151,24 +93,33 @@ pub async fn start_eth(logs: bool) -> anyhow::Result<EthNodeProcess> {
     EthNode::default().with_show_logs(logs).start().await
 }
 
-pub async fn create_and_fund_kms_keys(
+pub async fn create_and_fund_kms_signers(
     kms: &KmsProcess,
     eth_node: &EthNodeProcess,
-) -> anyhow::Result<(KmsKey, KmsKey)> {
+) -> anyhow::Result<L1Signers<TestEthKmsSigner, TestEthKmsSigner>> {
     let amount = alloy::primitives::utils::parse_ether("10")?;
 
     let create_and_fund = || async {
         let key = kms.create_key().await?;
-        eth_node.fund(key.address(), amount).await?;
-        anyhow::Result::<_>::Ok(key)
+        let signer = kms.eth_signer(key.id.clone()).await?;
+
+        eth_node.fund(signer.address(), amount).await?;
+        anyhow::Result::<_>::Ok(signer)
     };
 
-    Ok((create_and_fund().await?, create_and_fund().await?))
+    let main = create_and_fund().await?;
+    let blob = create_and_fund().await?;
+    let l1_signers = L1Signers {
+        main,
+        blob: Some(blob),
+    };
+
+    Ok(l1_signers)
 }
 
 pub async fn deploy_contract(
     eth_node: &EthNodeProcess,
-    main_wallet_key: &KmsKey,
+    signers: L1Signers<TestEthKmsSigner, TestEthKmsSigner>,
     tx_max_fee: u128,
     request_timeout: Duration,
 ) -> anyhow::Result<(ContractArgs, DeployedContract)> {
@@ -179,19 +130,21 @@ pub async fn deploy_contract(
     };
 
     let deployed_contract = eth_node
-        .deploy_state_contract(
-            main_wallet_key.clone(),
-            contract_args,
-            tx_max_fee,
-            request_timeout,
-        )
+        .deploy_state_contract(signers, contract_args, tx_max_fee, request_timeout)
         .await?;
 
     Ok((contract_args, deployed_contract))
 }
 
-pub async fn start_fuel_node(logs: bool) -> anyhow::Result<FuelNodeProcess> {
-    FuelNode::default().with_show_logs(logs).start().await
+pub async fn start_fuel_node(
+    logs: bool,
+    poa_interval_period: Option<Duration>,
+) -> anyhow::Result<FuelNodeProcess> {
+    FuelNode::default()
+        .with_show_logs(logs)
+        .with_poa_interval_period(poa_interval_period)
+        .start()
+        .await
 }
 
 pub async fn start_db() -> anyhow::Result<DbWithProcess> {
@@ -210,8 +163,7 @@ pub async fn start_committer(
     eth_node: &EthNodeProcess,
     fuel_node_url: &Url,
     deployed_contract: &DeployedContract,
-    main_key: &KmsKey,
-    secondary_key: &KmsKey,
+    eth_signers: L1Signers<TestEthKmsSigner, TestEthKmsSigner>,
 ) -> anyhow::Result<CommitterProcess> {
     let committer_builder = Committer::default()
         .with_show_logs(logs)
@@ -220,8 +172,8 @@ pub async fn start_committer(
         .with_db_port(random_db.port())
         .with_db_name(random_db.db_name())
         .with_state_contract_address(deployed_contract.address())
-        .with_main_key_arn(main_key.id.clone())
-        .with_kms_url(main_key.url.clone())
+        .with_main_key_arn(eth_signers.main.key_id.clone())
+        .with_kms_url(eth_signers.main.url.clone())
         .with_bundle_accumulation_timeout("5s".to_owned())
         .with_bundle_optimization_timeout("5s".to_owned())
         .with_block_bytes_to_accumulate("3 MB".to_string())
@@ -232,13 +184,61 @@ pub async fn start_committer(
         .with_bundle_compression_level("level6".to_owned())
         .with_new_bundle_check_interval("3s".to_owned())
         .with_state_pruner_retention("10s".to_owned())
-        .with_state_pruner_run_interval("50s".to_owned());
+        .with_state_pruner_run_interval("20s".to_owned())
+        .with_da_fee_check_interval("30s".to_owned())
+        .with_da_layer_polling_interval("2s".to_owned())
+        .with_da_layer_api_throughput(16777216);
 
     let committer = if blob_support {
-        committer_builder.with_blob_key_arn(secondary_key.id.clone())
+        committer_builder.with_blob_key_arn(
+            eth_signers
+                .blob
+                .expect("expected blob signer to be present")
+                .key_id
+                .clone(),
+        )
     } else {
         committer_builder
     };
 
     committer.start().await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn start_eigen_committer(
+    logs: bool,
+    random_db: DbWithProcess,
+    eth_node: &EthNodeProcess,
+    fuel_node_url: &Url,
+    deployed_contract: &DeployedContract,
+    main_eth_signer: TestEthKmsSigner,
+    eigen_key: String,
+    bytes_to_accumulate: &str,
+) -> anyhow::Result<CommitterProcess> {
+    let committer_builder = Committer::default()
+        .with_show_logs(logs)
+        .with_eth_rpc((eth_node).ws_url())
+        .with_fuel_rpc(fuel_node_url.to_owned())
+        .with_db_port(random_db.port())
+        .with_db_name(random_db.db_name())
+        .with_state_contract_address(deployed_contract.address())
+        .with_main_key_arn(main_eth_signer.key_id.clone())
+        .with_kms_url(main_eth_signer.url.clone())
+        .with_bundle_accumulation_timeout("3600s".to_owned())
+        .with_block_bytes_to_accumulate(bytes_to_accumulate.to_string())
+        .with_bundle_optimization_timeout("60s".to_owned())
+        .with_bundle_block_height_lookback("8500".to_owned())
+        .with_bundle_compression_level("level4".to_owned())
+        .with_bundle_optimization_step("100".to_owned())
+        .with_bundle_fragments_to_accumulate("3".to_owned())
+        .with_bundle_fragment_accumulation_timeout("10m".to_owned())
+        .with_new_bundle_check_interval("3s".to_owned())
+        .with_state_pruner_retention("1s".to_owned())
+        .with_state_pruner_run_interval("30s".to_owned())
+        .with_alt_da_key(eigen_key)
+        .with_da_fee_check_interval("30s".to_owned())
+        .with_da_layer_polling_interval("2s".to_owned())
+        .with_da_layer_api_throughput(16777216);
+
+    committer_builder.start().await
 }

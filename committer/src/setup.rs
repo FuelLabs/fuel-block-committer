@@ -1,7 +1,9 @@
-use std::time::Duration;
+use std::{num::NonZeroU32, str::FromStr, time::Duration};
 
 use clock::SystemClock;
-use eth::{AcceptablePriorityFeePercentages, BlobEncoder, Signers};
+use eigenda::{EigenDAClient, Throughput};
+use eth::{AcceptablePriorityFeePercentages, BlobEncoder};
+use ethereum_types::H160;
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,
@@ -10,10 +12,9 @@ use metrics::{
 use services::{
     BlockBundler, BlockBundlerConfig, Runner,
     block_committer::{port::l1::Contract, service::BlockCommitter},
-    fee_metrics_tracker::service::FeeMetricsTracker,
     fees::cache::CachingApi,
     state_committer::port::Storage,
-    state_listener::service::StateListener,
+    state_listener::{eigen_service::StateListener as EigenStateListener, service::StateListener},
     state_pruner::service::StatePruner,
     wallet_balance_tracker::service::WalletBalanceTracker,
 };
@@ -21,7 +22,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{Database, FuelApi, L1, config, errors::Result};
+use crate::{
+    Database, EigenDA, FuelApi, L1,
+    config::{self, DALayer, EigenDaConfig},
+    errors::{Error, Result},
+};
 
 pub fn wallet_balance_tracker(
     internal_config: &config::Internal,
@@ -70,6 +75,194 @@ pub fn block_committer(
         config.app.block_check_interval,
         block_committer,
         "Block Committer",
+        cancel_token,
+    )
+}
+
+pub fn ethereum_da_services(
+    fuel: FuelApi,
+    ethereum_rpc: L1,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+    registry: &Registry,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
+    let block_bundler = block_bundler(
+        fuel.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        config,
+        registry,
+    );
+
+    let fee_api = CachingApi::new(
+        ethereum_rpc.clone(),
+        internal_config.l1_blocks_cached_for_fee_metrics_tracker,
+    );
+
+    let fee_metrics_updater_handle =
+        ethereum_da_fee_metrics_tracker(fee_api.clone(), cancel_token.clone(), config, registry)?;
+
+    let committer = state_committer(
+        fuel.clone(),
+        ethereum_rpc.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        config,
+        registry,
+        fee_api,
+    )?;
+
+    let listener = state_listener(
+        ethereum_rpc,
+        storage.clone(),
+        cancel_token.clone(),
+        registry,
+        config,
+        last_finalization_metric(),
+    );
+
+    let state_importer_handle = block_importer(
+        fuel,
+        storage.clone(),
+        cancel_token.clone(),
+        config,
+        internal_config,
+        registry,
+    );
+
+    let state_pruner_handle = state_pruner(storage.clone(), cancel_token.clone(), registry, config);
+
+    let handles = vec![
+        committer,
+        state_importer_handle,
+        block_bundler,
+        listener,
+        fee_metrics_updater_handle,
+        state_pruner_handle,
+    ];
+
+    Ok(handles)
+}
+
+pub async fn eigen_da_services(
+    fuel: FuelApi,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    internal_config: &config::Internal,
+    registry: &Registry,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
+    let block_bundler = eigen_block_bundler(
+        fuel.clone(),
+        storage.clone(),
+        cancel_token.clone(),
+        config,
+        registry,
+    );
+
+    let (state_committer_handle, state_listener_handle, fee_metrics_handle) =
+        match config.da_layer.clone() {
+            Some(DALayer::EigenDA(eigen_config)) => {
+                let eigen_da = eigen_adapter(&eigen_config, internal_config).await?;
+                let committer = eigen_state_committer(
+                    fuel.clone(),
+                    eigen_da.clone(),
+                    storage.clone(),
+                    cancel_token.clone(),
+                    config,
+                    registry,
+                )?;
+
+                let listener = eigen_state_listener(
+                    eigen_da.clone(),
+                    storage.clone(),
+                    cancel_token.clone(),
+                    config,
+                    registry,
+                    last_finalization_metric(),
+                )?;
+
+                let fee_metrics_handle =
+                    eigen_fee_metrics_tracker(eigen_da, cancel_token.clone(), config, registry)?;
+
+                (committer, listener, fee_metrics_handle)
+            }
+            _ => {
+                return Err(Error::Other(format!(
+                    "Expected EigenDA configuration but received: {:?}",
+                    config.da_layer
+                )));
+            }
+        };
+
+    let state_importer_handle = block_importer(
+        fuel,
+        storage.clone(),
+        cancel_token.clone(),
+        config,
+        internal_config,
+        registry,
+    );
+
+    let state_pruner_handle = state_pruner(storage.clone(), cancel_token.clone(), registry, config);
+
+    let handles = vec![
+        state_committer_handle,
+        state_importer_handle,
+        block_bundler,
+        state_listener_handle,
+        state_pruner_handle,
+        fee_metrics_handle,
+    ];
+
+    Ok(handles)
+}
+
+pub fn eigen_block_bundler(
+    fuel: FuelApi,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> tokio::task::JoinHandle<()> {
+    let bundler_factory = services::EigenBundlerFactory::new(
+        bundle::Encoder::new(config.app.bundle.compression_level),
+        match &config.da_layer {
+            // Defaults to 3.5MB, as 4+MB errors out on the server side when checking for inclusion.
+            Some(DALayer::EigenDA(eigen_da)) => eigen_da
+                .fragment_size
+                .unwrap_or(NonZeroU32::new(3_500_000).unwrap()),
+            other => panic!("Wrong DA layer configuration for Eigen bundler: {other:?}"),
+        },
+        config.app.bundle.max_fragments_per_bundle,
+    );
+
+    let block_bundler = BlockBundler::new(
+        fuel,
+        storage,
+        SystemClock,
+        bundler_factory,
+        BlockBundlerConfig {
+            optimization_time_limit: Duration::from_secs(0),
+            accumulation_time_limit: config.app.bundle.accumulation_timeout,
+            blocks_to_accumulate: config.app.bundle.blocks_to_accumulate,
+            lookback_window: config.app.bundle.block_height_lookback,
+            bytes_to_accumulate: config.app.bundle.bytes_to_accumulate,
+            max_fragments_per_bundle: config.app.bundle.max_fragments_per_bundle,
+            max_bundles_per_optimization_run: num_cpus::get()
+                .try_into()
+                .expect("num cpus not zero"),
+        },
+    );
+
+    block_bundler.register_metrics(registry);
+
+    schedule_polling(
+        config.app.bundle.new_bundle_check_interval,
+        block_bundler,
+        "Block Bundler",
         cancel_token,
     )
 }
@@ -150,12 +343,66 @@ pub fn state_committer(
     ))
 }
 
+pub fn eigen_state_committer(
+    fuel: FuelApi,
+    eigen_da: EigenDA,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let Some(DALayer::EigenDA(eigen_config)) = &config.da_layer else {
+        panic!("Invalid DA layer configuration for Eigen state committer");
+    };
+
+    let state_committer = services::EigenStateCommitter::new(
+        eigen_da,
+        fuel,
+        storage,
+        services::EigenStatecommitterConfig {
+            lookback_window: config.app.bundle.block_height_lookback,
+        },
+        SystemClock,
+    );
+
+    state_committer.register_metrics(registry);
+
+    Ok(schedule_polling(
+        eigen_config.polling_interval.unwrap_or(Duration::new(1, 0)),
+        state_committer,
+        "State Committer",
+        cancel_token,
+    ))
+}
+
+pub fn eigen_state_listener(
+    eigen_da: EigenDA,
+    storage: Database,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+    last_finalization: IntGauge,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let state_committer =
+        EigenStateListener::new(eigen_da, storage, SystemClock, last_finalization);
+
+    state_committer.register_metrics(registry);
+
+    Ok(schedule_polling(
+        config.app.tx_finalization_check_interval,
+        state_committer,
+        "State Listener",
+        cancel_token,
+    ))
+}
+
 pub fn block_importer(
     fuel: FuelApi,
     storage: Database,
     cancel_token: CancellationToken,
     config: &config::Config,
     internal_config: &config::Internal,
+    registry: &Registry,
 ) -> tokio::task::JoinHandle<()> {
     let block_importer = services::block_importer::service::BlockImporter::new(
         storage,
@@ -164,6 +411,9 @@ pub fn block_importer(
         internal_config.import_batches.max_blocks,
         internal_config.import_batches.max_cumulative_size,
     );
+
+    // Register metrics for the block importer
+    block_importer.register_metrics(registry);
 
     schedule_polling(
         config.app.block_check_interval,
@@ -233,7 +483,7 @@ pub async fn l1_adapter(
     let l1 = L1::connect(
         config.eth.rpc.clone(),
         config.eth.state_contract_address,
-        Signers::for_keys(config.eth.l1_keys.clone()).await?,
+        config.eth.signers().await?,
         internal_config.eth_errors_before_unhealthy,
         eth::TxConfig {
             tx_max_fee: u128::from(config.app.tx_fees.max),
@@ -251,6 +501,48 @@ pub async fn l1_adapter(
     let health_check = l1.connection_health_checker();
 
     Ok((l1, health_check))
+}
+
+pub const DEFAULT_EIGEN_THROUGHPUT: u32 = 16_000_000;
+pub const DEFAULT_EIGEN_CALLS_PER_SEC: u32 = 1;
+
+pub async fn eigen_adapter(
+    config: &EigenDaConfig,
+    _internal_config: &config::Internal,
+) -> Result<EigenDA> {
+    // Configure with appropriate throughput values
+    // because testing showed that the time window in which thottling is calculated allows for
+    // around 500MB to be sent before throttling comes into effect
+    let burst = DEFAULT_EIGEN_THROUGHPUT.try_into().unwrap();
+    let eigen_da = EigenDAClient::new(
+        config.signer().await?,
+        config.disperser_rpc_url.clone(),
+        Throughput {
+            bytes_per_sec: config
+                .api_throughput
+                .unwrap_or(DEFAULT_EIGEN_THROUGHPUT)
+                .try_into()
+                .map_err(|e| {
+                    Error::Other(format!(
+                        "Invalid throughput value ({e}): {:?}",
+                        config.api_throughput
+                    ))
+                })?,
+            max_burst: burst,
+            calls_per_sec: DEFAULT_EIGEN_CALLS_PER_SEC.try_into().unwrap(),
+        },
+        H160::from_str(&config.cert_verifier_address).map_err(|e| {
+            Error::Other(format!(
+                "Invalid cert verifier address ({e}): {}",
+                config.cert_verifier_address
+            ))
+        })?,
+        config.eth_rpc_url.clone(),
+    )
+    .await
+    .map_err(|e| Error::Other(format!("Failed to initialize EigenDA client: {}", e)))?;
+
+    Ok(eigen_da)
 }
 
 fn schedule_polling(
@@ -312,8 +604,24 @@ pub async fn storage(
 
     postgres.register_metrics(registry);
 
-    if let Some(last_fragment_time) = postgres.last_time_a_fragment_was_finalized().await? {
-        last_finalization.set(last_fragment_time.timestamp());
+    let last_time = match config.da_layer {
+        Some(DALayer::EigenDA(_)) => {
+            // For Eigen DA, we use the last eigen submission time
+            postgres.last_eigen_submission_was_finalized().await?
+        }
+        None => {
+            // For Ethereum DA or no DA, we use the last fragment finalization time
+            postgres.last_time_a_fragment_was_finalized().await?
+        }
+    };
+
+    info!(
+        "setup::storage: Last finalization time: {:?}",
+        last_time.map(|t| t.to_rfc3339())
+    );
+
+    if let Some(time) = last_time {
+        last_finalization.set(time.timestamp());
     }
 
     Ok(postgres)
@@ -334,12 +642,14 @@ pub async fn shut_down(
     Ok(())
 }
 
-pub fn fee_metrics_tracker(
+pub fn ethereum_da_fee_metrics_tracker(
     api: CachingApi<L1>,
     cancel_token: CancellationToken,
     config: &config::Config,
     registry: &Registry,
 ) -> Result<tokio::task::JoinHandle<()>> {
+    use services::fee_metrics_tracker::ethereum_da::service::FeeMetricsTracker;
+
     let fee_metrics_tracker = FeeMetricsTracker::new(api);
 
     fee_metrics_tracker.register_metrics(registry);
@@ -348,6 +658,38 @@ pub fn fee_metrics_tracker(
         config.app.l1_fee_check_interval,
         fee_metrics_tracker,
         "Fee Tracker",
+        cancel_token,
+    );
+
+    Ok(handle)
+}
+
+pub fn eigen_fee_metrics_tracker<S: Send + Sync + 'static>(
+    eigen_da_client: EigenDAClient<S>,
+    cancel_token: CancellationToken,
+    config: &config::Config,
+    registry: &Registry,
+) -> Result<tokio::task::JoinHandle<()>> {
+    use services::fee_metrics_tracker::eigen_da::service::FeeMetricsTracker;
+
+    let fee_metrics_tracker = FeeMetricsTracker::new(eigen_da_client);
+
+    fee_metrics_tracker.register_metrics(registry);
+
+    let polling_interval = config
+        .da_layer
+        .as_ref()
+        .map(|layer| match layer {
+            DALayer::EigenDA(eigenda_config) => eigenda_config.fee_check_interval,
+        })
+        .ok_or_else(|| {
+            Error::Other("Invalid DA layer configuration for Eigen fee metrics tracker".to_string())
+        })?;
+
+    let handle = schedule_polling(
+        polling_interval,
+        fee_metrics_tracker,
+        "Fee Tracker", // has the same name as the Ethereum DA fee tracker, all other eigen specific modules have the same name as the Ethereum DA modules
         cancel_token,
     );
 

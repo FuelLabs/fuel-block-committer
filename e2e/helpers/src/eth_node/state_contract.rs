@@ -7,16 +7,13 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
 };
-use eth::{
-    AcceptablePriorityFeePercentages, AwsClient, AwsConfig, Signer, Signers, WebsocketClient,
-};
+use eth::{AcceptablePriorityFeePercentages, WebsocketClient};
 use fs_extra::dir::{CopyOptions, copy};
 use serde::Deserialize;
 use services::{block_committer::port::fuel::FuelBlock, types::Address};
+use signers::eth::{Signer, kms::TestEthKmsSigner};
 use tokio::process::Command;
 use url::Url;
-
-use crate::kms::KmsKey;
 
 pub struct DeployedContract {
     address: Address,
@@ -27,19 +24,14 @@ impl DeployedContract {
     pub async fn connect(
         url: Url,
         address: Address,
-        key: KmsKey,
+        signers: eth::L1Signers<TestEthKmsSigner, TestEthKmsSigner>,
         tx_max_fee: u128,
         send_tx_request_timeout: Duration,
     ) -> anyhow::Result<Self> {
-        let aws_client = AwsClient::new(AwsConfig::for_testing(key.url).await);
-
         let chain_state_contract = WebsocketClient::connect(
             url,
             address,
-            Signers {
-                main: Signer::make_aws_signer(&aws_client, key.id).await?,
-                blob: None,
-            },
+            signers,
             5,
             eth::TxConfig {
                 tx_max_fee,
@@ -81,29 +73,31 @@ pub struct CreateTransactions {
 impl CreateTransactions {
     pub async fn prepare(
         url: Url,
-        kms_key: &KmsKey,
+        main_wallet_address: Address,
         contract_args: ContractArgs,
     ) -> Result<Self, anyhow::Error> {
-        let transactions = generate_transactions_via_foundry(url, kms_key, contract_args)
-            .await?
-            .into_iter()
-            .map(|tx| CreateTransaction {
-                name: tx.name,
-                address: tx.address,
-                tx: TransactionRequest {
-                    from: Some(tx.raw_tx.from),
-                    input: tx.raw_tx.input.into(),
-                    to: Some(TxKind::Create),
-                    ..Default::default()
-                },
-            })
-            .collect::<Vec<_>>();
+        let transactions =
+            generate_transactions_via_foundry(url, main_wallet_address, contract_args)
+                .await?
+                .into_iter()
+                .map(|tx| CreateTransaction {
+                    name: tx.name,
+                    address: tx.address,
+                    tx: TransactionRequest {
+                        from: Some(tx.raw_tx.from),
+                        input: tx.raw_tx.input.into(),
+                        to: Some(TxKind::Create),
+                        ..Default::default()
+                    },
+                })
+                .collect::<Vec<_>>();
 
         Ok(CreateTransactions::new(transactions))
     }
 
-    pub async fn deploy(self, url: Url, kms_key: &KmsKey) -> anyhow::Result<()> {
-        let wallet = EthereumWallet::from(kms_key.signer.clone());
+    pub async fn deploy(self, url: Url, main_signer: Signer) -> anyhow::Result<()> {
+        let wallet = EthereumWallet::from(main_signer);
+
         let ws = WsConnect::new(url);
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
@@ -190,7 +184,7 @@ struct Broadcasts {
 
 async fn generate_transactions_via_foundry(
     url: Url,
-    kms_key: &KmsKey,
+    address: Address,
     contract_args: ContractArgs,
 ) -> anyhow::Result<Vec<CreateContractTx>> {
     let temp_dir = tempfile::tempdir()?;
@@ -212,7 +206,7 @@ async fn generate_transactions_via_foundry(
         .arg("--fork-url")
         .arg(url.to_string())
         .stdin(std::process::Stdio::null())
-        .env("ADDRESS", format!("{:?}", kms_key.address()))
+        .env("ADDRESS", format!("{:?}", address))
         .env(
             "TIME_TO_FINALIZE",
             contract_args.finalize_duration.as_secs().to_string(),

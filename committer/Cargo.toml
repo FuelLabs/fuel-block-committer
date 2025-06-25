@@ -15,6 +15,7 @@ byte-unit = { workspace = true, features = ["byte", "u128"] }
 clap = { workspace = true, features = ["default", "derive"] }
 clock = { workspace = true }
 config = { workspace = true, features = ["async"] }
+eigenda = { workspace = true }
 eth = { workspace = true }
 fuel = { workspace = true }
 fuel-block-committer-encoding = { workspace = true }
@@ -22,6 +23,8 @@ humantime = { workspace = true }
 metrics = { workspace = true }
 num_cpus = { workspace = true }
 serde = { workspace = true }
+signers = { workspace = true }
+hex = { workspace = true }
 serde_json = { workspace = true }
 services = { workspace = true }
 storage = { workspace = true }
@@ -31,6 +34,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 url = { workspace = true }
+ethereum-types = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

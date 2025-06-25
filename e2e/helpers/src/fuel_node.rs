@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use fuel::HttpClient;
 use fuel_core_chain_config::{ChainConfig, CoinConfig, SnapshotWriter, StateConfig};
@@ -15,6 +15,7 @@ use url::Url;
 #[derive(Default, Debug)]
 pub struct FuelNode {
     show_logs: bool,
+    poa_interval_period: Option<Duration>,
 }
 
 pub struct FuelNodeProcess {
@@ -106,6 +107,11 @@ impl FuelNode {
         };
         cmd.stdout(sink()).stderr(sink());
 
+        if let Some(interval) = self.poa_interval_period {
+            cmd.arg("--poa-interval-period")
+                .arg(humantime::format_duration(interval).to_string());
+        }
+
         let child = cmd.spawn()?;
 
         let url = format!("http://localhost:{}", unused_port).parse()?;
@@ -125,6 +131,11 @@ impl FuelNode {
 
     pub fn with_show_logs(mut self, show_logs: bool) -> Self {
         self.show_logs = show_logs;
+        self
+    }
+
+    pub fn with_poa_interval_period(mut self, interval: Option<Duration>) -> Self {
+        self.poa_interval_period = interval;
         self
     }
 }

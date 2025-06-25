@@ -31,7 +31,7 @@ use services::{
 use tracing::info;
 use url::Url;
 
-use super::{Signers, TxConfig, health_tracking_middleware::EthApi};
+use super::{L1Signers, Sign, TxConfig, health_tracking_middleware::EthApi};
 use crate::{
     blob_encoder::{self},
     error::{Error, Result},
@@ -367,12 +367,16 @@ impl EthApi for WsConnection {
 }
 
 impl WsConnection {
-    pub async fn connect(
+    pub async fn connect<S1, S2>(
         url: Url,
         contract_address: Address,
-        signers: Signers,
+        signers: L1Signers<S1, S2>,
         tx_config: TxConfig,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        S1: Sign + Send + Sync + 'static,
+        S2: Sign + Send + Sync + 'static,
+    {
         let address = TxSigner::address(&signers.main);
         let ws = WsConnect::new(url);
         let provider = Self::provider_with_signer(ws.clone(), signers.main).await?;

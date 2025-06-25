@@ -38,40 +38,65 @@
     <hr class="my-5">
     <h2>Live Metrics Preview</h2>
     <canvas id="metricsChart" width="800" height="400"></canvas>
-  </div>
-  <script>
-    // Intercept the form submission and update configuration via AJAX.
-    document.getElementById("updateForm").addEventListener("submit", function(e) {
-      e.preventDefault(); // Prevent the full page refresh.
-      const form = e.target;
-      const formData = new FormData(form);
-      // Convert formData to URL encoded string.
-      const data = new URLSearchParams();
-      for (const pair of formData) {
-          data.append(pair[0], pair[1]);
-      }
-      fetch(form.action, {
-        method: "POST",
-        body: data,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        }
-      })
-      .then(response => response.text())
-      .then(result => {
-        document.getElementById("updateStatus").textContent = "Configuration updated successfully.";
-        // clear the status after a few seconds.
-        setTimeout(() => {
-          document.getElementById("updateStatus").textContent = "";
-        }, 3000);
-      })
-      .catch(err => {
-        console.error("Error updating configuration:", err);
-        document.getElementById("updateStatus").textContent = "Error updating configuration.";
-      });
-    });
 
-    // Initialize the Chart.js chart with streaming plugin enabled.
+    <!-- Bootstrap Cards for Metrics -->
+    <div class="row mt-4">
+      <!-- L2 Blocks Behind Card -->
+      <div class="col-md-6">
+        <div class="card text-center mb-3">
+          <div class="card-body">
+            <h5 class="card-title">L2 Blocks Behind</h5>
+            <p class="card-text">
+              Current: <span id="l2BehindValue">--</span> <br>
+              5min Diff: <span id="l2BehindDiff">--</span>
+            </p>
+          </div>
+        </div>
+      </div>
+      <!-- Unbundled Blocks Card -->
+      <div class="col-md-6">
+        <div class="card text-center mb-3">
+          <div class="card-body">
+            <h5 class="card-title">Unbundled Blocks</h5>
+            <p class="card-text">
+              Current: <span id="unbundledValue">--</span> <br>
+              5min Diff: <span id="unbundledDiff">--</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- New row for import metrics -->
+    <div class="row mt-2">
+      <!-- Import Lag Card -->
+      <div class="col-md-6">
+        <div class="card text-center mb-3 bg-warning">
+          <div class="card-body">
+            <h5 class="card-title">Import Lag</h5>
+            <p class="card-text">
+              Current: <span id="importLagValue">--</span> blocks <br>
+              5min Diff: <span id="importLagDiff">--</span>
+            </p>
+          </div>
+        </div>
+      </div>
+      <!-- Import Rate Card -->
+      <div class="col-md-6">
+        <div class="card text-center mb-3 bg-warning">
+          <div class="card-body">
+            <h5 class="card-title">Import Rate</h5>
+            <p class="card-text">
+              Current: <span id="importRateValue">--</span> blocks/s <br>
+              Latest: <span id="latestImportedValue">--</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // The chart remains unchanged.
     document.addEventListener("DOMContentLoaded", function() {
       const ctx = document.getElementById('metricsChart').getContext('2d');
       const chart = new Chart(ctx, {
@@ -81,6 +106,12 @@
             {
               label: "l2 blocks behind",
               borderColor: "rgb(255, 99, 132)",
+              data: [],
+              fill: false,
+            },
+            {
+              label: "import lag",
+              borderColor: "rgb(255, 159, 64)",
               data: [],
               fill: false,
             }
@@ -103,12 +134,18 @@
                         const match = text.match(regex);
                         return match ? parseFloat(match[1]) : null;
                       }
+                      const now = Date.now();
                       const fuel_height = parseMetric("fuel_height");
                       const current_height_to_commit = parseMetric("current_height_to_commit");
+                      const import_lag = parseMetric("import_lag");
+                      
                       if (fuel_height !== null && current_height_to_commit !== null) {
-                        const expr = fuel_height - current_height_to_commit;
-                        const now = Date.now();
-                        chart.data.datasets[0].data.push({x: now, y: expr});
+                        const l2Behind = fuel_height - current_height_to_commit;
+                        chart.data.datasets[0].data.push({ x: now, y: l2Behind });
+                      }
+                      
+                      if (import_lag !== null) {
+                        chart.data.datasets[1].data.push({ x: now, y: import_lag });
                       }
                     })
                     .catch(err => console.error("Error fetching metrics:", err));
@@ -127,6 +164,139 @@
         }
       });
     });
+    
+    // Separate setInterval for updating the cards every second with a rolling 5-minute (300000ms) window.
+    let behindCardHistory = [];
+    let unbundledCardHistory = [];
+    
+    setInterval(() => {
+      fetch("/proxy/metrics")
+        .then(response => response.text())
+        .then(text => {
+          const now = Date.now();
+          function parseMetric(metricName) {
+            const regex = new RegExp("^" + metricName + "\\s+(\\S+)", "m");
+            const match = text.match(regex);
+            return match ? parseFloat(match[1]) : null;
+          }
+          const fuel_height = parseMetric("fuel_height");
+          const current_height_to_commit = parseMetric("current_height_to_commit");
+          const lowest_unbundled_height = parseMetric("lowest_unbundled_height");
+          
+          // --- L2 Blocks Behind (fuel_height - current_height_to_commit) ---
+          if (fuel_height !== null && current_height_to_commit !== null) {
+            const l2Behind = fuel_height - current_height_to_commit;
+            behindCardHistory.push({ time: now, value: l2Behind });
+            // Keep only entries from the last 5 minutes.
+            behindCardHistory = behindCardHistory.filter(item => now - item.time <= 300000);
+            const oldest = behindCardHistory.length > 0 ? behindCardHistory[0].value : l2Behind;
+            const diff = l2Behind - oldest;
+            document.getElementById("l2BehindValue").textContent = l2Behind;
+            const diffEl = document.getElementById("l2BehindDiff");
+            if (diff < 0) {
+              diffEl.textContent = "-" + Math.abs(diff).toFixed(2);
+              diffEl.style.color = "green";
+            } else if (diff > 0) {
+              diffEl.textContent = "+" + diff.toFixed(2);
+              diffEl.style.color = "red";
+            } else {
+              diffEl.textContent = "0";
+              diffEl.style.color = "black";
+            }
+          }
+          
+          // --- Unbundled Blocks (fuel_height - lowest_unbundled_height) ---
+          if (fuel_height !== null && lowest_unbundled_height !== null) {
+            const unbundled = fuel_height - lowest_unbundled_height;
+            unbundledCardHistory.push({ time: now, value: unbundled });
+            // Keep only entries from the last 5 minutes.
+            unbundledCardHistory = unbundledCardHistory.filter(item => now - item.time <= 300000);
+            const oldestUnbundled = unbundledCardHistory.length > 0 ? unbundledCardHistory[0].value : unbundled;
+            const diffUnbundled = unbundled - oldestUnbundled;
+            document.getElementById("unbundledValue").textContent = unbundled;
+            const diffUnbundledEl = document.getElementById("unbundledDiff");
+            if (diffUnbundled < 0) {
+              diffUnbundledEl.textContent = "-" + Math.abs(diffUnbundled).toFixed(2);
+              diffUnbundledEl.style.color = "green";
+            } else if (diffUnbundled > 0) {
+              diffUnbundledEl.textContent = "+" + diffUnbundled.toFixed(2);
+              diffUnbundledEl.style.color = "red";
+            } else {
+              diffUnbundledEl.textContent = "0";
+              diffUnbundledEl.style.color = "black";
+            }
+          }
+          
+          // --- Import Lag (fuel_height - latest_imported_height) ---
+          const latest_imported_height = parseMetric("latest_imported_height");
+          const import_lag = parseMetric("import_lag");
+          let importLagCardHistory = window.importLagCardHistory || [];
+          window.importLagCardHistory = importLagCardHistory;
+          
+          if (import_lag !== null) {
+            importLagCardHistory.push({ time: now, value: import_lag });
+            // Keep only entries from the last 5 minutes
+            importLagCardHistory = importLagCardHistory.filter(item => now - item.time <= 300000);
+            const oldestImportLag = importLagCardHistory.length > 0 ? importLagCardHistory[0].value : import_lag;
+            const diffImportLag = import_lag - oldestImportLag;
+            
+            document.getElementById("importLagValue").textContent = import_lag;
+            const diffImportLagEl = document.getElementById("importLagDiff");
+            
+            if (diffImportLag < 0) {
+              diffImportLagEl.textContent = "-" + Math.abs(diffImportLag).toFixed(2);
+              diffImportLagEl.style.color = "green";
+            } else if (diffImportLag > 0) {
+              diffImportLagEl.textContent = "+" + diffImportLag.toFixed(2);
+              diffImportLagEl.style.color = "red";
+            } else {
+              diffImportLagEl.textContent = "0";
+              diffImportLagEl.style.color = "black";
+            }
+            
+            // Update card color based on lag severity
+            const importLagCard = document.querySelector(".card.bg-warning:first-of-type");
+            if (import_lag > 100) {
+              importLagCard.classList.remove("bg-warning");
+              importLagCard.classList.add("bg-danger", "text-white");
+            } else if (import_lag > 50) {
+              importLagCard.classList.remove("bg-danger", "text-white");
+              importLagCard.classList.add("bg-warning");
+            } else {
+              importLagCard.classList.remove("bg-danger", "bg-warning", "text-white");
+              importLagCard.classList.add("bg-success", "text-white");
+            }
+          }
+          
+          // --- Import Rate ---
+          // Use the blocks_import_rate_sum and blocks_import_rate_count histograms
+          const import_rate_sum = parseMetric("blocks_import_rate_sum");
+          const import_rate_count = parseMetric("blocks_import_rate_count");
+          
+          if (latest_imported_height !== null) {
+            document.getElementById("latestImportedValue").textContent = latest_imported_height;
+          }
+          
+          if (import_rate_sum !== null && import_rate_count !== null && import_rate_count > 0) {
+            const average_rate = (import_rate_sum / import_rate_count).toFixed(2);
+            document.getElementById("importRateValue").textContent = average_rate;
+            
+            // Update card color based on import rate
+            const importRateCard = document.querySelector(".card.bg-warning:last-of-type");
+            if (average_rate < 1.0) {
+              importRateCard.classList.remove("bg-warning");
+              importRateCard.classList.add("bg-danger", "text-white");
+            } else if (average_rate < 5.0) {
+              importRateCard.classList.remove("bg-danger", "text-white");
+              importRateCard.classList.add("bg-warning");
+            } else {
+              importRateCard.classList.remove("bg-danger", "bg-warning", "text-white");
+              importRateCard.classList.add("bg-success", "text-white");
+            }
+          }
+        })
+        .catch(err => console.error("Error fetching metrics for cards:", err));
+    }, 1000);
   </script>
 </body>
 </html>

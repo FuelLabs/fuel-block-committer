@@ -1,4 +1,6 @@
 pub mod bundler;
+pub mod common;
+pub mod eigen_bundler;
 
 pub mod service {
     use std::{num::NonZeroUsize, time::Duration};
@@ -11,7 +13,7 @@ pub mod service {
     use tracing::info;
 
     use super::{
-        bundler::{Bundle, BundleProposal, BundlerFactory, Metadata},
+        common::{Bundle, BundleProposal, BundlerFactory, Metadata},
         port::UnbundledBlocks,
     };
     use crate::{
@@ -157,27 +159,49 @@ pub mod service {
         BF: BundlerFactory,
     {
         async fn bundle_and_fragment_blocks(&mut self) -> Result<()> {
+            let start_total = self.clock.now();
+            tracing::info!("Starting bundling process");
+
+            let start_get_height = self.clock.now();
             let starting_height = self.get_starting_height().await?;
+            let get_height_duration = self.clock.now().signed_duration_since(start_get_height);
+            tracing::info!(
+                "Got starting height {starting_height} in {:?}",
+                get_height_duration
+            );
 
             while let Some(UnbundledBlocks {
                 oldest,
                 total_unbundled,
-            }) = self
-                .storage
-                .lowest_sequence_of_unbundled_blocks(
-                    starting_height,
-                    self.config.bytes_to_accumulate.get() as u32,
-                )
-                .await?
-            {
+            }) = {
+                let start_get_blocks = self.clock.now();
+                let result = self
+                    .storage
+                    .lowest_sequence_of_unbundled_blocks(
+                        starting_height,
+                        self.config.bytes_to_accumulate.get() as u32,
+                    )
+                    .await?;
+                let get_blocks_duration = self.clock.now().signed_duration_since(start_get_blocks);
+                tracing::info!("Retrieved unbundled blocks in {:?}", get_blocks_duration);
+                result
+            } {
                 if self.should_wait(&oldest, total_unbundled)? {
                     return Ok(());
                 }
 
+                let start_get_id = self.clock.now();
                 let next_id = self.storage.next_bundle_id().await?;
+                let get_id_duration = self.clock.now().signed_duration_since(start_get_id);
+                tracing::info!("Got next bundle ID {} in {:?}", next_id, get_id_duration);
+
+                let start_build = self.clock.now();
                 let bundler = self.bundler_factory.build(oldest, next_id).await;
+                let build_duration = self.clock.now().signed_duration_since(start_build);
+                tracing::info!("Built bundler in {:?}", build_duration);
 
                 let optimization_start = self.clock.now();
+                tracing::info!("Starting optimization phase...");
                 let BundleProposal {
                     fragments,
                     metadata,
@@ -186,11 +210,17 @@ pub mod service {
                 let optimization_duration =
                     self.clock.now().signed_duration_since(optimization_start);
 
-                tracing::info!("Bundler proposed: {metadata}");
+                tracing::info!(
+                    "Bundler proposed: {metadata} (optimization took {:?})",
+                    optimization_duration
+                );
 
+                let start_insert = self.clock.now();
                 self.storage
                     .insert_bundle_and_fragments(next_id, metadata.block_heights.clone(), fragments)
                     .await?;
+                let insert_duration = self.clock.now().signed_duration_since(start_insert);
+                tracing::info!("Inserted bundle and fragments in {:?}", insert_duration);
 
                 self.metrics.observe_metadata(&metadata);
                 self.metrics
@@ -199,6 +229,9 @@ pub mod service {
 
                 self.last_time_bundled = self.clock.now();
             }
+
+            let total_duration = self.clock.now().signed_duration_since(start_total);
+            tracing::info!("Completed bundling process in {:?}", total_duration);
 
             Ok(())
         }
@@ -265,18 +298,60 @@ pub mod service {
         async fn find_optimal_bundle<B: Bundle>(&self, mut bundler: B) -> Result<BundleProposal> {
             // TODO: The current approach can lead to excessive optimization time when we are far behind. Maybe we should scale the optimization time depending on how behind bundling we are.
             let optimization_start = self.clock.now();
+            let mut advance_iterations = 0;
+            let mut total_advance_time = Duration::from_secs(0);
 
-            while bundler
-                .advance(self.config.max_bundles_per_optimization_run)
-                .await?
-            {
+            while {
+                let advance_start = self.clock.now();
+                let advance_result = bundler
+                    .advance(self.config.max_bundles_per_optimization_run)
+                    .await?;
+                let advance_duration = self
+                    .clock
+                    .now()
+                    .signed_duration_since(advance_start)
+                    .to_std()
+                    .unwrap_or_default();
+                total_advance_time += advance_duration;
+                advance_iterations += 1;
+
+                tracing::info!(
+                    "Bundler advance iteration {}: took {:?}",
+                    advance_iterations,
+                    advance_duration
+                );
+
+                advance_result
+            } {
                 if self.should_stop_optimizing(optimization_start)? {
                     info!("Optimization time limit reached! Finishing bundling.");
                     break;
                 }
             }
 
-            bundler.finish().await
+            tracing::info!(
+                "Completed {} advance iterations in total {:?} (avg {:?} per iteration)",
+                advance_iterations,
+                total_advance_time,
+                if advance_iterations > 0 {
+                    total_advance_time / advance_iterations as u32
+                } else {
+                    Duration::from_secs(0)
+                }
+            );
+
+            let finish_start = self.clock.now();
+            let result = bundler.finish().await;
+            let finish_duration = self
+                .clock
+                .now()
+                .signed_duration_since(finish_start)
+                .to_std()
+                .unwrap_or_default();
+
+            tracing::info!("Bundler finish operation took {:?}", finish_duration);
+
+            result
         }
 
         fn still_time_to_accumulate_more(&self) -> Result<bool> {
@@ -399,7 +474,7 @@ pub mod test_helpers {
         mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     };
 
-    use super::bundler::{Bundle, BundleProposal, BundlerFactory};
+    use super::common::{Bundle, BundleProposal, BundlerFactory};
     use crate::types::{NonNegative, storage::SequentialFuelBlocks};
 
     pub struct ControllableBundler {

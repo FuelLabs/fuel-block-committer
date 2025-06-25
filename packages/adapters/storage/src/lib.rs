@@ -14,9 +14,9 @@ use services::{
     Result,
     block_bundler::port::UnbundledBlocks,
     types::{
-        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime, Fragment,
-        L1Tx, NonEmpty, NonNegative, TransactionCostUpdate, TransactionState, Utc,
-        storage::BundleFragment,
+        BlockSubmission, BlockSubmissionTx, BundleCost, CompressedFuelBlock, DateTime,
+        DispersalStatus, EigenDARequestId, EigenDASubmission, Fragment, L1Tx, NonEmpty,
+        NonNegative, TransactionCostUpdate, TransactionState, Utc, storage::BundleFragment,
     },
 };
 
@@ -42,6 +42,30 @@ impl services::state_listener::port::Storage for Postgres {
 
     async fn earliest_submission_attempt(&self, nonce: u32) -> Result<Option<DateTime<Utc>>> {
         self._earliest_submission_attempt(nonce)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn earliest_eigen_submission_attempt(
+        &self,
+        request_id: &EigenDARequestId,
+    ) -> Result<Option<DateTime<Utc>>> {
+        self._earliest_eigen_submission_attempt(request_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_non_finalized_eigen_submission(&self) -> services::Result<Vec<EigenDASubmission>> {
+        self._get_non_finalized_eigen_submission()
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn update_eigen_submissions(
+        &self,
+        changes: Vec<(u32, DispersalStatus)>,
+    ) -> services::Result<()> {
+        self._update_eigen_submissions(changes)
             .await
             .map_err(Into::into)
     }
@@ -82,6 +106,10 @@ impl services::block_importer::port::Storage for Postgres {
 
     async fn insert_blocks(&self, blocks: NonEmpty<CompressedFuelBlock>) -> Result<()> {
         Ok(self._insert_blocks(blocks).await?)
+    }
+
+    async fn get_latest_block_height(&self) -> Result<u32> {
+        self._get_latest_block_height().await.map_err(Into::into)
     }
 }
 
@@ -182,6 +210,33 @@ impl services::state_committer::port::Storage for Postgres {
 
     async fn latest_bundled_height(&self) -> Result<Option<u32>> {
         self._latest_bundled_height().await.map_err(Into::into)
+    }
+
+    async fn record_eigenda_submission(
+        &self,
+        submission: EigenDASubmission,
+        fragment_id: i32,
+        created_at: DateTime<Utc>,
+    ) -> services::Result<()> {
+        self._record_eigenda_submission(submission, fragment_id, created_at)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn oldest_unsubmitted_fragments(
+        &self,
+        starting_height: u32,
+        limit: usize,
+    ) -> Result<Vec<BundleFragment>> {
+        self._oldest_unsubmitted_fragments(starting_height, limit)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn last_eigen_submission_was_finalized(&self) -> Result<Option<DateTime<Utc>>> {
+        self._last_eigen_submission_was_finalized()
+            .await
+            .map_err(Into::into)
     }
 }
 
@@ -1097,12 +1152,8 @@ mod tests {
         )
         .await;
         // simulate replaced txs
-        ensure_fragments_have_transaction(
-            storage.clone(),
-            fragment_ids,
-            TransactionState::SqueezedOut,
-        )
-        .await;
+        ensure_fragments_have_transaction(storage.clone(), fragment_ids, TransactionState::Failed)
+            .await;
         ensure_some_fragments_exists_in_the_db(storage.clone(), 6..=10).await;
 
         // when

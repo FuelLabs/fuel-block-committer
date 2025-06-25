@@ -244,6 +244,7 @@ mod foundry {
         let output = tokio::process::Command::new("forge")
             .arg("init")
             .arg("--no-git")
+            // .arg("--no-commit")
             .stdin(std::process::Stdio::null())
             .current_dir(dir)
             .kill_on_drop(true)
@@ -294,6 +295,7 @@ mod foundry {
         for Dep { git, tag, .. } in &deps {
             let output = tokio::process::Command::new("forge")
                 .arg("install")
+                // .arg("--no-commit")
                 .arg("--no-git")
                 .arg(format!("{git}@{tag}"))
                 .current_dir(dir)
