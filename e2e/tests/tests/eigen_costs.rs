@@ -4,8 +4,8 @@ use e2e_helpers::whole_stack::{
     start_fuel_node, start_kms,
 };
 use k256::ecdsa::SigningKey as K256SigningKey;
-use tracing::info;
 use std::time::Duration;
+use tracing::info;
 
 #[tokio::test]
 async fn test_eigen_costs() -> Result<()> {
