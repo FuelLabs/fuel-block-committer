@@ -392,7 +392,6 @@ impl CommitterProcess {
         Ok(response)
     }
 
-
     pub fn port(&self) -> u16 {
         self.port
     }

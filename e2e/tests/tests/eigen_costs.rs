@@ -57,7 +57,7 @@ async fn test_eigen_costs() -> Result<()> {
     // Check if committer has updated the costs
     let costs = committer.latest_costs().await?;
 
-    assert!(costs.len() > 0);
+    assert!(!costs.is_empty());
 
     Ok(())
 }
