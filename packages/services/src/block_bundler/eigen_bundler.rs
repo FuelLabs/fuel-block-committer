@@ -97,12 +97,12 @@ where
 {
     fn create_fragments(
         fragment_size: NonZeroU32,
-        compressed_data: Vec<u8>,
+        compressed_data: &[u8],
     ) -> Result<NonEmpty<Fragment>> {
         let fragments: Vec<Fragment> = compressed_data
             .chunks(fragment_size.get() as usize)
             .map(|chunk| Fragment {
-                data: NonEmpty::from_vec(chunk.to_vec()).expect("chunk should not be empty"),
+                data: NonEmpty::from_slice(chunk).expect("chunk should not be empty"),
                 unused_bytes: (fragment_size.get() as usize - chunk.len()) as u32,
                 total_bytes: NonZeroU32::new(chunk.len() as u32).unwrap(),
             })
@@ -143,7 +143,7 @@ where
         } {
             if let Ok(fragments) = {
                 let fragments_start = std::time::Instant::now();
-                let result = Self::create_fragments(self.fragment_size, bundle.data.clone());
+                let result = Self::create_fragments(self.fragment_size, &bundle.data);
 
                 if let Ok(ref fragments) = result {
                     let fragments_duration = fragments_start.elapsed();
@@ -240,7 +240,7 @@ where
                 );
 
                 let fragments_start = std::time::Instant::now();
-                let fragments = Self::create_fragments(self.fragment_size, bundle.data.clone())?;
+                let fragments = Self::create_fragments(self.fragment_size, &bundle.data)?;
                 let fragments_duration = fragments_start.elapsed();
                 tracing::info!(
                     "EigenBundler: create_fragments completed in {:?}, created {} fragments",
