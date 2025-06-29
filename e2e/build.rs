@@ -244,7 +244,6 @@ mod foundry {
         let output = tokio::process::Command::new("forge")
             .arg("init")
             .arg("--no-git")
-            .arg("--no-commit")
             .stdin(std::process::Stdio::null())
             .current_dir(dir)
             .kill_on_drop(true)
