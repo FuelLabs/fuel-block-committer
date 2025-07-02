@@ -120,11 +120,7 @@ impl EthNodeProcess {
     pub async fn fund(&self, address: Address, amount: U256) -> anyhow::Result<()> {
         let wallet = EthereumWallet::from(self.wallet(0));
         let ws = WsConnect::new(self.ws_url());
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_ws(ws)
-            .await?;
+        let provider = ProviderBuilder::new().wallet(wallet).connect_ws(ws).await?;
 
         let tx = TransactionRequest::default()
             .with_to(address)

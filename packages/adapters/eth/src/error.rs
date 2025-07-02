@@ -17,7 +17,7 @@ impl From<RpcError<TransportErrorKind>> for Error {
     fn from(err: RpcError<TransportErrorKind>) -> Self {
         match err {
             RpcError::ErrorResp(err) if err.code >= -32613 && err.code <= -32000 => {
-                Self::TxExecution(err.message)
+                Self::TxExecution(err.message.to_string())
             }
             RpcError::Transport(
                 TransportErrorKind::BackendGone | TransportErrorKind::PubsubUnavailable,

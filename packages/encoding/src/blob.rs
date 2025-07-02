@@ -10,7 +10,7 @@ use crate::constants::BYTES_PER_BLOB;
 
 pub type Blob = Box<[u8; BYTES_PER_BLOB]>;
 
-#[cfg(feature = "kzg")]
+// #[cfg(feature = "kzg")]
 pub fn generate_sidecar(
     blobs: impl IntoIterator<Item = Blob>,
 ) -> anyhow::Result<alloy::consensus::BlobTransactionSidecar> {
@@ -20,15 +20,16 @@ pub fn generate_sidecar(
         .collect::<Vec<_>>();
     let mut commitments = Vec::with_capacity(blobs.len());
     let mut proofs = Vec::with_capacity(blobs.len());
-    let settings = alloy::consensus::EnvKzgSettings::default();
+    let env_settings = alloy::consensus::EnvKzgSettings::default();
+    let settings = env_settings.get();
 
     for blob in &blobs {
         // SAFETY: same size
         let blob =
             unsafe { core::mem::transmute::<&alloy::eips::eip4844::Blob, &c_kzg::Blob>(blob) };
-        let commitment = c_kzg::KzgCommitment::blob_to_kzg_commitment(blob, settings.get())?;
-        let proof =
-            c_kzg::KzgProof::compute_blob_kzg_proof(blob, &commitment.to_bytes(), settings.get())?;
+        // let commitment = blob
+        let commitment = settings.blob_to_kzg_commitment(&blob)?;
+        let proof = settings.compute_blob_kzg_proof(blob, &commitment.to_bytes())?;
 
         // SAFETY: same size
         unsafe {
