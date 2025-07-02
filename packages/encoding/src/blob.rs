@@ -10,7 +10,7 @@ use crate::constants::BYTES_PER_BLOB;
 
 pub type Blob = Box<[u8; BYTES_PER_BLOB]>;
 
-// #[cfg(feature = "kzg")]
+#[cfg(feature = "kzg")]
 pub fn generate_sidecar(
     blobs: impl IntoIterator<Item = Blob>,
 ) -> anyhow::Result<alloy::consensus::BlobTransactionSidecar> {
