@@ -484,7 +484,7 @@ mod tests {
     async fn submit_fragments_will_bump_gas_prices() {
         // given
         let anvil = Anvil::new()
-            .args(["--hardfork", "cancun"])
+            .args(["--hardfork", "cancun", "--block-base-fee-per-gas", "10"])
             .try_spawn()
             .unwrap();
 
