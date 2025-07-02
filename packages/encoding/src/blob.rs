@@ -27,7 +27,7 @@ pub fn generate_sidecar(
         // SAFETY: same size
         let blob =
             unsafe { core::mem::transmute::<&alloy::eips::eip4844::Blob, &c_kzg::Blob>(blob) };
-        let commitment = settings.blob_to_kzg_commitment(&blob)?;
+        let commitment = settings.blob_to_kzg_commitment(blob)?;
         let proof = settings.compute_blob_kzg_proof(blob, &commitment.to_bytes())?;
 
         // SAFETY: same size

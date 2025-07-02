@@ -77,7 +77,7 @@ mod tests {
         for code in 32_000..=32613 {
             let err = RpcError::ErrorResp(ErrorPayload {
                 code: -code,
-                message: "some message".to_owned(),
+                message: "some message".to_owned().into(),
                 data: None,
             });
 
@@ -95,7 +95,7 @@ mod tests {
         for code in [31_999, 32614] {
             let err = RpcError::ErrorResp(ErrorPayload {
                 code: -code,
-                message: "some message".to_owned(),
+                message: "some message".to_owned().into(),
                 data: None,
             });
 

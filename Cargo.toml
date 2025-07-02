@@ -96,7 +96,7 @@ serde_json = { version = "1.0", default-features = false }
 sha3 = { version = "0.10.8" }
 sqlx = { version = "0.7.4", default-features = false }
 tai64 = { version = "4.0.0", default-features = false }
-tempfile = { version = "3.10", default-features = false }
+tempfile = { version = "3.20", default-features = false }
 test-case = { version = "3.3", default-features = false }
 testcontainers = { version = "0.20", default-features = false }
 # to be removed once alloy fixes the issue with blob encoding

@@ -12,15 +12,17 @@ use tracing::info;
 
 use crate::fee_api_helpers::batch_requests;
 
+type InnerProvider = FillProvider<
+    JoinFill<
+        alloy::providers::Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+>;
+
 #[derive(Debug, Clone)]
 pub struct Provider {
-    pub(crate) provider: FillProvider<
-        JoinFill<
-            alloy::providers::Identity,
-            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
-        >,
-        RootProvider,
-    >,
+    pub(crate) provider: InnerProvider,
 }
 
 impl Provider {

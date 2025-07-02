@@ -357,8 +357,7 @@ impl EthApi for WsConnection {
             .blockHashAtCommit(U256::from(commit_height))
             .call()
             .await?
-            .0
-            .into())
+            .0)
     }
 }
 
@@ -446,7 +445,7 @@ impl WsConnection {
             block_number,
             tx_receipt.status(),
             fee,
-            blob_fee.into(),
+            blob_fee,
         )))
     }
 
@@ -497,15 +496,13 @@ mod tests {
 
         let ws = WsConnect::new(anvil.ws_endpoint());
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet.clone())
-            .on_ws(ws.clone())
+            .connect_ws(ws.clone())
             .await
             .unwrap();
         let blob_provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(blob_wallet.clone())
-            .on_ws(ws)
+            .connect_ws(ws)
             .await
             .unwrap();
 
@@ -573,15 +570,13 @@ mod tests {
 
         let ws = WsConnect::new(anvil.ws_endpoint());
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet.clone())
-            .on_ws(ws.clone())
+            .connect_ws(ws.clone())
             .await
             .unwrap();
         let blob_provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(blob_wallet.clone())
-            .on_ws(ws)
+            .connect_ws(ws)
             .await
             .unwrap();
 
