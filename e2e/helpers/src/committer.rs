@@ -173,6 +173,14 @@ impl Committer {
                 .env(
                     "COMMITTER__DA_LAYER__CERT_VERIFIER_ADDRESS",
                     "0xFe52fE1940858DCb6e12153E2104aD0fDFbE1162",
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__REGISTRY_COORDINATOR_ADDRESS",
+                    "0x53012C69A189cfA2D9d29eb6F19B32e0A2EA3490",
+                )
+                .env(
+                    "COMMITTER__DA_LAYER__OPERATOR_STATE_RETRIEVER_ADDRESS",
+                    "0xB4baAfee917fb4449f5ec64804217bccE9f46C67",
                 );
         }
 
