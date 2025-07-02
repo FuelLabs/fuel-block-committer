@@ -125,6 +125,10 @@ pub struct EigenDaConfig {
     pub eth_rpc_url: Url,
     /// Certificate verifier address.
     pub cert_verifier_address: String,
+    /// Registry coordinator address.
+    pub registry_coordinator_address: String,
+    /// Operator state retriever address.
+    pub operator_state_retriever_address: String,
 }
 
 impl EigenDaConfig {

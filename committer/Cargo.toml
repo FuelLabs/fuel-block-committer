@@ -34,7 +34,6 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json"] }
 url = { workspace = true }
-ethereum-types = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

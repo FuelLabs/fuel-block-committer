@@ -4006,7 +4006,6 @@ dependencies = [
  "config",
  "eigenda",
  "eth",
- "ethereum-types",
  "fuel",
  "fuel-block-committer-encoding",
  "hex",
