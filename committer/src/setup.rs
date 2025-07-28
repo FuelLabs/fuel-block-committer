@@ -1,9 +1,8 @@
-use std::{num::NonZeroU32, str::FromStr, time::Duration};
+use std::{num::NonZeroU32, time::Duration};
 
 use clock::SystemClock;
 use eigenda::{EigenDAClient, Throughput};
 use eth::{AcceptablePriorityFeePercentages, BlobEncoder};
-use ethereum_types::H160;
 use fuel_block_committer_encoding::bundle;
 use metrics::{
     HealthChecker, RegistersMetrics,
@@ -531,12 +530,9 @@ pub async fn eigen_adapter(
             max_burst: burst,
             calls_per_sec: DEFAULT_EIGEN_CALLS_PER_SEC.try_into().unwrap(),
         },
-        H160::from_str(&config.cert_verifier_address).map_err(|e| {
-            Error::Other(format!(
-                "Invalid cert verifier address ({e}): {}",
-                config.cert_verifier_address
-            ))
-        })?,
+        config.cert_verifier_address.clone(),
+        config.registry_coordinator_address.clone(),
+        config.operator_state_retriever_address.clone(),
         config.eth_rpc_url.clone(),
     )
     .await

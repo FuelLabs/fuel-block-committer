@@ -1,8 +1,8 @@
 use std::ops::RangeInclusive;
 
-use alloy::{
-    providers::{Provider as AlloyProvider, ProviderBuilder, RootProvider},
-    transports::http::{Client, Http},
+use alloy::providers::{
+    Provider as AlloyProvider, ProviderBuilder, RootProvider,
+    fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
 };
 use services::{
     fees::SequentialBlockFees,
@@ -12,9 +12,17 @@ use tracing::info;
 
 use crate::fee_api_helpers::batch_requests;
 
+type InnerProvider = FillProvider<
+    JoinFill<
+        alloy::providers::Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+>;
+
 #[derive(Debug, Clone)]
 pub struct Provider {
-    pub(crate) provider: RootProvider<Http<Client>>,
+    pub(crate) provider: InnerProvider,
 }
 
 impl Provider {
@@ -22,7 +30,7 @@ impl Provider {
         let url = url
             .parse()
             .map_err(|e| crate::error::Error::Other(format!("invalid url: {url}: {e}")))?;
-        let provider = ProviderBuilder::new().on_http(url);
+        let provider = ProviderBuilder::new().connect_http(url);
 
         Ok(Self { provider })
     }
@@ -32,7 +40,7 @@ impl Provider {
     pub async fn get_block_time(&self, block_num: u64) -> crate::Result<Option<DateTime<Utc>>> {
         let block = self
             .provider
-            .get_block_by_number(alloy::eips::BlockNumberOrTag::Number(block_num), false)
+            .get_block_by_number(alloy::eips::BlockNumberOrTag::Number(block_num))
             .await
             .map_err(|e| {
                 crate::error::Error::Other(format!("failed to get block by number: {e}"))

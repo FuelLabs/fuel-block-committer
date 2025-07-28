@@ -8,7 +8,7 @@ mod tests {
     };
     use itertools::Itertools;
     use proptest::prelude::*;
-    use rand::{rngs::SmallRng, seq::SliceRandom, RngCore, SeedableRng};
+    use rand::{rngs::SmallRng, seq::SliceRandom, Rng, RngCore, SeedableRng};
     use test_case::test_case;
 
     #[test_case(1,  1; "one blob")]

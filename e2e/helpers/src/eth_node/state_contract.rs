@@ -99,11 +99,7 @@ impl CreateTransactions {
         let wallet = EthereumWallet::from(main_signer);
 
         let ws = WsConnect::new(url);
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_ws(ws)
-            .await?;
+        let provider = ProviderBuilder::new().wallet(wallet).connect_ws(ws).await?;
 
         for tx in self.txs {
             let succeeded = provider

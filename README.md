@@ -15,6 +15,7 @@ The Fuel Block Committer is a standalone service dedicated to uploading Fuel Blo
     - [Database (DB) Configuration](#database-db-configuration)
     - [Application (App) Configuration](#application-app-configuration)
     - [Bundle Configuration](#bundle-configuration)
+    - [DA Layer Configuration](#da-layer-configuration)
   - [Configuration Validation](#configuration-validation)
 - [Running the Fee Algo Simulator](#running-the-fee-algo-simulator)
 
@@ -380,6 +381,18 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Description:** Address of the certificate verifier contract. Get it from the EigenDA documentation or deployment details.
   - **Type:** String
   - **Example:** `0x1234567890123456789012345678901234567890`
+
+- **`COMMITTER__DA_LAYER__REGISTRY_COORDINATOR_ADDRESS`**
+
+  - **Description:** Address of the registry coordinator contract. Get it from the EigenDA documentation or deployment details.
+  - **Type:** String
+  - **Example:** `0x0987654321098765432109876543210987654321`
+
+- **`COMMITTER__DA_LAYER__OPERATOR_STATE_RETRIEVER_ADDRESS`**
+
+  - **Description:** Address of the operator state retriever contract. Get it from the EigenDA documentation or deployment details.
+  - **Type:** String
+  - **Example:** `0x1122334455667788990011223344556677889900`
 
 ### Configuration Validation
 

@@ -8,13 +8,12 @@ use alloy::{
         BlockNumberOrTag,
         eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB},
     },
-    network::{Ethereum, EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
+    network::{EthereumWallet, TransactionBuilder, TransactionBuilder4844, TxSigner},
     primitives::{Address, U256},
     providers::{
         Provider, ProviderBuilder, SendableTx, WsConnect,
         utils::{EIP1559_FEE_ESTIMATION_PAST_BLOCKS, Eip1559Estimation},
     },
-    pubsub::PubSubFrontend,
     rpc::types::{FeeHistory, TransactionReceipt, TransactionRequest},
     sol,
 };
@@ -54,11 +53,9 @@ pub type WsProvider = alloy::providers::fillers::FillProvider<
         >,
         alloy::providers::fillers::WalletFiller<EthereumWallet>,
     >,
-    alloy::providers::RootProvider<alloy::pubsub::PubSubFrontend>,
-    alloy::pubsub::PubSubFrontend,
-    Ethereum,
+    alloy::providers::RootProvider,
 >;
-type FuelStateContract = IFuelStateContract::IFuelStateContractInstance<PubSubFrontend, WsProvider>;
+type FuelStateContract = IFuelStateContract::IFuelStateContractInstance<WsProvider>;
 
 sol!(
     #[sol(rpc)]
@@ -157,7 +154,7 @@ impl EthApi for WsConnection {
         let Eip1559Estimation {
             max_fee_per_gas,
             max_priority_fee_per_gas,
-        } = self.provider.estimate_eip1559_fees(None).await?;
+        } = self.provider.estimate_eip1559_fees().await?;
 
         let nonce = self
             .provider
@@ -312,7 +309,7 @@ impl EthApi for WsConnection {
             l1_tx.nonce, l1_tx.max_fee, l1_tx.priority_fee, l1_tx.blob_fee
         );
 
-        let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit(), num_fragments);
+        let max_fee = WsConnection::get_max_fee(&l1_tx, blob_tx.gas_limit().into(), num_fragments);
         if max_fee > self.tx_config.tx_max_fee {
             return Err(Error::Other(
                 format!(
@@ -350,8 +347,7 @@ impl EthApi for WsConnection {
             .contract
             .finalized(hash.into(), U256::from(height))
             .call()
-            .await?
-            ._0)
+            .await?)
     }
 
     #[cfg(feature = "test-helpers")]
@@ -361,8 +357,7 @@ impl EthApi for WsConnection {
             .blockHashAtCommit(U256::from(commit_height))
             .call()
             .await?
-            ._0
-            .into())
+            .0)
     }
 }
 
@@ -392,7 +387,7 @@ impl WsConnection {
         let contract_address = Address::from_slice(contract_address.as_ref());
         let contract = FuelStateContract::new(contract_address, provider.clone());
 
-        let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?._0;
+        let interval_u256 = contract.BLOCKS_PER_COMMIT_INTERVAL().call().await?;
 
         let commit_interval = u32::try_from(interval_u256)
             .map_err(|e| Error::Other(e.to_string()))
@@ -420,9 +415,8 @@ impl WsConnection {
     {
         let wallet = EthereumWallet::from(signer);
         ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet)
-            .on_ws(ws)
+            .connect_ws(ws)
             .await
             .map_err(Into::into)
     }
@@ -444,9 +438,7 @@ impl WsConnection {
 
         let block_number = Self::extract_block_number_from_receipt(&tx_receipt)?;
 
-        let fee = tx_receipt
-            .gas_used
-            .saturating_mul(tx_receipt.effective_gas_price);
+        let fee = u128::from(tx_receipt.gas_used).saturating_mul(tx_receipt.effective_gas_price);
         let blob_fee = Self::extract_blob_fee_from_receipt(&tx_receipt);
 
         Ok(Some(TransactionResponse::new(
@@ -465,7 +457,7 @@ impl WsConnection {
 
     fn extract_blob_fee_from_receipt(receipt: &TransactionReceipt) -> u128 {
         match (receipt.blob_gas_used, receipt.blob_gas_price) {
-            (Some(gas_used), Some(gas_price)) => gas_used.saturating_mul(gas_price),
+            (Some(gas_used), Some(gas_price)) => u128::from(gas_used).saturating_mul(gas_price),
             _ => 0,
         }
     }
@@ -492,7 +484,7 @@ mod tests {
     async fn submit_fragments_will_bump_gas_prices() {
         // given
         let anvil = Anvil::new()
-            .args(["--hardfork", "cancun"])
+            .args(["--hardfork", "cancun", "--block-base-fee-per-gas", "10"])
             .try_spawn()
             .unwrap();
 
@@ -504,15 +496,13 @@ mod tests {
 
         let ws = WsConnect::new(anvil.ws_endpoint());
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet.clone())
-            .on_ws(ws.clone())
+            .connect_ws(ws.clone())
             .await
             .unwrap();
         let blob_provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(blob_wallet.clone())
-            .on_ws(ws)
+            .connect_ws(ws)
             .await
             .unwrap();
 
@@ -580,15 +570,13 @@ mod tests {
 
         let ws = WsConnect::new(anvil.ws_endpoint());
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet.clone())
-            .on_ws(ws.clone())
+            .connect_ws(ws.clone())
             .await
             .unwrap();
         let blob_provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(blob_wallet.clone())
-            .on_ws(ws)
+            .connect_ws(ws)
             .await
             .unwrap();
 

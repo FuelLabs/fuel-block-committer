@@ -1,7 +1,6 @@
 use std::time::Instant;
 
 use byte_unit::Byte;
-use ethereum_types::H160;
 pub use rust_eigenda_v2_client::rust_eigenda_signers::Sign;
 use rust_eigenda_v2_client::{
     core::BlobKey,
@@ -152,21 +151,21 @@ where
         signer: S,
         rpc: Url,
         throughput: Throughput,
-        cert_verifier_address: H160,
+        cert_verifier_router_address: String,
+        registry_coordinator_address: String,
+        operator_state_retriever_address: String,
         eth_rpc: Url,
     ) -> Result<Self> {
-        // Set up Ethereum RPC URL
-        // For now, we're using the same URL for disperser and eth - this may need to be revised
         let disperser_rpc_url = rpc.to_string();
 
-        // Set a default Holesky RPC endpoint for Ethereum interaction
-        // This could be changed to a configurable parameter
         let eth_rpc_url = SecretUrl::new(eth_rpc);
 
         let config = PayloadDisperserConfig {
             polynomial_form: PayloadForm::Coeff,
             blob_version: 0,
-            cert_verifier_address,
+            cert_verifier_router_address,
+            registry_coordinator_addr: registry_coordinator_address,
+            operator_state_retriever_addr: operator_state_retriever_address,
             eth_rpc_url,
             disperser_rpc: disperser_rpc_url,
             use_secure_grpc_flag: true,
