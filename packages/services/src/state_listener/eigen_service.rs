@@ -129,6 +129,8 @@ where
 
         self.storage.update_eigen_submissions(changes).await?;
 
+        self.storage.update_eigen_costs().await?;
+
         Ok(())
     }
 }

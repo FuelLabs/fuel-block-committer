@@ -387,6 +387,19 @@ impl CommitterProcess {
         Ok(response)
     }
 
+    pub async fn latest_costs(&self) -> anyhow::Result<Vec<BundleCost>> {
+        let response = reqwest::get(format!(
+            "http://localhost:{}/v1/costs?variant=latest",
+            self.port,
+        ))
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+        Ok(response)
+    }
+
     pub fn port(&self) -> u16 {
         self.port
     }

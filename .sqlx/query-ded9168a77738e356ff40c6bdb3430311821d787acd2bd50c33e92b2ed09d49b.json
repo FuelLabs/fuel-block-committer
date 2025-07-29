@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n           INSERT INTO bundle_cost (bundle_id, da_block_height, cost, size, is_finalized)\n           SELECT DISTINCT\n               b.id as bundle_id,\n               0 as da_block_height,\n               0 as cost,\n               COALESCE(SUM(lf.total_bytes), 0) as size,\n               true as is_finalized\n           FROM eigen_submission_fragments esf\n           JOIN eigen_submission es ON esf.submission_id = es.id\n           JOIN l1_fragments lf ON esf.fragment_id = lf.id\n           JOIN bundles b ON lf.bundle_id = b.id\n           LEFT JOIN bundle_cost bc ON b.id = bc.bundle_id\n           WHERE es.status = $1\n             AND bc.bundle_id IS NULL  -- Don't insert duplicates\n             AND esf.id IN (\n                 SELECT id FROM eigen_submission_fragments\n                 ORDER BY id DESC\n             )\n           GROUP BY b.id;\n           ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ded9168a77738e356ff40c6bdb3430311821d787acd2bd50c33e92b2ed09d49b"
+}
