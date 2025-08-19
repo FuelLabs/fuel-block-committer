@@ -205,20 +205,40 @@ where
     pub async fn check_blob_status(&self, blob_id: &str) -> Result<DispersalStatus> {
         let blob_key = BlobKey::from_hex(blob_id).map_err(Error::InvalidBlobKey)?;
 
-        // we wait for the throttler to ensure we don't exceed the polling limits
-        self.throttler.wait_for_capacity(0).await?;
+        const RETRY_LIMIT: usize = 5;
+        let mut response = None;
 
-        let response = match self
-            .eigen_client
-            .disperser_client
-            .blob_status(&blob_key)
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                warn!("Error checking blob status for {}: {}", blob_id, e);
-                return Ok(DispersalStatus::Failed);
+        for attempt in 0..RETRY_LIMIT {
+            // wait for the throttler to ensure we don't exceed the polling limits
+            self.throttler.wait_for_capacity(0).await?;
+
+            match self
+                .eigen_client
+                .disperser_client
+                .blob_status(&blob_key)
+                .await
+            {
+                Ok(resp) => {
+                    response = Some(resp);
+                    break;
+                }
+                Err(e) => {
+                    warn!(
+                        "Error checking blob status for {} (attempt {}): {}",
+                        blob_id,
+                        attempt + 1,
+                        e
+                    );
+                }
             }
+        }
+
+        let Some(response) = response else {
+            warn!(
+                "All {} retry attempts failed for blob {}",
+                RETRY_LIMIT, blob_id
+            );
+            return Ok(DispersalStatus::Failed);
         };
 
         let dispersal_status = match BlobStatus::from(response.status) {
