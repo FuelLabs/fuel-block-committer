@@ -86,6 +86,7 @@ pub fn ethereum_da_services(
     config: &config::Config,
     internal_config: &config::Internal,
     registry: &Registry,
+    last_finalization: IntGauge,
 ) -> Result<Vec<tokio::task::JoinHandle<()>>> {
     let block_bundler = block_bundler(
         fuel.clone(),
@@ -119,7 +120,7 @@ pub fn ethereum_da_services(
         cancel_token.clone(),
         registry,
         config,
-        last_finalization_metric(),
+        last_finalization.clone(),
     );
 
     let state_importer_handle = block_importer(
@@ -152,6 +153,7 @@ pub async fn eigen_da_services(
     config: &config::Config,
     internal_config: &config::Internal,
     registry: &Registry,
+    last_finalization: IntGauge,
 ) -> Result<Vec<tokio::task::JoinHandle<()>>> {
     let block_bundler = eigen_block_bundler(
         fuel.clone(),
@@ -180,7 +182,7 @@ pub async fn eigen_da_services(
                     cancel_token.clone(),
                     config,
                     registry,
-                    last_finalization_metric(),
+                    last_finalization.clone(),
                 )?;
 
                 let fee_metrics_handle =
