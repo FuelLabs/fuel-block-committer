@@ -78,6 +78,7 @@ pub fn block_committer(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ethereum_da_services(
     fuel: FuelApi,
     ethereum_rpc: L1,
