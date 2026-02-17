@@ -95,7 +95,7 @@ jobs:
           chmod +x fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core
           mv fuel-core-${{ env.FUEL_CORE_VERSION }}-x86_64-unknown-linux-gnu/fuel-core /usr/local/bin/fuel-core
       - name: Unit/integration tests
-        run:  cargo test --workspace --exclude e2e-tests
+        run: cargo test --workspace --exclude e2e-tests
 
   additional-check-for-published-crates:
     runs-on: ubuntu-latest
@@ -189,10 +189,10 @@ jobs:
     strategy:
       matrix:
         arch: [
-          # build on native runners instead of using emulation
-          {platform: linux/amd64, runner: buildjet-8vcpu-ubuntu-2204},
-          {platform: linux/arm64, runner: buildjet-8vcpu-ubuntu-2204-arm}
-        ]
+            # build on native runners instead of using emulation
+            { platform: linux/amd64, runner: buildjet-8vcpu-ubuntu-2204 },
+            { platform: linux/arm64, runner: buildjet-8vcpu-ubuntu-2204-arm },
+          ]
     runs-on: ${{ matrix.arch.runner }}
     permissions:
       contents: read
@@ -363,3 +363,70 @@ jobs:
         with:
           publish-delay: 30000
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  release-binaries:
+    needs:
+      - cargo-verifications
+      - additional-check-for-published-crates
+      - publish-crates-check
+      - e2e-tests
+    if: github.event_name == 'release' && github.event.action == 'published'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: aarch64-apple-darwin
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --locked --release --bin fuel-block-committer --target ${{ matrix.target }}
+
+      - name: Package release archive
+        id: package
+        run: |
+          ARCHIVE="fuel-block-committer-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          tar -C "target/${{ matrix.target }}/release" -czf "${ARCHIVE}" fuel-block-committer
+          shasum -a 256 "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload binary archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+
+  upload-release-assets:
+    needs:
+      - release-binaries
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
