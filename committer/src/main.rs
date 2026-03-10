@@ -72,6 +72,7 @@ async fn main() -> Result<()> {
             &config,
             &internal_config,
             &metrics_registry,
+            finalization_metric.clone(),
         )?
     } else if config.da_layer.is_some() {
         setup::eigen_da_services(
@@ -81,6 +82,7 @@ async fn main() -> Result<()> {
             &config,
             &internal_config,
             &metrics_registry,
+            finalization_metric,
         )
         .await?
     } else {
