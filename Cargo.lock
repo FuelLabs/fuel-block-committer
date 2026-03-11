@@ -2172,7 +2172,7 @@ checksum = "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1"
 
 [[package]]
 name = "benchmarks"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "clock",
  "criterion",
@@ -2549,7 +2549,7 @@ checksum = "afb84c814227b90d6895e01398aee0d8033c00e7466aca416fb6a8e0eb19d8a7"
 
 [[package]]
 name = "clock"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "clock",
  "services",
@@ -3025,7 +3025,7 @@ dependencies = [
 
 [[package]]
 name = "da"
-version = "0.10.10"
+version = "0.10.11"
 
 [[package]]
 name = "darling"
@@ -3302,7 +3302,7 @@ checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
 name = "e2e-helpers"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "actix-web",
  "alloy",
@@ -3341,7 +3341,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-tests"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3521,7 +3521,7 @@ dependencies = [
 
 [[package]]
 name = "eigenda"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3687,7 +3687,7 @@ dependencies = [
 
 [[package]]
 name = "eth"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "alloy",
  "async-trait",
@@ -3846,7 +3846,7 @@ dependencies = [
 
 [[package]]
 name = "fee_algo_simulation"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3968,7 +3968,7 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fuel"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "cynic",
  "cynic-codegen",
@@ -3996,7 +3996,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4027,7 +4027,7 @@ dependencies = [
 
 [[package]]
 name = "fuel-block-committer-encoding"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5667,7 +5667,7 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "metrics"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "prometheus",
 ]
@@ -7787,7 +7787,7 @@ dependencies = [
 
 [[package]]
 name = "services"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "alloy",
  "async-trait",
@@ -7910,7 +7910,7 @@ dependencies = [
 
 [[package]]
 name = "signers"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "alloy",
  "anyhow",
@@ -8229,7 +8229,7 @@ checksum = "d7beae5182595e9a8b683fa98c4317f956c9a2dec3b9716990d20023cc60c766"
 
 [[package]]
 name = "storage"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "clock",
  "delegate",
@@ -8571,7 +8571,7 @@ dependencies = [
 
 [[package]]
 name = "test-helpers"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "clock",
  "delegate",

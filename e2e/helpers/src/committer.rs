@@ -327,7 +327,7 @@ pub struct CommitterProcess {
 
 impl CommitterProcess {
     pub fn metrics_url(&self) -> Url {
-        format!("http://localhost:{}/metrics", self.port)
+        format!("http://127.0.0.1:{}/metrics", self.port)
             .parse()
             .unwrap()
     }
@@ -352,7 +352,7 @@ impl CommitterProcess {
     }
 
     pub async fn fetch_metric_value(&self, metric_name: &str) -> anyhow::Result<u64> {
-        let response = reqwest::get(format!("http://localhost:{}/metrics", self.port))
+        let response = reqwest::get(format!("http://127.0.0.1:{}/metrics", self.port))
             .await?
             .error_for_status()?
             .text()
@@ -376,7 +376,7 @@ impl CommitterProcess {
         limit: usize,
     ) -> anyhow::Result<Vec<BundleCost>> {
         let response = reqwest::get(format!(
-            "http://localhost:{}/v1/costs?variant=specific&value={}&limit={}",
+            "http://127.0.0.1:{}/v1/costs?variant=specific&value={}&limit={}",
             self.port, from_height, limit
         ))
         .await?
