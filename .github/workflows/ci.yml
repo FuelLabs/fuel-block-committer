@@ -330,6 +330,8 @@ jobs:
           docker buildx imagetools inspect ${{ env.REGISTRY_URL }}:${{ steps.meta.outputs.version }}
 
       - uses: actions/checkout@v4
+        if: always()
+
       - uses: ./.github/actions/slack-notify-template
         if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
         with:
