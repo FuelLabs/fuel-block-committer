@@ -13,7 +13,7 @@ permissions:
 jobs:
   helm-release:
     name: Build Helm Chart
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     if: |
       (github.event_name == 'release' && github.event.action == 'published') ||
       github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
