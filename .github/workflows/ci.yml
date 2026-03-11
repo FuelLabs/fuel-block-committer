@@ -329,7 +329,7 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY_URL }}:${{ steps.meta.outputs.version }}
 
-      - uses: FuelLabs/.github/.github/actions/slack-notify-template@master
+      - uses: ./.github/actions/slack-notify-template
         if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -358,8 +358,9 @@ jobs:
           curl -sSLf "$DASEL_VERSION" -L -o dasel && chmod +x dasel
           mv ./dasel /usr/local/bin/dasel
           ./.github/workflows/scripts/verify_tag.sh ${{ github.ref_name }} Cargo.toml
+
       - name: Publish crate
-        uses: FuelLabs/publish-crates@v1
+        uses: katyo/publish-crates@v1
         with:
           publish-delay: 30000
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
