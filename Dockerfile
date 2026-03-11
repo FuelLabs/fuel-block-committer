@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM lukemathwalker/cargo-chef:latest-rust-1.85 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.85-bookworm AS chef
 WORKDIR /build/
 # hadolint ignore=DL3008
 
@@ -18,18 +18,9 @@ COPY . .
 RUN cargo build --release --bin fuel-block-committer
 
 # Stage 2: Run
-FROM ubuntu:22.04 AS run
+FROM gcr.io/distroless/cc-debian12:nonroot AS run
 
-RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  # Clean up
-  && apt-get autoremove -y \
-  && apt-get clean -y \
-  && rm -rf /var/lib/apt/lists/*
+COPY --from=builder --chown=nonroot:nonroot /build/target/release/fuel-block-committer /
+COPY --from=builder --chown=nonroot:nonroot /build/target/release/fuel-block-committer.d /
 
-WORKDIR /root/
-
-COPY --from=builder /build/target/release/fuel-block-committer .
-COPY --from=builder /build/target/release/fuel-block-committer.d .
-
-ENTRYPOINT ["./fuel-block-committer"]
+ENTRYPOINT ["/fuel-block-committer"]
