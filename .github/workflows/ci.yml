@@ -329,6 +329,7 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY_URL }}:${{ steps.meta.outputs.version }}
 
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/slack-notify-template
         if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
         with:
@@ -360,7 +361,7 @@ jobs:
           ./.github/workflows/scripts/verify_tag.sh ${{ github.ref_name }} Cargo.toml
 
       - name: Publish crate
-        uses: katyo/publish-crates@v1
+        uses: katyo/publish-crates@v2
         with:
           publish-delay: 30000
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
