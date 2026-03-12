@@ -5,8 +5,8 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/fuellabs/fuel-block-committer
-  pullPolicy: Always
+  repository: public.ecr.aws/fuellabs/fuel-block-committer
+  pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
