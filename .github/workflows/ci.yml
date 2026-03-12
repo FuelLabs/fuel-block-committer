@@ -55,7 +55,7 @@ jobs:
   cargo-verifications:
     needs:
       - verify-rust-version
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: warp-ubuntu-latest-x64-4x
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -73,7 +73,7 @@ jobs:
         with:
           version: nightly
       - name: Build cache
-        uses: buildjet/cache@v4
+        uses: WarpBuilds/cache@v1
         with:
           path: |
             ~/.cargo/bin/
@@ -190,8 +190,8 @@ jobs:
       matrix:
         arch: [
           # build on native runners instead of using emulation
-          {platform: linux/amd64, runner: buildjet-8vcpu-ubuntu-2204},
-          {platform: linux/arm64, runner: buildjet-8vcpu-ubuntu-2204-arm}
+          {platform: linux/amd64, runner: warp-ubuntu-latest-x64-4x},
+          {platform: linux/arm64, runner: warp-ubuntu-latest-arm64-4x}
         ]
     runs-on: ${{ matrix.arch.runner }}
     permissions:
@@ -329,7 +329,10 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY_URL }}:${{ steps.meta.outputs.version }}
 
-      - uses: FuelLabs/.github/.github/actions/slack-notify-template@master
+      - uses: actions/checkout@v4
+        if: always()
+
+      - uses: ./.github/actions/slack-notify-template
         if: always() && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -343,7 +346,7 @@ jobs:
       - e2e-tests
     # Only do this job if publishing a release
     if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -358,8 +361,9 @@ jobs:
           curl -sSLf "$DASEL_VERSION" -L -o dasel && chmod +x dasel
           mv ./dasel /usr/local/bin/dasel
           ./.github/workflows/scripts/verify_tag.sh ${{ github.ref_name }} Cargo.toml
+
       - name: Publish crate
-        uses: FuelLabs/publish-crates@v1
+        uses: katyo/publish-crates@v2
         with:
           publish-delay: 30000
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
