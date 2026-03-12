@@ -1468,6 +1468,41 @@ impl Postgres {
         Ok(())
     }
 
+    pub(crate) async fn _update_eigen_costs(&self) -> Result<()> {
+        let mut tx = self.connection_pool.begin().await?;
+
+        sqlx::query!(
+            r#"
+           INSERT INTO bundle_cost (bundle_id, da_block_height, cost, size, is_finalized)
+           SELECT DISTINCT
+               b.id as bundle_id,
+               0 as da_block_height,
+               0 as cost,
+               COALESCE(SUM(lf.total_bytes), 0) as size,
+               true as is_finalized
+           FROM eigen_submission_fragments esf
+           JOIN eigen_submission es ON esf.submission_id = es.id
+           JOIN l1_fragments lf ON esf.fragment_id = lf.id
+           JOIN bundles b ON lf.bundle_id = b.id
+           LEFT JOIN bundle_cost bc ON b.id = bc.bundle_id
+           WHERE es.status = $1
+             AND bc.bundle_id IS NULL  -- Don't insert duplicates
+             AND esf.id IN (
+                 SELECT id FROM eigen_submission_fragments
+                 ORDER BY id DESC
+             )
+           GROUP BY b.id;
+           "#,
+            i16::from(eigen_tables::SubmissionStatus::Finalized),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
     pub(crate) async fn _get_latest_block_height(&self) -> Result<u32> {
         let result = sqlx::query!(r#"SELECT MAX(height) as max_height FROM fuel_blocks"#)
             .fetch_one(&self.connection_pool)
