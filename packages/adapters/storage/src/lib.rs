@@ -69,6 +69,10 @@ impl services::state_listener::port::Storage for Postgres {
             .await
             .map_err(Into::into)
     }
+
+    async fn update_eigen_costs(&self) -> services::Result<()> {
+        self._update_eigen_costs().await.map_err(Into::into)
+    }
 }
 
 impl services::cost_reporter::port::Storage for Postgres {
