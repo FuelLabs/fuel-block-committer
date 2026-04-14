@@ -120,6 +120,10 @@ pub struct EigenDaConfig {
     /// Defaults to 16 MiB/s if not given.
     #[serde(deserialize_with = "parse_u32")]
     pub api_throughput: Option<u32>,
+    /// Allocated API call limit in calls/s (for the address corresponding to the key).
+    /// Defaults to 1 call/s if not given.
+    #[serde(deserialize_with = "parse_u32")]
+    pub api_calls_per_sec: Option<u32>,
     /// URL to the EigenDA RPC endpoint for Ethereum.
     #[serde(deserialize_with = "parse_url")]
     pub eth_rpc_url: Url,

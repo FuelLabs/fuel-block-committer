@@ -531,7 +531,16 @@ pub async fn eigen_adapter(
                     ))
                 })?,
             max_burst: burst,
-            calls_per_sec: DEFAULT_EIGEN_CALLS_PER_SEC.try_into().unwrap(),
+            calls_per_sec: config
+                .api_calls_per_sec
+                .unwrap_or(DEFAULT_EIGEN_CALLS_PER_SEC)
+                .try_into()
+                .map_err(|e| {
+                    Error::Other(format!(
+                        "Invalid calls per second value ({e}): {:?}",
+                        config.api_calls_per_sec
+                    ))
+                })?,
         },
         config.cert_verifier_address.clone(),
         config.registry_coordinator_address.clone(),

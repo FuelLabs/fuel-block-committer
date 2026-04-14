@@ -370,6 +370,12 @@ The Fuel Block Committer is configured primarily through environment variables.
   - **Type:** `u32`
   - **Example:** `16777216`
 
+- **`COMMITTER__DA_LAYER__API_CALLS_PER_SEC`**
+
+  - **Description:** Allocated API call limit in calls/s for the authenticated address. Defaults to 1 call/s if not specified.
+  - **Type:** `u32`
+  - **Example:** `4`
+
 - **`COMMITTER__DA_LAYER__ETH_RPC_URL`**
 
   - **Description:** URL endpoint for the Ethereum RPC service used by EigenDA.
