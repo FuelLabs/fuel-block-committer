@@ -2,32 +2,20 @@ use anyhow::Context;
 use anyhow::Result;
 use e2e_helpers::kms::Kms;
 use e2e_helpers::kms::KmsProcess;
-use k256::ecdsa::SigningKey as K256SigningKey;
-use rand::rngs::OsRng;
 use rust_eigenda_signers::Message;
 use rust_eigenda_signers::PublicKey;
 use rust_eigenda_signers::RecoverableSignature;
-use rust_eigenda_signers::signers::private_key::Signer as PrivateKeySigner;
 use rust_eigenda_v2_client::rust_eigenda_signers::Sign;
 use secp256k1::Secp256k1;
 use sha2::{Digest, Sha256};
 use signers::eigen::kms::Signer;
 
-async fn setup_kms_and_signer() -> Result<(KmsProcess, PrivateKeySigner, Signer)> {
+async fn setup_kms_and_signer() -> Result<(KmsProcess, String, Signer)> {
     let kms_proc = Kms::default().with_show_logs(false).start().await?;
+    let kms_key_id = kms_proc.create_key().await?.id;
+    let aws_signer = Signer::new(kms_proc.client().clone(), kms_key_id.clone()).await?;
 
-    let k256_secret_key = k256::SecretKey::random(&mut OsRng);
-    let k256_signing_key = K256SigningKey::from(&k256_secret_key);
-
-    let secp_secret_key = secp256k1::SecretKey::from_slice(k256_secret_key.to_bytes().as_slice())
-        .expect("Failed to create secp256k1 secret key from k256 bytes");
-    let local_signer = PrivateKeySigner::new(secp_secret_key.into());
-
-    let kms_key_id = kms_proc.inject_secp256k1_key(&k256_signing_key).await?;
-
-    let aws_signer = Signer::new(kms_proc.client().clone(), kms_key_id).await?;
-
-    Ok((kms_proc, local_signer, aws_signer))
+    Ok((kms_proc, kms_key_id, aws_signer))
 }
 
 fn verify_signature_recovery(
@@ -58,20 +46,25 @@ fn verify_signature_recovery(
 
 #[tokio::test]
 async fn test_kms_signer_public_key_and_address() -> Result<()> {
-    let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
+    let (_kms_proc, kms_key_id, aws_signer) = setup_kms_and_signer().await?;
 
-    let expected_secp_pubkey = local_signer.public_key();
-    let actual_secp_pubkey = aws_signer.public_key();
+    let public_key_bytes = aws_signer.get_public_key(&kms_key_id).await?;
+    let expected_public_key = PublicKey::new(
+        public_key_bytes
+            .as_slice()
+            .try_into()
+            .context("KMS public key should be uncompressed SEC1 bytes")?,
+    )?;
+
     assert_eq!(
-        actual_secp_pubkey, expected_secp_pubkey,
-        "Public key from AwsKmsSigner does not match the expected key from LocalSigner"
+        aws_signer.public_key(),
+        expected_public_key,
+        "public key cached by AwsKmsSigner does not match KMS GetPublicKey"
     );
-
-    let expected_address = local_signer.public_key().address();
-    let actual_address = aws_signer.public_key().address();
     assert_eq!(
-        actual_address, expected_address,
-        "Address from AwsKmsSigner does not match the expected address from LocalSigner"
+        aws_signer.public_key().address(),
+        expected_public_key.address(),
+        "address derived from AwsKmsSigner public key does not match KMS GetPublicKey"
     );
 
     Ok(())
@@ -79,7 +72,7 @@ async fn test_kms_signer_public_key_and_address() -> Result<()> {
 
 #[tokio::test]
 async fn test_kms_signer_sign_and_verify() -> Result<()> {
-    let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
+    let (_kms_proc, _kms_key_id, aws_signer) = setup_kms_and_signer().await?;
     let test_message_bytes = b"Test message for KMS signer trait implementation";
     let message_hash_array: [u8; 32] = Sha256::digest(test_message_bytes).into();
     let message = Message::from(message_hash_array);
@@ -89,7 +82,7 @@ async fn test_kms_signer_sign_and_verify() -> Result<()> {
         .await
         .context("Signing with AwsKmsSigner failed")?;
 
-    let expected_pubkey = local_signer.public_key();
+    let expected_pubkey = aws_signer.public_key();
 
     verify_signature_recovery(&rec_sig, &message, &expected_pubkey)
         .context("Signature verification failed")?;
