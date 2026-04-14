@@ -224,11 +224,15 @@ mod bridge {
 }
 
 mod foundry {
-    use std::path::Path;
+    use std::{
+        io::Cursor,
+        path::{Path, PathBuf},
+    };
 
     use anyhow::{Context, bail};
     use itertools::Itertools;
     use tokio::{fs::OpenOptions, io::AsyncWriteExt};
+    use zip::{ZipArchive, read::ZipFile};
 
     struct Dep {
         git: String,
@@ -272,13 +276,16 @@ mod foundry {
             Dep {
                 git: "OpenZeppelin/openzeppelin-foundry-upgrades".to_string(),
                 tag: "v0.3.1".to_string(),
-                remap: None,
+                remap: Some((
+                    "openzeppelin-foundry-upgrades".to_string(),
+                    "openzeppelin-foundry-upgrades/src".to_string(),
+                )),
             },
             Dep {
                 git: "OpenZeppelin/openzeppelin-contracts".to_string(),
                 tag: "v5.0.2".to_string(),
                 remap: Some((
-                    "openzeppelin/contracts".to_string(),
+                    "@openzeppelin/contracts".to_string(),
                     "openzeppelin-contracts/contracts".to_string(),
                 )),
             },
@@ -286,28 +293,14 @@ mod foundry {
                 git: "OpenZeppelin/openzeppelin-contracts-upgradeable".to_string(),
                 tag: "v4.8.3".to_string(),
                 remap: Some((
-                    "openzeppelin/contracts-upgradeable".to_string(),
+                    "@openzeppelin/contracts-upgradeable".to_string(),
                     "openzeppelin-contracts-upgradeable/contracts".to_string(),
                 )),
             },
         ];
 
         for Dep { git, tag, .. } in &deps {
-            let output = tokio::process::Command::new("forge")
-                .arg("install")
-                // .arg("--no-commit")
-                .arg("--no-git")
-                .arg(format!("{git}@{tag}"))
-                .current_dir(dir)
-                .stdin(std::process::Stdio::null())
-                .kill_on_drop(true)
-                .output()
-                .await?;
-
-            if !output.status.success() {
-                let err = String::from_utf8_lossy(&output.stderr);
-                bail!("Failed to install dependencies: {err}")
-            }
+            download_dep(dir, git, tag).await?;
         }
 
         let mut file = OpenOptions::new()
@@ -318,13 +311,78 @@ mod foundry {
         let remappings = deps
             .iter()
             .filter_map(|dep| dep.remap.as_ref())
-            .map(|(from, to)| format!("\"@{from}/=lib/{to}\""))
+            .map(|(from, to)| format!("\"{from}/=lib/{to}\""))
             .join(",");
 
         file.write_all((format!("remappings = [{remappings}]")).as_bytes())
             .await?;
 
         Ok(())
+    }
+
+    async fn download_dep(dir: &Path, git: &str, tag: &str) -> anyhow::Result<()> {
+        let package = package_name(git)?;
+        let target = dir.join("lib").join(package);
+
+        if target.exists() {
+            tokio::fs::remove_dir_all(&target).await?;
+        }
+
+        let bytes = reqwest::get(format!("https://github.com/{git}/archive/refs/tags/{tag}.zip"))
+            .await?
+            .bytes()
+            .await?
+            .to_vec();
+
+        let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+        extract_archive_contents(&mut archive, &target).await
+    }
+
+    fn package_name(git: &str) -> anyhow::Result<&str> {
+        git.rsplit_once('/')
+            .map(|(_, package)| package)
+            .ok_or_else(|| anyhow::anyhow!("invalid GitHub dependency: {git}"))
+    }
+
+    async fn extract_archive_contents(
+        archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+        target: &Path,
+    ) -> anyhow::Result<()> {
+        for index in 0..archive.len() {
+            let entry = archive.by_index(index)?;
+            if entry.is_file() {
+                extract_file(entry, target).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn extract_file(mut file: ZipFile<'_>, target: &Path) -> anyhow::Result<()> {
+        let zip_file_name = file
+            .enclosed_name()
+            .ok_or_else(|| anyhow::anyhow!("could not get dependency archive file name"))?;
+
+        let path = remove_first_component(&zip_file_name);
+        let target_path = target.join(path);
+
+        if let Some(parent) = target_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        tokio::task::block_in_place(|| -> anyhow::Result<()> {
+            let mut outfile = std::fs::File::create(&target_path)?;
+            std::io::copy(&mut file, &mut outfile)?;
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    fn remove_first_component(path: &Path) -> PathBuf {
+        let mut components = path.components();
+        components.next();
+        components.collect()
     }
 
     pub async fn add_tx_building_script(path: &Path) -> anyhow::Result<()> {
