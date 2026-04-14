@@ -193,10 +193,13 @@ impl Committer {
 
         let child = cmd.spawn().with_context(||"couldn't find `fuel-block-committer` on PATH. Either use `run_tests.sh` or place the binary on the PATH.")?;
 
-        Ok(CommitterProcess {
-            _child: child,
+        let mut process = CommitterProcess {
+            child,
             port: unused_port,
-        })
+        };
+        process.wait_until_metrics_ready().await?;
+
+        Ok(process)
     }
 
     pub fn with_bundle_fragment_accumulation_timeout(mut self, timeout: String) -> Self {
@@ -321,7 +324,7 @@ impl Committer {
 }
 
 pub struct CommitterProcess {
-    _child: tokio::process::Child,
+    child: tokio::process::Child,
     port: u16,
 }
 
@@ -331,6 +334,31 @@ impl CommitterProcess {
             .parse()
             .unwrap()
     }
+
+    async fn wait_until_metrics_ready(&mut self) -> anyhow::Result<()> {
+        let client = reqwest::Client::new();
+        let metrics_url = self.metrics_url();
+        let timeout = tokio::time::Instant::now() + Duration::from_secs(30);
+
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                anyhow::bail!("fuel-block-committer exited before metrics were ready: {status}");
+            }
+
+            if let Ok(response) = client.get(metrics_url.clone()).send().await {
+                if response.status().is_success() {
+                    return Ok(());
+                }
+            }
+
+            if tokio::time::Instant::now() >= timeout {
+                anyhow::bail!("fuel-block-committer metrics were not ready at {metrics_url}");
+            }
+
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
     pub async fn wait_for_committed_block(&self, height: u64) -> anyhow::Result<()> {
         loop {
             match self.fetch_latest_committed_block().await {
