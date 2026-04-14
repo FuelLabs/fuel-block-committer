@@ -168,7 +168,7 @@ where
             operator_state_retriever_addr: operator_state_retriever_address,
             eth_rpc_url,
             disperser_rpc: disperser_rpc_url,
-            use_secure_grpc_flag: true,
+            use_secure_grpc_flag: false,
         };
 
         // Create PayloadDisperser instance

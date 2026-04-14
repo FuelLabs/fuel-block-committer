@@ -151,7 +151,7 @@ impl Committer {
             cmd.env("COMMITTER__DA_LAYER__TYPE", "EigenDA")
                 .env(
                     "COMMITTER__DA_LAYER__DISPERSER_RPC_URL",
-                    "https://disperser-holesky.eigenda.xyz",
+                    "https://disperser-testnet-holesky.eigenda.xyz",
                 )
                 .env("COMMITTER__DA_LAYER__KEY", key)
                 .env(
