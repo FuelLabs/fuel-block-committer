@@ -328,11 +328,13 @@ mod foundry {
             tokio::fs::remove_dir_all(&target).await?;
         }
 
-        let bytes = reqwest::get(format!("https://github.com/{git}/archive/refs/tags/{tag}.zip"))
-            .await?
-            .bytes()
-            .await?
-            .to_vec();
+        let bytes = reqwest::get(format!(
+            "https://github.com/{git}/archive/refs/tags/{tag}.zip"
+        ))
+        .await?
+        .bytes()
+        .await?
+        .to_vec();
 
         let mut archive = ZipArchive::new(Cursor::new(bytes))?;
         extract_archive_contents(&mut archive, &target).await
