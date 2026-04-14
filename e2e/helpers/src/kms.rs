@@ -22,7 +22,7 @@ impl testcontainers::Image for KmsImage {
     }
 
     fn tag(&self) -> &str {
-        "latest"
+        "3.8.1"
     }
 
     fn ready_conditions(&self) -> Vec<testcontainers::core::WaitFor> {
