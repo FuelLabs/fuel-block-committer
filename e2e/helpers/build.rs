@@ -284,7 +284,10 @@ mod foundry {
             Dep {
                 git: "Arachnid/solidity-stringutils".to_string(),
                 tag: "refs/heads/master".to_string(),
-                remap: None,
+                remap: Some((
+                    "solidity-stringutils".to_string(),
+                    "solidity-stringutils".to_string(),
+                )),
             },
             Dep {
                 git: "OpenZeppelin/openzeppelin-contracts".to_string(),
