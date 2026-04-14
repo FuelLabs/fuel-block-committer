@@ -282,6 +282,11 @@ mod foundry {
                 )),
             },
             Dep {
+                git: "Arachnid/solidity-stringutils".to_string(),
+                tag: "refs/heads/master".to_string(),
+                remap: None,
+            },
+            Dep {
                 git: "OpenZeppelin/openzeppelin-contracts".to_string(),
                 tag: "v5.0.2".to_string(),
                 remap: Some((
@@ -328,9 +333,7 @@ mod foundry {
             tokio::fs::remove_dir_all(&target).await?;
         }
 
-        let bytes = reqwest::get(format!(
-            "https://github.com/{git}/archive/refs/tags/{tag}.zip"
-        ))
+        let bytes = reqwest::get(github_archive_url(git, tag))
         .await?
         .bytes()
         .await?
@@ -338,6 +341,14 @@ mod foundry {
 
         let mut archive = ZipArchive::new(Cursor::new(bytes))?;
         extract_archive_contents(&mut archive, &target).await
+    }
+
+    fn github_archive_url(git: &str, tag: &str) -> String {
+        if tag.starts_with("refs/") {
+            format!("https://github.com/{git}/archive/{tag}.zip")
+        } else {
+            format!("https://github.com/{git}/archive/refs/tags/{tag}.zip")
+        }
     }
 
     fn package_name(git: &str) -> anyhow::Result<&str> {
