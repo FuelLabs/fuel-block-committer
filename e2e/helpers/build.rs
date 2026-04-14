@@ -334,10 +334,10 @@ mod foundry {
         }
 
         let bytes = reqwest::get(github_archive_url(git, tag))
-        .await?
-        .bytes()
-        .await?
-        .to_vec();
+            .await?
+            .bytes()
+            .await?
+            .to_vec();
 
         let mut archive = ZipArchive::new(Cursor::new(bytes))?;
         extract_archive_contents(&mut archive, &target).await
