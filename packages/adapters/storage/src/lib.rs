@@ -614,6 +614,27 @@ mod tests {
             .unwrap();
     }
 
+    // Bundle a range of already-inserted blocks (does not insert new blocks).
+    async fn bundle_existing_blocks(
+        storage: impl services::block_bundler::port::Storage,
+        range: RangeInclusive<u32>,
+    ) {
+        let fragments = std::iter::repeat(Fragment {
+            data: nonempty![0],
+            unused_bytes: 1000,
+            total_bytes: 100.try_into().unwrap(),
+        })
+        .take(1)
+        .collect_nonempty()
+        .unwrap();
+
+        let next_id = storage.next_bundle_id().await.unwrap();
+        storage
+            .insert_bundle_and_fragments(next_id, range, fragments)
+            .await
+            .unwrap();
+    }
+
     async fn lowest_unbundled_sequence(
         storage: impl services::block_bundler::port::Storage,
         starting_height: u32,
@@ -725,6 +746,34 @@ mod tests {
 
         // then
         assert_eq!(height_range, 0..=2);
+    }
+
+    /// Multiple in-window gaps must each be surfaced (lowest first), and draining one
+    /// gap must reveal the next -- including a gap that sits *below* a higher bundle.
+    /// A MAX(end_height) watermark would skip these lower gaps; range containment must not.
+    #[tokio::test]
+    async fn surfaces_each_gap_below_higher_bundles_in_order() {
+        // given: gap A (0..=2), bundle (7..=10), gap B (11..=13), bundle (20..=25), tail (26..=30)
+        let storage = start_db().await;
+
+        insert_sequence_of_unbundled_blocks(storage.clone(), 0..=2).await;
+        insert_sequence_of_bundled_blocks(storage.clone(), 7..=10, 1).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 11..=13).await;
+        insert_sequence_of_bundled_blocks(storage.clone(), 20..=25, 1).await;
+        insert_sequence_of_unbundled_blocks(storage.clone(), 26..=30).await;
+
+        // then: the lowest gap is returned first
+        assert_eq!(
+            lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await,
+            0..=2
+        );
+
+        // and: after bundling gap A, gap B -- which sits *below* bundle 20..=25 -- is next
+        bundle_existing_blocks(storage.clone(), 0..=2).await;
+        assert_eq!(
+            lowest_unbundled_sequence(storage.clone(), 0, u32::MAX).await,
+            11..=13
+        );
     }
 
     #[tokio::test]

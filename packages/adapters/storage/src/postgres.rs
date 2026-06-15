@@ -573,20 +573,22 @@ impl Postgres {
     }
 
     pub(crate) async fn total_unbundled_blocks(&self, starting_height: u32) -> Result<u64> {
-        // Unbundled blocks within the lookback window are exactly those above the
-        // contiguous bundled coverage. Bundling proceeds sequentially, so the window is
-        // gap-free and this watermark is equivalent to the previous
-        // `NOT EXISTS (... BETWEEN ...)` anti-join (verified: identical result set on
-        // mainnet) while using an index range scan instead of scanning `bundles` once
-        // per candidate block (~20s -> ~5ms on mainnet).
+        // A block is unbundled if no bundle's [start_height, end_height] range contains
+        // it. The previous `fb.height BETWEEN b.start_height AND b.end_height` form is a
+        // range-containment predicate that a btree on (start_height, end_height) cannot
+        // serve, so the planner scanned `bundles` once per candidate block (~20s on
+        // mainnet just to count the tail). Expressing it as range containment (`@>`)
+        // lets the GiST index on `int8range(start_height, end_height)` (migration 0011)
+        // serve it as an index probe. Correct for non-contiguous coverage (gaps), unlike
+        // a MAX(end_height) watermark -- see `can_handle_bundled_blocks_appearing_after_
+        // unbundled_ones`.
         let count = sqlx::query!(
             r#"SELECT COUNT(*)
                 FROM fuel_blocks fb
                 WHERE fb.height >= $1
-                AND fb.height > (
-                    SELECT COALESCE(MAX(b.end_height), $1 - 1)
-                    FROM bundles b
-                    WHERE b.end_height >= $1
+                AND NOT EXISTS (
+                    SELECT 1 FROM bundles b
+                    WHERE int8range(b.start_height, b.end_height, '[]') @> fb.height
                 )"#,
             i64::from(starting_height)
         )
@@ -644,19 +646,18 @@ impl Postgres {
         &self,
         starting_height: u32,
     ) -> BoxStream<'_, std::result::Result<tables::DBCompressedFuelBlock, sqlx::Error>> {
-        // See `total_unbundled_blocks`: watermark on the contiguous bundled coverage,
-        // equivalent to the previous anti-join in a gap-free window but served by an
-        // index range scan over the unbundled tail.
+        // See `total_unbundled_blocks`: range-containment anti-join served by the GiST
+        // index on `int8range(start_height, end_height)` (migration 0011). Correct for
+        // non-contiguous coverage (gaps), unlike a MAX(end_height) watermark.
         sqlx::query_as!(
             tables::DBCompressedFuelBlock,
             r#"
             SELECT fb.*
         FROM fuel_blocks fb
         WHERE fb.height >= $1
-        AND fb.height > (
-            SELECT COALESCE(MAX(b.end_height), $1 - 1)
-            FROM bundles b
-            WHERE b.end_height >= $1
+        AND NOT EXISTS (
+            SELECT 1 FROM bundles b
+            WHERE int8range(b.start_height, b.end_height, '[]') @> fb.height
         )
         ORDER BY fb.height"#,
             i64::from(starting_height),
