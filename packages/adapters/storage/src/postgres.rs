@@ -1340,19 +1340,25 @@ impl Postgres {
     }
 
     pub(crate) async fn _table_sizes(&self) -> Result<services::state_pruner::port::TableSizes> {
+        // These are observability gauges, not values the pruner acts on, so we use the
+        // planner's row-count estimate (`pg_class.reltuples`, maintained by autovacuum)
+        // instead of `COUNT(*)`. Exact counts meant scanning every table -- including
+        // multi-million-row `fuel_blocks` -- on every prune cycle, which kept the
+        // (Serverless v2) DB's ACU elevated for no functional benefit. `reltuples` is a
+        // metadata lookup (no heap/index scan). (`-1` = never analyzed; clamp to 0.)
         let response = sqlx::query!(
             r#"
             SELECT
-                (SELECT COUNT(*) FROM l1_blob_transaction) AS size_blob_transactions,
-                (SELECT COUNT(*) FROM l1_transaction_fragments) AS size_transaction_fragments,
-                (SELECT COUNT(*) FROM l1_fragments) AS size_fragments,
-                (SELECT COUNT(*) FROM bundles) AS size_bundles,
-                (SELECT COUNT(*) FROM bundle_cost) AS size_bundle_costs,
-                (SELECT COUNT(*) FROM fuel_blocks) AS size_fuel_blocks,
-                (SELECT COUNT(*) FROM l1_transaction) AS size_contract_transactions,
-                (SELECT COUNT(*) FROM l1_fuel_block_submission) AS size_contract_submissions,
-                (SELECT COUNT(*) FROM eigen_submission) AS size_eigen_submissions,
-                (SELECT COUNT(*) FROM eigen_submission_fragments) AS size_eigen_submission_fragments
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_blob_transaction'::regclass) AS size_blob_transactions,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_transaction_fragments'::regclass) AS size_transaction_fragments,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_fragments'::regclass) AS size_fragments,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'bundles'::regclass) AS size_bundles,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'bundle_cost'::regclass) AS size_bundle_costs,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'fuel_blocks'::regclass) AS size_fuel_blocks,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_transaction'::regclass) AS size_contract_transactions,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_fuel_block_submission'::regclass) AS size_contract_submissions,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'eigen_submission'::regclass) AS size_eigen_submissions,
+                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'eigen_submission_fragments'::regclass) AS size_eigen_submission_fragments
             "#,
         )
         .fetch_one(&self.connection_pool)

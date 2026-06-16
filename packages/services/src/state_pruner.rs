@@ -33,66 +33,24 @@ pub mod service {
         Clock: crate::state_pruner::port::Clock,
     {
         pub async fn prune(&self) -> Result<()> {
-            let pre_pruning_table_sizes = self.storage.table_sizes().await?;
             let pruned_blocks_range = self
                 .storage
                 .prune_entries_older_than(self.clock.now() - self.retention)
                 .await?;
 
-            let post_pruning_table_sizes = self.storage.table_sizes().await?;
-            let pruned = diff_dbg_str(&pre_pruning_table_sizes, &post_pruning_table_sizes);
+            // `table_sizes()` returns estimates (pg_class.reltuples), so a pre/post diff
+            // would be meaningless -- the exact pruned range comes from the prune itself.
+            // We skip the (previously pre-pruning) extra `table_sizes()` call entirely;
+            // the remaining one is a cheap metadata lookup used only for the size gauges.
+            let table_sizes = self.storage.table_sizes().await?;
 
-            tracing::info!("Pruned: {pruned} with {pruned_blocks_range:?}");
-            tracing::info!("Table sizes: {post_pruning_table_sizes:?}");
+            tracing::info!("Pruned range: {pruned_blocks_range:?}");
+            tracing::info!("Table sizes (approx): {table_sizes:?}");
 
-            self.metrics.observe_table_sizes(&post_pruning_table_sizes);
+            self.metrics.observe_table_sizes(&table_sizes);
 
             Ok(())
         }
-    }
-
-    fn diff_dbg_str(old: &super::port::TableSizes, new: &super::port::TableSizes) -> String {
-        [
-            format!(
-                "blob_transactions: {}, ",
-                old.blob_transactions.saturating_sub(new.blob_transactions)
-            ),
-            format!(
-                "fragments: {}, ",
-                old.fragments.saturating_sub(new.fragments)
-            ),
-            format!(
-                "transaction_fragments: {}, ",
-                old.transaction_fragments
-                    .saturating_sub(new.transaction_fragments)
-            ),
-            format!("bundles: {}, ", old.bundles.saturating_sub(new.bundles)),
-            format!(
-                "bundle_costs: {}, ",
-                old.bundle_costs.saturating_sub(new.bundle_costs)
-            ),
-            format!("blocks: {}, ", old.blocks.saturating_sub(new.blocks)),
-            format!(
-                "contract_transactions: {}, ",
-                old.contract_transactions
-                    .saturating_sub(new.contract_transactions)
-            ),
-            format!(
-                "contract_submissions: {}",
-                old.contract_submissions
-                    .saturating_sub(new.contract_submissions)
-            ),
-            format!(
-                "eigen_submissions: {}, ",
-                old.eigen_submissions.saturating_sub(new.eigen_submissions)
-            ),
-            format!(
-                "eigen_submission_fragments: {}",
-                old.eigen_submission_fragments
-                    .saturating_sub(new.eigen_submission_fragments)
-            ),
-        ]
-        .join("")
     }
 
     impl<Db, Clock> Runner for StatePruner<Db, Clock>
