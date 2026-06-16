@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_blob_transaction'::regclass) AS size_blob_transactions,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_transaction_fragments'::regclass) AS size_transaction_fragments,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_fragments'::regclass) AS size_fragments,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'bundles'::regclass) AS size_bundles,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'bundle_cost'::regclass) AS size_bundle_costs,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'fuel_blocks'::regclass) AS size_fuel_blocks,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_transaction'::regclass) AS size_contract_transactions,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'l1_fuel_block_submission'::regclass) AS size_contract_submissions,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'eigen_submission'::regclass) AS size_eigen_submissions,\n                (SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = 'eigen_submission_fragments'::regclass) AS size_eigen_submission_fragments\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "size_blob_transactions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "size_transaction_fragments",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "size_fragments",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "size_bundles",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "size_bundle_costs",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "size_fuel_blocks",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "size_contract_transactions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "size_contract_submissions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "size_eigen_submissions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "size_eigen_submission_fragments",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "cdb0c7639187768cdbd1e9cf3b6ce36c14a953e20d439bc9402270cdd55dc74a"
+}
