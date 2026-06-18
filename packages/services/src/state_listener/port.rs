@@ -56,6 +56,7 @@ pub trait Storage: Sync {
         request_id: &EigenDARequestId,
     ) -> Result<Option<DateTime<Utc>>>;
     async fn update_eigen_submissions(&self, changes: Vec<(u32, DispersalStatus)>) -> Result<()>;
+    async fn update_eigen_costs(&self) -> Result<()>;
 }
 
 pub trait Clock {

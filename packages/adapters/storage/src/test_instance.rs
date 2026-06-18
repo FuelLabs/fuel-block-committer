@@ -230,6 +230,10 @@ impl services::state_listener::port::Storage for DbWithProcess {
     ) -> services::Result<()> {
         unimplemented!();
     }
+
+    async fn update_eigen_costs(&self) -> services::Result<()> {
+        unimplemented!()
+    }
 }
 
 impl block_importer::port::Storage for DbWithProcess {
