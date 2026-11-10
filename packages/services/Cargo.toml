@@ -10,9 +10,6 @@ publish = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-reqwest = { workspace = true, features = ["json", "rustls-tls"] }
-serde_json = { workspace = true }
-url = { workspace = true, features = ["serde"] }
 humantime = { workspace = true }
 byte-unit = { workspace = true, features = ["byte", "u128"] }
 alloy = { workspace = true }

@@ -138,7 +138,6 @@ where
 
 #[derive(Debug, Clone)]
 pub struct EigenDAClient<S> {
-    pub fcr: Option<std::sync::Arc<services::fcr::Gate>>,
     eigen_client: EigenClient<S>,
     // Limits the number of bytes that can be posted per second.
     throttler: Throttler,
@@ -180,7 +179,6 @@ where
         let throttler = Throttler::new(throughput);
 
         Ok(Self {
-            fcr: None,
             eigen_client,
             throttler,
         })
@@ -193,9 +191,6 @@ where
         // Use the padding function to ensure proper data format for EigenDA
         let padded_data = convert_by_padding_empty_byte(&data);
 
-        if let Some(gate) = &self.fcr {
-            gate.check().await.map_err(|_| Error::SafetyHeld)?;
-        }
         // Use the client to dispatch the blob
         let blob_id = self
             .eigen_client
