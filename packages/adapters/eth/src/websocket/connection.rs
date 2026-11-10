@@ -165,6 +165,11 @@ impl EthApi for WsConnection {
             .max_priority_fee_per_gas(max_priority_fee_per_gas)
             .nonce(nonce);
 
+        if let Some(gate) = &self.tx_config.fcr {
+            gate.check()
+                .await
+                .map_err(|_| Error::Other("FCR safety holds external posting".into()))?;
+        }
         let send_fut = self.provider.send_transaction(tx_request);
         let tx = tokio::time::timeout(self.tx_config.send_tx_request_timeout, send_fut)
             .await
@@ -277,6 +282,11 @@ impl EthApi for WsConnection {
             blob_tx.with_max_fees(projected_fees.normalized())
         };
 
+        if let Some(gate) = &self.tx_config.fcr {
+            gate.check()
+                .await
+                .map_err(|_| Error::Other("FCR safety holds external posting".into()))?;
+        }
         let blob_tx = blob_provider.fill(blob_tx).await?;
         let SendableTx::Envelope(blob_tx) = blob_tx else {
             return Err(crate::error::Error::Other(
@@ -320,6 +330,11 @@ impl EthApi for WsConnection {
             ));
         }
 
+        if let Some(gate) = &self.tx_config.fcr {
+            gate.check()
+                .await
+                .map_err(|_| Error::Other("FCR safety holds external posting".into()))?;
+        }
         let send_fut = blob_provider.send_tx_envelope(blob_tx);
         let _ = tokio::time::timeout(self.tx_config.send_tx_request_timeout, send_fut)
             .await
@@ -471,6 +486,86 @@ mod tests {
 
     use super::*;
     use crate::blob_encoder;
+
+    #[tokio::test]
+    async fn fcr_latch_blocks_real_commit_and_blob_adapter_sends() {
+        #[derive(Debug)]
+        struct LatchedJournal;
+        #[async_trait::async_trait]
+        impl services::fcr::Journal for LatchedJournal {
+            async fn load(&self) -> services::Result<serde_json::Value> {
+                Ok(
+                    serde_json::json!({"generation":"0","fuel_chain_id":"9889","writer_identity":"test","incident":"canonical:test","height":null,"hash":null,"progressed_at":0}),
+                )
+            }
+            async fn save(&self, _: serde_json::Value) -> services::Result<()> {
+                panic!("latched gate must not save or send");
+            }
+        }
+        let anvil = Anvil::new()
+            .args(["--hardfork", "cancun", "--block-base-fee-per-gas", "10"])
+            .try_spawn()
+            .unwrap();
+        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+        let provider = ProviderBuilder::new()
+            .wallet(EthereumWallet::from(signer.clone()))
+            .connect_ws(WsConnect::new(anvil.ws_endpoint()))
+            .await
+            .unwrap();
+        let gate = services::fcr::Gate::open(
+            services::fcr::Config {
+                status_urls: vec!["http://127.0.0.1:1".parse().unwrap()],
+                fuel_url: "http://127.0.0.1:1".parse().unwrap(),
+                fuel_chain_id: "9889".into(),
+                writer_identity: "test".into(),
+                generation: "0".into(),
+                freshness_seconds: 60,
+            },
+            std::sync::Arc::new(LatchedJournal),
+        )
+        .await
+        .unwrap();
+        let connection = WsConnection {
+            provider: provider.clone(),
+            main_address: signer.address(),
+            blob_provider: Some(provider.clone()),
+            blob_signer_address: Some(signer.address()),
+            contract: FuelStateContract::new(Address::ZERO, provider.clone()),
+            commit_interval: 3.try_into().unwrap(),
+            tx_config: TxConfig {
+                fcr: Some(std::sync::Arc::new(gate)),
+                ..Default::default()
+            },
+            metrics: Default::default(),
+        };
+        assert!(
+            connection
+                .submit([0; 32], 3)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("FCR safety")
+        );
+        let fragments = blob_encoder::BlobEncoder
+            .encode(nonempty![1, 2, 3], 1.into())
+            .unwrap();
+        assert!(
+            connection
+                .submit_state_fragments(fragments, None, Priority::MIN)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("FCR safety")
+        );
+        assert_eq!(
+            provider
+                .get_transaction_count(signer.address())
+                .await
+                .unwrap(),
+            0,
+            "neither adapter emitted a transaction"
+        );
+    }
 
     #[test]
     fn calculates_correctly_the_commit_height() {

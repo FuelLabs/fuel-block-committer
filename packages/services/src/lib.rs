@@ -2,6 +2,7 @@ pub mod block_bundler;
 pub mod block_committer;
 pub mod block_importer;
 pub mod cost_reporter;
+pub mod fcr;
 pub mod fee_metrics_tracker;
 pub mod health_reporter;
 pub mod state_committer;

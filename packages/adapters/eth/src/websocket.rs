@@ -121,6 +121,7 @@ pub struct L1Signers<S1, S2> {
 
 #[derive(Debug, Clone)]
 pub struct TxConfig {
+    pub fcr: Option<std::sync::Arc<services::fcr::Gate>>,
     pub tx_max_fee: u128,
     pub send_tx_request_timeout: Duration,
     pub acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages,
@@ -130,6 +131,7 @@ pub struct TxConfig {
 impl Default for TxConfig {
     fn default() -> Self {
         Self {
+            fcr: None,
             tx_max_fee: u128::MAX,
             send_tx_request_timeout: Duration::from_secs(10),
             acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::default(),

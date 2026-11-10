@@ -34,6 +34,7 @@ impl DeployedContract {
             signers,
             5,
             eth::TxConfig {
+                fcr: None,
                 tx_max_fee,
                 send_tx_request_timeout,
                 acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::default(),

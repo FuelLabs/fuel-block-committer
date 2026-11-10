@@ -2,6 +2,8 @@ use rust_eigenda_v2_client::errors::{ConversionError, PayloadDisperserError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("FCR safety holds external posting")]
+    SafetyHeld,
     #[error("transport error: {0}")]
     Transport(#[from] tonic::transport::Error),
     #[error("RPC error: {0}")]

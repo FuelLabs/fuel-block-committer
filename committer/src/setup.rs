@@ -167,7 +167,8 @@ pub async fn eigen_da_services(
     let (state_committer_handle, state_listener_handle, fee_metrics_handle) =
         match config.da_layer.clone() {
             Some(DALayer::EigenDA(eigen_config)) => {
-                let eigen_da = eigen_adapter(&eigen_config, internal_config).await?;
+                let mut eigen_da = eigen_adapter(&eigen_config, internal_config).await?;
+                eigen_da.fcr = config.fcr_gate.clone();
                 let committer = eigen_state_committer(
                     fuel.clone(),
                     eigen_da.clone(),
@@ -488,6 +489,7 @@ pub async fn l1_adapter(
         config.eth.signers().await?,
         internal_config.eth_errors_before_unhealthy,
         eth::TxConfig {
+            fcr: config.fcr_gate.clone(),
             tx_max_fee: u128::from(config.app.tx_fees.max),
             send_tx_request_timeout: config.app.send_tx_request_timeout,
             acceptable_priority_fee_percentage: AcceptablePriorityFeePercentages::new(

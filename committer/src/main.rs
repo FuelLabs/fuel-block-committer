@@ -21,7 +21,7 @@ pub type EigenDA = EigenDAClient<signers::eigen::Signer>;
 async fn main() -> Result<()> {
     setup::logger();
 
-    let config = config::parse().with_context(|| "failed to parse config")?;
+    let mut config = config::parse().with_context(|| "failed to parse config")?;
     config
         .validate()
         .with_context(|| "config validation failed")?;
@@ -38,6 +38,15 @@ async fn main() -> Result<()> {
 
     let (fuel_adapter, fuel_health_check) =
         setup::fuel_adapter(&config, &internal_config, &metrics_registry);
+
+    config.fcr_gate = if let Some(safety_config) = config.fcr.clone() {
+        let journal = storage.fcr_journal(&safety_config.writer_identity).await?;
+        Some(std::sync::Arc::new(
+            services::fcr::Gate::open(safety_config, journal).await?,
+        ))
+    } else {
+        None
+    };
 
     let (ethereum_rpc, eth_health_check) =
         setup::l1_adapter(&config, &internal_config, &metrics_registry)

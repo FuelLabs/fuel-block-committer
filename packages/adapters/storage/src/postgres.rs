@@ -94,6 +94,34 @@ pub struct DbConfig {
 }
 
 impl Postgres {
+    /// Claim an exclusive session for this writer's safety journal. Dropping the
+    /// detached connection closes the session and releases the advisory lock.
+    pub async fn fcr_journal(
+        &self,
+        writer: &str,
+    ) -> services::Result<std::sync::Arc<dyn services::fcr::Journal>> {
+        let mut connection = self
+            .connection_pool
+            .acquire()
+            .await
+            .map_err(|_| services::Error::Storage("Cannot acquire FCR journal session".into()))?
+            .detach();
+        let locked: bool =
+            sqlx::query_scalar("SELECT pg_try_advisory_lock(hashtextextended($1, 0))")
+                .bind(format!("fcr:{writer}"))
+                .fetch_one(&mut connection)
+                .await
+                .map_err(|_| services::Error::Storage("Cannot claim FCR writer session".into()))?;
+        if !locked {
+            return Err(services::Error::Storage(
+                "FCR committer writer is already active".into(),
+            ));
+        }
+        Ok(std::sync::Arc::new(FcrJournal {
+            connection: futures::lock::Mutex::new(connection),
+            writer: writer.into(),
+        }))
+    }
     pub async fn connect(opt: &DbConfig) -> services::Result<Self> {
         let ssl_mode = if opt.use_ssl {
             sqlx::postgres::PgSslMode::Require
@@ -1924,6 +1952,52 @@ mod tests {
 
         assert!(duration.as_secs() < 60);
 
+        Ok(())
+    }
+}
+
+struct FcrJournal {
+    connection: futures::lock::Mutex<PgConnection>,
+    writer: String,
+}
+impl std::fmt::Debug for FcrJournal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PostgresFcrJournal")
+    }
+}
+#[async_trait::async_trait]
+impl services::fcr::Journal for FcrJournal {
+    async fn load(&self) -> services::Result<serde_json::Value> {
+        let mut connection = self.connection.lock().await;
+        sqlx::query_scalar("SELECT state FROM fcr_safety WHERE writer=$1")
+            .bind(&self.writer)
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(|_| {
+                tracing::error!("Committer FCR journal session unavailable: posting held; repair PostgreSQL and restart the committer");
+                services::Error::Storage("Cannot read committer safety journal; restart required after repair".into())
+            })?
+            .ok_or_else(|| {
+                services::Error::Storage(
+                    "Missing committer safety journal; initialize explicitly".into(),
+                )
+            })
+    }
+    async fn save(&self, state: serde_json::Value) -> services::Result<()> {
+        let mut connection = self.connection.lock().await;
+        let result = sqlx::query("UPDATE fcr_safety SET state=$2 WHERE writer=$1")
+            .bind(&self.writer)
+            .bind(state)
+            .execute(&mut *connection)
+            .await
+            .map_err(|_| {
+                services::Error::Storage("Cannot persist committer safety journal".into())
+            })?;
+        if result.rows_affected() != 1 {
+            return Err(services::Error::Storage(
+                "Committer safety journal disappeared".into(),
+            ));
+        }
         Ok(())
     }
 }

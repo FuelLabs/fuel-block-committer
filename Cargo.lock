@@ -7809,7 +7809,9 @@ dependencies = [
  "pretty_assertions",
  "rand 0.8.5",
  "rayon",
+ "reqwest 0.12.9",
  "serde",
+ "serde_json",
  "services",
  "sqlx",
  "storage",
@@ -7820,6 +7822,7 @@ dependencies = [
  "tokio",
  "tracing",
  "trait-variant",
+ "url",
 ]
 
 [[package]]
@@ -8231,6 +8234,7 @@ checksum = "d7beae5182595e9a8b683fa98c4317f956c9a2dec3b9716990d20023cc60c766"
 name = "storage"
 version = "0.10.11"
 dependencies = [
+ "async-trait",
  "clock",
  "delegate",
  "futures",
